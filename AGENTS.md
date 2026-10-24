@@ -33,6 +33,8 @@ Run `cargo fmt --all`, `cargo clippy --all-targets -- -D warnings` and
 - `examples/`: Kiln programs. Tests in `crates/kiln_syntax/tests/examples.rs`
   and `crates/kiln_check/tests/examples.rs` parse and type-check every one of
   them, so they must stay valid.
+- `assets/brand/`: the logo and vocabulary icons. Brand colours are terracotta
+  `#C65A34`, charcoal `#1F232B` and off-white `#F7F3EC`.
 - `docs/syntax.md` and `docs/glazes.md` document what the parsers accept; `docs/design.md` is the
   language design.
 
