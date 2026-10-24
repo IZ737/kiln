@@ -14,6 +14,21 @@ code. The conventions are defaults, not walls. Any piece can be configured
 in depth, or replaced, where it is used. Every design decision is checked
 against this rule.
 
+## Progressive integration
+
+Kiln provides a consistent developer experience whether used for an
+individual component, one application layer or an entire full-stack
+application.
+
+The compiler uses all available information to provide type checking, code
+generation and optimization. Full-stack Kiln applications benefit from
+deeper automatic integration, while applications containing external systems
+use explicit, typed contracts and adapters to unlock as many of the same
+capabilities as possible.
+
+No application feature should unnecessarily require ownership of the entire
+technology stack.
+
 ## Goals
 
 1. **One binary deploys**, with templates and assets embedded.
@@ -53,7 +68,7 @@ bindings).
 ## Memory and concurrency
 
 - A concurrent, non-moving, tri-color mark-and-sweep GC, as in Go. Phase 1
-  links the Boehm collector; phase 6 replaces it with a precise collector.
+  links the Boehm collector; phase 7 replaces it with a precise collector.
 - Escape analysis, and later request-scoped arenas for garbage that dies when
   a response is sent.
 - An M:N scheduler of lightweight tasks; blocking I/O parks the task. Tasks
@@ -68,9 +83,9 @@ to a typed mid-level IR, which feeds a backend:
 | Backend | Use | Phase |
 | --- | --- | --- |
 | C (via clang, gcc or `zig cc`) | First backend; free cross-compilation | 1 |
-| Cranelift | Fast debug builds | 4 |
-| WasmGC | Browser code (embers) | 5 |
-| LLVM | Optimized release builds | 6 |
+| Cranelift | Fast debug builds | 5 |
+| WasmGC | Browser code (embers) | 6 |
+| LLVM | Optimized release builds | 7 |
 
 The phase 1 C backend (`crates/kiln_codegen`) emits one C file with the
 runtime (`runtime/kiln.c`) in front, and builds it with `$CC` or `cc`
@@ -142,7 +157,7 @@ from browser code.
 ### Static site generation
 
 The same app can be built as a static site, for blogs, docs and marketing
-pages that need no server:
+pages that need no server. Planned for phase 7:
 
 - `kiln fire --static` renders every route to HTML files, with assets, ready
   for any static host or CDN. Routes with parameters list their pages:
@@ -156,7 +171,7 @@ pages that need no server:
 
 ### Installable apps (PWAs)
 
-A later addition, after the frontend phase. Marking an app installable
+Planned for phase 8+, after 1.0. Marking an app installable
 (`app.pwa(name: "Notes", icon: "icon.png")`) makes `kiln fire` generate the
 web manifest, icons at every size and a service worker that caches the app
 shell and assets, versioned with each release. A standard library `local`
@@ -172,7 +187,7 @@ background sync come with it.
 `kiln lsp` is a language server (LSP) for any editor. The first version, in
 phase 1, reports the same diagnostics as `kiln check` as you type and offers
 their suggested fixes as quick fixes; [editors.md](editors.md) shows how to
-set it up. Phase 4 adds completion, hover types,
+set it up. Phase 5 adds completion, hover types,
 go to definition, find references, rename, and the same support inside
 glazes, including props and component attributes.
 
@@ -191,4 +206,4 @@ glazes, including props and component attributes.
 - Should a `.glaze` page with inline code be able to serve a route directly
   (PHP style), or should every route go through a handler?
 - Whether the exact WasmGC browser support matches the plan should be
-  confirmed before phase 5.
+  confirmed before phase 6.
