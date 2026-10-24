@@ -116,6 +116,21 @@ runtime's collection code is shared by every item type. A call that fails sets a
 thread-local flag that `try` and `catch` check. Parts of the language the
 backend does not support yet are reported as E0401.
 
+### What phase 1 leaves for later
+
+Phase 1 is done when native CLI programs compile and run correctly; the
+programs in `conformance/` are the evidence. These gaps are known and
+deliberate:
+
+- The `web`, `sql`, `auth` and `json` modules type-check but report E0401
+  when built; they arrive in phases 2 to 4. So do tasks and the scheduler.
+- Built-in methods cannot have default arguments yet, so `pad_start` and
+  `pad_end` take their fill text explicitly.
+- `upper` and `lower` change only ASCII letters.
+- Maps, sets and functions cannot be map keys or sorted by value.
+- Methods cannot be used as values (`ps.map(P.get)`); write a closure.
+- The collector is Boehm's conservative one until phase 7.
+
 ## Web standard library
 
 `web` (server, router, static files), `template` (glazes), `json`, `form`,

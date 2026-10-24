@@ -25,11 +25,13 @@ fn main() ! {
 }
 ```
 
-> **Status: phase 1 (core compiler).** `kiln check` reports syntax and type
-> errors in `.kiln` files and glazes, `kiln lsp` shows them in your editor,
-> and `kiln run` compiles command-line
-> programs to native code through C. The web standard library (`web`, `sql`,
-> `json`, `auth`) arrives in later phases. See the [roadmap](#roadmap).
+> **Status: phase 1 (core compiler) is done; phase 2 is next.** `kiln check`
+> reports syntax and type errors in `.kiln` files and glazes, `kiln lsp`
+> shows them in your editor, and `kiln run` compiles command-line programs to
+> native code through C, with the `time`, `fs`, `os` and `io` modules. The
+> web standard library (`web`, `sql`, `json`, `auth`) arrives in later
+> phases. See the [roadmap](#roadmap) and
+> [what phase 1 leaves for later](docs/design.md#what-phase-1-leaves-for-later).
 
 ## Highlights
 
@@ -108,8 +110,8 @@ For errors and quick fixes in your editor, see [docs/editors.md](docs/editors.md
 
 | Phase | Focus | Done when |
 | --- | --- | --- |
-| 0 | Language specification, grammar, parser, diagnostics, type rules | The blog example parses and type-checks |
-| 1 | Core compiler, C backend, Boehm GC, basic LSP (`kiln lsp`: diagnostics and quick fixes), conformance tests | Native CLI programs compile and run correctly |
+| 0 | Language specification, grammar, parser, diagnostics, type rules | The blog example parses and type-checks (done) |
+| 1 | Core compiler, C backend, Boehm GC, basic LSP (`kiln lsp`: diagnostics and quick fixes), conformance tests | Native CLI programs compile and run correctly (done) |
 | 2 | Core runtime, HTTP server, typed routing, JSON, error handling | A real HTTP API runs as a native binary |
 | 3 | Glazes, server-rendered components, layouts, CSS, scoped styling, design tokens | The Kiln documentation website is built in Kiln |
 | 4 | SQL (SQLite first, for local development with no database server, then Postgres and MySQL), ORM with schema import (`kiln db pull`), migrations, forms, validation, sessions and auth, generated admin UI | A database-backed application with authentication works |
