@@ -64,6 +64,7 @@ server fn like_post(id: Int) -> Int ! web.Error { ... }   // callable from the b
 | `List<Post>`, `Map<String, Int>` | A generic type |
 | `User?` | An optional: a `User` or `none` |
 | `fn(Request, Int) -> Response !` | A function type; `!` means it can fail |
+| `{ name: String, age: Int }` | An anonymous record type, with its fields in order |
 
 There is no `null`.
 
