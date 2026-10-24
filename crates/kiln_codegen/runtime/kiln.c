@@ -11,6 +11,7 @@
 #include <inttypes.h>
 #include <math.h>
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -41,24 +42,66 @@ static void *k_alloc_atomic(size_t n) {
 
 /* ----- strings ----- */
 
-typedef struct kstr { int64_t len; char data[]; } kstr;
+/* A string is a length and a pointer to the start of a buffer's bytes.
+ * Strings never change, but a buffer can grow at its end: when `a + b`
+ * finds that `a` ends where its buffer's bytes in use end and there is
+ * room, `b` is copied after it and the result shares the buffer. Building
+ * a string with `+=` in a loop is then linear rather than quadratic.
+ *
+ * Because of that, the byte after a string's last one is not always 0.
+ * Pass `k_cstr(s)` to C functions that expect a NUL-terminated string. */
+typedef struct kstr { int64_t len; char *data; } kstr;
+
+/* A string and its buffer in one block; `data` points at `bytes`. */
+typedef struct kstrbuf { kstr s; int64_t used, cap; char bytes[]; } kstrbuf;
+
+static kstrbuf *k_strbuf_of(kstr *s) {
+    return (kstrbuf *)(void *)(s->data - offsetof(kstrbuf, bytes));
+}
+
+/* A new string of `n` bytes with room for `cap`; the caller fills it. */
+static kstr *k_str_alloc(int64_t n, int64_t cap) {
+    /* The block points only into itself, so the collector need not scan it. */
+    kstrbuf *b = k_alloc_atomic(sizeof(kstrbuf) + (size_t)cap + 1);
+    b->s.len = n;
+    b->s.data = b->bytes;
+    b->used = n;
+    b->cap = cap;
+    b->bytes[n] = 0;
+    return &b->s;
+}
 
 static kstr *k_str_n(const char *s, int64_t n) {
-    kstr *r = k_alloc_atomic(sizeof(kstr) + (size_t)n + 1);
-    r->len = n;
+    kstr *r = k_str_alloc(n, n);
     memcpy(r->data, s, (size_t)n);
-    r->data[n] = 0;
     return r;
 }
 
 static kstr *k_str(const char *s) { return k_str_n(s, (int64_t)strlen(s)); }
 
+static const char *k_cstr(kstr *s) {
+    if (s->data[s->len] == 0) return s->data;
+    return k_str_n(s->data, s->len)->data;
+}
+
 static kstr *k_concat(kstr *a, kstr *b) {
-    kstr *r = k_alloc_atomic(sizeof(kstr) + (size_t)(a->len + b->len) + 1);
-    r->len = a->len + b->len;
+    if (b->len == 0) return a;
+    if (a->len == 0) return b;
+    int64_t n = a->len + b->len;
+    kstrbuf *buf = k_strbuf_of(a);
+    if (buf->used == a->len && n <= buf->cap) {
+        memcpy(buf->bytes + a->len, b->data, (size_t)b->len);
+        buf->used = n;
+        buf->bytes[n] = 0;
+        kstr *r = k_alloc(sizeof(kstr));
+        r->len = n;
+        r->data = buf->bytes;
+        return r;
+    }
+    /* Leave room to grow once a string is long enough to be being built. */
+    kstr *r = k_str_alloc(n, n < 64 ? n : n * 2);
     memcpy(r->data, a->data, (size_t)a->len);
     memcpy(r->data + a->len, b->data, (size_t)b->len);
-    r->data[r->len] = 0;
     return r;
 }
 
@@ -77,7 +120,7 @@ static int k_str_cmp(kstr *a, kstr *b) {
 
 static _Noreturn void k_panic(kstr *message) {
     fflush(stdout);
-    fprintf(stderr, "panic: %s\n", message->data);
+    fprintf(stderr, "panic: %s\n", k_cstr(message));
     exit(101);
 }
 
@@ -107,7 +150,7 @@ static kstr *k_lib_error = NULL;
 
 static void k_lib_fail(const char *what, kstr *path) {
     char buf[512];
-    snprintf(buf, sizeof buf, "cannot %s %s: %s", what, path->data, strerror(errno));
+    snprintf(buf, sizeof buf, "cannot %s %s: %s", what, k_cstr(path), strerror(errno));
     k_lib_error = k_str(buf);
 }
 
@@ -724,8 +767,9 @@ static kbox *k_str_to_int(kstr *s) {
     if (s->len == 0) return NULL;
     char *end;
     errno = 0;
-    long long n = strtoll(s->data, &end, 10);
-    if (errno != 0 || end != s->data + s->len) return NULL;
+    const char *d = k_cstr(s);
+    long long n = strtoll(d, &end, 10);
+    if (errno != 0 || end != d + s->len) return NULL;
     return k_box((kv)(int64_t)n);
 }
 
@@ -733,8 +777,9 @@ static kbox *k_str_to_float(kstr *s) {
     if (s->len == 0 || k_is_space(s->data[0])) return NULL;
     char *end;
     errno = 0;
-    double f = strtod(s->data, &end);
-    if (errno == ERANGE || end != s->data + s->len || isnan(f) || isinf(f)) return NULL;
+    const char *d = k_cstr(s);
+    double f = strtod(d, &end);
+    if (errno == ERANGE || end != d + s->len || isnan(f) || isinf(f)) return NULL;
     return k_box(k_f2kv(f));
 }
 
@@ -794,10 +839,8 @@ static klist *k_str_lines(kstr *s) {
 static kstr *k_str_repeat(kstr *s, int64_t n) {
     if (n < 0) k_panic_c("repeat: the count is negative");
     int64_t total = k_mul(s->len, n);
-    kstr *r = k_alloc_atomic(sizeof(kstr) + (size_t)total + 1);
-    r->len = total;
+    kstr *r = k_str_alloc(total, total);
     for (int64_t i = 0; i < n; i++) memcpy(r->data + i * s->len, s->data, (size_t)s->len);
-    r->data[total] = 0;
     return r;
 }
 
@@ -843,14 +886,14 @@ static void k_print(kstr *s) {
 }
 
 static kstr *k_env(kstr *name) {
-    const char *v = getenv(name->data);
+    const char *v = getenv(k_cstr(name));
     return k_str(v ? v : "");
 }
 
 static void k_log(const char *level, kstr *message, int n, kstr **data) {
     fflush(stdout);
-    fprintf(stderr, "%s %s", level, message->data);
-    for (int i = 0; i < n; i++) fprintf(stderr, " %s", data[i]->data);
+    fprintf(stderr, "%s %s", level, k_cstr(message));
+    for (int i = 0; i < n; i++) fprintf(stderr, " %s", k_cstr(data[i]));
     fputc('\n', stderr);
 }
 
@@ -1061,7 +1104,7 @@ static int64_t k_time_parse(kstr *text) {
 /* ----- fs ----- */
 
 static kstr *k_fs_read(kstr *path) {
-    FILE *f = fopen(path->data, "rb");
+    FILE *f = fopen(k_cstr(path), "rb");
     if (!f) { k_lib_fail("read", path); return k_str(""); }
     size_t cap = 4096, len = 0;
     char *buf = k_alloc_atomic(cap);
@@ -1098,7 +1141,7 @@ static klist *k_fs_read_lines(kstr *path) {
 }
 
 static void k_fs_put(kstr *path, kstr *text, const char *mode) {
-    FILE *f = fopen(path->data, mode);
+    FILE *f = fopen(k_cstr(path), mode);
     if (!f) { k_lib_fail("write", path); return; }
     size_t n = fwrite(text->data, 1, (size_t)text->len, f);
     if (fclose(f) != 0 || n != (size_t)text->len) k_lib_fail("write", path);
@@ -1109,12 +1152,12 @@ static void k_fs_append(kstr *path, kstr *text) { k_fs_put(path, text, "ab"); }
 
 static bool k_fs_exists(kstr *path) {
     struct stat st;
-    return stat(path->data, &st) == 0;
+    return stat(k_cstr(path), &st) == 0;
 }
 
 static bool k_fs_is_dir(kstr *path) {
     struct stat st;
-    return stat(path->data, &st) == 0 && S_ISDIR(st.st_mode);
+    return stat(k_cstr(path), &st) == 0 && S_ISDIR(st.st_mode);
 }
 
 static int k_str_ptr_cmp(const void *a, const void *b) {
@@ -1123,7 +1166,7 @@ static int k_str_ptr_cmp(const void *a, const void *b) {
 
 static klist *k_fs_list(kstr *path) {
     klist *names = k_list(0, NULL);
-    DIR *dir = opendir(path->data);
+    DIR *dir = opendir(k_cstr(path));
     if (!dir) { k_lib_fail("list", path); return names; }
     struct dirent *entry;
     while ((entry = readdir(dir)) != NULL) {
@@ -1151,11 +1194,11 @@ static void k_fs_mkdir(kstr *path) {
 }
 
 static void k_fs_remove(kstr *path) {
-    if (remove(path->data) != 0) k_lib_fail("remove", path);
+    if (remove(k_cstr(path)) != 0) k_lib_fail("remove", path);
 }
 
 static void k_fs_rename(kstr *from, kstr *to) {
-    if (rename(from->data, to->data) != 0) k_lib_fail("rename", from);
+    if (rename(k_cstr(from), k_cstr(to)) != 0) k_lib_fail("rename", from);
 }
 
 /* ----- os ----- */
@@ -1170,7 +1213,7 @@ static klist *k_os_args(void) {
 }
 
 static kbox *k_os_env(kstr *name) {
-    const char *v = getenv(name->data);
+    const char *v = getenv(k_cstr(name));
     return v ? k_box(K_P2KV(k_str(v))) : NULL;
 }
 

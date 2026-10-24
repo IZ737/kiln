@@ -1,0 +1,24 @@
+// Strings built with += in a loop grow in place, so building one is linear.
+// A string kept from before an append must not see the appended text.
+
+fn main() {
+    var s = "ab"
+    for i in 0..100 { s += "c" }
+    let keep = s
+    s += "12"
+    let other = keep + "99"
+    print(keep.len())
+    print(s.len())
+    print(other.slice(100, 105))
+    print(s.slice(100, 105))
+    let n = "1"
+    var m = n + "2"
+    let m2 = m
+    m += "3"
+    print(m2.to_int())
+    print(m.to_int())
+    var big = ""
+    for i in 0..1000000 { big += "${i % 10}" }
+    print(big.len())
+    print([1, 2, 3].map(fn(x) { "${x}" }).join(","))
+}
