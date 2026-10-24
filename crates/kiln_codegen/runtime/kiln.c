@@ -15,6 +15,10 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <dirent.h>
+#include <sys/stat.h>
+#include <time.h>
+#include <unistd.h>
 
 typedef uint64_t kv;
 
@@ -95,6 +99,16 @@ static void k_fail(kv error, kstr *(*show)(kv)) {
 static kv k_take_error(void) {
     k_failed = false;
     return k_error;
+}
+
+/* A standard library function that fails stores its message here and
+ * returns; the generated code turns it into an `Error` and fails. */
+static kstr *k_lib_error = NULL;
+
+static void k_lib_fail(const char *what, kstr *path) {
+    char buf[512];
+    snprintf(buf, sizeof buf, "cannot %s %s: %s", what, path->data, strerror(errno));
+    k_lib_error = k_str(buf);
 }
 
 /* ----- numbers ----- */
@@ -616,4 +630,361 @@ static void k_log(const char *level, kstr *message, int n, kstr **data) {
     fprintf(stderr, "%s %s", level, message->data);
     for (int i = 0; i < n; i++) fprintf(stderr, " %s", data[i]->data);
     fputc('\n', stderr);
+}
+
+/* ----- time: instants are int64_t nanoseconds since 1970, in UTC ----- */
+
+#define K_NS_PER_SEC INT64_C(1000000000)
+#define K_NS_PER_DAY (INT64_C(86400) * K_NS_PER_SEC)
+
+static int64_t k_floor_div(int64_t a, int64_t b) { return a / b - (a % b != 0 && (a < 0) != (b < 0)); }
+
+static int64_t k_time_now(void) {
+    struct timespec ts;
+    clock_gettime(CLOCK_REALTIME, &ts);
+    return (int64_t)ts.tv_sec * K_NS_PER_SEC + ts.tv_nsec;
+}
+
+static void k_time_sleep(int64_t ns) {
+    if (ns <= 0) return;
+    struct timespec ts = {(time_t)(ns / K_NS_PER_SEC), (long)(ns % K_NS_PER_SEC)};
+    while (nanosleep(&ts, &ts) != 0 && errno == EINTR) {}
+}
+
+/* Days since 1970-01-01 to a civil date and back (Howard Hinnant's
+ * algorithms, valid for every day an int64_t can hold here). */
+static void k_civil(int64_t days, int64_t *y, int64_t *m, int64_t *d) {
+    days += 719468;
+    int64_t era = k_floor_div(days, 146097);
+    int64_t doe = days - era * 146097;
+    int64_t yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
+    int64_t doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    int64_t mp = (5 * doy + 2) / 153;
+    *d = doy - (153 * mp + 2) / 5 + 1;
+    *m = mp < 10 ? mp + 3 : mp - 9;
+    *y = yoe + era * 400 + (*m <= 2);
+}
+
+static int64_t k_days_from_civil(int64_t y, int64_t m, int64_t d) {
+    y -= m <= 2;
+    int64_t era = k_floor_div(y, 400);
+    int64_t yoe = y - era * 400;
+    int64_t doy = (153 * (m > 2 ? m - 3 : m + 9) + 2) / 5 + d - 1;
+    int64_t doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    return era * 146097 + doe - 719468;
+}
+
+/* The parts of an instant: year, month, day, hour, minute, second,
+ * nanosecond and weekday (0 is Sunday). */
+typedef struct ktm { int64_t year, month, day, hour, minute, second, nano, weekday; } ktm;
+
+static ktm k_time_parts(int64_t ns) {
+    ktm t;
+    int64_t days = k_floor_div(ns, K_NS_PER_DAY);
+    int64_t rest = ns - days * K_NS_PER_DAY;
+    k_civil(days, &t.year, &t.month, &t.day);
+    t.hour = rest / (3600 * K_NS_PER_SEC);
+    t.minute = rest / (60 * K_NS_PER_SEC) % 60;
+    t.second = rest / K_NS_PER_SEC % 60;
+    t.nano = rest % K_NS_PER_SEC;
+    t.weekday = ((days % 7) + 11) % 7;
+    return t;
+}
+
+static int64_t k_time_year(int64_t ns) { return k_time_parts(ns).year; }
+static int64_t k_time_month(int64_t ns) { return k_time_parts(ns).month; }
+static int64_t k_time_day(int64_t ns) { return k_time_parts(ns).day; }
+static int64_t k_time_unix(int64_t ns) { return k_floor_div(ns, K_NS_PER_SEC); }
+
+static kstr *k_time_iso(int64_t ns) {
+    ktm t = k_time_parts(ns);
+    char buf[64];
+    int len = snprintf(buf, sizeof buf, "%04" PRId64 "-%02" PRId64 "-%02" PRId64 "T%02" PRId64 ":%02" PRId64 ":%02" PRId64,
+                       t.year, t.month, t.day, t.hour, t.minute, t.second);
+    if (t.nano != 0) {
+        int digits = 9;
+        int64_t frac = t.nano;
+        while (frac % 10 == 0) { frac /= 10; digits--; }
+        len += snprintf(buf + len, sizeof buf - (size_t)len, ".%0*" PRId64, digits, frac);
+    }
+    buf[len++] = 'Z';
+    return k_str_n(buf, len);
+}
+
+static const char *k_month_names[] = {"January", "February", "March", "April", "May", "June", "July",
+                                      "August", "September", "October", "November", "December"};
+static const char *k_day_names[] = {"Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"};
+
+/* Formats with a date pattern such as "MMM d, yyyy". A run of one letter
+ * is one field; text in single quotes is copied, and '' is a quote. */
+static kstr *k_time_format(int64_t ns, kstr *pattern) {
+    ktm t = k_time_parts(ns);
+    size_t cap = 64, len = 0;
+    char *out = k_alloc_atomic(cap);
+#define K_PUT(s, n) do { size_t n_ = (n); while (len + n_ + 1 > cap) { char *o = k_alloc_atomic(cap * 2); memcpy(o, out, len); out = o; cap *= 2; } memcpy(out + len, (s), n_); len += n_; } while (0)
+    const char *p = pattern->data;
+    const char *end = p + pattern->len;
+    while (p < end) {
+        char c = *p;
+        if (c == '\'') {
+            p++;
+            if (p < end && *p == '\'') { K_PUT("'", 1); p++; continue; }
+            while (p < end) {
+                if (*p == '\'') {
+                    if (p + 1 < end && p[1] == '\'') { K_PUT("'", 1); p += 2; continue; }
+                    p++;
+                    break;
+                }
+                K_PUT(p, 1);
+                p++;
+            }
+            continue;
+        }
+        if (!((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z'))) { K_PUT(p, 1); p++; continue; }
+        int n = 0;
+        while (p < end && *p == c) { n++; p++; }
+        char buf[32];
+        int w = -1;
+        switch (c) {
+        case 'y':
+            if (n == 2) w = snprintf(buf, sizeof buf, "%02" PRId64, ((t.year % 100) + 100) % 100);
+            else w = snprintf(buf, sizeof buf, "%0*" PRId64, n, t.year);
+            break;
+        case 'M':
+            if (n >= 4) { K_PUT(k_month_names[t.month - 1], strlen(k_month_names[t.month - 1])); continue; }
+            if (n == 3) { K_PUT(k_month_names[t.month - 1], 3); continue; }
+            w = snprintf(buf, sizeof buf, "%0*" PRId64, n, t.month);
+            break;
+        case 'd': w = snprintf(buf, sizeof buf, "%0*" PRId64, n, t.day); break;
+        case 'E':
+            if (n >= 4) { K_PUT(k_day_names[t.weekday], strlen(k_day_names[t.weekday])); continue; }
+            K_PUT(k_day_names[t.weekday], 3);
+            continue;
+        case 'H': w = snprintf(buf, sizeof buf, "%0*" PRId64, n, t.hour); break;
+        case 'h': w = snprintf(buf, sizeof buf, "%0*" PRId64, n, (t.hour + 11) % 12 + 1); break;
+        case 'a': K_PUT(t.hour < 12 ? "AM" : "PM", 2); continue;
+        case 'm': w = snprintf(buf, sizeof buf, "%0*" PRId64, n, t.minute); break;
+        case 's': w = snprintf(buf, sizeof buf, "%0*" PRId64, n, t.second); break;
+        case 'S': {
+            /* Fractions of a second, to n digits. */
+            int64_t frac = t.nano;
+            for (int i = n; i < 9; i++) frac /= 10;
+            w = snprintf(buf, sizeof buf, "%0*" PRId64, n > 9 ? 9 : n, frac);
+            break;
+        }
+        default:
+            /* Letters that are not fields are copied. */
+            for (int i = 0; i < n; i++) K_PUT(&c, 1);
+            continue;
+        }
+        K_PUT(buf, (size_t)w);
+    }
+#undef K_PUT
+    out[len] = 0;
+    return k_str_n(out, (int64_t)len);
+}
+
+static bool k_digits(const char **p, const char *end, int n, int64_t *out) {
+    int64_t v = 0;
+    for (int i = 0; i < n; i++) {
+        if (*p >= end || **p < '0' || **p > '9') return false;
+        v = v * 10 + (**p - '0');
+        (*p)++;
+    }
+    *out = v;
+    return true;
+}
+
+/* Reads an RFC 3339 time, or a date alone as midnight UTC. */
+static int64_t k_time_parse(kstr *text) {
+    const char *p = text->data, *end = p + text->len;
+    int64_t y, mo, d, h = 0, mi = 0, s = 0, nano = 0, offset = 0;
+    bool ok = k_digits(&p, end, 4, &y) && p < end && *p++ == '-' && k_digits(&p, end, 2, &mo) && p < end &&
+              *p++ == '-' && k_digits(&p, end, 2, &d);
+    if (ok && p < end) {
+        ok = (*p == 'T' || *p == 't' || *p == ' ') && (p++, k_digits(&p, end, 2, &h)) && p < end && *p++ == ':' &&
+             k_digits(&p, end, 2, &mi) && p < end && *p++ == ':' && k_digits(&p, end, 2, &s);
+        if (ok && p < end && *p == '.') {
+            p++;
+            int n = 0;
+            while (p < end && *p >= '0' && *p <= '9') {
+                if (n < 9) nano = nano * 10 + (*p - '0');
+                n++;
+                p++;
+            }
+            ok = n > 0;
+            for (; n < 9; n++) nano *= 10;
+        }
+        if (ok && p < end && (*p == 'Z' || *p == 'z')) {
+            p++;
+        } else if (ok && p < end && (*p == '+' || *p == '-')) {
+            int64_t sign = *p++ == '-' ? -1 : 1, oh, om;
+            ok = k_digits(&p, end, 2, &oh) && p < end && *p++ == ':' && k_digits(&p, end, 2, &om);
+            offset = sign * (oh * 3600 + om * 60);
+        } else {
+            ok = false;
+        }
+    }
+    int64_t mdays = mo == 2 ? ((y % 4 == 0 && y % 100 != 0) || y % 400 == 0 ? 29 : 28)
+                            : (mo == 4 || mo == 6 || mo == 9 || mo == 11 ? 30 : 31);
+    ok = ok && p == end && mo >= 1 && mo <= 12 && d >= 1 && d <= mdays && h < 24 && mi < 60 && s < 60;
+    if (!ok) {
+        k_lib_error = k_concat(k_str("not a valid time: "), k_str_quote(text));
+        return 0;
+    }
+    int64_t secs = k_days_from_civil(y, mo, d) * 86400 + h * 3600 + mi * 60 + s - offset;
+    return secs * K_NS_PER_SEC + nano;
+}
+
+/* ----- fs ----- */
+
+static kstr *k_fs_read(kstr *path) {
+    FILE *f = fopen(path->data, "rb");
+    if (!f) { k_lib_fail("read", path); return k_str(""); }
+    size_t cap = 4096, len = 0;
+    char *buf = k_alloc_atomic(cap);
+    size_t n;
+    while ((n = fread(buf + len, 1, cap - len, f)) > 0) {
+        len += n;
+        if (len == cap) {
+            char *b = k_alloc_atomic(cap * 2);
+            memcpy(b, buf, len);
+            buf = b;
+            cap *= 2;
+        }
+    }
+    bool failed = ferror(f);
+    fclose(f);
+    if (failed) { k_lib_fail("read", path); return k_str(""); }
+    return k_str_n(buf, (int64_t)len);
+}
+
+static klist *k_fs_read_lines(kstr *path) {
+    kstr *text = k_fs_read(path);
+    klist *lines = k_list(0, NULL);
+    if (k_lib_error) return lines;
+    int64_t start = 0;
+    for (int64_t i = 0; i <= text->len; i++) {
+        if (i == text->len || text->data[i] == '\n') {
+            if (i == text->len && start == i) break;
+            int64_t stop = i > start && text->data[i - 1] == '\r' ? i - 1 : i;
+            k_list_push(lines, K_P2KV(k_str_n(text->data + start, stop - start)));
+            start = i + 1;
+        }
+    }
+    return lines;
+}
+
+static void k_fs_put(kstr *path, kstr *text, const char *mode) {
+    FILE *f = fopen(path->data, mode);
+    if (!f) { k_lib_fail("write", path); return; }
+    size_t n = fwrite(text->data, 1, (size_t)text->len, f);
+    if (fclose(f) != 0 || n != (size_t)text->len) k_lib_fail("write", path);
+}
+
+static void k_fs_write(kstr *path, kstr *text) { k_fs_put(path, text, "wb"); }
+static void k_fs_append(kstr *path, kstr *text) { k_fs_put(path, text, "ab"); }
+
+static bool k_fs_exists(kstr *path) {
+    struct stat st;
+    return stat(path->data, &st) == 0;
+}
+
+static bool k_fs_is_dir(kstr *path) {
+    struct stat st;
+    return stat(path->data, &st) == 0 && S_ISDIR(st.st_mode);
+}
+
+static int k_str_ptr_cmp(const void *a, const void *b) {
+    return k_str_cmp(K_KV2P(kstr *, *(const kv *)a), K_KV2P(kstr *, *(const kv *)b));
+}
+
+static klist *k_fs_list(kstr *path) {
+    klist *names = k_list(0, NULL);
+    DIR *dir = opendir(path->data);
+    if (!dir) { k_lib_fail("list", path); return names; }
+    struct dirent *entry;
+    while ((entry = readdir(dir)) != NULL) {
+        if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) continue;
+        k_list_push(names, K_P2KV(k_str(entry->d_name)));
+    }
+    closedir(dir);
+    qsort(names->items, (size_t)names->len, sizeof(kv), k_str_ptr_cmp);
+    return names;
+}
+
+static void k_fs_mkdir(kstr *path) {
+    kstr *p = k_str_n(path->data, path->len);
+    for (int64_t i = 1; i <= p->len; i++) {
+        if (i < p->len && p->data[i] != '/') continue;
+        char saved = p->data[i];
+        p->data[i] = 0;
+        if (mkdir(p->data, 0777) != 0 && !(errno == EEXIST && k_fs_is_dir(p))) {
+            p->data[i] = saved;
+            k_lib_fail("create the directory", path);
+            return;
+        }
+        p->data[i] = saved;
+    }
+}
+
+static void k_fs_remove(kstr *path) {
+    if (remove(path->data) != 0) k_lib_fail("remove", path);
+}
+
+static void k_fs_rename(kstr *from, kstr *to) {
+    if (rename(from->data, to->data) != 0) k_lib_fail("rename", from);
+}
+
+/* ----- os ----- */
+
+static int k_argc = 0;
+static char **k_argv = NULL;
+
+static klist *k_os_args(void) {
+    klist *l = k_list(0, NULL);
+    for (int i = 1; i < k_argc; i++) k_list_push(l, K_P2KV(k_str(k_argv[i])));
+    return l;
+}
+
+static kbox *k_os_env(kstr *name) {
+    const char *v = getenv(name->data);
+    return v ? k_box(K_P2KV(k_str(v))) : NULL;
+}
+
+static _Noreturn void k_os_exit(int64_t code) {
+    fflush(stdout);
+    exit((int)code);
+}
+
+static kstr *k_os_cwd(void) {
+    size_t cap = 256;
+    for (;;) {
+        char *buf = k_alloc_atomic(cap);
+        if (getcwd(buf, cap)) return k_str(buf);
+        if (errno != ERANGE) return k_str(".");
+        cap *= 2;
+    }
+}
+
+static kstr *k_os_temp_dir(void) {
+    const char *v = getenv("TMPDIR");
+    if (!v || !*v) return k_str("/tmp");
+    size_t n = strlen(v);
+    while (n > 1 && v[n - 1] == '/') n--;
+    return k_str_n(v, (int64_t)n);
+}
+
+static int64_t k_os_pid(void) { return (int64_t)getpid(); }
+
+static kstr *k_os_platform(void) {
+#if defined(__linux__)
+    return k_str("linux");
+#elif defined(__APPLE__)
+    return k_str("macos");
+#elif defined(_WIN32)
+    return k_str("windows");
+#else
+    return k_str("unknown");
+#endif
 }

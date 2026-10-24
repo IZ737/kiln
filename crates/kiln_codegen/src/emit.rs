@@ -148,7 +148,7 @@ impl<'a> Gen<'a> {
         let init = self.func_name(self.p.init);
         let _ = write!(
             out,
-            "int main(void) {{\n    GC_INIT();\n    {init}();\n    {main}();\n    if (k_failed) {{\n        fflush(stdout);\n        fprintf(stderr, \"error: %s\\n\", k_error_show(k_error)->data);\n        return 1;\n    }}\n    return 0;\n}}\n"
+            "int main(int argc, char **argv) {{\n    GC_INIT();\n    k_argc = argc;\n    k_argv = argv;\n    {init}();\n    {main}();\n    if (k_failed) {{\n        fflush(stdout);\n        fprintf(stderr, \"error: %s\\n\", k_error_show(k_error)->data);\n        return 1;\n    }}\n    return 0;\n}}\n"
         );
         out
     }
@@ -949,6 +949,10 @@ impl<'a> Gen<'a> {
                 let call = self.builtin_method(&r, &recv.ty, name, &vals, args, e.span);
                 self.store(&call, &e.ty)
             }
+            ExprKind::Lib { module, name, args } => {
+                let vals: Vec<String> = args.iter().map(|a| self.expr(a)).collect();
+                self.lib_call(module, name, &vals, &e.ty, e.span)
+            }
             ExprKind::Print(v) => {
                 let x = self.expr(v);
                 self.line(&format!("k_print({x});"));
@@ -1308,6 +1312,29 @@ impl<'a> Gen<'a> {
                 _ => self.unsupported(span, format!("`Int.{name}`")),
             };
         }
+        if id == p.duration {
+            return match name {
+                "to_millis" => format!("(({r}) / INT64_C(1000000))"),
+                "to_seconds" => format!("((double)({r}) / 1e9)"),
+                _ => self.unsupported(span, format!("`Duration.{name}`")),
+            };
+        }
+        if self.is_std_adt(id, "Instant") {
+            let ns = format!("({r})->f_unix_nanos");
+            let ret = match self.method_ret(recv_ty, name) {
+                Some(t) => t,
+                None => return self.unsupported(span, format!("`Instant.{name}`")),
+            };
+            return match name {
+                "unix" => format!("k_time_unix({ns})"),
+                "add" => self.new_instant(&format!("k_add({ns}, {})", arg(0)), &ret),
+                "since" => format!("k_sub({ns}, ({})->f_unix_nanos)", arg(0)),
+                "date" => self.new_date(&ns, &ret),
+                "iso" => format!("k_time_iso({ns})"),
+                "format" => format!("k_time_format({ns}, {})", arg(0)),
+                _ => self.unsupported(span, format!("`Instant.{name}`")),
+            };
+        }
         if id == p.float {
             return match name {
                 "to_string" => format!("k_float_str({r})"),
@@ -1372,6 +1399,99 @@ impl<'a> Gen<'a> {
         }
         let what = format!("`{}.{name}`", self.p.adts[id].name);
         self.unsupported(span, what)
+    }
+
+    // ----- standard library modules -----
+
+    fn is_std_adt(&self, id: AdtId, name: &str) -> bool {
+        id < self.p.std_adts && self.p.adts[id].name == name
+    }
+
+    fn method_ret(&self, recv_ty: &Ty, name: &str) -> Option<Ty> {
+        let Ty::Adt(id, _) = recv_ty else { return None };
+        self.p.adts[*id]
+            .methods
+            .iter()
+            .find(|m| m.name == name)
+            .map(|m| m.ret.clone())
+    }
+
+    /// A new `time.Instant` of type `ty` at `ns` nanoseconds.
+    fn new_instant(&mut self, ns: &str, ty: &Ty) -> String {
+        let Ty::Adt(id, _) = ty else {
+            return "NULL".into();
+        };
+        let t = self.tmp(ty);
+        let name = self.struct_name(*id);
+        self.line(&format!("{t} = k_alloc(sizeof({name}));"));
+        self.line(&format!("{t}->f_unix_nanos = {ns};"));
+        t
+    }
+
+    /// A new `Date` of type `ty`: the UTC date of the instant `ns`.
+    fn new_date(&mut self, ns: &str, ty: &Ty) -> String {
+        let Ty::Adt(id, _) = ty else {
+            return "NULL".into();
+        };
+        let n = self.tmp_c("int64_t");
+        self.line(&format!("{n} = {ns};"));
+        let t = self.tmp(ty);
+        let name = self.struct_name(*id);
+        self.line(&format!("{t} = k_alloc(sizeof({name}));"));
+        for part in ["year", "month", "day"] {
+            self.line(&format!("{t}->f_{part} = k_time_{part}({n});"));
+        }
+        t
+    }
+
+    /// A call to a function of the `time`, `fs` or `os` module, returning
+    /// its value. A function that can fail is followed by the check that
+    /// turns the runtime's message into a failed standard `Error`.
+    fn lib_call(&mut self, module: &str, name: &str, a: &[String], ty: &Ty, span: Span) -> String {
+        let arg = |i: usize| a.get(i).cloned().unwrap_or_else(|| "0".into());
+        let (v, fallible) = match (module, name) {
+            ("time", "now") => (self.new_instant("k_time_now()", ty), false),
+            ("time", "unix") => {
+                let ns = format!("k_mul({}, K_NS_PER_SEC)", arg(0));
+                (self.new_instant(&ns, ty), false)
+            }
+            ("time", "since") => {
+                let d = format!("k_sub(k_time_now(), ({})->f_unix_nanos)", arg(0));
+                (self.store(&d, ty), false)
+            }
+            ("time", "sleep") => (self.store(&format!("k_time_sleep({})", arg(0)), ty), false),
+            ("time", "today") => (self.new_date("k_time_now()", ty), false),
+            ("time", "parse") => {
+                let n = self.tmp_c("int64_t");
+                self.line(&format!("{n} = k_time_parse({});", arg(0)));
+                (self.new_instant(&n, ty), true)
+            }
+            (
+                "fs",
+                "read" | "read_lines" | "write" | "append" | "list" | "mkdir" | "remove" | "rename",
+            ) => {
+                let call = format!("k_fs_{name}({})", a.join(", "));
+                (self.store(&call, ty), true)
+            }
+            ("fs", "exists" | "is_dir") => {
+                (self.store(&format!("k_fs_{name}({})", arg(0)), ty), false)
+            }
+            ("os", "args" | "cwd" | "temp_dir" | "pid" | "platform") => {
+                (self.store(&format!("k_os_{name}()"), ty), false)
+            }
+            ("os", "env" | "exit") => (self.store(&format!("k_os_{name}({})", arg(0)), ty), false),
+            _ => return self.unsupported(span, format!("`{module}.{name}`")),
+        };
+        if fallible {
+            self.open("if (k_lib_error)");
+            let w = self.new_error();
+            self.line(&format!("{w}->f_message = k_lib_error;"));
+            self.line("k_lib_error = NULL;");
+            let show = self.error_message_fn();
+            self.line(&format!("k_fail(K_P2KV({w}), {show});"));
+            self.close();
+        }
+        v
     }
 
     // ----- showing, comparing and ordering values -----

@@ -1,0 +1,59 @@
+// The fs module: reading, writing, listing and removing files, and the
+// errors it reports.
+import fs
+import os
+
+fn count_words(path: String) -> Int ! {
+    var total = 0
+    for line in try fs.read_lines(path) {
+        total += line.split(" ").filter(fn(w) { not w.is_empty() }).len()
+    }
+    total
+}
+
+fn main() ! {
+    let dir = "${os.temp_dir()}/kiln-fs-test-${os.pid()}"
+    try fs.mkdir("${dir}/notes/old")
+    print(fs.is_dir("${dir}/notes/old"))
+    try fs.mkdir("${dir}/notes")
+
+    let path = "${dir}/notes/today.txt"
+    print(fs.exists(path))
+    try fs.write(path, "first line\n")
+    try fs.append(path, "second  line\r\nthird")
+    print(fs.exists(path))
+    print(fs.is_dir(path))
+    print(try fs.read(path))
+    print(try fs.read_lines(path))
+    print(try count_words(path))
+
+    try fs.write("${dir}/notes/b.txt", "")
+    print(try fs.read_lines("${dir}/notes/b.txt"))
+    try fs.write("${dir}/notes/a.txt", "a\n")
+    print(try fs.read_lines("${dir}/notes/a.txt"))
+    print(try fs.list("${dir}/notes"))
+
+    try fs.rename("${dir}/notes/a.txt", "${dir}/notes/c.txt")
+    print(try fs.list("${dir}/notes"))
+
+    // Errors carry the path and the reason.
+    let missing = fs.read("${dir}/missing.txt") catch err {
+        print(err.message.ends_with("missing.txt: No such file or directory"))
+        "none"
+    }
+    print(missing)
+    print(fs.list("${dir}/nowhere") catch err { ["failed"] })
+    fs.remove("${dir}/notes") catch err {
+        print("not empty")
+    }
+
+    for name in try fs.list("${dir}/notes") {
+        try fs.remove("${dir}/notes/${name}")
+    }
+    try fs.remove("${dir}/notes")
+    try fs.remove(dir)
+    print(fs.exists(dir))
+
+    // An error that leaves main ends the program.
+    try fs.read("kiln-missing-file.txt")
+}

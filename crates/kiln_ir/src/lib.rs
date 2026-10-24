@@ -285,6 +285,14 @@ pub enum ExprKind {
         recv: Box<Expr>,
         args: Vec<Expr>,
     },
+    /// A function of a standard library module that the backend builds,
+    /// such as `fs.read`. Types are as for [`ExprKind::Call`]; when the
+    /// function can fail, it fails with the standard `Error`.
+    Lib {
+        module: String,
+        name: String,
+        args: Vec<Expr>,
+    },
     Print(Box<Expr>),
     Env(Box<Expr>),
     Panic(Box<Expr>),

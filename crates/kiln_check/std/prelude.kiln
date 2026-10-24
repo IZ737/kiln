@@ -43,6 +43,11 @@ impl Float {
     fn ceil(self) -> Int {}
 }
 
+impl Duration {
+    fn to_millis(self) -> Int {}
+    fn to_seconds(self) -> Float {}
+}
+
 impl String {
     fn len(self) -> Int {}
     fn is_empty(self) -> Bool {}

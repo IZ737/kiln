@@ -1,0 +1,18 @@
+true
+false
+true
+false
+first line
+second  line
+third
+["first line", "second  line", "third"]
+5
+[]
+["a"]
+["a.txt", "b.txt", "old", "today.txt"]
+["b.txt", "c.txt", "old", "today.txt"]
+true
+none
+["failed"]
+not empty
+false

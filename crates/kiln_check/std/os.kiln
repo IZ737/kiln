@@ -1,0 +1,16 @@
+// The running program and the system it runs on.
+
+// The command-line arguments, without the program's name.
+fn args() -> List<String> {}
+// An environment variable, or none when it is not set.
+fn env(name: String) -> String? {}
+// Ends the program with an exit code.
+fn exit(code: Int) -> Never {}
+// The working directory.
+fn cwd() -> String {}
+// The directory for temporary files.
+fn temp_dir() -> String {}
+// The process id.
+fn pid() -> Int {}
+// The operating system: `"linux"`, `"macos"`, `"windows"` or `"unknown"`.
+fn platform() -> String {}

@@ -1,0 +1,46 @@
+// The time module: instants, dates, formatting, parsing and the clock.
+import time
+
+fn main() ! {
+    let epoch = time.unix(0)
+    print(epoch.iso())
+    print(epoch.unix_nanos)
+    print(epoch.date())
+
+    let launch = time.unix(1792877400)
+    print(launch.iso())
+    print(launch.unix())
+    print(launch.format("EEEE, MMMM d, yyyy 'at' HH:mm:ss"))
+    print(launch.format("EEE dd/MM/yy h:mm a"))
+    print(launch.add(90m).iso())
+    print(launch.add(1500ms).format("HH:mm:ss.SSS"))
+    print(launch.add(36h).since(launch))
+
+    // Before 1970, and leap days.
+    print(time.unix(-1).iso())
+    print(time.unix(951782400).date())
+    print(time.unix(-2203891200).format("yyyy-MM-dd EEE"))
+
+    let parsed = try time.parse("2026-10-24T23:30:00.25+02:00")
+    print(parsed.iso())
+    print(parsed == time.unix(1792877400).add(250ms))
+    print((try time.parse("2000-02-29")).iso())
+    let leap = time.parse("2026-02-30") catch err { time.unix(0) }
+    print(leap.iso())
+    let bad = time.parse("10:30") catch err {
+        print(err.message)
+        epoch
+    }
+    print(bad == epoch)
+
+    // The clock moves forward.
+    let start = time.now()
+    time.sleep(20ms)
+    let waited = time.since(start)
+    print(waited >= 20ms)
+    print(waited.to_millis() >= 20)
+    print(time.now().since(start).to_seconds() > 0.0)
+    print(time.today().year >= 2026)
+    print(1500ms.to_millis())
+    print(2s.to_seconds())
+}

@@ -312,6 +312,9 @@ impl<'a> Printer<'a> {
                 format!("{}.{name}({})", self.expr(recv), self.list(args))
             }
             ExprKind::Print(v) => format!("print({})", self.expr(v)),
+            ExprKind::Lib { module, name, args } => {
+                format!("{module}.{name}({})", self.list(args))
+            }
             ExprKind::Env(v) => format!("env({})", self.expr(v)),
             ExprKind::Panic(v) => format!("panic({})", self.expr(v)),
             ExprKind::Log { level, args } => format!("log.{level}({})", self.list(args)),

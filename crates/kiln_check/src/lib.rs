@@ -36,6 +36,8 @@ pub struct Program {
     pub global_fns: HashMap<String, types::FnSig>,
     /// Imported standard library modules, by the name used in the file.
     pub imports: HashMap<String, String>,
+    /// The standard library modules, by name.
+    pub modules: HashMap<String, types::ModuleDef>,
     pub consts: HashMap<String, types::Ty>,
     /// The type of every expression, by its span.
     pub expr_types: HashMap<Span, types::Ty>,
@@ -61,6 +63,11 @@ pub fn check_program(module: &Module) -> Program {
         global_types: checker.global_types,
         global_fns: checker.global_fns,
         imports,
+        modules: checker
+            .modules
+            .iter()
+            .map(|m| (m.name.clone(), m.clone()))
+            .collect(),
         consts: checker.consts,
         expr_types: checker.expr_types,
         binding_types: checker.binding_types,

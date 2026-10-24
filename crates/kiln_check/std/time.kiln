@@ -1,0 +1,35 @@
+// Instants, the clock and calendar dates. Times are UTC.
+
+// A point in time, in nanoseconds since 1970-01-01 00:00:00 UTC.
+struct Instant {
+    unix_nanos: Int
+}
+
+// The current time.
+fn now() -> Instant {}
+// The instant `seconds` after 1970-01-01 00:00:00 UTC.
+fn unix(seconds: Int) -> Instant {}
+// How much time has passed since `start`.
+fn since(start: Instant) -> Duration {}
+// Pauses the program.
+fn sleep(duration: Duration) {}
+// Today's date in UTC.
+fn today() -> Date {}
+// Reads an RFC 3339 time such as `2026-10-24T21:30:00Z`.
+fn parse(text: String) -> Instant ! {}
+
+impl Instant {
+    // Whole seconds since 1970-01-01 00:00:00 UTC.
+    fn unix(self) -> Int {}
+    fn add(self, duration: Duration) -> Instant {}
+    // The time from `earlier` to this instant.
+    fn since(self, earlier: Instant) -> Duration {}
+    fn date(self) -> Date {}
+    // The time as `2026-10-24T21:30:00Z`, with fractions of a second only
+    // when there are some.
+    fn iso(self) -> String {}
+    // Formats with a pattern such as `"MMM d, yyyy"`: yyyy, yy, MMMM, MMM,
+    // MM, M, dd, d, EEEE, EEE, HH, H, hh, h, a, mm, ss and SSS. Text in
+    // single quotes is copied as is.
+    fn format(self, pattern: String) -> String {}
+}
