@@ -84,3 +84,18 @@ fn bare_error_wraps() {
 fn missing_main_is_reported() {
     assert_eq!(lower_errors("fn helper() {\n}\n"), ["E0402"]);
 }
+
+#[test]
+fn library_calls_name_their_module() {
+    let ir = lower(
+        "import fs\nimport time\nfn main() ! {\n    try fs.write(\"a.txt\", \"hi\")\n    print(time.unix(0).iso())\n}\n",
+    );
+    assert!(ir.contains("fs.write(\"a.txt\", \"hi\")"), "{ir}");
+    assert!(ir.contains("time.unix(0)"), "{ir}");
+}
+
+#[test]
+fn library_structs_are_constructed() {
+    let ir = lower("import time\nfn main() {\n    print(time.Instant(unix_nanos: 5))\n}\n");
+    assert!(ir.contains("Instant(unix_nanos: 5)"), "{ir}");
+}

@@ -1,0 +1,19 @@
+// Files and directories. Paths are relative to the working directory.
+
+// The whole file as text.
+fn read(path: String) -> String ! {}
+// The file's lines, without their line endings.
+fn read_lines(path: String) -> List<String> ! {}
+// Replaces the file's contents, creating the file if needed.
+fn write(path: String, text: String) ! {}
+// Adds to the end of the file, creating the file if needed.
+fn append(path: String, text: String) ! {}
+fn exists(path: String) -> Bool {}
+fn is_dir(path: String) -> Bool {}
+// The names in a directory, sorted.
+fn list(path: String) -> List<String> ! {}
+// Creates a directory and any missing parents.
+fn mkdir(path: String) ! {}
+// Removes a file or an empty directory.
+fn remove(path: String) ! {}
+fn rename(from: String, to: String) ! {}

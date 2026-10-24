@@ -100,6 +100,7 @@ For errors and quick fixes in your editor, see [docs/editors.md](docs/editors.md
 | `docs/syntax.md` | The syntax the parser accepts |
 | `docs/glazes.md` | Glaze (template and component) syntax |
 | `docs/types.md` | The type rules the checker enforces |
+| `docs/stdlib.md` | The standard library modules the compiler builds |
 | `docs/editors.md` | Setting up `kiln lsp` in Neovim, Helix and other editors |
 | `docs/design.md` | Language design overview and roadmap |
 

@@ -1135,7 +1135,7 @@ impl<'a> Lowerer<'a> {
                 if let E::Ident(m) = &base.kind {
                     if self.lookup(m).is_none() {
                         if let Some(module) = self.p.imports.get(m).cloned() {
-                            return (self.module_call(&module, name, args, span), None);
+                            return self.module_call(&module, name, args, &rt, span);
                         }
                         if let Some(&id) = self.p.global_types.get(m) {
                             if !self.fns.contains_key(m) {
@@ -1155,9 +1155,10 @@ impl<'a> Lowerer<'a> {
                 let bt = self.ty(base);
                 let recv = self.expr(base);
                 if self.method_sig(&bt, &name.name).is_some() {
+                    // The receiver has no type when it could not be lowered.
                     return self
                         .method_call(recv, &name.name, args, &rt, span)
-                        .expect("the method exists");
+                        .unwrap_or_else(|| (mk(ExprKind::Error, rt.clone(), span), None));
                 }
                 let Some((field, decl)) = self.field_decl(&bt, &name.name) else {
                     return (self.unsupported(span, "this call"), None);
@@ -1474,11 +1475,12 @@ impl<'a> Lowerer<'a> {
         module: &str,
         name: &ast::Ident,
         args: &[ast::Arg],
+        rt: &Ty,
         span: Span,
-    ) -> Expr {
+    ) -> (Expr, Option<Ty>) {
         if module == "log" && matches!(name.name.as_str(), "debug" | "info" | "warn" | "error") {
             if args.is_empty() {
-                return self.unsupported(span, "this call");
+                return (self.unsupported(span, "this call"), None);
             }
             let string = Ty::Adt(self.prims.string, Vec::new());
             let shown = args
@@ -1492,12 +1494,48 @@ impl<'a> Lowerer<'a> {
                 level: name.name.clone(),
                 args: shown,
             };
-            return mk(kind, Ty::Unit, span);
+            return (mk(kind, Ty::Unit, span), None);
+        }
+        let ty = self
+            .p
+            .modules
+            .get(module)
+            .and_then(|m| m.types.get(&name.name))
+            .copied()
+            .filter(|&id| matches!(&self.p.adts[id].kind, AdtKind::Struct(f) if !f.is_empty()));
+        if let Some(id) = ty {
+            return (self.construct(id, args, rt.clone(), span), None);
+        }
+        if LIB_MODULES.contains(&module) {
+            let sig = self
+                .p
+                .modules
+                .get(module)
+                .and_then(|m| m.fns.get(&name.name))
+                .cloned();
+            if let Some(sig) = sig {
+                let (prelude, _, vals) = self.arrange(&sig.params, &[], None, args);
+                let call = mk(
+                    ExprKind::Lib {
+                        module: module.to_string(),
+                        name: name.name.clone(),
+                        args: vals,
+                    },
+                    sig.ret.clone(),
+                    span,
+                );
+                let call = coerce_value(call, rt);
+                return (with_prelude(prelude, call), sig.throws.clone());
+            }
         }
         let what = format!("`{module}.{}`", name.name);
-        self.unsupported(span, what)
+        (self.unsupported(span, what), None)
     }
 }
+
+/// Modules whose functions become [`ExprKind::Lib`] calls, for the
+/// backend to build.
+const LIB_MODULES: &[&str] = &["time", "fs", "os"];
 
 fn mk(kind: ExprKind, ty: Ty, span: Span) -> Expr {
     Expr { kind, ty, span }

@@ -1,0 +1,33 @@
+// The os module: arguments, environment variables, the process and exit
+// codes.
+import os
+
+fn flag(args: List<String>, name: String) -> String? {
+    for i in 0..args.len() - 1 {
+        if args[i] == name {
+            return args[i + 1]
+        }
+    }
+    none
+}
+
+fn main() {
+    let args = os.args()
+    print(args)
+    print(args.len())
+    print(flag(args, "--name") ?? "nobody")
+    print(flag(args, "--age") ?? "unknown")
+
+    print(os.env("PATH") is some(_))
+    print(os.env("KILN_SURELY_UNSET_VARIABLE"))
+    print(os.env("KILN_SURELY_UNSET_VARIABLE") ?? "default")
+
+    print(os.cwd().len() > 0)
+    print(os.temp_dir().len() > 0)
+    print(os.pid() > 0)
+    print(["linux", "macos", "windows", "unknown"].contains(os.platform()))
+
+    print("exiting with 3")
+    os.exit(3)
+    print("unreachable")
+}

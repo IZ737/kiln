@@ -6,6 +6,9 @@
 //!   exit code must then be 101 for a panic and 1 for an error that left
 //!   `main`. Without this file, the program must exit with 0 and print
 //!   nothing on standard error.
+//! - `main.args`: the program's arguments, one per line.
+//! - `main.code`: the expected exit code, for a program that ends itself
+//!   with `os.exit`.
 
 use std::path::Path;
 use std::process::Command;
@@ -26,16 +29,19 @@ fn conformance_programs_produce_expected_output() {
     );
     let mut failures = Vec::new();
     for program in &programs {
+        let read =
+            |ext: &str| std::fs::read_to_string(program.join("main").with_extension(ext)).ok();
+        let args = read("args").unwrap_or_default();
         let out = Command::new(env!("CARGO_BIN_EXE_kiln"))
             .arg("run")
             .arg(program)
+            .args(args.lines())
             .output()
             .unwrap();
-        let read =
-            |ext: &str| std::fs::read_to_string(program.join("main").with_extension(ext)).ok();
         let expected_out = read("out").unwrap_or_default();
         let expected_err = read("err");
         let expected_code = match &expected_err {
+            _ if read("code").is_some() => read("code").unwrap().trim().parse().unwrap(),
             None => 0,
             Some(err) if err.lines().last().is_some_and(|l| l.starts_with("panic:")) => 101,
             Some(_) => 1,

@@ -55,7 +55,8 @@ Run `cargo fmt --all`, `cargo clippy --all-targets -- -D warnings` and
   them, so they must stay valid.
 - `assets/brand/`: the logo and vocabulary icons. Brand colours are terracotta
   `#C65A34`, charcoal `#1F232B` and off-white `#F7F3EC`.
-- `docs/syntax.md` and `docs/glazes.md` document what the parsers accept; `docs/design.md` is the
+- `docs/syntax.md` and `docs/glazes.md` document what the parsers accept; `docs/stdlib.md` lists
+  the standard library modules the compiler builds; `docs/design.md` is the
   language design.
 
 ## Conventions
@@ -75,7 +76,8 @@ Run `cargo fmt --all`, `cargo clippy --all-targets -- -D warnings` and
 - **One mistake, one error.** After an error the checker uses `Ty::Unknown`,
   which is compatible with everything, so later uses are not reported again.
 - **Standard library changes** go in `crates/kiln_check/std/*.kiln`. New
-  modules are also listed in `STD_MODULES` in `checker.rs`.
+  modules are also listed in `STD_MODULES` in `checker.rs`. To compile a
+  module's functions, see the steps in `docs/stdlib.md`.
 - **The compiler never guesses.** A program that type-checks but uses
   something the backend cannot build yet gets E0401 at that spot, never
   wrong C.
