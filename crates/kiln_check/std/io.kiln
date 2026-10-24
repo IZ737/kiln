@@ -1,0 +1,13 @@
+// Standard input, output and error.
+
+// The next line of standard input without its line ending, or none at the
+// end of the input.
+fn read_line() -> String? {}
+// The rest of standard input.
+fn read_all() -> String {}
+// The remaining lines of standard input.
+fn read_lines() -> List<String> {}
+// Writes text to standard output without adding a newline.
+fn write(text: String) {}
+// Prints a value on standard error, as `print` does on standard output.
+fn print_err(value: Any) {}

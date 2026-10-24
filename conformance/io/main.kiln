@@ -1,0 +1,22 @@
+// The io module: reading standard input line by line or all at once, and
+// writing without a newline or to standard error.
+import io
+
+fn main() {
+    let name = io.read_line() ?? "nobody"
+    let count = (io.read_line() ?? "").to_int() ?? 0
+    io.write("Hello, ")
+    io.write(name)
+    io.write("!\n")
+    for i in 0..count {
+        io.write("${i + 1} ")
+    }
+    print("")
+    print(io.read_line())
+    let rest = io.read_lines()
+    print(rest)
+    print(io.read_line())
+    print(io.read_all().is_empty())
+    io.print_err("warning: ${rest.len()} lines left over")
+    io.print_err(rest)
+}

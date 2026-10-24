@@ -77,7 +77,29 @@ as `cannot read notes.txt: No such file or directory`.
 | `os.pid() -> Int` | The process id |
 | `os.platform() -> String` | `"linux"`, `"macos"`, `"windows"` or `"unknown"` |
 
-`fs` and `os` need the server, so embers cannot use them.
+## `io`
+
+| Function | |
+| --- | --- |
+| `io.read_line() -> String?` | The next line of standard input, or none at the end |
+| `io.read_lines() -> List<String>` | The remaining lines |
+| `io.read_all() -> String` | The rest of standard input |
+| `io.write(text)` | Writes to standard output without a newline |
+| `io.print_err(value)` | Prints on standard error, as `print` does |
+
+```kiln
+import io
+
+fn main() {
+    var total = 0
+    for line in io.read_lines() {
+        total += line.to_int() ?? 0
+    }
+    print(total)
+}
+```
+
+`fs`, `os` and `io` need the server, so embers cannot use them.
 
 ## Adding to the standard library
 

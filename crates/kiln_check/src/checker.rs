@@ -85,7 +85,7 @@ pub(crate) struct GlazeSig {
 }
 
 /// Modules that need the server: they cannot be used in embers.
-const SERVER_ONLY_MODULES: &[&str] = &["sql", "auth", "fs", "os"];
+const SERVER_ONLY_MODULES: &[&str] = &["sql", "auth", "fs", "os", "io"];
 
 const STD_MODULES: &[(&str, &str)] = &[
     ("web", include_str!("../std/web.kiln")),
@@ -96,6 +96,7 @@ const STD_MODULES: &[(&str, &str)] = &[
     ("time", include_str!("../std/time.kiln")),
     ("fs", include_str!("../std/fs.kiln")),
     ("os", include_str!("../std/os.kiln")),
+    ("io", include_str!("../std/io.kiln")),
 ];
 const PRELUDE: &str = include_str!("../std/prelude.kiln");
 

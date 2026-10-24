@@ -1444,7 +1444,7 @@ impl<'a> Gen<'a> {
         t
     }
 
-    /// A call to a function of the `time`, `fs` or `os` module, returning
+    /// A call to a function of the `time`, `fs`, `os` or `io` module, returning
     /// its value. A function that can fail is followed by the check that
     /// turns the runtime's message into a failed standard `Error`.
     fn lib_call(&mut self, module: &str, name: &str, a: &[String], ty: &Ty, span: Span) -> String {
@@ -1478,6 +1478,12 @@ impl<'a> Gen<'a> {
             }
             ("os", "args" | "cwd" | "temp_dir" | "pid" | "platform") => {
                 (self.store(&format!("k_os_{name}()"), ty), false)
+            }
+            ("io", "read_line" | "read_all" | "read_lines") => {
+                (self.store(&format!("k_io_{name}()"), ty), false)
+            }
+            ("io", "write" | "print_err") => {
+                (self.store(&format!("k_io_{name}({})", arg(0)), ty), false)
             }
             ("os", "env" | "exit") => (self.store(&format!("k_os_{name}({})", arg(0)), ty), false),
             _ => return self.unsupported(span, format!("`{module}.{name}`")),

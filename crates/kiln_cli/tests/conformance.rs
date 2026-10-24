@@ -7,11 +7,13 @@
 //!   `main`. Without this file, the program must exit with 0 and print
 //!   nothing on standard error.
 //! - `main.args`: the program's arguments, one per line.
+//! - `main.in`: the program's standard input.
 //! - `main.code`: the expected exit code, for a program that ends itself
-//!   with `os.exit`.
+//!   with `os.exit` or writes to standard error and succeeds.
 
+use std::io::Write;
 use std::path::Path;
-use std::process::Command;
+use std::process::{Command, Stdio};
 
 #[test]
 fn conformance_programs_produce_expected_output() {
@@ -32,12 +34,22 @@ fn conformance_programs_produce_expected_output() {
         let read =
             |ext: &str| std::fs::read_to_string(program.join("main").with_extension(ext)).ok();
         let args = read("args").unwrap_or_default();
-        let out = Command::new(env!("CARGO_BIN_EXE_kiln"))
+        let mut child = Command::new(env!("CARGO_BIN_EXE_kiln"))
             .arg("run")
             .arg(program)
             .args(args.lines())
-            .output()
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
             .unwrap();
+        let input = read("in").unwrap_or_default();
+        let mut stdin = child.stdin.take().unwrap();
+        let writer = std::thread::spawn(move || {
+            let _ = stdin.write_all(input.as_bytes());
+        });
+        let out = child.wait_with_output().unwrap();
+        writer.join().unwrap();
         let expected_out = read("out").unwrap_or_default();
         let expected_err = read("err");
         let expected_code = match &expected_err {

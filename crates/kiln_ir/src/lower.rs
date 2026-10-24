@@ -1496,6 +1496,19 @@ impl<'a> Lowerer<'a> {
             };
             return (mk(kind, Ty::Unit, span), None);
         }
+        if module == "io" && name.name == "print_err" && args.len() == 1 {
+            // Like `print`, the value is shown first.
+            let a = &args[0].value;
+            let v = self.expr(a);
+            let string = Ty::Adt(self.prims.string, Vec::new());
+            let shown = mk(ExprKind::Show(Box::new(v)), string, a.span);
+            let kind = ExprKind::Lib {
+                module: "io".into(),
+                name: "print_err".into(),
+                args: vec![shown],
+            };
+            return (mk(kind, Ty::Unit, span), None);
+        }
         let ty = self
             .p
             .modules
@@ -1535,7 +1548,7 @@ impl<'a> Lowerer<'a> {
 
 /// Modules whose functions become [`ExprKind::Lib`] calls, for the
 /// backend to build.
-const LIB_MODULES: &[&str] = &["time", "fs", "os"];
+const LIB_MODULES: &[&str] = &["time", "fs", "os", "io"];
 
 fn mk(kind: ExprKind, ty: Ty, span: Span) -> Expr {
     Expr { kind, ty, span }

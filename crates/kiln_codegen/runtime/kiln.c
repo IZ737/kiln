@@ -988,3 +988,53 @@ static kstr *k_os_platform(void) {
     return k_str("unknown");
 #endif
 }
+
+/* ----- io ----- */
+
+static kbox *k_io_read_line(void) {
+    size_t cap = 128, len = 0;
+    char *buf = k_alloc_atomic(cap);
+    int c;
+    while ((c = getchar()) != EOF && c != '\n') {
+        if (len + 1 == cap) {
+            char *b = k_alloc_atomic(cap * 2);
+            memcpy(b, buf, len);
+            buf = b;
+            cap *= 2;
+        }
+        buf[len++] = (char)c;
+    }
+    if (c == EOF && len == 0) return NULL;
+    if (len > 0 && buf[len - 1] == '\r') len--;
+    return k_box(K_P2KV(k_str_n(buf, (int64_t)len)));
+}
+
+static kstr *k_io_read_all(void) {
+    size_t cap = 4096, len = 0, n;
+    char *buf = k_alloc_atomic(cap);
+    while ((n = fread(buf + len, 1, cap - len, stdin)) > 0) {
+        len += n;
+        if (len == cap) {
+            char *b = k_alloc_atomic(cap * 2);
+            memcpy(b, buf, len);
+            buf = b;
+            cap *= 2;
+        }
+    }
+    return k_str_n(buf, (int64_t)len);
+}
+
+static klist *k_io_read_lines(void) {
+    klist *lines = k_list(0, NULL);
+    kbox *line;
+    while ((line = k_io_read_line()) != NULL) k_list_push(lines, line->v);
+    return lines;
+}
+
+static void k_io_write(kstr *s) { fwrite(s->data, 1, (size_t)s->len, stdout); }
+
+static void k_io_print_err(kstr *s) {
+    fflush(stdout);
+    fwrite(s->data, 1, (size_t)s->len, stderr);
+    fputc('\n', stderr);
+}
