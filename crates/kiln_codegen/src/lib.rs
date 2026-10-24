@@ -1,30 +1,30 @@
-//! The C backend: turns a type-checked Kiln program into one C file, which
-//! a C compiler builds against the runtime in `runtime/kiln.c` and the
-//! Boehm garbage collector.
+//! The C backend: turns a Kiln program in the IR (see `kiln_ir`) into one C
+//! file, which a C compiler builds against the runtime in `runtime/kiln.c`
+//! and the Boehm garbage collector.
 //!
 //! ```no_run
 //! let source = "fn main() {\n    print(\"hi\")\n}\n";
 //! let parsed = kiln_syntax::parse(source);
 //! let program = kiln_check::check_program(&parsed.module);
-//! let c = kiln_codegen::emit_c(&parsed.module, &program).unwrap();
+//! let ir = kiln_ir::lower(&parsed.module, &program).unwrap();
+//! let c = kiln_codegen::emit_c(&ir).unwrap();
 //! kiln_codegen::compile_c(&c, std::path::Path::new("hi")).unwrap();
 //! ```
 
 mod emit;
 
-use kiln_check::Program;
 use kiln_diagnostics::Diagnostic;
-use kiln_syntax::ast::Module;
+use kiln_ir::Program;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
 /// The runtime, prepended to every generated file.
 pub const RUNTIME: &str = include_str!("../runtime/kiln.c");
 
-/// Generates C for a program that type-checked without errors. Returns
-/// diagnostics for the parts the compiler does not support yet (E0401).
-pub fn emit_c(module: &Module, program: &Program) -> Result<String, Vec<Diagnostic>> {
-    emit::emit(module, program)
+/// Generates C for a program lowered to the IR. Returns diagnostics for the
+/// parts the backend does not support yet (E0401).
+pub fn emit_c(program: &Program) -> Result<String, Vec<Diagnostic>> {
+    emit::emit(program)
 }
 
 /// Compiles generated C into an executable at `out`, using `$CC` or `cc`.

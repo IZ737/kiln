@@ -37,6 +37,9 @@ enum Command {
         /// Also write the generated C to this path.
         #[arg(long)]
         emit_c: Option<PathBuf>,
+        /// Also write the program's IR, in its readable form, to this path.
+        #[arg(long)]
+        emit_ir: Option<PathBuf>,
     },
     /// Compile a program and run it.
     Run {
@@ -64,9 +67,14 @@ fn main() -> ExitCode {
             file,
             output,
             emit_c,
+            emit_ir,
         } => {
             let out = output.unwrap_or_else(|| default_output(&file));
-            match build(&file, &out, emit_c.as_deref()) {
+            let emit = Emit {
+                c: emit_c.as_deref(),
+                ir: emit_ir.as_deref(),
+            };
+            match build(&file, &out, emit) {
                 Ok(()) => ExitCode::SUCCESS,
                 Err(code) => code,
             }
@@ -284,8 +292,15 @@ fn default_output(path: &Path) -> PathBuf {
     PathBuf::from(name)
 }
 
+/// Where `build` also writes the intermediate forms of a program.
+#[derive(Clone, Copy, Default)]
+struct Emit<'a> {
+    c: Option<&'a Path>,
+    ir: Option<&'a Path>,
+}
+
 /// Checks and compiles the program in a folder into an executable at `out`.
-fn build(path: &Path, out: &Path, emit_c: Option<&Path>) -> Result<(), ExitCode> {
+fn build(path: &Path, out: &Path, emit: Emit) -> Result<(), ExitCode> {
     let (dir, files) = app_files(path).map_err(|err| {
         eprintln!("error: cannot read {}: {err}", path.display());
         ExitCode::from(2)
@@ -355,12 +370,19 @@ fn build(path: &Path, out: &Path, emit_c: Option<&Path>) -> Result<(), ExitCode>
     if !program.diagnostics.is_empty() {
         return Err(report(program.diagnostics));
     }
-    let c = kiln_codegen::emit_c(&parsed.module, &program).map_err(report)?;
-    if let Some(c_path) = emit_c {
-        std::fs::write(c_path, &c).map_err(|err| {
-            eprintln!("error: cannot write {}: {err}", c_path.display());
+    let write = |path: &Path, text: &str| {
+        std::fs::write(path, text).map_err(|err| {
+            eprintln!("error: cannot write {}: {err}", path.display());
             ExitCode::from(2)
-        })?;
+        })
+    };
+    let ir = kiln_ir::lower(&parsed.module, &program).map_err(report)?;
+    if let Some(ir_path) = emit.ir {
+        write(ir_path, &ir.to_string())?;
+    }
+    let c = kiln_codegen::emit_c(&ir).map_err(report)?;
+    if let Some(c_path) = emit.c {
+        write(c_path, &c)?;
     }
     kiln_codegen::compile_c(&c, out).map_err(|err| {
         eprintln!("error: {err}");
@@ -377,7 +399,7 @@ fn run(path: &Path, args: &[String]) -> ExitCode {
         }
     };
     let exe = dir.join("program");
-    if let Err(code) = build(path, &exe, None) {
+    if let Err(code) = build(path, &exe, Emit::default()) {
         let _ = std::fs::remove_dir_all(&dir);
         return code;
     }
