@@ -569,8 +569,15 @@ impl<'a> Lowerer<'a> {
             .collect()
     }
 
-    /// The declared type and index of a struct field.
+    /// The declared type and index of a struct field. A record's fields
+    /// live in slots, so their declared type is `Any`.
     fn field_decl(&self, base: &Ty, name: &str) -> Option<(usize, Ty)> {
+        if let Ty::Record(fields) = base {
+            return fields
+                .iter()
+                .position(|f| f.0 == name)
+                .map(|i| (i, Ty::Any));
+        }
         let Ty::Adt(id, _) = base else { return None };
         let AdtKind::Struct(fields) = &self.p.adts[*id].kind else {
             return None;
@@ -867,7 +874,24 @@ impl<'a> Lowerer<'a> {
                         .collect(),
                 )
             }
-            E::Record(_) => return self.unsupported(span, "an anonymous record"),
+            E::Record(fields) => {
+                let tys: Vec<Ty> = match &ty {
+                    Ty::Record(fs) => fs.iter().map(|f| f.1.clone()).collect(),
+                    _ => Vec::new(),
+                };
+                let values = fields
+                    .iter()
+                    .zip(tys)
+                    .map(|(f, fty)| {
+                        let v = match &f.value {
+                            Some(v) => self.expr(v),
+                            None => self.ident(&f.name.name, fty, f.name.span),
+                        };
+                        coerce(v, &Ty::Any)
+                    })
+                    .collect();
+                ExprKind::Record(values)
+            }
             E::Unary { op, expr } => {
                 let v = Box::new(self.expr(expr));
                 match op {
@@ -1337,6 +1361,7 @@ impl<'a> Lowerer<'a> {
                 };
                 let field_ty = match &bt {
                     Ty::Adt(id, targs) => substitute(&decl, &self.type_map(*id, targs)),
+                    Ty::Record(fields) => fields[field].1.clone(),
                     _ => decl.clone(),
                 };
                 let f = mk(

@@ -233,6 +233,7 @@ impl<'a> Printer<'a> {
                 AdtKind::Struct(fields) => fields[field].name.clone(),
                 AdtKind::Enum(_) => field.to_string(),
             },
+            Ty::Record(fields) => fields[field].0.clone(),
             _ => field.to_string(),
         };
         format!("{}.{name}", self.expr(base))
@@ -276,6 +277,18 @@ impl<'a> Printer<'a> {
             ExprKind::Coalesce(a, b) => format!("({} ?? {})", self.expr(a), self.expr(b)),
             ExprKind::Range(a, b) => format!("({}..{})", self.expr(a), self.expr(b)),
             ExprKind::List(items) => format!("[{}]", self.list(items)),
+            ExprKind::Record(values) => {
+                let names: Vec<String> = match &e.ty {
+                    Ty::Record(fields) => fields.iter().map(|f| f.0.clone()).collect(),
+                    _ => Vec::new(),
+                };
+                let parts: Vec<String> = names
+                    .iter()
+                    .zip(values)
+                    .map(|(n, v)| format!("{n}: {}", self.expr(v)))
+                    .collect();
+                format!("{{ {} }}", parts.join(", "))
+            }
             ExprKind::NewMap => format!("{}()", self.ty(&e.ty)),
             ExprKind::Struct { adt, fields } => {
                 let def = &self.prog.adts[*adt];

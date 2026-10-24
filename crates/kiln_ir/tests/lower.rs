@@ -120,3 +120,14 @@ fn generic_recursion_that_grows_its_types_is_reported() {
     );
     assert_eq!(codes, vec!["E0401"]);
 }
+
+#[test]
+fn records_store_their_fields_in_slots() {
+    let ir =
+        lower("fn main() {\n    let n = 2\n    let r = { n, s: \"x\" }\n    print(r.n + 1)\n}\n");
+    assert!(
+        ir.contains("{ n: (n#0 as Any), s: (\"x\" as Any) }"),
+        "{ir}"
+    );
+    assert!(ir.contains("(r#1.n as Int)"), "{ir}");
+}

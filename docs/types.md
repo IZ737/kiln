@@ -26,6 +26,15 @@ the details of any error.
 - Unwrap with `??`, `match`, or `if x is some(v) { ... }`. Fields and methods
   of a `T?` are not available until it is unwrapped (E0208).
 
+## Records
+
+- `{ name: "Ada", age: 36 }` is an anonymous record of type
+  `{ name: String, age: Int }`; `{ name }` is short for `{ name: name }`.
+  Fields are read and assigned like struct fields. Two records are equal
+  when their fields are, and they print as they are written.
+- Records have no type syntax yet, so they are used where their type is
+  inferred: locals, lists, closures and generic arguments.
+
 ## Lists, maps and sets
 
 - `[1, 2]` is a `List<Int>`; `list[i]` panics when `i` is out of range, while

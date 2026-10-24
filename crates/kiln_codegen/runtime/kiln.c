@@ -225,6 +225,14 @@ static kenum *k_enum(int64_t tag, int n, const kv *fields) {
     return e;
 }
 
+/* ----- records: an array of slots, in the record type's field order ----- */
+
+static kv *k_record(int n, const kv *fields) {
+    kv *r = k_alloc(sizeof(kv) * (size_t)n);
+    for (int i = 0; i < n; i++) r[i] = fields[i];
+    return r;
+}
+
 /* ----- lists ----- */
 
 typedef struct klist { int64_t len, cap; kv *items; } klist;

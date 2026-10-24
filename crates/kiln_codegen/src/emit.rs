@@ -317,6 +317,7 @@ impl<'a> Gen<'a> {
             Rep::Ptr => match ty {
                 Ty::Opt(_) => "kbox *".into(),
                 Ty::Fn(_) => "kclosure *".into(),
+                Ty::Record(_) => "kv *".into(),
                 Ty::Adt(id, _) if *id == self.prims.string => "kstr *".into(),
                 Ty::Adt(id, _) if *id == self.prims.list => "klist *".into(),
                 Ty::Adt(id, _) if *id == self.prims.map || *id == self.prims.set => "kmap *".into(),
@@ -392,13 +393,20 @@ impl<'a> Gen<'a> {
     }
 
     /// The name and declared type of a struct field.
-    fn field_decl(&self, base: &Ty, field: usize) -> (String, Ty) {
-        if let Ty::Adt(id, _) = base {
-            if let AdtKind::Struct(fields) = &self.p.adts[*id].kind {
-                return (mangle(&fields[field].name), fields[field].ty.clone());
+    /// The C lvalue of a field of the value `b`, and the field's declared
+    /// type. A record is an array of slots.
+    fn field_place(&self, b: &str, base: &Ty, field: usize) -> (String, Ty) {
+        match base {
+            Ty::Adt(id, _) => {
+                if let AdtKind::Struct(fields) = &self.p.adts[*id].kind {
+                    let name = mangle(&fields[field].name);
+                    return (format!("({b})->f_{name}"), fields[field].ty.clone());
+                }
+                (format!("({b})->f_{field}"), Ty::Unknown)
             }
+            Ty::Record(_) => (format!("({b})[{field}]"), Ty::Any),
+            _ => (format!("({b})->f_{field}"), Ty::Unknown),
         }
-        (format!("{field}"), Ty::Unknown)
     }
 
     // ----- output -----
@@ -619,9 +627,8 @@ impl<'a> Gen<'a> {
                 self.line(&format!("{c} = {new};"));
             }
             Place::Field { base, field, ty } => {
-                let (name, decl) = self.field_decl(&base.ty, *field);
                 let b = self.expr(base);
-                let raw = format!("({b})->f_{name}");
+                let (raw, decl) = self.field_place(&b, &base.ty, *field);
                 let v = self.expr(value);
                 let cur = self.convert(&raw, &decl, ty);
                 let new = self.compound(op, &cur, ty, &v);
@@ -901,9 +908,18 @@ impl<'a> Gen<'a> {
                 t
             }
             ExprKind::Field { base, field } => {
-                let (name, _) = self.field_decl(&base.ty, *field);
                 let b = self.expr(base);
-                format!("({b})->f_{name}")
+                self.field_place(&b, &base.ty, *field).0
+            }
+            ExprKind::Record(values) => {
+                let vals: Vec<String> = values.iter().map(|v| self.expr(v)).collect();
+                let t = self.tmp_c("kv *");
+                self.line(&format!(
+                    "{t} = k_record({}, (kv[]){{{}}});",
+                    vals.len(),
+                    vals.join(", ")
+                ));
+                t
             }
             ExprKind::ListItem { list, index } => {
                 let b = self.expr(list);
@@ -1662,6 +1678,21 @@ impl<'a> Gen<'a> {
                     }
                 }
             }
+            Ty::Record(fields) => {
+                let mut b =
+                    "    kv *x = K_KV2P(kv *, v);\n    kstr *r = k_str(\"{ \");\n".to_string();
+                for (i, (fname, fty)) in fields.iter().enumerate() {
+                    let show = self.show_fn(fty, true, span);
+                    let sep = if i == 0 { "" } else { ", " };
+                    let _ = writeln!(
+                        b,
+                        "    r = k_concat(r, {});\n    r = k_concat(r, {show}(x[{i}]));",
+                        c_string(&format!("{sep}{fname}: "))
+                    );
+                }
+                b.push_str("    return k_concat(r, k_str(\" }\"));\n");
+                b
+            }
             Ty::Param(_) | Ty::Var(_) | Ty::Any => {
                 self.unsupported(span, "showing a value whose type is a generic parameter");
                 "    return k_str(\"\");\n".to_string()
@@ -1772,6 +1803,15 @@ impl<'a> Gen<'a> {
                         b
                     }
                 }
+            }
+            Ty::Record(fields) => {
+                let mut b = "    kv *x = K_KV2P(kv *, a), *y = K_KV2P(kv *, b);\n".to_string();
+                for (i, (_, fty)) in fields.iter().enumerate() {
+                    let eq = self.eq_fn(fty, span);
+                    let _ = writeln!(b, "    if (!{eq}(x[{i}], y[{i}])) return false;");
+                }
+                b.push_str("    return true;\n");
+                b
             }
             Ty::Param(_) | Ty::Var(_) | Ty::Any => {
                 self.unsupported(span, "comparing values whose type is a generic parameter");
