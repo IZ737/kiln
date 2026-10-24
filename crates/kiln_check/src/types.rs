@@ -135,19 +135,31 @@ pub fn similar<'a>(name: &str, candidates: impl IntoIterator<Item = &'a str>) ->
         .map(|(_, c)| c.to_string())
 }
 
+/// Edits between two names, counting a swap of neighbouring letters as one
+/// edit, since `tilte` for `title` is a common typo.
 fn edit_distance(a: &str, b: &str) -> usize {
     let a: Vec<char> = a.chars().collect();
     let b: Vec<char> = b.chars().collect();
-    let mut prev: Vec<usize> = (0..=b.len()).collect();
-    for (i, ca) in a.iter().enumerate() {
-        let mut row = vec![i + 1];
-        for (j, cb) in b.iter().enumerate() {
-            let cost = usize::from(ca != cb);
-            row.push((prev[j] + cost).min(prev[j + 1] + 1).min(row[j] + 1));
-        }
-        prev = row;
+    let mut d = vec![vec![0usize; b.len() + 1]; a.len() + 1];
+    for (i, row) in d.iter_mut().enumerate() {
+        row[0] = i;
     }
-    prev[b.len()]
+    for (j, cell) in d[0].iter_mut().enumerate() {
+        *cell = j;
+    }
+    for i in 1..=a.len() {
+        for j in 1..=b.len() {
+            let cost = usize::from(a[i - 1] != b[j - 1]);
+            let mut best = (d[i - 1][j - 1] + cost)
+                .min(d[i - 1][j] + 1)
+                .min(d[i][j - 1] + 1);
+            if i > 1 && j > 1 && a[i - 1] == b[j - 2] && a[i - 2] == b[j - 1] {
+                best = best.min(d[i - 2][j - 2] + 1);
+            }
+            d[i][j] = best;
+        }
+    }
+    d[a.len()][b.len()]
 }
 
 #[cfg(test)]
@@ -159,5 +171,6 @@ mod tests {
         assert_eq!(similar("tittle", ["title", "body"]), Some("title".into()));
         assert_eq!(similar("string", ["String", "Int"]), Some("String".into()));
         assert_eq!(similar("xyz", ["title", "body"]), None);
+        assert_eq!(similar("pots", ["post", "user"]), Some("post".into()));
     }
 }

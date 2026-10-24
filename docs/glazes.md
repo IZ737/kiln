@@ -5,8 +5,8 @@ it. This is the syntax the phase 0 parser accepts; every form here is covered
 by a test in `crates/kiln_syntax/tests/glaze.rs`. Code inside braces is
 ordinary Kiln, as in [syntax.md](syntax.md).
 
-Glazes are parsed by `kiln check`, but not yet type-checked: checking props,
-values and components against their types comes next.
+`kiln check` type-checks glazes together with the `.kiln` files in the same
+directory: see [types.md](types.md#glazes) for the rules.
 
 ## A page
 

@@ -23,14 +23,14 @@ pub(crate) enum Expect {
 }
 
 #[derive(Clone)]
-struct Local {
-    ty: Ty,
-    mutable: bool,
+pub(crate) struct Local {
+    pub(crate) ty: Ty,
+    pub(crate) mutable: bool,
     /// The `let` keyword, so an assignment error can suggest `var`.
     let_span: Option<Span>,
 }
 
-struct FnCtx {
+pub(crate) struct FnCtx {
     ret: Ty,
     /// The error type this function may fail with.
     throws: Option<Ty>,
@@ -54,7 +54,22 @@ pub struct Checker {
     scopes: Vec<HashMap<String, Local>>,
     fns: Vec<FnCtx>,
     pub(crate) diags: Vec<Diagnostic>,
+    /// The glazes next to the file being checked, by file name. `None` when
+    /// a file is checked on its own, so `web.render` cannot be checked.
+    pub(crate) glazes: Option<HashMap<String, GlazeSig>>,
+    /// Whether the code being checked runs in the browser.
+    pub(crate) in_ember: bool,
 }
+
+/// What other files need to know about a glaze.
+#[derive(Clone, Debug)]
+pub(crate) struct GlazeSig {
+    pub(crate) props: Vec<ParamSig>,
+    pub(crate) has_slot: bool,
+}
+
+/// Modules that need the server: they cannot be used in embers.
+const SERVER_ONLY_MODULES: &[&str] = &["sql", "auth"];
 
 const STD_MODULES: &[(&str, &str)] = &[
     ("web", include_str!("../std/web.kiln")),
@@ -78,6 +93,8 @@ impl Checker {
             scopes: Vec::new(),
             fns: Vec::new(),
             diags: Vec::new(),
+            glazes: None,
+            in_ember: false,
         };
         let prelude = parse_std("prelude", PRELUDE);
         checker.declare_types(&prelude, Scope::Global);
@@ -106,6 +123,12 @@ impl Checker {
     }
 
     pub fn check_module(&mut self, module: &Module) {
+        self.collect_module(module);
+        self.check_bodies(module);
+    }
+
+    /// Imports and declarations: everything other files can refer to.
+    pub(crate) fn collect_module(&mut self, module: &Module) {
         for item in &module.items {
             if let Item::Import(import) = item {
                 for path in &import.paths {
@@ -138,7 +161,10 @@ impl Checker {
         }
         self.declare_types(module, Scope::Global);
         self.define_items(module, Scope::Global);
+    }
 
+    /// Constants, function bodies and field defaults.
+    pub(crate) fn check_bodies(&mut self, module: &Module) {
         for item in &module.items {
             if let Item::Const(c) = item {
                 self.enter_fn(Ty::Unit, None, None);
@@ -208,15 +234,15 @@ impl Checker {
         Ty::Adt(self.global_types["Error"], Vec::new())
     }
 
-    fn prim(&self, name: &str) -> Ty {
+    pub(crate) fn prim(&self, name: &str) -> Ty {
         Ty::Adt(self.global_types[name], Vec::new())
     }
 
-    fn list_of(&self, elem: Ty) -> Ty {
+    pub(crate) fn list_of(&self, elem: Ty) -> Ty {
         Ty::Adt(self.global_types["List"], vec![elem])
     }
 
-    fn is_prim(&self, ty: &Ty, name: &str) -> bool {
+    pub(crate) fn is_prim(&self, ty: &Ty, name: &str) -> bool {
         matches!(ty, Ty::Adt(id, _) if *id == self.global_types[name])
     }
 
@@ -228,7 +254,7 @@ impl Checker {
     }
 
     /// Follows solved inference variables at the top level.
-    fn resolve(&self, ty: &Ty) -> Ty {
+    pub(crate) fn resolve(&self, ty: &Ty) -> Ty {
         let mut ty = ty.clone();
         while let Ty::Var(v) = ty {
             match &self.subst[v as usize] {
@@ -309,7 +335,7 @@ impl Checker {
 
     /// Checks that a value of type `actual` can be used where `expected` is
     /// required. A `T` is accepted where `T?` is expected.
-    fn coerce(&mut self, actual: &Ty, expected: &Ty, span: Span) {
+    pub(crate) fn coerce(&mut self, actual: &Ty, expected: &Ty, span: Span) {
         let (a, e) = (self.resolve(actual), self.resolve(expected));
         if let Ty::Opt(inner) = &e {
             if !matches!(
@@ -397,15 +423,15 @@ impl Checker {
 
     // ----- scopes -----
 
-    fn push_scope(&mut self) {
+    pub(crate) fn push_scope(&mut self) {
         self.scopes.push(HashMap::new());
     }
 
-    fn pop_scope(&mut self) {
+    pub(crate) fn pop_scope(&mut self) {
         self.scopes.pop();
     }
 
-    fn bind(&mut self, name: &str, ty: Ty, mutable: bool, let_span: Option<Span>) {
+    pub(crate) fn bind(&mut self, name: &str, ty: Ty, mutable: bool, let_span: Option<Span>) {
         if name.is_empty() || name == "_" {
             return;
         }
@@ -419,11 +445,11 @@ impl Checker {
         );
     }
 
-    fn local(&self, name: &str) -> Option<&Local> {
+    pub(crate) fn local(&self, name: &str) -> Option<&Local> {
         self.scopes.iter().rev().find_map(|s| s.get(name))
     }
 
-    fn enter_fn(&mut self, ret: Ty, throws: Option<Ty>, bang_at: Option<Span>) {
+    pub(crate) fn enter_fn(&mut self, ret: Ty, throws: Option<Ty>, bang_at: Option<Span>) {
         self.fns.push(FnCtx {
             ret,
             throws,
@@ -434,7 +460,7 @@ impl Checker {
         self.push_scope();
     }
 
-    fn exit_fn(&mut self) -> FnCtx {
+    pub(crate) fn exit_fn(&mut self) -> FnCtx {
         self.pop_scope();
         let ctx = self.fns.pop().unwrap();
         for (v, span, param, func) in &ctx.pending {
@@ -504,7 +530,7 @@ impl Checker {
 
     // ----- statements -----
 
-    fn check_block(&mut self, block: &Block, expect: &Expect) -> Ty {
+    pub(crate) fn check_block(&mut self, block: &Block, expect: &Expect) -> Ty {
         self.push_scope();
         let mut ty = Ty::Unit;
         let mut diverges = false;
@@ -631,24 +657,7 @@ impl Checker {
                 body,
                 ..
             } => {
-                let iter_ty = self.infer(iter, &Expect::Value(None));
-                let elem = match self.resolve(&iter_ty) {
-                    Ty::Adt(id, args)
-                        if id == self.global_types["List"] || id == self.global_types["Set"] =>
-                    {
-                        args[0].clone()
-                    }
-                    Ty::Unknown => Ty::Unknown,
-                    other => {
-                        let shown = self.show(&other);
-                        self.error(Diagnostic::error(
-                            codes::TYPE_MISMATCH,
-                            format!("`for` loops over a `List` or `Set`, found `{shown}`"),
-                            iter.span,
-                        ));
-                        Ty::Unknown
-                    }
-                };
+                let elem = self.element_type(iter);
                 self.push_scope();
                 self.bind(&binding.name, elem, false, None);
                 if let Some(f) = filter {
@@ -671,7 +680,7 @@ impl Checker {
 
     // ----- expressions -----
 
-    fn check(&mut self, e: &Expr, expected: &Ty) {
+    pub(crate) fn check(&mut self, e: &Expr, expected: &Ty) {
         let ty = self.infer(e, &Expect::Value(Some(expected.clone())));
         self.coerce(&ty, expected, e.span);
     }
@@ -1108,7 +1117,7 @@ impl Checker {
 
     // ----- names, fields and calls -----
 
-    fn infer_ident(&mut self, name: &str, span: Span) -> Ty {
+    pub(crate) fn infer_ident(&mut self, name: &str, span: Span) -> Ty {
         if let Some(local) = self.local(name) {
             return local.ty.clone();
         }
@@ -1182,7 +1191,7 @@ impl Checker {
     }
 
     /// A module referred to by a bare name, unless a local shadows it.
-    fn module_named(&self, e: &Expr) -> Option<ModId> {
+    pub(crate) fn module_named(&self, e: &Expr) -> Option<ModId> {
         match &e.kind {
             ExprKind::Ident(name) if self.local(name).is_none() => self.imports.get(name).copied(),
             _ => None,
@@ -1205,8 +1214,22 @@ impl Checker {
         }
     }
 
+    /// Reports a server-only module used in browser code.
+    fn use_module(&mut self, m: ModId, span: Span) {
+        let name = &self.modules[m].name;
+        if self.in_ember && SERVER_ONLY_MODULES.contains(&name.as_str()) {
+            let message =
+                format!("`{name}` works only on the server, but this ember runs in the browser");
+            self.error(
+                Diagnostic::error(codes::SERVER_ONLY, message, span)
+                    .with_help("move this into a `server fn` in a `.kiln` file and call that"),
+            );
+        }
+    }
+
     fn infer_field(&mut self, base: &Expr, name: &Ident, span: Span) -> Ty {
         if let Some(m) = self.module_named(base) {
+            self.use_module(m, base.span);
             let module = &self.modules[m];
             if module.fns.contains_key(&name.name) {
                 self.error(Diagnostic::error(
@@ -1467,7 +1490,7 @@ impl Checker {
 
     /// Infers a call, returning its result type and, if the callee can fail,
     /// its error type. The caller decides whether `try` was required.
-    fn infer_call(&mut self, e: &Expr) -> (Ty, Option<Ty>) {
+    pub(crate) fn infer_call(&mut self, e: &Expr) -> (Ty, Option<Ty>) {
         let ExprKind::Call {
             callee,
             type_args,
@@ -1489,6 +1512,12 @@ impl Checker {
         // `module.function(...)` or `module.Type(...)`
         if let ExprKind::Field { expr: base, name } = &callee.kind {
             if let Some(m) = self.module_named(base) {
+                self.use_module(m, base.span);
+                if self.modules[m].name == "web" && name.name == "render" && self.glazes.is_some() {
+                    let ret = self.modules[m].fns["render"].ret.clone();
+                    self.check_render(args, e.span);
+                    return (ret, None);
+                }
                 if let Some(sig) = self.modules[m].fns.get(&name.name).cloned() {
                     let (params, ret, throws) = self.instantiate(&sig, &[], &explicit, e.span);
                     self.check_args(&params, args, e.span, &fn_name, None);
@@ -1759,7 +1788,7 @@ impl Checker {
         ))
     }
 
-    fn check_args(
+    pub(crate) fn check_args(
         &mut self,
         params: &[ParamSig],
         args: &[Arg],
@@ -1989,14 +2018,45 @@ impl Checker {
             branches.push((body_ty, arm.body.span));
             self.pop_scope();
         }
-        self.check_exhaustive(&ty, arms, span);
+        let patterns: Vec<(&Pattern, bool)> = arms
+            .iter()
+            .map(|a| (&a.pattern, a.guard.is_some()))
+            .collect();
+        self.check_exhaustive(
+            &ty,
+            &patterns,
+            span,
+            "add the missing arms, or a final `_ => ...` arm",
+        );
         match expect {
             Expect::Discard => Ty::Unit,
             _ => self.join(branches),
         }
     }
 
-    fn check_pattern(&mut self, p: &Pattern, ty: &Ty) {
+    /// The element type of the list or set `iter` loops over.
+    pub(crate) fn element_type(&mut self, iter: &Expr) -> Ty {
+        let iter_ty = self.infer(iter, &Expect::Value(None));
+        match self.resolve(&iter_ty) {
+            Ty::Adt(id, args)
+                if id == self.global_types["List"] || id == self.global_types["Set"] =>
+            {
+                args[0].clone()
+            }
+            Ty::Unknown => Ty::Unknown,
+            other => {
+                let shown = self.show(&other);
+                self.error(Diagnostic::error(
+                    codes::TYPE_MISMATCH,
+                    format!("`for` loops over a `List` or `Set`, found `{shown}`"),
+                    iter.span,
+                ));
+                Ty::Unknown
+            }
+        }
+    }
+
+    pub(crate) fn check_pattern(&mut self, p: &Pattern, ty: &Ty) {
         match &p.kind {
             PatternKind::Wildcard | PatternKind::Error => {}
             PatternKind::Binding(name) => self.bind(name, ty.clone(), false, None),
@@ -2087,17 +2147,25 @@ impl Checker {
         }
     }
 
-    fn check_exhaustive(&mut self, ty: &Ty, arms: &[MatchArm], span: Span) {
+    /// Checks that `patterns` (each with whether it has a guard) cover
+    /// every value of `ty`.
+    pub(crate) fn check_exhaustive(
+        &mut self,
+        ty: &Ty,
+        patterns: &[(&Pattern, bool)],
+        span: Span,
+        help: &str,
+    ) {
         let irrefutable = |p: &Pattern| {
             matches!(
                 p.kind,
                 PatternKind::Wildcard | PatternKind::Binding(_) | PatternKind::Error
             )
         };
-        let unguarded: Vec<&Pattern> = arms
+        let unguarded: Vec<&Pattern> = patterns
             .iter()
-            .filter(|a| a.guard.is_none())
-            .map(|a| &a.pattern)
+            .filter(|(_, guarded)| !guarded)
+            .map(|(p, _)| *p)
             .collect();
         if unguarded.iter().any(|p| irrefutable(p)) {
             return;
@@ -2150,7 +2218,7 @@ impl Checker {
                     format!("this `match` does not handle {}", missing.join(", ")),
                     span,
                 )
-                .with_help("add the missing arms, or a final `_ => ...` arm"),
+                .with_help(help),
             );
         }
     }

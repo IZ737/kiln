@@ -19,8 +19,7 @@ fn main() ! {
 ```
 
 > **Status: phase 0 (spec and prototype).** The parsers and type checker work:
-> `kiln check` reports syntax and type errors in `.kiln` files and syntax
-> errors in glazes. Nothing compiles or runs yet. See the [roadmap](#roadmap).
+> `kiln check` reports syntax and type errors in `.kiln` files and glazes. Nothing compiles or runs yet. See the [roadmap](#roadmap).
 
 ## Highlights
 

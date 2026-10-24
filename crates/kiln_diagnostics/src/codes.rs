@@ -49,6 +49,9 @@ pub const DUPLICATE_DEFINITION: &str = "E0213";
 pub const NOT_CALLABLE: &str = "E0214";
 pub const MISSING_VALUE: &str = "E0215";
 pub const UNKNOWN_TYPE: &str = "E0216";
+pub const NOT_DISPLAYABLE: &str = "E0217";
+pub const SERVER_ONLY: &str = "E0218";
+pub const UNKNOWN_GLAZE: &str = "E0219";
 
 pub const UNCLOSED_GLAZE_TAG: &str = "E0301";
 pub const MISMATCHED_CLOSING_TAG: &str = "E0302";
@@ -283,6 +286,27 @@ pub static ALL: &[ErrorCode] = &[
         explanation: "No type with this name is declared or imported. Check the spelling; built-in types are capitalized, as in `String` and `Int`.",
         wrong: "fn greet(name: string) {}",
         right: "fn greet(name: String) {}",
+    },
+    ErrorCode {
+        code: NOT_DISPLAYABLE,
+        title: "value has no text form",
+        explanation: "`{value}` in a glaze shows text, numbers, booleans, dates and durations. Show a field of a struct, loop over a list with `{% for %}`, unwrap an optional first, and use `{% match %}` to choose text for an enum.",
+        wrong: "{% props post: Post, author: User? %}\n<h1>{post}</h1>\n<p>{author.name}</p>",
+        right: "{% props post: Post, author: User? %}\n<h1>{post.title}</h1>\n{% if author is some(a) %}<p>{a.name}</p>{% end %}",
+    },
+    ErrorCode {
+        code: SERVER_ONLY,
+        title: "server-only module used in the browser",
+        explanation: "An ember (a glaze with `{% state %}` or an `on:` handler) runs in the browser, which has no database and no secrets. Modules such as `sql` work only on the server. Move the work into a `server fn` in a `.kiln` file and call it from the ember: the call becomes a typed request to the server.",
+        wrong: "{% state posts = sql.open(url).query<Post>(\"select * from posts\") %}",
+        right: "// main.kiln\nserver fn recent_posts() -> List<Post> ! { ... }\n\n// feed.glaze\n{% state posts = recent_posts() catch { [] } %}",
+    },
+    ErrorCode {
+        code: UNKNOWN_GLAZE,
+        title: "unknown glaze or component",
+        explanation: "Components, layouts and `web.render` refer to `.glaze` files in the same directory. A component tag uses the file name in PascalCase: `<LikeButton>` is `like_button.glaze`. A layout must contain `{% slot %}`.",
+        wrong: "web.render(\"home.glaze\", { posts })   // the file is index.glaze",
+        right: "web.render(\"index.glaze\", { posts })",
     },
     ErrorCode {
         code: UNCLOSED_GLAZE_TAG,
