@@ -10,8 +10,24 @@ uses them reports E0401 until their phase arrives.
 ## Prelude
 
 `print`, `env` and `panic`, and the methods of `Int`, `Float`, `String`,
-`Duration`, `List`, `Map` and `Set`. `Duration` has `to_millis() -> Int`
-and `to_seconds() -> Float`.
+`Duration`, `List`, `Map` and `Set`. The full list is in
+[`prelude.kiln`](../crates/kiln_check/std/prelude.kiln); the ones most
+programs reach for:
+
+| Type | Methods |
+| --- | --- |
+| `Int` | `to_string`, `to_float`, `abs`, `min`, `max`, `pow`, `clamp(lo, hi)` |
+| `Float` | `to_string`, `round`, `floor`, `ceil` (to `Int`), `abs`, `sqrt`, `min`, `max`, `fixed(digits)` (`3.14159.fixed(2)` is `"3.14"`) |
+| `String` | `len`, `upper`, `lower`, `trim`, `trim_start`, `trim_end`, `contains`, `starts_with`, `ends_with`, `index_of -> Int?`, `slice(start, end)`, `split`, `lines`, `chars`, `replace`, `repeat`, `pad_start(width, fill)`, `pad_end`, `to_int -> Int?`, `to_float -> Float?` |
+| `List<T>` | `len`, `first`, `last`, `get -> T?`, `push`, `pop -> T?`, `insert(index, item)`, `remove_at(index)`, `contains`, `index_of`, `slice`, `take`, `skip`, `concat`, `reverse`, `sort`, `sort_by(key)`, `min`, `max`, `filter`, `map`, `flat_map`, `find`, `any`, `all`, `count`, `fold(initial, combine)`, `join` |
+| `Map<K, V>` | `len`, `get`, `set`, `remove`, `contains`, `keys`, `values`, `entries -> List<{ key: K, value: V }>` |
+| `Set<T>` | `len`, `add`, `remove`, `contains`, `to_list` |
+| `Duration` | `to_millis -> Int`, `to_seconds -> Float` |
+
+String positions count characters, not bytes. `slice` on a string or a list
+clamps its bounds to the value, while `list[i]` and `remove_at` panic when
+`i` is out of range. `sort`, `min` and `max` work on lists of numbers,
+strings and booleans; sort anything else with `sort_by`.
 
 ## `time`
 

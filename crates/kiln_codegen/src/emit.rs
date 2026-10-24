@@ -1335,6 +1335,8 @@ impl<'a> Gen<'a> {
                 "abs" => format!("k_abs({r})"),
                 "min" => format!("k_min({r}, {})", arg(0)),
                 "max" => format!("k_max({r}, {})", arg(0)),
+                "pow" => format!("k_pow({r}, {})", arg(0)),
+                "clamp" => format!("k_clamp({r}, {}, {})", arg(0), arg(1)),
                 _ => self.unsupported(span, format!("`Int.{name}`")),
             };
         }
@@ -1365,6 +1367,11 @@ impl<'a> Gen<'a> {
             return match name {
                 "to_string" => format!("k_float_str({r})"),
                 "round" | "floor" | "ceil" => format!("k_float_to_int({name}({r}))"),
+                "abs" => format!("fabs({r})"),
+                "sqrt" => format!("sqrt({r})"),
+                "min" => format!("fmin({r}, {})", arg(0)),
+                "max" => format!("fmax({r}, {})", arg(0)),
+                "fixed" => format!("k_float_fixed({r}, {})", arg(0)),
                 _ => self.unsupported(span, format!("`Float.{name}`")),
             };
         }
@@ -1372,11 +1379,14 @@ impl<'a> Gen<'a> {
             return match name {
                 "len" => format!("k_str_len({r})"),
                 "is_empty" => format!("(({r})->len == 0)"),
-                "upper" | "lower" | "trim" | "to_int" => format!("k_str_{name}({r})"),
-                "contains" | "starts_with" | "ends_with" | "split" => {
+                "upper" | "lower" | "trim" | "trim_start" | "trim_end" | "to_int" | "to_float"
+                | "chars" | "lines" => format!("k_str_{name}({r})"),
+                "contains" | "starts_with" | "ends_with" | "split" | "index_of" | "repeat" => {
                     format!("k_str_{name}({r}, {})", arg(0))
                 }
-                "replace" => format!("k_str_replace({r}, {}, {})", arg(0), arg(1)),
+                "replace" | "slice" | "pad_start" | "pad_end" => {
+                    format!("k_str_{name}({r}, {}, {})", arg(0), arg(1))
+                }
                 _ => self.unsupported(span, format!("`String.{name}`")),
             };
         }
@@ -1385,13 +1395,26 @@ impl<'a> Gen<'a> {
             return match name {
                 "len" => format!("(({r})->len)"),
                 "is_empty" => format!("(({r})->len == 0)"),
-                "first" | "last" | "reverse" => format!("k_list_{name}({r})"),
-                "get" | "push" | "filter" | "map" | "find" | "any" | "all" => {
+                "first" | "last" | "reverse" | "pop" => format!("k_list_{name}({r})"),
+                "get" | "push" | "filter" | "map" | "find" | "any" | "all" | "remove_at"
+                | "take" | "skip" | "concat" | "count" | "flat_map" => {
                     format!("k_list_{name}({r}, {})", arg(0))
                 }
-                "contains" => {
+                "insert" | "slice" | "fold" => {
+                    format!("k_list_{name}({r}, {}, {})", arg(0), arg(1))
+                }
+                "contains" | "index_of" => {
                     let eq = self.eq_fn(&elem, span);
-                    format!("k_list_contains({r}, {}, {eq})", arg(0))
+                    format!("k_list_{name}({r}, {}, {eq})", arg(0))
+                }
+                "sort" => {
+                    let cmp = self.cmp_fn(&elem, span);
+                    format!("k_list_sort({r}, {cmp})")
+                }
+                "min" | "max" => {
+                    let cmp = self.cmp_fn(&elem, span);
+                    let sign = if name == "min" { 1 } else { -1 };
+                    format!("k_list_extreme({r}, {cmp}, {sign})")
                 }
                 "sort_by" => {
                     let key = match args.first().map(|a| &a.uncoerced().ty) {
@@ -1413,7 +1436,7 @@ impl<'a> Gen<'a> {
             return match name {
                 "len" => format!("(({r})->len)"),
                 "is_empty" => format!("(({r})->len == 0)"),
-                "keys" | "values" => format!("k_map_{name}({r})"),
+                "keys" | "values" | "entries" => format!("k_map_{name}({r})"),
                 "to_list" => format!("k_map_keys({r})"),
                 "get" | "contains" => format!("k_map_{name}({r}, {})", arg(0)),
                 "remove" if set => format!("k_set_remove({r}, {})", arg(0)),

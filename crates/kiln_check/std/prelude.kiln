@@ -34,6 +34,8 @@ impl Int {
     fn abs(self) -> Int {}
     fn min(self, other: Int) -> Int {}
     fn max(self, other: Int) -> Int {}
+    fn pow(self, exp: Int) -> Int {}
+    fn clamp(self, lo: Int, hi: Int) -> Int {}
 }
 
 impl Float {
@@ -41,6 +43,11 @@ impl Float {
     fn round(self) -> Int {}
     fn floor(self) -> Int {}
     fn ceil(self) -> Int {}
+    fn abs(self) -> Float {}
+    fn sqrt(self) -> Float {}
+    fn min(self, other: Float) -> Float {}
+    fn max(self, other: Float) -> Float {}
+    fn fixed(self, digits: Int) -> String {}
 }
 
 impl Duration {
@@ -60,6 +67,16 @@ impl String {
     fn replace(self, from: String, to: String) -> String {}
     fn split(self, separator: String) -> List<String> {}
     fn to_int(self) -> Int? {}
+    fn to_float(self) -> Float? {}
+    fn index_of(self, part: String) -> Int? {}
+    fn slice(self, start: Int, end: Int) -> String {}
+    fn chars(self) -> List<String> {}
+    fn lines(self) -> List<String> {}
+    fn repeat(self, count: Int) -> String {}
+    fn pad_start(self, width: Int, fill: String) -> String {}
+    fn pad_end(self, width: Int, fill: String) -> String {}
+    fn trim_start(self) -> String {}
+    fn trim_end(self) -> String {}
 }
 
 impl List<T> {
@@ -78,6 +95,20 @@ impl List<T> {
     fn sort_by<K>(self, key: fn(T) -> K) -> List<T> {}
     fn reverse(self) -> List<T> {}
     fn join(self, separator: String) -> String {}
+    fn pop(self) -> T? {}
+    fn insert(self, index: Int, item: T) {}
+    fn remove_at(self, index: Int) -> T {}
+    fn index_of(self, item: T) -> Int? {}
+    fn slice(self, start: Int, end: Int) -> List<T> {}
+    fn take(self, count: Int) -> List<T> {}
+    fn skip(self, count: Int) -> List<T> {}
+    fn concat(self, other: List<T>) -> List<T> {}
+    fn sort(self) -> List<T> {}
+    fn min(self) -> T? {}
+    fn max(self) -> T? {}
+    fn count(self, matches: fn(T) -> Bool) -> Int {}
+    fn fold<A>(self, initial: A, combine: fn(A, T) -> A) -> A {}
+    fn flat_map<U>(self, transform: fn(T) -> List<U>) -> List<U> {}
 }
 
 impl Map<K, V> {
@@ -89,6 +120,7 @@ impl Map<K, V> {
     fn contains(self, key: K) -> Bool {}
     fn keys(self) -> List<K> {}
     fn values(self) -> List<V> {}
+    fn entries(self) -> List<{ key: K, value: V }> {}
 }
 
 impl Set<T> {
