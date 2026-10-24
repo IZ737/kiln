@@ -430,3 +430,17 @@ fn imports_belong_to_one_file() {
         vec![vec![], vec![codes::UNDEFINED_NAME]]
     );
 }
+
+#[test]
+fn branches_may_end_in_none_after_a_value() {
+    ok("fn pick(n: Int) -> String? {\n    match n {\n        1 => \"one\"\n        _ => none\n    }\n}\n\nfn main() {\n    let x = if true { 5 } else { none }\n    print(x ?? 0)\n}\n");
+    assert_eq!(
+        error_codes("fn main() {\n    let x = if true { 5 } else { \"five\" }\n}\n"),
+        vec![codes::TYPE_MISMATCH]
+    );
+}
+
+#[test]
+fn type_parameters_are_in_scope_in_the_body() {
+    ok("fn first<T>(items: List<T>) -> T? {\n    var best: T? = none\n    let check = fn(x: T) -> T { x }\n    for item in items {\n        best = check(item)\n    }\n    best\n}\n");
+}

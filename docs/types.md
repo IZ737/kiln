@@ -14,11 +14,15 @@ the details of any error.
   `posts.filter(fn(p) { p.published })` knows `p` is a `Post`.
 - Generic functions infer their type arguments from the arguments or from the
   expected type. When neither says, write them: `json.decode<Post>(text)`
-  (E0212).
+  (E0212). Inside a generic function, its type parameters can be used in
+  annotations: `var best: T? = none`.
 
 ## Optionals
 
 - A `T` can be used where a `T?` is expected, but not the reverse (E0202).
+- The branches of an `if` or `match` share one type. When one branch is
+  `none` or another optional, or the surrounding code expects an optional,
+  that type is `T?`: `if found { item } else { none }`.
 - Unwrap with `??`, `match`, or `if x is some(v) { ... }`. Fields and methods
   of a `T?` are not available until it is unwrapped (E0208).
 
