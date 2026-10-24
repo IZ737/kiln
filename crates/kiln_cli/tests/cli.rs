@@ -63,6 +63,45 @@ fn check_reports_type_errors() {
 }
 
 #[test]
+fn check_type_checks_glazes_with_their_directory() {
+    let dir = std::env::temp_dir().join(format!("kiln-cli-glaze-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(
+        dir.join("main.kiln"),
+        "import web\n\nstruct Post {\n    title: String\n}\n\nfn page() -> web.Response {\n    web.render(\"post.glaze\", {})\n}\n",
+    )
+    .unwrap();
+    std::fs::write(
+        dir.join("post.glaze"),
+        "{% props post: Post %}\n<h1>{post.titel}</h1>\n",
+    )
+    .unwrap();
+
+    // Checking only the glaze still uses the types in main.kiln.
+    let out = kiln()
+        .args(["check", "--json"])
+        .arg(dir.join("post.glaze"))
+        .output()
+        .unwrap();
+    let report: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(report["error_count"], 1);
+    assert_eq!(report["diagnostics"][0]["code"], "E0208");
+
+    // Checking the directory also finds the missing prop in main.kiln.
+    let out = kiln().args(["check", "--json"]).arg(&dir).output().unwrap();
+    let report: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    let codes: Vec<_> = report["diagnostics"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|d| d["code"].as_str().unwrap().to_string())
+        .collect();
+    assert_eq!(codes, ["E0209", "E0208"]);
+
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
 fn explain_prints_examples() {
     let out = kiln().args(["explain", "E0107"]).output().unwrap();
     assert!(out.status.success());

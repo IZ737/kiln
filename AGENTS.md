@@ -25,8 +25,10 @@ Run `cargo fmt --all`, `cargo clippy --all-targets -- -D warnings` and
   the code inside braces.
 - `crates/kiln_check`: the type checker. `collect.rs` turns declarations into
   definitions, `checker.rs` checks bodies, `types.rs` holds `Ty`. `lib.rs`
-  exposes `check(module)`. The standard library's signatures are Kiln stubs
-  in `std/`; their bodies are ignored.
+  exposes `check(module)` and `check_app(modules, glazes)`, which checks a
+  directory's `.kiln` files and glazes together; `glaze.rs` holds the glaze
+  rules. The standard library's signatures are Kiln stubs in `std/`; their
+  bodies are ignored.
 - `crates/kiln_cli`: the `kiln` binary (`check`, `parse`, `explain`).
 - `examples/`: Kiln programs. Tests in `crates/kiln_syntax/tests/examples.rs`
   and `crates/kiln_check/tests/examples.rs` parse and type-check every one of

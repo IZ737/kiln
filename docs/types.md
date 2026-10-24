@@ -67,3 +67,30 @@ the details of any error.
   ```
 
   A handler with the wrong number of parameters is E0211.
+
+## Glazes
+
+A directory is one app: its glazes see the types and functions of its `.kiln`
+files, and its `.kiln` files see the props of its glazes.
+
+- `{value}` must have a text form: `String`, `Int`, `Float`, `Bool`,
+  `Decimal`, `Duration` or `Date` (E0217). Show a field of a struct, loop
+  over a list, unwrap an optional (`{note ?? ""}`), and `{% match %}` an enum.
+  `{raw value}` takes a `String`.
+- `{% if %}` conditions are `Bool`; `{% if x is some(v) %}` binds `v` inside.
+  `{% for %}` loops over a `List` or `Set`. `{% match %}` must cover every
+  case (E0210).
+- `web.render("post.glaze", { post })` is checked against the page's
+  `{% props %}`: every prop without a default must be given, with the right
+  type (E0209, E0202). The file must exist (E0219).
+- A component tag `<PostCard post={post} />` is checked the same way against
+  `post_card.glaze`; a text attribute gives a `String`, a bare attribute a
+  `Bool`. A component takes children only if it has a `{% slot %}`.
+  `client:load`, `client:visible`, `client:idle` and `client:only` are
+  hydration hints, not props.
+- `{% layout "base.glaze" title: value %}` passes props to the layout, which
+  must contain `{% slot %}`.
+- An ember (a glaze with `{% state %}` or an `on:` handler) runs in the
+  browser: `sql` and `auth` are server-only (E0218). Call a `server fn`
+  instead. Handlers cannot fail, so errors from a `server fn` are handled with
+  `catch`. Props cannot be reassigned; state can.
