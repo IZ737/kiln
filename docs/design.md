@@ -91,7 +91,7 @@ to a typed mid-level IR, which feeds a backend:
 | Backend | Use | Phase |
 | --- | --- | --- |
 | C (via clang, gcc or `zig cc`) | First backend; free cross-compilation | 1 |
-| Cranelift | Fast debug builds | 5 |
+| Cranelift | Self-contained native compilation; fast debug builds | 1.5 |
 | WasmGC | Browser code (embers) | 6 |
 | LLVM | Optimized release builds | 7 |
 
@@ -115,6 +115,35 @@ structs and enums, and closure arguments use a uniform 64-bit slot, so the
 runtime's collection code is shared by every item type. A call that fails sets a
 thread-local flag that `try` and `catch` check. Parts of the language the
 backend does not support yet are reported as E0401.
+
+### Phase 1.5: self-contained toolchain and native executables
+
+Phase 1.5 comes after the working C backend and before phase 2's HTTP work.
+Its goal is **zero installation-time toolchain and runtime dependencies for
+end users**, not eliminating libraries from Kiln's implementation:
+
+- Ship a prebuilt `kiln` executable that can compile supported CLI programs
+  without requiring a separately installed C compiler, linker, Rust toolchain
+  or garbage collector. Building the compiler itself from source may still
+  use Rust, Cargo and third-party libraries.
+- Bring the Cranelift backend forward from phase 5 to generate native code
+  directly from Kiln's typed IR. Provide an integrated or bundled linking
+  path rather than invoking a system-installed linker. Retain the C backend
+  as a supported alternative and correctness reference.
+- Bundle and statically link the Kiln runtime, Boehm GC and required system
+  support into generated executables. Kiln's standard-library API remains
+  available; users simply do not install its implementation separately.
+- Target Linux x86-64 first. Other operating systems and architectures can
+  follow with their own appropriate linking and runtime strategies.
+- Run the existing phase 1 conformance suite against the new backend and
+  verify the installation guarantee in clean environments.
+
+**Done when:** On a clean, compatible Linux x86-64 machine, downloading
+one `kiln` executable is sufficient to compile supported CLI programs
+without installing build tools or runtime libraries, and the resulting
+executables run in a compatible minimal environment without separately
+installed shared libraries (for example, a `FROM scratch` container).
+Compiler-from-source dependencies do not count against this goal.
 
 ### What phase 1 leaves for later
 
