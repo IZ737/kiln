@@ -118,6 +118,14 @@ hydrates the server-rendered HTML. `server fn` declarations are callable from
 embers as typed RPC; server-only modules such as `sql` cannot be referenced
 from browser code.
 
+## Editor support
+
+`kiln lsp` is a language server (LSP) for any editor. The first version, in
+phase 1, reports the same diagnostics as `kiln check` as you type and offers
+their suggested fixes as quick fixes. Phase 4 adds completion, hover types,
+go to definition, find references, rename, and the same support inside
+glazes, including props and component attributes.
+
 ## Built for coding agents
 
 - Familiar syntax and one way to do each thing, so model priors transfer.
