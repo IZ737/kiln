@@ -1,0 +1,5 @@
+// The smallest Kiln program.
+fn main() {
+    let name = "world"
+    print("Hello, ${name}!")
+}
