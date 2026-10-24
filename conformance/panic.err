@@ -1,0 +1,2 @@
+info starting 3 items
+panic: index 3 is out of range for a list of length 3

@@ -70,6 +70,7 @@ var count: Int = 0         // mutable
 count += 1                 // also -=, *=, /=, =
 return value
 for post in posts where post.published { ... }
+for i in 0..10 { ... }                        // 0 to 9: the end is excluded
 while count < 10 { ... }
 break
 continue

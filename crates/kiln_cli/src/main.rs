@@ -1,8 +1,4 @@
-//! The `kiln` command.
-//!
-//! Phase 0 implements the commands that work on syntax alone: `check`,
-//! `parse` and `explain`. Build and run commands arrive with the compiler
-//! backend in phase 1.
+//! The `kiln` command: `check`, `build`, `run`, `parse` and `explain`.
 
 use clap::{Parser, Subcommand};
 use kiln_diagnostics::{codes, Diagnostic, SourceFile};
@@ -28,6 +24,26 @@ enum Command {
         #[arg(long)]
         json: bool,
     },
+    /// Compile a program into an executable.
+    Build {
+        /// The `.kiln` file with `fn main()`.
+        file: PathBuf,
+        /// Where to write the executable. Defaults to the file name without
+        /// `.kiln`.
+        #[arg(short, long)]
+        output: Option<PathBuf>,
+        /// Also write the generated C to this path.
+        #[arg(long)]
+        emit_c: Option<PathBuf>,
+    },
+    /// Compile a program and run it.
+    Run {
+        /// The `.kiln` file with `fn main()`.
+        file: PathBuf,
+        /// Arguments passed to the program.
+        #[arg(trailing_var_arg = true)]
+        args: Vec<String>,
+    },
     /// Print the syntax tree of a file.
     Parse { file: PathBuf },
     /// Explain an error code, with a wrong and a right example.
@@ -40,6 +56,18 @@ enum Command {
 fn main() -> ExitCode {
     match Cli::parse().command {
         Command::Check { paths, json } => check(paths, json),
+        Command::Build {
+            file,
+            output,
+            emit_c,
+        } => {
+            let out = output.unwrap_or_else(|| file.with_extension(""));
+            match build(&file, &out, emit_c.as_deref()) {
+                Ok(()) => ExitCode::SUCCESS,
+                Err(code) => code,
+            }
+        }
+        Command::Run { file, args } => run(&file, &args),
         Command::Parse { file } => parse(&file),
         Command::Explain { code } => explain(&code),
     }
@@ -200,6 +228,71 @@ fn check_dir(
         out.push((file.clone(), diags.unwrap_or_default()));
     }
     Ok(out)
+}
+
+/// Parses, checks and compiles one file into an executable at `out`.
+fn build(path: &Path, out: &Path, emit_c: Option<&Path>) -> Result<(), ExitCode> {
+    let text = std::fs::read_to_string(path).map_err(|err| {
+        eprintln!("error: cannot read {}: {err}", path.display());
+        ExitCode::from(2)
+    })?;
+    let file = SourceFile::new(path.display().to_string(), text);
+    let report = |diagnostics: &[Diagnostic]| {
+        for diag in diagnostics {
+            eprintln!("{}", diag.render(&file));
+        }
+        eprintln!(
+            "{} error(s). Run `kiln explain <code>` for details.",
+            diagnostics.len()
+        );
+        ExitCode::FAILURE
+    };
+    let parsed = kiln_syntax::parse(&file.text);
+    if !parsed.diagnostics.is_empty() {
+        return Err(report(&parsed.diagnostics));
+    }
+    let program = kiln_check::check_program(&parsed.module);
+    if !program.diagnostics.is_empty() {
+        return Err(report(&program.diagnostics));
+    }
+    let c = kiln_codegen::emit_c(&parsed.module, &program).map_err(|d| report(&d))?;
+    if let Some(c_path) = emit_c {
+        std::fs::write(c_path, &c).map_err(|err| {
+            eprintln!("error: cannot write {}: {err}", c_path.display());
+            ExitCode::from(2)
+        })?;
+    }
+    kiln_codegen::compile_c(&c, out).map_err(|err| {
+        eprintln!("error: {err}");
+        ExitCode::from(2)
+    })
+}
+
+fn run(path: &Path, args: &[String]) -> ExitCode {
+    let dir = match kiln_codegen::scratch_dir() {
+        Ok(dir) => dir,
+        Err(err) => {
+            eprintln!("error: {err}");
+            return ExitCode::from(2);
+        }
+    };
+    let exe = dir.join("program");
+    if let Err(code) = build(path, &exe, None) {
+        let _ = std::fs::remove_dir_all(&dir);
+        return code;
+    }
+    let status = std::process::Command::new(&exe).args(args).status();
+    let _ = std::fs::remove_dir_all(&dir);
+    match status {
+        Ok(status) => match status.code() {
+            Some(code) => ExitCode::from(code.clamp(0, 255) as u8),
+            None => ExitCode::FAILURE,
+        },
+        Err(err) => {
+            eprintln!("error: cannot run the program: {err}");
+            ExitCode::from(2)
+        }
+    }
 }
 
 fn same_file(a: &Path, b: &Path) -> bool {

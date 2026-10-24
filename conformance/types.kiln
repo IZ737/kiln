@@ -1,0 +1,94 @@
+// Structs, enums, pattern matching and optionals.
+enum Role {
+    Admin
+    Editor
+    Viewer(since: Date)
+}
+
+enum Shape {
+    Circle(radius: Float)
+    Rect(w: Float, h: Float)
+}
+
+struct User {
+    id: Int
+    name: String
+    role: Role
+    email: String? = none
+}
+
+impl User {
+    fn label(self) -> String {
+        match self.role {
+            Admin => "admin"
+            Viewer(since) if since.year < 2020 => "veteran"
+            _ => "member"
+        }
+    }
+
+    fn can_edit(self) -> Bool {
+        self.role is Admin or self.role is Editor
+    }
+}
+
+impl Shape {
+    fn area(self) -> Float {
+        match self {
+            Circle(r) => 3.0 * r * r
+            Rect(w, h) => w * h
+        }
+    }
+
+    fn unit() -> Shape {
+        Shape.Rect(w: 1.0, h: 1.0)
+    }
+}
+
+fn greeting(user: User?) -> String {
+    match user {
+        some(u) => "Hi ${u.name} (${u.label()})"
+        none => "Hi stranger"
+    }
+}
+
+fn grade(score: Int) -> String {
+    match score {
+        100 => "perfect"
+        0 => "none"
+        _ => "some"
+    }
+}
+
+fn main() {
+    let ada = User(id: 1, name: "Ada", role: Role.Admin)
+    let old = Date(year: 2015, month: 3, day: 1)
+    let bob = User(id: 2, name: "Bob", role: Role.Viewer(since: old), email: "bob@example.com")
+    print(greeting(ada))
+    print(greeting(bob))
+    print(greeting(none))
+    print(ada.can_edit())
+    print(bob.can_edit())
+    print(ada.email ?? "no email")
+    print(bob.email ?? "no email")
+    if bob.email is some(e) {
+        print("email ${e}")
+    }
+    print(ada)
+    print(bob.role)
+    print(Shape.Circle(radius: 2.0).area())
+    print(Shape.unit().area())
+    print(grade(100))
+    print(grade(5))
+    print(ada.role == Role.Admin)
+    print(bob.role == Role.Viewer(since: Date(year: 2015, month: 3, day: 1)))
+    print(bob.role == Role.Viewer(since: Date(year: 2016, month: 3, day: 1)))
+    var maybe: Int? = none
+    print(maybe)
+    maybe = 3
+    print(maybe)
+    print(maybe == 3)
+    var u = User(id: 3, name: "Cy", role: Role.Editor)
+    u.name = "Cyd"
+    u.id += 10
+    print("${u.name} ${u.id}")
+}

@@ -1,0 +1,88 @@
+// Lists, closures, captures and generic functions.
+struct Post {
+    title: String
+    likes: Int
+}
+
+struct Pair<A, B> {
+    first: A
+    second: B
+}
+
+fn twice(f: fn(Int) -> Int, x: Int) -> Int {
+    f(f(x))
+}
+
+fn double(n: Int) -> Int {
+    n * 2
+}
+
+fn first_or<T>(items: List<T>, fallback: T) -> T {
+    items.first() ?? fallback
+}
+
+fn swap<A, B>(p: Pair<A, B>) -> Pair<B, A> {
+    Pair(first: p.second, second: p.first)
+}
+
+fn counter() -> fn() -> Int {
+    var n = 0
+    fn() {
+        n += 1
+        n
+    }
+}
+
+fn main() {
+    let names = ["Grace", "Ada", "Linus"]
+    let long_names = names.filter(fn(n) { n.len() > 3 }).map(.upper)
+    print(long_names)
+    print(names.join(", "))
+    print(names.contains("Ada"))
+    print(names.find(fn(n) { n.starts_with("L") }) ?? "nobody")
+    print(names.any(fn(n) { n == "Bob" }))
+    print(names.all(fn(n) { n.len() >= 3 }))
+    print(names.sort_by(fn(n) { n }))
+    print(names.sort_by(.len).reverse())
+    print(names[1])
+    print(names.get(7))
+    print(names.len())
+
+    let nums = [3, 1, 2]
+    nums.push(10)
+    print(nums.map(double))
+    print(nums.map(fn(n) { n.to_float() / 2.0 }))
+    print(twice(double, 5))
+    print(twice(fn(x) { x + 1 }, 5))
+
+    let posts = [Post(title: "Hello", likes: 3), Post(title: "Kiln", likes: 9)]
+    let titles = posts.sort_by(.likes).reverse().map(.title)
+    print(titles)
+    var total = 0
+    for p in posts {
+        total += p.likes
+    }
+    print(total)
+
+    let offset = 100
+    print(nums.map(fn(n) { n + offset }))
+    var seen = 0
+    nums.filter(fn(n) {
+        seen += 1
+        n > 2
+    })
+    print("seen ${seen}")
+
+    let next = counter()
+    next()
+    next()
+    print(next())
+
+    print(first_or(nums, 0))
+    print(first_or([], "empty"))
+    let p = swap(Pair(first: 1, second: "one"))
+    print("${p.first} ${p.second}")
+    print([[1, 2], [3]])
+    print([1, 2] == [1, 2])
+    print(["a"] == ["b"])
+}

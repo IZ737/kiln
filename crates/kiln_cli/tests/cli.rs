@@ -114,3 +114,84 @@ fn explain_rejects_unknown_codes() {
     let out = kiln().args(["explain", "E9999"]).output().unwrap();
     assert!(!out.status.success());
 }
+
+fn scratch(name: &str) -> std::path::PathBuf {
+    let dir = std::env::temp_dir().join(format!("kiln-cli-{name}-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    dir
+}
+
+#[test]
+fn run_compiles_and_runs_hello() {
+    let out = kiln()
+        .arg("run")
+        .arg(examples().join("hello.kiln"))
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert_eq!(String::from_utf8_lossy(&out.stdout), "Hello, world!\n");
+}
+
+#[test]
+fn build_writes_an_executable() {
+    let dir = scratch("build");
+    let exe = dir.join("hello");
+    let c = dir.join("hello.c");
+    let out = kiln()
+        .arg("build")
+        .arg(examples().join("hello.kiln"))
+        .arg("-o")
+        .arg(&exe)
+        .arg("--emit-c")
+        .arg(&c)
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(std::fs::read_to_string(&c).unwrap().contains("kf_main"));
+    let run = Command::new(&exe).output().unwrap();
+    assert_eq!(String::from_utf8_lossy(&run.stdout), "Hello, world!\n");
+}
+
+#[test]
+fn run_reports_features_the_compiler_lacks() {
+    let dir = scratch("unsupported");
+    let file = dir.join("app.kiln");
+    std::fs::write(
+        &file,
+        "import json\n\nfn main() {\n    print(json.encode(1))\n}\n",
+    )
+    .unwrap();
+    let out = kiln().arg("run").arg(&file).output().unwrap();
+    assert_eq!(out.status.code(), Some(1));
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(stderr.contains("E0401"), "{stderr}");
+    assert!(stderr.contains("`json.encode`"), "{stderr}");
+}
+
+#[test]
+fn run_needs_main() {
+    let dir = scratch("no-main");
+    let file = dir.join("lib.kiln");
+    std::fs::write(&file, "fn helper() -> Int {\n    1\n}\n").unwrap();
+    let out = kiln().arg("run").arg(&file).output().unwrap();
+    assert_eq!(out.status.code(), Some(1));
+    assert!(String::from_utf8_lossy(&out.stderr).contains("E0402"));
+}
+
+#[test]
+fn run_reports_type_errors_before_compiling() {
+    let dir = scratch("type-error");
+    let file = dir.join("bad.kiln");
+    std::fs::write(&file, "fn main() {\n    let x: Int = \"no\"\n}\n").unwrap();
+    let out = kiln().arg("run").arg(&file).output().unwrap();
+    assert_eq!(out.status.code(), Some(1));
+    assert!(String::from_utf8_lossy(&out.stderr).contains("E0202"));
+}
