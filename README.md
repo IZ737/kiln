@@ -25,7 +25,8 @@ fn main() ! {
 }
 ```
 
-> **Status: phase 1 (core compiler) is done; phase 2 is next.** `kiln check`
+> **Status: phase 1 (core compiler) is done; phase 1.5 (self-contained
+> compiler and executables) is next, before phase 2 (HTTP).** `kiln check`
 > reports syntax and type errors in `.kiln` files and glazes, `kiln lsp`
 > shows them in your editor, and `kiln run` compiles command-line programs to
 > native code through C, with the `time`, `fs`, `os` and `io` modules. The
@@ -71,9 +72,11 @@ fn main() ! {
 
 ## Try it
 
-You need a recent stable Rust toolchain, a C compiler, and the Boehm garbage
-collector (`libgc-dev` on Debian and Ubuntu, `gc-devel` on Fedora, `bdw-gc`
-on Homebrew).
+To build and use the current phase 1 compiler from source, you need a recent
+stable Rust toolchain, a C compiler, and the Boehm garbage collector
+(`libgc-dev` on Debian and Ubuntu, `gc-devel` on Fedora, `bdw-gc` on
+Homebrew). Phase 1.5 aims to remove these installation requirements for
+people downloading the prebuilt `kiln` compiler.
 
 ```sh
 cargo run -p kiln_cli -- run examples/hello     # compile and run a program
@@ -112,6 +115,7 @@ For errors and quick fixes in your editor, see [docs/editors.md](docs/editors.md
 | --- | --- | --- |
 | 0 | Language specification, grammar, parser, diagnostics, type rules | The blog example parses and type-checks (done) |
 | 1 | Core compiler, C backend, Boehm GC, basic LSP (`kiln lsp`: diagnostics and quick fixes), conformance tests | Native CLI programs compile and run correctly (done) |
+| 1.5 | Self-contained toolchain and executables: Cranelift native backend, integrated linking, statically bundled runtime and Boehm GC (Linux x86-64 first); keep the C backend | Download one `kiln` executable and compile supported CLI programs without installing a C compiler, linker or runtime libraries; run the resulting native executables on compatible clean systems without installing dependencies |
 | 2 | Core runtime, HTTP server, typed routing, JSON, error handling | A real HTTP API runs as a native binary |
 | 3 | Glazes, server-rendered components, layouts, CSS, scoped styling, design tokens | The Kiln documentation website is built in Kiln |
 | 4 | SQL (SQLite first, for local development with no database server, then Postgres and MySQL), ORM with schema import (`kiln db pull`), migrations, forms, validation, sessions and auth, generated admin UI | A database-backed application with authentication works |
