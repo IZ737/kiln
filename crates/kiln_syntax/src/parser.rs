@@ -68,11 +68,11 @@ impl Parser {
         &self.tokens[self.pos]
     }
 
-    fn peek(&mut self) -> &TokenKind {
+    pub(crate) fn peek(&mut self) -> &TokenKind {
         &self.current().kind
     }
 
-    fn span(&mut self) -> Span {
+    pub(crate) fn span(&mut self) -> Span {
         self.current().span
     }
 
@@ -95,11 +95,11 @@ impl Parser {
         }
     }
 
-    fn previous_span(&self) -> Span {
+    pub(crate) fn previous_span(&self) -> Span {
         self.tokens[self.pos.saturating_sub(1)].span
     }
 
-    fn bump(&mut self) -> Token {
+    pub(crate) fn bump(&mut self) -> Token {
         self.skip_insignificant_newlines();
         let token = self.tokens[self.pos].clone();
         if token.kind != TokenKind::Eof {
@@ -108,11 +108,11 @@ impl Parser {
         token
     }
 
-    fn at(&mut self, kind: &TokenKind) -> bool {
+    pub(crate) fn at(&mut self, kind: &TokenKind) -> bool {
         self.peek() == kind
     }
 
-    fn eat(&mut self, kind: &TokenKind) -> bool {
+    pub(crate) fn eat(&mut self, kind: &TokenKind) -> bool {
         if self.at(kind) {
             self.bump();
             true
@@ -125,7 +125,7 @@ impl Parser {
         matches!(self.peek(), TokenKind::Ident(name) if name == word)
     }
 
-    fn error(&mut self, diag: Diagnostic) {
+    pub(crate) fn error(&mut self, diag: Diagnostic) {
         // One error per location: later ones are usually knock-on effects.
         if self
             .diags
@@ -146,7 +146,7 @@ impl Parser {
         ));
     }
 
-    fn expect(&mut self, kind: &TokenKind) -> Option<Span> {
+    pub(crate) fn expect(&mut self, kind: &TokenKind) -> Option<Span> {
         if self.at(kind) {
             Some(self.bump().span)
         } else {
@@ -155,7 +155,7 @@ impl Parser {
         }
     }
 
-    fn expect_ident(&mut self, what: &str) -> Ident {
+    pub(crate) fn expect_ident(&mut self, what: &str) -> Ident {
         if let TokenKind::Ident(name) = self.peek().clone() {
             let span = self.bump().span;
             Ident { name, span }
@@ -169,7 +169,11 @@ impl Parser {
         }
     }
 
-    fn with_newlines<T>(&mut self, significant: bool, f: impl FnOnce(&mut Self) -> T) -> T {
+    pub(crate) fn with_newlines<T>(
+        &mut self,
+        significant: bool,
+        f: impl FnOnce(&mut Self) -> T,
+    ) -> T {
         self.newline_modes.push(significant);
         let result = f(self);
         self.newline_modes.pop();
@@ -415,7 +419,7 @@ impl Parser {
         }
     }
 
-    fn parse_params(&mut self, types_required: bool) -> Vec<Param> {
+    pub(crate) fn parse_params(&mut self, types_required: bool) -> Vec<Param> {
         self.delimited(TokenKind::LParen, TokenKind::RParen, |p| {
             let name = p.expect_ident("a parameter name");
             let ty = if p.eat(&TokenKind::Colon) {
@@ -1229,7 +1233,7 @@ impl Parser {
         }
     }
 
-    fn parse_pattern(&mut self) -> Pattern {
+    pub(crate) fn parse_pattern(&mut self) -> Pattern {
         let token = self.current().clone();
         let span = token.span;
         let kind = match token.kind {

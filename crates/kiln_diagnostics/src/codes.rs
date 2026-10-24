@@ -4,7 +4,8 @@
 //! error. `kiln explain <code>` prints the explanation and examples, so every
 //! entry carries a wrong and a right example.
 //!
-//! Ranges: `E00xx` lexing, `E01xx` parsing, `E02xx` names and types.
+//! Ranges: `E00xx` lexing, `E01xx` parsing, `E02xx` names and types,
+//! `E03xx` glazes (templates and components).
 
 pub struct ErrorCode {
     pub code: &'static str,
@@ -48,6 +49,15 @@ pub const DUPLICATE_DEFINITION: &str = "E0213";
 pub const NOT_CALLABLE: &str = "E0214";
 pub const MISSING_VALUE: &str = "E0215";
 pub const UNKNOWN_TYPE: &str = "E0216";
+
+pub const UNCLOSED_GLAZE_TAG: &str = "E0301";
+pub const MISMATCHED_CLOSING_TAG: &str = "E0302";
+pub const UNKNOWN_GLAZE_TAG: &str = "E0303";
+pub const FOREIGN_TEMPLATE_SYNTAX: &str = "E0304";
+pub const MISPLACED_DECLARATION: &str = "E0305";
+pub const FOREIGN_ATTRIBUTE: &str = "E0306";
+pub const UNCLOSED_GLAZE_CODE: &str = "E0307";
+pub const STRAY_CLOSING_TAG: &str = "E0308";
 
 pub static ALL: &[ErrorCode] = &[
     ErrorCode {
@@ -273,6 +283,62 @@ pub static ALL: &[ErrorCode] = &[
         explanation: "No type with this name is declared or imported. Check the spelling; built-in types are capitalized, as in `String` and `Int`.",
         wrong: "fn greet(name: string) {}",
         right: "fn greet(name: String) {}",
+    },
+    ErrorCode {
+        code: UNCLOSED_GLAZE_TAG,
+        title: "element or block never closed",
+        explanation: "An HTML element needs a matching closing tag, and `{% if %}`, `{% for %}` and `{% match %}` need a matching `{% end %}`. Void elements such as `<br>`, `<img>` and `<input>` need no closing tag.",
+        wrong: "<ul>\n  {% for post in posts %}\n    <li>{post.title}</li>\n</ul>",
+        right: "<ul>\n  {% for post in posts %}\n    <li>{post.title}</li>\n  {% end %}\n</ul>",
+    },
+    ErrorCode {
+        code: MISMATCHED_CLOSING_TAG,
+        title: "closing tag does not match",
+        explanation: "A closing tag must close the innermost open element.",
+        wrong: "<p>Hello <b>world</p></b>",
+        right: "<p>Hello <b>world</b></p>",
+    },
+    ErrorCode {
+        code: UNKNOWN_GLAZE_TAG,
+        title: "unknown glaze tag",
+        explanation: "Glazes have a small set of `{% %}` tags: `props`, `state`, `layout`, `slot`, `let`, `if`, `else`, `else if`, `for`, `empty`, `match`, `case` and `end`. Every block ends with `{% end %}`. Other template languages' tags such as `endif`, `elif`, `extends` and `include` are not used.",
+        wrong: "{% if user %}Hi{% endif %}",
+        right: "{% if user is some(u) %}Hi {u.name}{% end %}",
+    },
+    ErrorCode {
+        code: FOREIGN_TEMPLATE_SYNTAX,
+        title: "syntax from another template language",
+        explanation: "Glazes output a value with single braces, `{value}`, escaped for where it appears. To output trusted HTML without escaping, write `{raw value}`. Double braces, filters such as `| safe`, and PHP or ERB tags are not used.",
+        wrong: "<h1>{{ post.title }}</h1>\n<div>{{ post.html | safe }}</div>",
+        right: "<h1>{post.title}</h1>\n<div>{raw post.html}</div>",
+    },
+    ErrorCode {
+        code: MISPLACED_DECLARATION,
+        title: "declaration in the wrong place",
+        explanation: "`{% props %}`, `{% state %}` and `{% layout %}` describe the whole glaze, so they appear at the top level, outside any element or block. `props` and `layout` appear at most once.",
+        wrong: "<div>\n  {% props post: Post %}\n</div>",
+        right: "{% props post: Post %}\n<div>{post.title}</div>",
+    },
+    ErrorCode {
+        code: FOREIGN_ATTRIBUTE,
+        title: "attribute from another framework",
+        explanation: "Glazes use plain HTML attribute names, and event handlers are written `on:event={...}`. React names such as `className`, `htmlFor` and `onClick` are not used.",
+        wrong: "<button className=\"primary\" onClick={save()}>Save</button>",
+        right: "<button class=\"primary\" on:click={save()}>Save</button>",
+    },
+    ErrorCode {
+        code: UNCLOSED_GLAZE_CODE,
+        title: "code in a glaze never closed",
+        explanation: "A `{` that starts a value needs a matching `}`, and a `{%` tag needs a matching `%}`. To show a literal brace in text, write `{\"{\"}`.",
+        wrong: "<h1>{post.title</h1>",
+        right: "<h1>{post.title}</h1>",
+    },
+    ErrorCode {
+        code: STRAY_CLOSING_TAG,
+        title: "nothing to close",
+        explanation: "This closing tag, `{% end %}`, `{% else %}`, `{% empty %}` or `{% case %}` has no matching opening element or block.",
+        wrong: "<p>Hi</p></div>",
+        right: "<p>Hi</p>",
     },
 ];
 

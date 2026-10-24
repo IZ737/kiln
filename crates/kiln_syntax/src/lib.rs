@@ -1,4 +1,5 @@
-//! Lexer, parser and syntax tree for Kiln source files (`.kiln`).
+//! Lexer, parser and syntax tree for Kiln source files (`.kiln`) and glazes
+//! (`.glaze`).
 //!
 //! ```
 //! let result = kiln_syntax::parse("fn main() {\n    print(\"hi\")\n}\n");
@@ -7,6 +8,7 @@
 //! ```
 
 pub mod ast;
+pub mod glaze;
 pub mod lexer;
 pub mod parser;
 pub mod token;

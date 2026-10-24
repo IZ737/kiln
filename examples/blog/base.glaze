@@ -1,0 +1,17 @@
+{# The layout every page uses. Pages fill the slot. #}
+{% props title: String %}
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <title>{title} · Kiln blog</title>
+    <link rel="stylesheet" href="/static/site.css">
+  </head>
+  <body>
+    <header><a href="/">Kiln blog</a></header>
+    <main>
+      {% slot %}
+    </main>
+  </body>
+</html>

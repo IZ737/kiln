@@ -7,7 +7,8 @@ until 1.0; open questions are listed at the end.
 
 1. **One binary deploys**, with templates and assets embedded.
 2. **Batteries included for the web**: HTTP/1.1 and 2, TLS, routing,
-   templating, JSON, forms, SQL, sessions, auth and background jobs.
+   templating, JSON, forms, SQL with an ORM, a generated admin UI, sessions,
+   auth and background jobs.
 3. **Errors at compile time**: routes, template variables, SQL results and
    JSON shapes are type-checked.
 4. **Safe by default**: auto-escaping templates, parameterized SQL, signed
@@ -63,10 +64,49 @@ to a typed mid-level IR, which feeds a backend:
 ## Web standard library
 
 `web` (server, router, static files), `template` (glazes), `json`, `form`,
-`validate`, `sql` (Postgres, MySQL, SQLite, migrations), `session`, `auth`
+`validate`, `sql` (Postgres, MySQL, SQLite, migrations), `orm`, `admin`, `session`, `auth`
 (Argon2, CSRF, rate limiting, JWT, OAuth 2/OIDC), `http.client`, `log`,
 `metrics`, `trace`, `cache`, `jobs`, `ws`, `sse`, `mail`, `crypto`, `time`,
 `fs`, `os`, `env`, `io`, `text`, `test`.
+
+### ORM
+
+The `orm` module ships with the standard library, so a database-backed site
+needs no third-party package.
+
+- **Models are ordinary structs.** Table and column names are derived
+  (`Post` maps to `posts`, `author_id` to a foreign key) and can be
+  overridden. Relations are typed fields: `author: User` and
+  `comments: List<Comment>` load on request, never implicitly in a loop.
+- **Typed queries.** `orm.find<Post>(db).where(.published).order_by(.created).limit(20)`
+  is checked at compile time: a misspelled field or a comparison of the
+  wrong type is a build error. Raw SQL stays available through `sql.query<T>`.
+- **Migrations from models.** `kiln db diff` compares models with the database
+  and writes a migration; `kiln db migrate` applies it.
+- **Existing databases.** `kiln db pull` reads the schema of an existing
+  Postgres, MySQL or SQLite database, including keys, foreign keys,
+  indexes, defaults and enums, and generates `.kiln` model files with their
+  relations. The generated models are normal code to edit; later pulls
+  report drift instead of overwriting changes.
+
+### Admin UI
+
+The `admin` module generates a Django-style admin site from ORM models, in
+one line:
+
+```kiln
+app.mount("/admin", admin.site(db, models: [Post, User, Comment]))
+```
+
+- List, search, filter, create, edit and delete pages for every model, with
+  forms and validation derived from field types and relations.
+- Protected by `auth`, with per-model permissions.
+- **Fully customizable, in layers:** per-model options in code (columns,
+  search fields, filters, read-only fields, custom actions); any field
+  widget replaced by a component; and any page replaced by placing a glaze
+  at the matching path, such as `admin/post/edit.glaze`. The admin is built
+  from glazes, so overrides use the same component system as the rest of the
+  site.
 
 ## Glazes and embers
 

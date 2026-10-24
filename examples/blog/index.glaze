@@ -1,0 +1,15 @@
+{# The home page: every published post. #}
+{% props posts: List<Post> %}
+{% layout "base.glaze" title: "Home" %}
+
+<h1>Posts</h1>
+<ul class="posts">
+  {% for post in posts where post.published %}
+    <li>
+      <a href="/posts/{post.id}">{post.title}</a>
+      <LikeButton post={post} client:visible />
+    </li>
+  {% empty %}
+    <li>Nothing published yet.</li>
+  {% end %}
+</ul>
