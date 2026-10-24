@@ -133,10 +133,16 @@ end users**, not eliminating libraries from Kiln's implementation:
 - Bundle and statically link the Kiln runtime, Boehm GC and required system
   support into generated executables. Kiln's standard-library API remains
   available; users simply do not install its implementation separately.
-- Target Linux x86-64 first. Other operating systems and architectures can
-  follow with their own appropriate linking and runtime strategies.
+- Target Linux x86-64 first, with an explicit follow-up for native Windows
+  x86-64. Windows should ship a standalone `kiln.exe` that generates Windows
+  `.exe` programs using a bundled or integrated PE/COFF linking path and
+  a bundled Kiln runtime and GC. Neither compilation nor execution should
+  require users to install a C compiler, linker, Rust, GC or redistributable
+  runtime package. Normal system libraries included with a supported Windows
+  installation are allowed. Other platforms may follow separately.
 - Run the existing phase 1 conformance suite against the new backend and
-  verify the installation guarantee in clean environments.
+  verify the installation guarantee in clean environments; add Windows CI
+  coverage as the Windows target is implemented.
 
 **Done when:** On a clean, compatible Linux x86-64 machine, downloading
 one `kiln` executable is sufficient to compile supported CLI programs
@@ -144,6 +150,14 @@ without installing build tools or runtime libraries, and the resulting
 executables run in a compatible minimal environment without separately
 installed shared libraries (for example, a `FROM scratch` container).
 Compiler-from-source dependencies do not count against this goal.
+
+**Windows follow-up (not a gate on phase 1.5 or phase 2):** On a clean,
+compatible Windows x86-64 machine, downloading only `kiln.exe` is sufficient
+to compile supported CLI programs to Windows `.exe` files, and the outputs
+run without separately installing development tools, Boehm GC or additional
+runtime redistributables. Validate with the same conformance programs in
+Windows CI. The C backend can remain available separately where its external
+toolchain dependencies are acceptable.
 
 ### What phase 1 leaves for later
 
