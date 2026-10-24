@@ -1,0 +1,48 @@
+// A small blog: server-rendered pages, a JSON API and a server function.
+// This is the sample app from the design; phase 0's gate is that it parses
+// and type-checks.
+import web, sql, json, auth
+
+struct Post {
+    id: Int
+    title: String
+    body: String
+    likes: Int = 0
+    published: Bool = false
+}
+
+struct NewPost {
+    title: String
+    body: String
+}
+
+fn main() ! {
+    let db = try sql.open(env("DATABASE_URL"))
+    let app = web.app()
+
+    app.get("/", fn(req) {
+        let posts = try db.query<Post>("select * from posts where published")
+        return web.render("index.glaze", { posts })
+    })
+
+    app.get("/posts/{id: Int}", fn(req, id) {
+        match try db.one<Post>("select * from posts where id = $1", id) {
+            some(post) => web.render("post.glaze", { post })
+            none => web.not_found()
+        }
+    })
+
+    app.post("/api/posts", fn(req) {
+        let input = try req.json<NewPost>()
+        let post = try db.insert("posts", input)
+        return web.json(post, status: 201)
+    })
+
+    try app.listen(":8080")
+}
+
+server fn like_post(id: Int) -> Int ! web.Error {
+    let user = try auth.require()
+    try db.exec("insert into likes (post_id, user_id) values ($1, $2)", id, user.id)
+    return try db.scalar<Int>("select count(*) from likes where post_id = $1", id)
+}

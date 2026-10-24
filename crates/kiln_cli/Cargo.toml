@@ -1,0 +1,18 @@
+[package]
+name = "kiln_cli"
+description = "The `kiln` command-line tool"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[[bin]]
+name = "kiln"
+path = "src/main.rs"
+
+[dependencies]
+kiln_diagnostics.workspace = true
+kiln_syntax.workspace = true
+serde_json.workspace = true
+clap = { version = "4", features = ["derive"] }

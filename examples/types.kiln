@@ -1,0 +1,73 @@
+// Enums, pattern matching, optionals and errors.
+import log
+
+enum Role {
+    Admin
+    Editor
+    Viewer(since: Date)
+}
+
+enum DbError {
+    NotFound
+    Timeout(after: Duration)
+}
+
+struct User {
+    id: Int
+    name: String
+    role: Role
+    email: String? = none
+}
+
+impl User {
+    fn label(self) -> String {
+        match self.role {
+            Admin => "admin"
+            Viewer(since) if since.year < 2020 => "veteran"
+            _ => "member"
+        }
+    }
+
+    fn can_edit(self) -> Bool {
+        self.role is Admin or self.role is Editor
+    }
+}
+
+fn load_user(id: Int) -> User ! DbError {
+    let row = try db.one<User>("select * from users where id = $1", id)
+    return row ?? throw DbError.NotFound
+}
+
+fn greeting(user: User?) -> String {
+    match user {
+        some(u) => "Hi ${u.name} (${u.label()})"
+        none => "Hi stranger"
+    }
+}
+
+fn main() {
+    let user = load_user(7) catch err {
+        log.warn("lookup failed", err)
+        return
+    }
+
+    var count = 0
+    for n in 1..10 where n % 2 == 0 {
+        count += n
+    }
+
+    let names = [user.name, "Ada", "Grace"]
+    let long_names = names
+        .filter(fn(n) { n.len() > 3 })
+        .map(.upper)
+
+    if count > 10 and not user.can_edit() {
+        print(greeting(user))
+    } else if long_names.is_empty() {
+        print("nobody")
+    } else {
+        print("${count} ${long_names}")
+    }
+
+    let wait = timeout(2s)
+}
