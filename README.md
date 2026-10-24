@@ -37,6 +37,10 @@ fn main() ! {
   admin, builds and deployment ship with the language and already fit
   together, so a project needs no glue code. Any piece can still be
   configured in depth, or replaced, where it is used.
+- **Progressive integration.** The same experience whether Kiln runs one
+  component, one layer or a whole full-stack app. Full-stack apps get the
+  deepest automatic integration; external systems connect through typed
+  contracts and adapters, so no feature needs you to own the entire stack.
 - **One binary deploys.** `kiln fire` will produce a static executable with
   templates and assets embedded.
 - **Errors at compile time.** Routes, templates, SQL results and JSON shapes
@@ -100,16 +104,17 @@ For errors and quick fixes in your editor, see [docs/editors.md](docs/editors.md
 
 ## Roadmap
 
-| Phase | Scope | Done when |
+| Phase | Focus | Done when |
 | --- | --- | --- |
-| 0 | Spec and prototype: grammar, parser, diagnostics, type rules | The sample blog app parses and type-checks |
-| 1 | Core compiler: type checker, IR, C backend, Boehm GC, a first language server (`kiln lsp`: diagnostics and quick fixes) | Compiled CLI programs pass a conformance suite |
-| 2 | Runtime and HTTP server: scheduler, network poller, HTTP/1.1 and 2, TLS | A hello-world server holds up under load next to Go's net/http |
-| 3 | Web standard library: router, glazes, JSON, forms, SQL (SQLite first, for local development with no database server, then Postgres and MySQL), ORM with schema import, generated admin UI, sessions, auth | A blog with login, ORM models pulled from an existing Postgres database and a customized admin ships as one binary |
-| 4 | Tooling: full language server (completion, hover, go to definition, rename, glaze support), static site generation (`kiln fire --static`), formatter, wares, live reload, MCP server | Debug rebuilds finish in under a second |
-| 5 | Frontend: embers on WasmGC, server functions, JS interop; later, installable PWAs with local-first data that syncs with the server | An ember hydrates and calls a server function |
-| 6 | Performance and 1.0: precise concurrent GC, LLVM release backend | GC pauses under 1 ms; syntax frozen |
-| 7 | Self-hosting (optional) | The compiler builds itself |
+| 0 | Language specification, grammar, parser, diagnostics, type rules | The blog example parses and type-checks |
+| 1 | Core compiler, C backend, Boehm GC, basic LSP (`kiln lsp`: diagnostics and quick fixes), conformance tests | Native CLI programs compile and run correctly |
+| 2 | Core runtime, HTTP server, typed routing, JSON, error handling | A real HTTP API runs as a native binary |
+| 3 | Glazes, server-rendered components, layouts, CSS, scoped styling, design tokens | The Kiln documentation website is built in Kiln |
+| 4 | SQL (SQLite first, for local development with no database server, then Postgres and MySQL), ORM with schema import (`kiln db pull`), migrations, forms, validation, sessions and auth, generated admin UI | A database-backed application with authentication works |
+| 5 | Developer tooling: full LSP (completion, hover, go to definition, rename, glaze support), formatter, hot reload, testing, wares (package management), MCP server and agent guide | A complete application can be developed and tested comfortably |
+| 6 | Embers on WasmGC, reactive UI, server functions, generated RPC, JS interoperability | A full-stack interactive Kiln application works end-to-end |
+| 7 | Production hardening, static site generation (`kiln fire --static`), deployment, performance (precise GC, LLVM release builds), stability | Kiln 1.0: stable and ready for personal production projects |
+| 8+ | Installable PWAs with local-first data that syncs with the server, advanced optimization, interoperability improvements, desktop apps, additional targets, request arenas, self-hosting | Independent milestones after 1.0 |
 
 ## License
 

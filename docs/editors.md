@@ -6,7 +6,7 @@ unsaved changes, and offers each error's suggested fix as a quick fix. A file
 is checked together with the other `.kiln` and `.glaze` files in its
 directory, so glazes see your types and pages see your glazes' props.
 
-Completion, hover, go to definition and rename arrive in phase 4, together
+Completion, hover, go to definition and rename arrive in phase 5, together
 with a VS Code extension that uses the icons in `assets/brand/`.
 
 Install the `kiln` binary first:
