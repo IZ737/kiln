@@ -462,3 +462,21 @@ fn record_types_in_signatures() {
         vec![codes::DUPLICATE_DEFINITION]
     );
 }
+
+#[test]
+fn list_items_share_one_type() {
+    ok("fn main() {\n    let xs = [3, none, 1]\n    let first: Int? = xs[0]\n    print(first)\n}\n");
+    assert_eq!(
+        error_codes("fn main() {\n    let xs = [3, \"a\"]\n}\n"),
+        vec![codes::TYPE_MISMATCH]
+    );
+}
+
+#[test]
+fn map_entries_are_assigned_values() {
+    ok("fn main() {\n    let m: Map<String, Int?> = Map()\n    m[\"a\"] = 4\n    m[\"b\"] = none\n    let n: Map<String, Int> = Map()\n    n[\"a\"] = 1\n    n[\"a\"] += 2\n}\n");
+    assert_eq!(
+        error_codes("fn main() {\n    let n: Map<String, Int> = Map()\n    n[\"a\"] = none\n}\n"),
+        vec![codes::TYPE_MISMATCH]
+    );
+}

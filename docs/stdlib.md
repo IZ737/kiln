@@ -26,8 +26,11 @@ programs reach for:
 
 String positions count characters, not bytes. `slice` on a string or a list
 clamps its bounds to the value, while `list[i]` and `remove_at` panic when
-`i` is out of range. `sort`, `min` and `max` work on lists of numbers,
-strings and booleans; sort anything else with `sort_by`.
+`i` is out of range. `sort`, `min` and `max` order numbers by value,
+strings by their bytes, `false` before `true`, `none` before any value,
+lists item by item, structs and records field by field in the order they are
+written, and enums by variant and then fields. Maps, sets and functions
+have no order; sort those with `sort_by`.
 
 ## `time`
 

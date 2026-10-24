@@ -681,7 +681,16 @@ impl Checker {
                         }
                     }
                 }
-                let target_ty = self.infer(target, &Expect::Value(None));
+                let mut target_ty = self.infer(target, &Expect::Value(None));
+                // `map[key]` reads a `V?`, but `map[key] = value` stores a `V`.
+                if let ExprKind::Index { expr, .. } = &target.kind {
+                    let base = self.expr_types.get(&expr.span).cloned();
+                    if let Some(Ty::Adt(id, args)) = base.map(|b| self.resolve(&b)) {
+                        if id == self.global_types["Map"] {
+                            target_ty = args[1].clone();
+                        }
+                    }
+                }
                 if *op != AssignOp::Set {
                     let t = self.resolve(&target_ty);
                     let numeric = self.is_prim(&t, "Int") || self.is_prim(&t, "Float");
@@ -813,7 +822,17 @@ impl Checker {
             ExprKind::List(items) => {
                 let elem = match self.expected_ty(expect) {
                     Some(Ty::Adt(id, args)) if id == self.global_types["List"] => args[0].clone(),
-                    _ => self.fresh(),
+                    _ if items.is_empty() => self.fresh(),
+                    // The items share one type, as the branches of an `if`
+                    // do: `[3, none]` is a `List<Int?>`.
+                    _ => {
+                        let tys = items
+                            .iter()
+                            .map(|item| (self.infer(item, &Expect::Value(None)), item.span))
+                            .collect();
+                        let elem = self.join(tys, &Expect::Value(None));
+                        return self.list_of(elem);
+                    }
                 };
                 for item in items {
                     self.check(item, &elem);

@@ -183,7 +183,8 @@ pub enum Place {
         index: Expr,
         ty: Ty,
     },
-    /// `map[key] = value`. Only plain assignment.
+    /// `map[key] = value`. With an operator, such as `map[key] += 1`,
+    /// the key must already be in the map, or the program panics.
     MapEntry {
         map: Expr,
         key: Expr,
