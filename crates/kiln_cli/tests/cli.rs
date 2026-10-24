@@ -141,6 +141,7 @@ fn build_writes_an_executable() {
     let dir = scratch("build");
     let exe = dir.join("hello");
     let c = dir.join("hello.c");
+    let ir = dir.join("hello.ir");
     let out = kiln()
         .arg("build")
         .arg(examples().join("hello"))
@@ -148,6 +149,8 @@ fn build_writes_an_executable() {
         .arg(&exe)
         .arg("--emit-c")
         .arg(&c)
+        .arg("--emit-ir")
+        .arg(&ir)
         .output()
         .unwrap();
     assert!(
@@ -156,6 +159,7 @@ fn build_writes_an_executable() {
         String::from_utf8_lossy(&out.stderr)
     );
     assert!(std::fs::read_to_string(&c).unwrap().contains("kf_main"));
+    assert!(std::fs::read_to_string(&ir).unwrap().contains("fn main()"));
     let run = Command::new(&exe).output().unwrap();
     assert_eq!(String::from_utf8_lossy(&run.stdout), "Hello, world!\n");
 }

@@ -12,6 +12,7 @@ cargo clippy --all-targets -- -D warnings    # lint; CI rejects warnings
 cargo run -p kiln_cli -- check examples      # run the CLI on the examples
 cargo run -p kiln_cli -- run conformance/basics   # compile and run a program
 cargo run -p kiln_cli -- build conformance/basics --emit-c out.c  # see the C
+cargo run -p kiln_cli -- build conformance/basics --emit-ir out.ir  # see the IR
 ```
 
 Run `cargo fmt --all`, `cargo clippy --all-targets -- -D warnings` and
@@ -31,9 +32,16 @@ Run `cargo fmt --all`, `cargo clippy --all-targets -- -D warnings` and
   directory's `.kiln` files and glazes together; `glaze.rs` holds the glaze
   rules. The standard library's signatures are Kiln stubs in `std/`; their
   bodies are ignored.
-- `crates/kiln_codegen`: the C backend. `emit.rs` turns a checked program
-  (`kiln_check::check_program`) into C; `runtime/kiln.c` is prepended to it.
-  Building needs a C compiler and the Boehm GC (`libgc-dev`).
+- `crates/kiln_ir`: the typed IR between the checker and the backends.
+  `lib.rs` defines it, `lower.rs` turns a checked program
+  (`kiln_check::check_program`) into it with `lower(module, program)`, and
+  `print.rs` gives its readable form. Names, closures' captures, default
+  arguments and coercions are resolved here, so backends never look at the
+  syntax tree. Lowering reports E0401 for language features with no IR
+  form yet; the backend reports it for library calls it cannot build.
+- `crates/kiln_codegen`: the C backend. `emit.rs` turns an IR program into
+  C with `emit_c(&ir)`; `runtime/kiln.c` is prepended to it. Building needs
+  a C compiler and the Boehm GC (`libgc-dev`).
 - `crates/kiln_cli`: the `kiln` binary (`check`, `build`, `run`, `lsp`,
   `parse`, `explain`). `lsp.rs` is the language server; it reuses
   `check_sources` from `main.rs`, so editors and `kiln check` report the same

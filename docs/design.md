@@ -95,6 +95,15 @@ to a typed mid-level IR, which feeds a backend:
 | WasmGC | Browser code (embers) | 6 |
 | LLVM | Optimized release builds | 7 |
 
+The IR (`crates/kiln_ir`) is a typed tree: names are resolved, closures and
+field shorthands are lifted into functions with their captures listed (a
+captured `var` lives in a heap cell), call arguments are in parameter order
+with defaults filled in, and every place a value changes representation,
+such as an `Int` passed for a generic `T`, is an explicit coercion. It stays
+a tree of blocks, loops and `if`s rather than a control-flow graph, so the
+C backend maps it almost line for line; later backends can flatten it.
+`kiln build --emit-ir` writes its readable form.
+
 The phase 1 C backend (`crates/kiln_codegen`) emits one C file with the
 runtime (`runtime/kiln.c`) in front, and builds it with `$CC` or `cc`
 against the Boehm collector. Values keep their natural C types (`int64_t`,

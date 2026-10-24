@@ -91,6 +91,7 @@ For errors and quick fixes in your editor, see [docs/editors.md](docs/editors.md
 | `crates/kiln_diagnostics` | Spans, error codes, human and JSON rendering |
 | `crates/kiln_syntax` | Lexer, parser and syntax tree |
 | `crates/kiln_check` | Type checker, and standard library signatures in `std/` |
+| `crates/kiln_ir` | The typed IR between the checker and the backends |
 | `crates/kiln_codegen` | The C backend, and the runtime in `runtime/kiln.c` |
 | `crates/kiln_cli` | The `kiln` command |
 | `examples/` | Example programs and glazes; every one is checked in CI |

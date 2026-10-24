@@ -132,6 +132,7 @@ dependencies = [
  "kiln_check",
  "kiln_codegen",
  "kiln_diagnostics",
+ "kiln_ir",
  "kiln_syntax",
  "serde_json",
 ]
@@ -142,6 +143,7 @@ version = "0.0.1"
 dependencies = [
  "kiln_check",
  "kiln_diagnostics",
+ "kiln_ir",
  "kiln_syntax",
 ]
 
@@ -151,6 +153,15 @@ version = "0.0.1"
 dependencies = [
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "kiln_ir"
+version = "0.0.1"
+dependencies = [
+ "kiln_check",
+ "kiln_diagnostics",
+ "kiln_syntax",
 ]
 
 [[package]]
