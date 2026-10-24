@@ -245,6 +245,9 @@ pub enum ExprKind {
     Range(Box<Expr>, Box<Expr>),
     /// Items have the list's item type.
     List(Vec<Expr>),
+    /// An anonymous record, `{ name: "x", n: 2 }`: field values in the
+    /// order of the record type, each moved to `Any` (a slot).
+    Record(Vec<Expr>),
     /// An empty `Map` or `Set` of the expression's type.
     NewMap,
     /// Field values in declaration order, with the declared field types.
@@ -258,7 +261,8 @@ pub enum ExprKind {
         index: usize,
         fields: Vec<Expr>,
     },
-    /// The expression's type is the field's declared type.
+    /// The expression's type is the field's declared type, or `Any` for
+    /// a record's field, which lives in a slot.
     Field {
         base: Box<Expr>,
         field: usize,
