@@ -1,0 +1,18 @@
+{# An ember: it holds state, so it compiles to WebAssembly and runs in the
+   browser. `like_post` is a server function in main.kiln. #}
+{% props post: Post %}
+{% state likes = post.likes %}
+{% state busy = false %}
+
+<button class="like" disabled={busy} on:click={
+    busy = true
+    likes = like_post(post.id) catch { likes }
+    busy = false
+}>
+  ♥ {likes}
+</button>
+
+<style>
+  .like { border-radius: 8px; }
+  .like:disabled { opacity: 0.5; }
+</style>

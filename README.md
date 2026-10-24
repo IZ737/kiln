@@ -18,8 +18,9 @@ fn main() ! {
 }
 ```
 
-> **Status: phase 0 (spec and prototype).** The parser and type checker work:
-> `kiln check` reports syntax and type errors. Nothing compiles or runs yet. See the [roadmap](#roadmap).
+> **Status: phase 0 (spec and prototype).** The parsers and type checker work:
+> `kiln check` reports syntax and type errors in `.kiln` files and syntax
+> errors in glazes. Nothing compiles or runs yet. See the [roadmap](#roadmap).
 
 ## Highlights
 
@@ -28,6 +29,9 @@ fn main() ! {
 - **Errors at compile time.** Routes, templates, SQL results and JSON shapes
   are type-checked. No `null`: optionals are `T?`, missing is `none`.
 - **No async/await split.** Each request runs on a lightweight thread, as in Go.
+- **Database to admin in minutes.** A built-in ORM can read an existing
+  database's schema into typed models, and a generated, fully customizable
+  admin UI (like Django's) manages the data.
 - **Server-rendered by default.** Components (glazes) render to HTML on the
   server; only interactive ones (embers) compile to WebAssembly.
 - **Built for coding agents.** Familiar syntax, one way to do things, error
@@ -63,8 +67,9 @@ cargo run -p kiln_cli -- explain E0106
 | `crates/kiln_syntax` | Lexer, parser and syntax tree |
 | `crates/kiln_check` | Type checker, and standard library signatures in `std/` |
 | `crates/kiln_cli` | The `kiln` command |
-| `examples/` | Example programs; every one is type-checked in CI |
+| `examples/` | Example programs and glazes; every one is checked in CI |
 | `docs/syntax.md` | The syntax the parser accepts |
+| `docs/glazes.md` | Glaze (template and component) syntax |
 | `docs/types.md` | The type rules the checker enforces |
 | `docs/design.md` | Language design overview and roadmap |
 
@@ -73,10 +78,10 @@ cargo run -p kiln_cli -- explain E0106
 | Phase | Scope | Done when |
 | --- | --- | --- |
 | 0 | Spec and prototype: grammar, parser, diagnostics, type rules | The sample blog app parses and type-checks |
-| 1 | Core compiler: type checker, IR, C backend, Boehm GC | Compiled CLI programs pass a conformance suite |
+| 1 | Core compiler: type checker, IR, C backend, Boehm GC, a first language server (`kiln lsp`: diagnostics and quick fixes) | Compiled CLI programs pass a conformance suite |
 | 2 | Runtime and HTTP server: scheduler, network poller, HTTP/1.1 and 2, TLS | A hello-world server holds up under load next to Go's net/http |
-| 3 | Web standard library: router, glazes, JSON, forms, SQL, sessions, auth | A blog with login and Postgres ships as one binary |
-| 4 | Tooling: formatter, language server, wares, live reload, MCP server | Debug rebuilds finish in under a second |
+| 3 | Web standard library: router, glazes, JSON, forms, SQL, ORM with schema import, generated admin UI, sessions, auth | A blog with login, ORM models pulled from an existing Postgres database and a customized admin ships as one binary |
+| 4 | Tooling: full language server (completion, hover, go to definition, rename, glaze support), formatter, wares, live reload, MCP server | Debug rebuilds finish in under a second |
 | 5 | Frontend: embers on WasmGC, server functions, JS interop | An ember hydrates and calls a server function |
 | 6 | Performance and 1.0: precise concurrent GC, LLVM release backend | GC pauses under 1 ms; syntax frozen |
 | 7 | Self-hosting (optional) | The compiler builds itself |

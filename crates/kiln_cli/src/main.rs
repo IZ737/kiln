@@ -21,7 +21,7 @@ enum Command {
     /// Check source files for errors without building.
     Check {
         /// Files or directories to check. Directories are searched for
-        /// `.kiln` files. Defaults to the current directory.
+        /// `.kiln` and `.glaze` files. Defaults to the current directory.
         paths: Vec<PathBuf>,
         /// Print diagnostics as JSON, for editors and coding agents.
         #[arg(long)]
@@ -70,12 +70,17 @@ fn check(paths: Vec<PathBuf>, json: bool) -> ExitCode {
             }
         };
         let file = SourceFile::new(path.display().to_string(), text);
-        let result = kiln_syntax::parse(&file.text);
-        // Type errors in a file that does not parse would mostly be noise.
-        let diagnostics = if result.diagnostics.is_empty() {
-            kiln_check::check(&result.module)
+        let diagnostics = if is_glaze(path) {
+            // Glazes are parsed; type-checking them comes next.
+            kiln_syntax::glaze::parse_glaze(&file.text).diagnostics
         } else {
-            result.diagnostics
+            let result = kiln_syntax::parse(&file.text);
+            // Type errors in a file that does not parse would mostly be noise.
+            if result.diagnostics.is_empty() {
+                kiln_check::check(&result.module)
+            } else {
+                result.diagnostics
+            }
         };
         error_count += diagnostics.len();
         for diag in &diagnostics {
@@ -109,6 +114,10 @@ fn check(paths: Vec<PathBuf>, json: bool) -> ExitCode {
     }
 }
 
+fn is_glaze(path: &Path) -> bool {
+    path.extension().is_some_and(|ext| ext == "glaze")
+}
+
 fn collect_sources(path: &Path, out: &mut Vec<PathBuf>) -> std::io::Result<()> {
     if path.is_file() {
         out.push(path.to_path_buf());
@@ -125,7 +134,7 @@ fn collect_sources(path: &Path, out: &mut Vec<PathBuf>) -> std::io::Result<()> {
         }
         if path.is_dir() {
             collect_sources(&path, out)?;
-        } else if path.extension().is_some_and(|ext| ext == "kiln") {
+        } else if path.extension().is_some_and(|ext| ext == "kiln") || is_glaze(&path) {
             out.push(path);
         }
     }
@@ -141,12 +150,19 @@ fn parse(path: &Path) -> ExitCode {
         }
     };
     let file = SourceFile::new(path.display().to_string(), text);
-    let result = kiln_syntax::parse(&file.text);
-    println!("{:#?}", result.module);
-    for diag in &result.diagnostics {
+    let diagnostics = if is_glaze(path) {
+        let result = kiln_syntax::glaze::parse_glaze(&file.text);
+        println!("{:#?}", result.glaze);
+        result.diagnostics
+    } else {
+        let result = kiln_syntax::parse(&file.text);
+        println!("{:#?}", result.module);
+        result.diagnostics
+    };
+    for diag in &diagnostics {
         eprintln!("{}", diag.render(&file));
     }
-    if result.diagnostics.is_empty() {
+    if diagnostics.is_empty() {
         ExitCode::SUCCESS
     } else {
         ExitCode::FAILURE

@@ -348,3 +348,167 @@ pub enum PatternKind {
     },
     Error,
 }
+
+// ----- Glazes (`.glaze` templates and components) -----
+
+/// A parsed `.glaze` file.
+#[derive(Clone, Debug, PartialEq, Default)]
+pub struct Glaze {
+    /// `{% props post: Post, user: User? = none %}`
+    pub props: Option<Props>,
+    /// `{% state likes = post.likes %}`. A glaze with state is an ember.
+    pub states: Vec<LocalDecl>,
+    /// `{% layout "base.glaze" title: post.title %}`
+    pub layout: Option<Layout>,
+    pub nodes: Vec<Node>,
+}
+
+impl Glaze {
+    /// Whether this glaze runs in the browser: it holds state or handles
+    /// events.
+    pub fn is_ember(&self) -> bool {
+        fn handles_events(nodes: &[Node]) -> bool {
+            nodes.iter().any(|n| match n {
+                Node::Element(e) => {
+                    e.attrs
+                        .iter()
+                        .any(|a| matches!(a.value, AttrValue::Handler(_)))
+                        || handles_events(&e.children)
+                }
+                Node::If {
+                    branches,
+                    otherwise,
+                    ..
+                } => {
+                    branches.iter().any(|b| handles_events(&b.body))
+                        || otherwise.as_deref().is_some_and(handles_events)
+                }
+                Node::For { body, empty, .. } => {
+                    handles_events(body) || empty.as_deref().is_some_and(handles_events)
+                }
+                Node::Match { cases, .. } => cases.iter().any(|c| handles_events(&c.body)),
+                _ => false,
+            })
+        }
+        !self.states.is_empty() || handles_events(&self.nodes)
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct Props {
+    pub params: Vec<Param>,
+    pub span: Span,
+}
+
+/// `{% state name = value %}` or `{% let name = value %}`.
+#[derive(Clone, Debug, PartialEq)]
+pub struct LocalDecl {
+    pub name: Ident,
+    pub ty: Option<TypeExpr>,
+    pub value: Expr,
+    pub span: Span,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct Layout {
+    /// The layout glaze, a string literal such as `"base.glaze"`.
+    pub path: Expr,
+    pub args: Vec<Arg>,
+    pub span: Span,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum Node {
+    Text {
+        text: String,
+        span: Span,
+    },
+    /// `{value}`, escaped for where it appears, or `{raw value}`.
+    Expr {
+        expr: Expr,
+        raw: bool,
+        span: Span,
+    },
+    /// An HTML element, or a component when the name is capitalized.
+    Element(Element),
+    If {
+        branches: Vec<Branch>,
+        otherwise: Option<Vec<Node>>,
+        span: Span,
+    },
+    For {
+        binding: Ident,
+        iter: Expr,
+        filter: Option<Expr>,
+        body: Vec<Node>,
+        /// `{% empty %}`: shown when nothing was iterated.
+        empty: Option<Vec<Node>>,
+        span: Span,
+    },
+    Match {
+        expr: Expr,
+        cases: Vec<Case>,
+        span: Span,
+    },
+    Let(LocalDecl),
+    /// `{% slot %}` in a layout or component: where the caller's children go.
+    Slot {
+        name: Option<Ident>,
+        span: Span,
+    },
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct Branch {
+    pub cond: Expr,
+    pub body: Vec<Node>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct Case {
+    pub pattern: Pattern,
+    pub guard: Option<Expr>,
+    pub body: Vec<Node>,
+    pub span: Span,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct Element {
+    pub name: Ident,
+    pub attrs: Vec<Attr>,
+    /// For `<script>` and `<style>`, a single text node with the raw contents.
+    pub children: Vec<Node>,
+    pub span: Span,
+}
+
+impl Element {
+    /// Capitalized tags such as `<LikeButton>` are components.
+    pub fn is_component(&self) -> bool {
+        self.name.name.starts_with(|c: char| c.is_ascii_uppercase())
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct Attr {
+    pub name: Ident,
+    pub value: AttrValue,
+    pub span: Span,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum AttrValue {
+    /// `disabled`, `client:visible`
+    Flag,
+    /// `href="/posts/{post.id}"`
+    Text(Vec<AttrPart>),
+    /// `disabled={busy}`
+    Expr(Expr),
+    /// `on:click={ busy = true }`: statements run in the browser.
+    Handler(Block),
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum AttrPart {
+    Text(String),
+    Expr(Expr),
+}

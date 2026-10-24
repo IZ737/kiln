@@ -1,0 +1,19 @@
+{# One post. #}
+{% props post: Post %}
+{% layout "base.glaze" title: post.title %}
+
+<article>
+  <h1>{post.title}</h1>
+  {% let words = post.body.split(" ").len() %}
+  <p class="meta">
+    {% if words < 200 %}
+      A short read
+    {% else if words < 1000 %}
+      {words / 200} minute read
+    {% else %}
+      A long read
+    {% end %}
+  </p>
+  {raw post.body}
+  <LikeButton post={post} />
+</article>

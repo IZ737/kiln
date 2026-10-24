@@ -32,6 +32,44 @@ pub fn lex(src: &str) -> (Vec<Token>, Vec<Diagnostic>) {
     (tokens, lexer.diags)
 }
 
+/// Lexes code embedded in a glaze, starting at byte `start` of `src` and
+/// stopping at the first `}` that closes nothing. Returns the tokens (ending
+/// with `Eof` at the `}`), the errors, and the offset just past the `}`, or
+/// `None` when the end of the file comes first. Spans are offsets into `src`.
+pub fn lex_until_close(src: &str, start: usize) -> (Vec<Token>, Vec<Diagnostic>, Option<usize>) {
+    let mut lexer = Lexer {
+        src,
+        pos: start,
+        diags: Vec::new(),
+    };
+    let mut tokens: Vec<Token> = Vec::new();
+    let mut depth = 0usize;
+    loop {
+        let token = lexer.next_token();
+        match token.kind {
+            TokenKind::Eof => {
+                tokens.push(token);
+                return (tokens, lexer.diags, None);
+            }
+            TokenKind::RBrace if depth == 0 => {
+                let end = token.span.end as usize;
+                tokens.push(Token {
+                    kind: TokenKind::Eof,
+                    span: token.span,
+                });
+                return (tokens, lexer.diags, Some(end));
+            }
+            TokenKind::LBrace => depth += 1,
+            TokenKind::RBrace => depth -= 1,
+            TokenKind::Newline if tokens.last().is_none_or(|t| t.kind == TokenKind::Newline) => {
+                continue;
+            }
+            _ => {}
+        }
+        tokens.push(token);
+    }
+}
+
 struct Lexer<'a> {
     src: &'a str,
     pos: usize,

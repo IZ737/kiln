@@ -7,7 +7,7 @@ also covered by a test in `crates/kiln_syntax/tests/`.
 ## Files and lines
 
 - Source files end in `.kiln`. Templates and components (glazes) end in
-  `.glaze` and are not parsed yet.
+  `.glaze`; see [glazes.md](glazes.md).
 - A newline ends a statement. There are no semicolons.
 - Newlines are ignored inside `( )`, `[ ]` and record literals `{ name: value }`,
   so long calls can span lines.

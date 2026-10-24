@@ -20,7 +20,9 @@ Run `cargo fmt --all`, `cargo clippy --all-targets -- -D warnings` and
 - `crates/kiln_diagnostics`: `Span`, `SourceFile`, `Diagnostic`, and the error
   code registry in `src/codes.rs`.
 - `crates/kiln_syntax`: `lexer.rs` (text to tokens), `parser.rs` (tokens to
-  the tree in `ast.rs`). `lib.rs` exposes `parse(src)`.
+  the tree in `ast.rs`). `lib.rs` exposes `parse(src)`. `glaze.rs` parses
+  `.glaze` files with `parse_glaze(src)`, using the same lexer and parser for
+  the code inside braces.
 - `crates/kiln_check`: the type checker. `collect.rs` turns declarations into
   definitions, `checker.rs` checks bodies, `types.rs` holds `Ty`. `lib.rs`
   exposes `check(module)`. The standard library's signatures are Kiln stubs
@@ -29,7 +31,7 @@ Run `cargo fmt --all`, `cargo clippy --all-targets -- -D warnings` and
 - `examples/`: Kiln programs. Tests in `crates/kiln_syntax/tests/examples.rs`
   and `crates/kiln_check/tests/examples.rs` parse and type-check every one of
   them, so they must stay valid.
-- `docs/syntax.md` documents what the parser accepts; `docs/design.md` is the
+- `docs/syntax.md` and `docs/glazes.md` document what the parsers accept; `docs/design.md` is the
   language design.
 
 ## Conventions
@@ -40,11 +42,12 @@ Run `cargo fmt --all`, `cargo clippy --all-targets -- -D warnings` and
 - **Every diagnostic has a code.** Add new codes to `codes.rs` with a title,
   an explanation, and a wrong and right example; `kiln explain` prints them.
   Codes are never reused. Ranges: `E00xx` lexer, `E01xx` parser, `E02xx`
-  names and types.
+  names and types, `E03xx` glazes.
 - **Give a fix when there is one.** Use `Diagnostic::with_suggestion` with
   the exact replacement text, so agents can apply it from `kiln check --json`.
 - **Syntax changes update three places:** the parser, a test in
-  `crates/kiln_syntax/tests/parser.rs`, and `docs/syntax.md`.
+  `crates/kiln_syntax/tests/parser.rs` (or `glaze.rs`), and `docs/syntax.md`
+  (or `docs/glazes.md`).
 - **One mistake, one error.** After an error the checker uses `Ty::Unknown`,
   which is compatible with everything, so later uses are not reported again.
 - **Standard library changes** go in `crates/kiln_check/std/*.kiln`. New
