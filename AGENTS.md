@@ -10,8 +10,8 @@ cargo test                                   # all tests, including examples/
 cargo fmt --all                              # format; CI rejects unformatted code
 cargo clippy --all-targets -- -D warnings    # lint; CI rejects warnings
 cargo run -p kiln_cli -- check examples      # run the CLI on the examples
-cargo run -p kiln_cli -- run conformance/basics.kiln   # compile and run
-cargo run -p kiln_cli -- build file.kiln --emit-c out.c # see the generated C
+cargo run -p kiln_cli -- run conformance/basics   # compile and run a program
+cargo run -p kiln_cli -- build conformance/basics --emit-c out.c  # see the C
 ```
 
 Run `cargo fmt --all`, `cargo clippy --all-targets -- -D warnings` and
@@ -38,7 +38,8 @@ Run `cargo fmt --all`, `cargo clippy --all-targets -- -D warnings` and
   `parse`, `explain`). `lsp.rs` is the language server; it reuses
   `check_sources` from `main.rs`, so editors and `kiln check` report the same
   errors.
-- `conformance/`: programs with expected output (`.out`, and `.err` when
+- `conformance/`: programs, one folder each, with expected output
+  (`main.out`, and `main.err` when
   they fail). `crates/kiln_cli/tests/conformance.rs` runs each one; add one
   for every feature the compiler learns.
 - `examples/`: Kiln programs. Tests in `crates/kiln_syntax/tests/examples.rs`

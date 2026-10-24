@@ -14,6 +14,11 @@ also covered by a test in `crates/kiln_syntax/tests/`.
 - An expression continues onto the next line when the line ends with a binary
   operator, or when the next line starts with `.` (method chains).
 - Comments: `// line` and `/* block */`.
+- A folder is one program. Its `.kiln` files share one namespace: every
+  function, type and constant in one file is visible in the others with no
+  import, and a name defined in two files is an error (E0213). Imports of
+  standard library modules belong to the file that writes them. `kiln run`
+  and `kiln build` take the folder, or any file in it.
 
 ## Declarations
 

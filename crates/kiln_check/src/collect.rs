@@ -19,8 +19,15 @@ impl Checker {
                 Item::Enum(e) => (&e.name, &e.generics),
                 _ => continue,
             };
-            if let Some(first) = seen.insert(name.name.clone(), name.span) {
-                self.duplicate(&name.name, name.span, first);
+            let again = match scope {
+                // The files of a folder share one namespace.
+                Scope::Global => !self.declared_types.insert(name.name.clone()),
+                Scope::Module(_) => seen.insert(name.name.clone(), name.span).is_some(),
+            };
+            if again {
+                self.duplicate(&name.name, name.span);
+                self.duplicate_types
+                    .insert(std::ptr::from_ref(name) as usize);
                 continue;
             }
             let id = self.adts.len();
@@ -47,6 +54,9 @@ impl Checker {
         for item in &module.items {
             match item {
                 Item::Struct(s) => {
+                    if self.is_duplicate_type(&s.name) {
+                        continue;
+                    }
                     let Some(id) = self.type_in_scope(&s.name.name, scope) else {
                         continue;
                     };
@@ -54,8 +64,8 @@ impl Checker {
                     let mut fields = Vec::new();
                     let mut seen: HashMap<String, Span> = HashMap::new();
                     for f in &s.fields {
-                        if let Some(first) = seen.insert(f.name.name.clone(), f.name.span) {
-                            self.duplicate(&f.name.name, f.name.span, first);
+                        if seen.insert(f.name.name.clone(), f.name.span).is_some() {
+                            self.duplicate(&f.name.name, f.name.span);
                         }
                         fields.push(FieldDef {
                             name: f.name.name.clone(),
@@ -66,6 +76,9 @@ impl Checker {
                     self.adts[id].kind = AdtKind::Struct(fields);
                 }
                 Item::Enum(e) => {
+                    if self.is_duplicate_type(&e.name) {
+                        continue;
+                    }
                     let Some(id) = self.type_in_scope(&e.name.name, scope) else {
                         continue;
                     };
@@ -73,8 +86,8 @@ impl Checker {
                     let mut variants = Vec::new();
                     let mut seen: HashMap<String, Span> = HashMap::new();
                     for v in &e.variants {
-                        if let Some(first) = seen.insert(v.name.name.clone(), v.name.span) {
-                            self.duplicate(&v.name.name, v.name.span, first);
+                        if seen.insert(v.name.name.clone(), v.name.span).is_some() {
+                            self.duplicate(&v.name.name, v.name.span);
                         }
                         let fields = v
                             .fields
@@ -94,8 +107,14 @@ impl Checker {
                     self.adts[id].kind = AdtKind::Enum(variants);
                 }
                 Item::Fn(f) => {
-                    if let Some(first) = seen_fns.insert(f.name.name.clone(), f.name.span) {
-                        self.duplicate(&f.name.name, f.name.span, first);
+                    let again = match scope {
+                        Scope::Global => !self.declared_values.insert(f.name.name.clone()),
+                        Scope::Module(_) => {
+                            seen_fns.insert(f.name.name.clone(), f.name.span).is_some()
+                        }
+                    };
+                    if again {
+                        self.duplicate(&f.name.name, f.name.span);
                         continue;
                     }
                     let sig = self.signature(f, &[], scope);
@@ -109,7 +128,14 @@ impl Checker {
                     }
                 }
                 Item::Impl(imp) => self.define_impl(imp, scope),
-                Item::Const(_) | Item::Import(_) => {}
+                Item::Const(c) => {
+                    if matches!(scope, Scope::Global)
+                        && !self.declared_values.insert(c.name.name.clone())
+                    {
+                        self.duplicate(&c.name.name, c.name.span);
+                    }
+                }
+                Item::Import(_) => {}
             }
         }
     }
@@ -135,8 +161,11 @@ impl Checker {
             .map(|m| (m.name.clone(), Span::default()))
             .collect();
         for method in &imp.methods {
-            if let Some(first) = seen.insert(method.name.name.clone(), method.name.span) {
-                self.duplicate(&method.name.name, method.name.span, first);
+            if seen
+                .insert(method.name.name.clone(), method.name.span)
+                .is_some()
+            {
+                self.duplicate(&method.name.name, method.name.span);
                 continue;
             }
             let mut sig = self.signature(method, &impl_params, scope);
@@ -155,8 +184,8 @@ impl Checker {
         let mut has_self = false;
         let mut seen: HashMap<String, Span> = HashMap::new();
         for (i, p) in f.params.iter().enumerate() {
-            if let Some(first) = seen.insert(p.name.name.clone(), p.name.span) {
-                self.duplicate(&p.name.name, p.name.span, first);
+            if seen.insert(p.name.name.clone(), p.name.span).is_some() {
+                self.duplicate(&p.name.name, p.name.span);
             }
             if i == 0 && p.name.name == "self" && p.ty.is_none() {
                 has_self = true;
@@ -314,7 +343,14 @@ impl Checker {
         found
     }
 
-    fn duplicate(&mut self, name: &str, span: Span, _first: Span) {
+    /// Whether this declaration repeats a type's name, so it must not
+    /// change the first declaration's definition.
+    fn is_duplicate_type(&self, name: &ast::Ident) -> bool {
+        self.duplicate_types
+            .contains(&(std::ptr::from_ref(name) as usize))
+    }
+
+    fn duplicate(&mut self, name: &str, span: Span) {
         self.error(Diagnostic::error(
             codes::DUPLICATE_DEFINITION,
             format!("`{name}` is defined more than once"),

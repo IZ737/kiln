@@ -50,6 +50,14 @@ bindings).
 - JSON, form and SQL encoding are derived at compile time, with no runtime
   reflection.
 
+## Programs and folders
+
+A folder is one program, as in Go. All of its `.kiln` files share one
+namespace, so splitting a file in two never needs an import, and the
+folder's glazes see the same types and functions. Imports stay per file.
+A subfolder will be a module, imported by its name, with `pub` items as its
+interface; that arrives with wares.
+
 ## Memory and concurrency
 
 - A concurrent, non-moving, tri-color mark-and-sweep GC, as in Go. Phase 1

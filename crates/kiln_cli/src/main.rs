@@ -26,12 +26,12 @@ enum Command {
         #[arg(long)]
         json: bool,
     },
-    /// Compile a program into an executable.
+    /// Compile a program into an executable. A program is a folder: all of
+    /// its `.kiln` files, one of which has `fn main()`.
     Build {
-        /// The `.kiln` file with `fn main()`.
+        /// The program's folder, or any file in it.
         file: PathBuf,
-        /// Where to write the executable. Defaults to the file name without
-        /// `.kiln`.
+        /// Where to write the executable. Defaults to the folder's name.
         #[arg(short, long)]
         output: Option<PathBuf>,
         /// Also write the generated C to this path.
@@ -40,7 +40,7 @@ enum Command {
     },
     /// Compile a program and run it.
     Run {
-        /// The `.kiln` file with `fn main()`.
+        /// The program's folder, or any file in it.
         file: PathBuf,
         /// Arguments passed to the program.
         #[arg(trailing_var_arg = true)]
@@ -65,7 +65,7 @@ fn main() -> ExitCode {
             output,
             emit_c,
         } => {
-            let out = output.unwrap_or_else(|| file.with_extension(""));
+            let out = output.unwrap_or_else(|| default_output(&file));
             match build(&file, &out, emit_c.as_deref()) {
                 Ok(()) => ExitCode::SUCCESS,
                 Err(code) => code,
@@ -244,32 +244,118 @@ pub(crate) fn check_sources(texts: Vec<(PathBuf, String)>) -> Vec<(SourceFile, V
     out
 }
 
-/// Parses, checks and compiles one file into an executable at `out`.
+/// The folder a program lives in, and its `.kiln` and `.glaze` files. A
+/// program is a whole folder; naming one of its files means that folder.
+fn app_files(path: &Path) -> std::io::Result<(PathBuf, Vec<PathBuf>)> {
+    let dir = if path.is_dir() {
+        path.to_path_buf()
+    } else {
+        std::fs::metadata(path)?;
+        match path.parent() {
+            Some(p) if !p.as_os_str().is_empty() => p.to_path_buf(),
+            _ => PathBuf::from("."),
+        }
+    };
+    let mut files = Vec::new();
+    for entry in std::fs::read_dir(&dir)? {
+        let p = entry?.path();
+        let source = p.extension().is_some_and(|e| e == "kiln") || is_glaze(&p);
+        if source && p.is_file() {
+            files.push(p);
+        }
+    }
+    files.sort();
+    Ok((dir, files))
+}
+
+/// Where `kiln build` writes the executable by default: the program's
+/// folder name, in the current directory.
+fn default_output(path: &Path) -> PathBuf {
+    let dir = if path.is_dir() {
+        path.to_path_buf()
+    } else {
+        path.parent().map(Path::to_path_buf).unwrap_or_default()
+    };
+    let name = dir
+        .canonicalize()
+        .ok()
+        .and_then(|d| d.file_name().map(|n| n.to_owned()))
+        .unwrap_or_else(|| "program".into());
+    PathBuf::from(name)
+}
+
+/// Checks and compiles the program in a folder into an executable at `out`.
 fn build(path: &Path, out: &Path, emit_c: Option<&Path>) -> Result<(), ExitCode> {
-    let text = std::fs::read_to_string(path).map_err(|err| {
+    let (dir, files) = app_files(path).map_err(|err| {
         eprintln!("error: cannot read {}: {err}", path.display());
         ExitCode::from(2)
     })?;
-    let file = SourceFile::new(path.display().to_string(), text);
-    let report = |diagnostics: &[Diagnostic]| {
-        for diag in diagnostics {
-            eprintln!("{}", diag.render(&file));
-        }
-        eprintln!(
-            "{} error(s). Run `kiln explain <code>` for details.",
-            diagnostics.len()
-        );
+    let failed = |count: usize| {
+        eprintln!("{count} error(s). Run `kiln explain <code>` for details.");
         ExitCode::FAILURE
     };
-    let parsed = kiln_syntax::parse(&file.text);
+    let checked = check_dir(&files).map_err(|(p, err)| {
+        eprintln!("error: cannot read {}: {err}", p.display());
+        ExitCode::from(2)
+    })?;
+    let count: usize = checked.iter().map(|(_, d)| d.len()).sum();
+    if count > 0 {
+        for (file, diagnostics) in &checked {
+            for diag in diagnostics {
+                eprintln!("{}", diag.render(file));
+            }
+        }
+        return Err(failed(count));
+    }
+
+    // The files of a folder share one namespace, so the compiler sees them
+    // as one text. Diagnostics are mapped back to the file they point into.
+    let kiln_files: Vec<&SourceFile> = checked
+        .iter()
+        .map(|(f, _)| f)
+        .filter(|f| !is_glaze(Path::new(&f.name)))
+        .collect();
+    if kiln_files.is_empty() {
+        eprintln!("error: there are no `.kiln` files in {}", dir.display());
+        return Err(ExitCode::from(2));
+    }
+    let mut combined = String::new();
+    let mut offsets = Vec::new();
+    for file in &kiln_files {
+        offsets.push(combined.len() as u32);
+        combined.push_str(&file.text);
+        if !combined.ends_with('\n') {
+            combined.push('\n');
+        }
+    }
+    let report = |diagnostics: Vec<Diagnostic>| {
+        let count = diagnostics.len();
+        for mut diag in diagnostics {
+            let i = offsets
+                .iter()
+                .rposition(|&o| o <= diag.span.start)
+                .unwrap_or(0);
+            let shift = |s: &mut kiln_diagnostics::Span| {
+                s.start = s.start.saturating_sub(offsets[i]);
+                s.end = s.end.saturating_sub(offsets[i]);
+            };
+            shift(&mut diag.span);
+            if let Some(s) = &mut diag.suggestion {
+                shift(&mut s.span);
+            }
+            eprintln!("{}", diag.render(kiln_files[i]));
+        }
+        failed(count)
+    };
+    let parsed = kiln_syntax::parse(&combined);
     if !parsed.diagnostics.is_empty() {
-        return Err(report(&parsed.diagnostics));
+        return Err(report(parsed.diagnostics));
     }
     let program = kiln_check::check_program(&parsed.module);
     if !program.diagnostics.is_empty() {
-        return Err(report(&program.diagnostics));
+        return Err(report(program.diagnostics));
     }
-    let c = kiln_codegen::emit_c(&parsed.module, &program).map_err(|d| report(&d))?;
+    let c = kiln_codegen::emit_c(&parsed.module, &program).map_err(report)?;
     if let Some(c_path) = emit_c {
         std::fs::write(c_path, &c).map_err(|err| {
             eprintln!("error: cannot write {}: {err}", c_path.display());

@@ -125,7 +125,7 @@ fn scratch(name: &str) -> std::path::PathBuf {
 fn run_compiles_and_runs_hello() {
     let out = kiln()
         .arg("run")
-        .arg(examples().join("hello.kiln"))
+        .arg(examples().join("hello"))
         .output()
         .unwrap();
     assert!(
@@ -143,7 +143,7 @@ fn build_writes_an_executable() {
     let c = dir.join("hello.c");
     let out = kiln()
         .arg("build")
-        .arg(examples().join("hello.kiln"))
+        .arg(examples().join("hello"))
         .arg("-o")
         .arg(&exe)
         .arg("--emit-c")
@@ -194,4 +194,42 @@ fn run_reports_type_errors_before_compiling() {
     let out = kiln().arg("run").arg(&file).output().unwrap();
     assert_eq!(out.status.code(), Some(1));
     assert!(String::from_utf8_lossy(&out.stderr).contains("E0202"));
+}
+
+#[test]
+fn run_compiles_every_file_in_the_folder() {
+    let dir = scratch("multi");
+    std::fs::write(
+        dir.join("main.kiln"),
+        "fn main() {\n    print(greet(\"Kiln\"))\n}\n",
+    )
+    .unwrap();
+    std::fs::write(
+        dir.join("greet.kiln"),
+        "fn greet(name: String) -> String {\n    \"Hello, ${name}!\"\n}\n",
+    )
+    .unwrap();
+    let out = kiln().arg("run").arg(&dir).output().unwrap();
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert_eq!(String::from_utf8_lossy(&out.stdout), "Hello, Kiln!\n");
+}
+
+#[test]
+fn compile_errors_point_into_the_right_file() {
+    let dir = scratch("multi-error");
+    std::fs::write(dir.join("a.kiln"), "fn main() {\n    print(encoded())\n}\n").unwrap();
+    std::fs::write(
+        dir.join("b.kiln"),
+        "import json\n\nfn encoded() -> String {\n    json.encode(1)\n}\n",
+    )
+    .unwrap();
+    let out = kiln().arg("run").arg(dir.join("a.kiln")).output().unwrap();
+    assert_eq!(out.status.code(), Some(1));
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(stderr.contains("E0401"), "{stderr}");
+    assert!(stderr.contains("b.kiln:4:5"), "{stderr}");
 }
