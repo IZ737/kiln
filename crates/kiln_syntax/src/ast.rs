@@ -55,7 +55,7 @@ pub enum Throws {
     /// A bare `!`: fails with the default error type.
     Default,
     /// `! DbError`
-    Type(TypeExpr),
+    Type(Box<TypeExpr>),
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -138,6 +138,12 @@ pub enum TypeKind {
     },
     /// `User?`
     Optional(Box<TypeExpr>),
+    /// `fn(Int, String) -> Bool`, with `!` when it can fail.
+    Fn {
+        params: Vec<TypeExpr>,
+        ret: Option<Box<TypeExpr>>,
+        throws: Throws,
+    },
     /// Produced after a syntax error so parsing can continue.
     Error,
 }

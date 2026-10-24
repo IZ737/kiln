@@ -1,0 +1,14 @@
+// SQL databases. Queries use `$1`, `$2`, ... placeholders; the extra
+// arguments fill them in order.
+
+struct Db {}
+
+fn open(url: String) -> Db ! {}
+
+impl Db {
+    fn query<T>(self, sql: String, args: Rest) -> List<T> ! {}
+    fn one<T>(self, sql: String, args: Rest) -> T? ! {}
+    fn scalar<T>(self, sql: String, args: Rest) -> T ! {}
+    fn exec(self, sql: String, args: Rest) -> Int ! {}
+    fn insert<T>(self, table: String, value: T) -> T ! {}
+}

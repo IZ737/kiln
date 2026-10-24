@@ -1,5 +1,5 @@
 // Enums, pattern matching, optionals and errors.
-import log
+import log, sql
 
 enum Role {
     Admin
@@ -10,6 +10,7 @@ enum Role {
 enum DbError {
     NotFound
     Timeout(after: Duration)
+    Unavailable(reason: String)
 }
 
 struct User {
@@ -33,8 +34,10 @@ impl User {
     }
 }
 
-fn load_user(id: Int) -> User ! DbError {
-    let row = try db.one<User>("select * from users where id = $1", id)
+fn load_user(db: sql.Db, id: Int) -> User ! DbError {
+    let row = db.one<User>("select * from users where id = $1", id) catch err {
+        throw DbError.Unavailable(err.message)
+    }
     return row ?? throw DbError.NotFound
 }
 
@@ -46,7 +49,11 @@ fn greeting(user: User?) -> String {
 }
 
 fn main() {
-    let user = load_user(7) catch err {
+    let db = sql.open(env("DATABASE_URL")) catch err {
+        log.error("cannot open the database", err)
+        return
+    }
+    let user = load_user(db, 7) catch err {
         log.warn("lookup failed", err)
         return
     }
@@ -69,5 +76,6 @@ fn main() {
         print("${count} ${long_names}")
     }
 
-    let wait = timeout(2s)
+    let delay = 250ms
+    log.debug("polling again", delay)
 }

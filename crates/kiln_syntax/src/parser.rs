@@ -409,7 +409,7 @@ impl Parser {
             return Throws::Never;
         }
         if matches!(self.peek(), TokenKind::Ident(_)) {
-            Throws::Type(self.parse_type())
+            Throws::Type(Box::new(self.parse_type()))
         } else {
             Throws::Default
         }
@@ -590,6 +590,23 @@ impl Parser {
 
     pub fn parse_type(&mut self) -> TypeExpr {
         let start = self.span();
+        if self.eat(&TokenKind::Fn) {
+            let params = self.delimited(TokenKind::LParen, TokenKind::RParen, |p| p.parse_type());
+            let ret = if self.eat(&TokenKind::Arrow) {
+                Some(Box::new(self.parse_type()))
+            } else {
+                None
+            };
+            let throws = self.parse_throws();
+            return TypeExpr {
+                kind: TypeKind::Fn {
+                    params,
+                    ret,
+                    throws,
+                },
+                span: start.to(self.previous_span()),
+            };
+        }
         if !matches!(self.peek(), TokenKind::Ident(_)) {
             let found = self.peek().clone();
             self.error(Diagnostic::error(

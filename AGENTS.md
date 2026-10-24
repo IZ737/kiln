@@ -21,9 +21,14 @@ Run `cargo fmt --all`, `cargo clippy --all-targets -- -D warnings` and
   code registry in `src/codes.rs`.
 - `crates/kiln_syntax`: `lexer.rs` (text to tokens), `parser.rs` (tokens to
   the tree in `ast.rs`). `lib.rs` exposes `parse(src)`.
+- `crates/kiln_check`: the type checker. `collect.rs` turns declarations into
+  definitions, `checker.rs` checks bodies, `types.rs` holds `Ty`. `lib.rs`
+  exposes `check(module)`. The standard library's signatures are Kiln stubs
+  in `std/`; their bodies are ignored.
 - `crates/kiln_cli`: the `kiln` binary (`check`, `parse`, `explain`).
-- `examples/`: Kiln programs. `crates/kiln_syntax/tests/examples.rs` parses
-  every one of them, so they must stay valid.
+- `examples/`: Kiln programs. Tests in `crates/kiln_syntax/tests/examples.rs`
+  and `crates/kiln_check/tests/examples.rs` parse and type-check every one of
+  them, so they must stay valid.
 - `docs/syntax.md` documents what the parser accepts; `docs/design.md` is the
   language design.
 
@@ -34,11 +39,16 @@ Run `cargo fmt --all`, `cargo clippy --all-targets -- -D warnings` and
   a list must make progress even on bad input.
 - **Every diagnostic has a code.** Add new codes to `codes.rs` with a title,
   an explanation, and a wrong and right example; `kiln explain` prints them.
-  Codes are never reused. Ranges: `E00xx` lexer, `E01xx` parser.
+  Codes are never reused. Ranges: `E00xx` lexer, `E01xx` parser, `E02xx`
+  names and types.
 - **Give a fix when there is one.** Use `Diagnostic::with_suggestion` with
   the exact replacement text, so agents can apply it from `kiln check --json`.
 - **Syntax changes update three places:** the parser, a test in
   `crates/kiln_syntax/tests/parser.rs`, and `docs/syntax.md`.
+- **One mistake, one error.** After an error the checker uses `Ty::Unknown`,
+  which is compatible with everything, so later uses are not reported again.
+- **Standard library changes** go in `crates/kiln_check/std/*.kiln`. New
+  modules are also listed in `STD_MODULES` in `checker.rs`.
 - Keep error messages short, specific, and in plain words: say what was
   expected and what was found.
 

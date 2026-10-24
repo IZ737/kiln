@@ -71,8 +71,14 @@ fn check(paths: Vec<PathBuf>, json: bool) -> ExitCode {
         };
         let file = SourceFile::new(path.display().to_string(), text);
         let result = kiln_syntax::parse(&file.text);
-        error_count += result.diagnostics.len();
-        for diag in &result.diagnostics {
+        // Type errors in a file that does not parse would mostly be noise.
+        let diagnostics = if result.diagnostics.is_empty() {
+            kiln_check::check(&result.module)
+        } else {
+            result.diagnostics
+        };
+        error_count += diagnostics.len();
+        for diag in &diagnostics {
             if json {
                 json_diags.push(diag.to_json(&file));
             } else {

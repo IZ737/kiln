@@ -1,0 +1,39 @@
+// HTTP server, routing and responses.
+
+struct App {}
+
+struct Request {
+    method: String
+    path: String
+}
+
+struct Response {
+    status: Int
+}
+
+fn app() -> App {}
+fn render(template: String, data: Any = {}) -> Response {}
+fn json(value: Any, status: Int = 200) -> Response {}
+fn text(body: String, status: Int = 200) -> Response {}
+fn html(body: String, status: Int = 200) -> Response {}
+fn redirect(to: String) -> Response {}
+fn not_found() -> Response {}
+
+// A handler takes the request, then one parameter per `{name}` in the route
+// pattern. The type checker reads the pattern to type those parameters.
+impl App {
+    fn get(self, path: String, handler: fn(Request, Rest) -> Response !) {}
+    fn post(self, path: String, handler: fn(Request, Rest) -> Response !) {}
+    fn put(self, path: String, handler: fn(Request, Rest) -> Response !) {}
+    fn patch(self, path: String, handler: fn(Request, Rest) -> Response !) {}
+    fn delete(self, path: String, handler: fn(Request, Rest) -> Response !) {}
+    fn listen(self, address: String) ! {}
+}
+
+impl Request {
+    fn json<T>(self) -> T ! {}
+    fn form<T>(self) -> T ! {}
+    fn query(self, name: String) -> String? {}
+    fn header(self, name: String) -> String? {}
+    fn cookie(self, name: String) -> String? {}
+}

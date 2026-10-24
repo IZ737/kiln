@@ -1,0 +1,340 @@
+//! Builds definitions (types, functions, methods) from declarations, for
+//! the standard library and for the file being checked.
+
+use crate::checker::{Checker, Scope};
+use crate::types::*;
+use kiln_diagnostics::{codes, Diagnostic, Span};
+use kiln_syntax::ast::{self, Item, Module, Throws, TypeExpr, TypeKind};
+use std::collections::HashMap;
+
+impl Checker {
+    /// Registers every struct and enum name in `module` before any
+    /// signature is resolved, so declarations can refer to each other in any
+    /// order.
+    pub(crate) fn declare_types(&mut self, module: &Module, scope: Scope) {
+        let mut seen: HashMap<String, Span> = HashMap::new();
+        for item in &module.items {
+            let (name, generics) = match item {
+                Item::Struct(s) => (&s.name, &s.generics),
+                Item::Enum(e) => (&e.name, &e.generics),
+                _ => continue,
+            };
+            if let Some(first) = seen.insert(name.name.clone(), name.span) {
+                self.duplicate(&name.name, name.span, first);
+                continue;
+            }
+            let id = self.adts.len();
+            self.adts.push(AdtDef {
+                name: name.name.clone(),
+                params: generics.iter().map(|g| g.name.clone()).collect(),
+                kind: AdtKind::Struct(Vec::new()),
+                methods: Vec::new(),
+            });
+            match scope {
+                Scope::Global => {
+                    self.global_types.insert(name.name.clone(), id);
+                }
+                Scope::Module(m) => {
+                    self.modules[m].types.insert(name.name.clone(), id);
+                }
+            }
+        }
+    }
+
+    /// Resolves fields, variants, function signatures and methods.
+    pub(crate) fn define_items(&mut self, module: &Module, scope: Scope) {
+        let mut seen_fns: HashMap<String, Span> = HashMap::new();
+        for item in &module.items {
+            match item {
+                Item::Struct(s) => {
+                    let Some(id) = self.type_in_scope(&s.name.name, scope) else {
+                        continue;
+                    };
+                    let generics: Vec<String> = s.generics.iter().map(|g| g.name.clone()).collect();
+                    let mut fields = Vec::new();
+                    let mut seen: HashMap<String, Span> = HashMap::new();
+                    for f in &s.fields {
+                        if let Some(first) = seen.insert(f.name.name.clone(), f.name.span) {
+                            self.duplicate(&f.name.name, f.name.span, first);
+                        }
+                        fields.push(FieldDef {
+                            name: f.name.name.clone(),
+                            ty: self.resolve_type(&f.ty, &generics, scope),
+                            has_default: f.default.is_some(),
+                        });
+                    }
+                    self.adts[id].kind = AdtKind::Struct(fields);
+                }
+                Item::Enum(e) => {
+                    let Some(id) = self.type_in_scope(&e.name.name, scope) else {
+                        continue;
+                    };
+                    let generics: Vec<String> = e.generics.iter().map(|g| g.name.clone()).collect();
+                    let mut variants = Vec::new();
+                    let mut seen: HashMap<String, Span> = HashMap::new();
+                    for v in &e.variants {
+                        if let Some(first) = seen.insert(v.name.name.clone(), v.name.span) {
+                            self.duplicate(&v.name.name, v.name.span, first);
+                        }
+                        let fields = v
+                            .fields
+                            .iter()
+                            .map(|f| {
+                                (
+                                    f.name.as_ref().map(|n| n.name.clone()),
+                                    self.resolve_type(&f.ty, &generics, scope),
+                                )
+                            })
+                            .collect();
+                        variants.push(VariantDef {
+                            name: v.name.name.clone(),
+                            fields,
+                        });
+                    }
+                    self.adts[id].kind = AdtKind::Enum(variants);
+                }
+                Item::Fn(f) => {
+                    if let Some(first) = seen_fns.insert(f.name.name.clone(), f.name.span) {
+                        self.duplicate(&f.name.name, f.name.span, first);
+                        continue;
+                    }
+                    let sig = self.signature(f, &[], scope);
+                    match scope {
+                        Scope::Global => {
+                            self.global_fns.insert(f.name.name.clone(), sig);
+                        }
+                        Scope::Module(m) => {
+                            self.modules[m].fns.insert(f.name.name.clone(), sig);
+                        }
+                    }
+                }
+                Item::Impl(imp) => self.define_impl(imp, scope),
+                Item::Const(_) | Item::Import(_) => {}
+            }
+        }
+    }
+
+    fn define_impl(&mut self, imp: &ast::ImplDecl, scope: Scope) {
+        let TypeKind::Named { path, args } = &imp.target.kind else {
+            return;
+        };
+        let target = self.resolve_type_path(path, imp.target.span, scope);
+        let Some(id) = target else { return };
+        // Type arguments in an impl target introduce type parameters:
+        // `impl List<T>` declares `T`.
+        let impl_params: Vec<String> = args
+            .iter()
+            .filter_map(|a| match &a.kind {
+                TypeKind::Named { path, .. } if path.len() == 1 => Some(path[0].name.clone()),
+                _ => None,
+            })
+            .collect();
+        let mut seen: HashMap<String, Span> = self.adts[id]
+            .methods
+            .iter()
+            .map(|m| (m.name.clone(), Span::default()))
+            .collect();
+        for method in &imp.methods {
+            if let Some(first) = seen.insert(method.name.name.clone(), method.name.span) {
+                self.duplicate(&method.name.name, method.name.span, first);
+                continue;
+            }
+            let mut sig = self.signature(method, &impl_params, scope);
+            sig.impl_params = impl_params.clone();
+            self.adts[id].methods.push(sig);
+        }
+    }
+
+    pub(crate) fn signature(&mut self, f: &ast::FnDecl, outer: &[String], scope: Scope) -> FnSig {
+        let generics: Vec<String> = outer
+            .iter()
+            .cloned()
+            .chain(f.generics.iter().map(|g| g.name.clone()))
+            .collect();
+        let mut params = Vec::new();
+        let mut has_self = false;
+        let mut seen: HashMap<String, Span> = HashMap::new();
+        for (i, p) in f.params.iter().enumerate() {
+            if let Some(first) = seen.insert(p.name.name.clone(), p.name.span) {
+                self.duplicate(&p.name.name, p.name.span, first);
+            }
+            if i == 0 && p.name.name == "self" && p.ty.is_none() {
+                has_self = true;
+                continue;
+            }
+            let ty = match &p.ty {
+                Some(t) => self.resolve_type(t, &generics, scope),
+                None => Ty::Unknown,
+            };
+            params.push(ParamSig {
+                name: Some(p.name.name.clone()),
+                ty,
+                has_default: p.default.is_some(),
+            });
+        }
+        let ret = match &f.ret {
+            Some(t) => self.resolve_type(t, &generics, scope),
+            None => Ty::Unit,
+        };
+        let throws = self.resolve_throws(&f.throws, &generics, scope);
+        FnSig {
+            name: f.name.name.clone(),
+            generics: f.generics.iter().map(|g| g.name.clone()).collect(),
+            impl_params: Vec::new(),
+            has_self,
+            params,
+            ret,
+            throws,
+        }
+    }
+
+    pub(crate) fn resolve_throws(
+        &mut self,
+        throws: &Throws,
+        generics: &[String],
+        scope: Scope,
+    ) -> Option<Ty> {
+        match throws {
+            Throws::Never => None,
+            Throws::Default => Some(self.error_ty()),
+            Throws::Type(t) => Some(self.resolve_type(t, generics, scope)),
+        }
+    }
+
+    fn type_in_scope(&self, name: &str, scope: Scope) -> Option<AdtId> {
+        match scope {
+            Scope::Global => self.global_types.get(name).copied(),
+            Scope::Module(m) => self.modules[m].types.get(name).copied(),
+        }
+    }
+
+    pub(crate) fn resolve_type(&mut self, t: &TypeExpr, generics: &[String], scope: Scope) -> Ty {
+        match &t.kind {
+            TypeKind::Error => Ty::Unknown,
+            TypeKind::Optional(inner) => {
+                Ty::Opt(Box::new(self.resolve_type(inner, generics, scope)))
+            }
+            TypeKind::Fn {
+                params,
+                ret,
+                throws,
+            } => {
+                let params = params
+                    .iter()
+                    .map(|p| self.resolve_type(p, generics, scope))
+                    .collect();
+                let ret = match ret {
+                    Some(r) => self.resolve_type(r, generics, scope),
+                    None => Ty::Unit,
+                };
+                let throws = self.resolve_throws(throws, generics, scope);
+                Ty::Fn(std::rc::Rc::new(FnTy {
+                    params,
+                    ret,
+                    throws,
+                }))
+            }
+            TypeKind::Named { path, args } => {
+                if path.len() == 1 {
+                    let name = path[0].name.as_str();
+                    if generics.iter().any(|g| g == name) {
+                        return Ty::Param(name.to_string());
+                    }
+                    match name {
+                        "Any" => return Ty::Any,
+                        "Rest" => return Ty::Rest,
+                        "Never" => return Ty::Never,
+                        _ => {}
+                    }
+                }
+                let Some(id) = self.resolve_type_path(path, t.span, scope) else {
+                    return Ty::Unknown;
+                };
+                let args: Vec<Ty> = args
+                    .iter()
+                    .map(|a| self.resolve_type(a, generics, scope))
+                    .collect();
+                let expected = self.adts[id].params.len();
+                if args.len() != expected {
+                    let name = self.adts[id].name.clone();
+                    self.error(Diagnostic::error(
+                        codes::TYPE_MISMATCH,
+                        format!(
+                            "`{name}` takes {expected} type argument(s), but {} were given",
+                            args.len()
+                        ),
+                        t.span,
+                    ));
+                    return Ty::Unknown;
+                }
+                Ty::Adt(id, args)
+            }
+        }
+    }
+
+    fn resolve_type_path(
+        &mut self,
+        path: &[ast::Ident],
+        span: Span,
+        scope: Scope,
+    ) -> Option<AdtId> {
+        let found = match path {
+            [name] => {
+                let local = match scope {
+                    Scope::Module(m) => self.modules[m].types.get(&name.name).copied(),
+                    Scope::Global => None,
+                };
+                local.or_else(|| self.global_types.get(&name.name).copied())
+            }
+            [module, name] => {
+                let m = match scope {
+                    Scope::Global => self.imports.get(&module.name).copied(),
+                    Scope::Module(_) => self.modules.iter().position(|d| d.name == module.name),
+                };
+                m.and_then(|m| self.modules[m].types.get(&name.name).copied())
+            }
+            _ => None,
+        };
+        if found.is_none() {
+            let text: Vec<&str> = path.iter().map(|p| p.name.as_str()).collect();
+            let text = text.join(".");
+            let mut diag =
+                Diagnostic::error(codes::UNKNOWN_TYPE, format!("unknown type `{text}`"), span);
+            if path.len() == 1 {
+                let candidates: Vec<String> = self.global_types.keys().cloned().collect();
+                let guess = foreign_type_name(&text)
+                    .map(str::to_string)
+                    .or_else(|| similar(&text, candidates.iter().map(String::as_str)));
+                if let Some(s) = guess {
+                    diag = diag.with_suggestion(format!("did you mean `{s}`?"), path[0].span, s);
+                }
+            }
+            self.error(diag);
+        }
+        found
+    }
+
+    fn duplicate(&mut self, name: &str, span: Span, _first: Span) {
+        self.error(Diagnostic::error(
+            codes::DUPLICATE_DEFINITION,
+            format!("`{name}` is defined more than once"),
+            span,
+        ));
+    }
+}
+
+/// Kiln's name for a type name from another language, such as `Integer` or
+/// `HashMap`.
+fn foreign_type_name(name: &str) -> Option<&'static str> {
+    Some(match name.to_ascii_lowercase().as_str() {
+        "int" | "integer" | "i32" | "i64" | "long" | "number" | "usize" => "Int",
+        "float" | "double" | "f32" | "f64" | "float64" => "Float",
+        "bool" | "boolean" => "Bool",
+        "str" | "string" | "text" => "String",
+        "array" | "vec" | "vector" | "arraylist" | "slice" => "List",
+        "dict" | "dictionary" | "hashmap" | "object" | "record" => "Map",
+        "hashset" => "Set",
+        "exception" => "Error",
+        _ => return None,
+    })
+}

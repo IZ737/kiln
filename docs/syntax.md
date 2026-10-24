@@ -58,6 +58,7 @@ server fn like_post(id: Int) -> Int ! web.Error { ... }   // callable from the b
 | `Int`, `String`, `web.Error` | A named type, optionally qualified by module |
 | `List<Post>`, `Map<String, Int>` | A generic type |
 | `User?` | An optional: a `User` or `none` |
+| `fn(Request, Int) -> Response !` | A function type; `!` means it can fail |
 
 There is no `null`.
 

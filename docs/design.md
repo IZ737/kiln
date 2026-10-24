@@ -32,7 +32,8 @@ bindings).
   and exhaustive `match`; structural interfaces; generics by monomorphization.
 - No null. `T?` is optional and the missing value is `none`.
 - Errors are values: `fn f() -> T ! E`, propagated with `try`, handled with
-  `catch`. Panics are for bugs only, and the HTTP server recovers them per
+  `catch`. A bare `!` uses the standard `Error` and accepts any error; `! E`
+  only passes on errors of type `E`. See [types.md](types.md). Panics are for bugs only, and the HTTP server recovers them per
   request.
 - JSON, form and SQL encoding are derived at compile time, with no runtime
   reflection.

@@ -1,0 +1,6 @@
+// Structured logging. Extra arguments are attached to the log line.
+
+fn debug(message: String, data: Rest) {}
+fn info(message: String, data: Rest) {}
+fn warn(message: String, data: Rest) {}
+fn error(message: String, data: Rest) {}

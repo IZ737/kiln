@@ -1,0 +1,93 @@
+// Types and functions available in every file without an import.
+
+struct Int {}
+struct Float {}
+struct Bool {}
+struct String {}
+struct Bytes {}
+struct Decimal {}
+struct Duration {}
+
+// The default error type: a function declared with a bare `!` can fail with
+// any error.
+struct Error {
+    message: String
+}
+
+struct Date {
+    year: Int
+    month: Int
+    day: Int
+}
+
+struct List<T> {}
+struct Map<K, V> {}
+struct Set<T> {}
+
+fn print(value: Any) {}
+fn env(name: String) -> String {}
+fn panic(message: String) -> Never {}
+
+impl Int {
+    fn to_string(self) -> String {}
+    fn to_float(self) -> Float {}
+    fn abs(self) -> Int {}
+    fn min(self, other: Int) -> Int {}
+    fn max(self, other: Int) -> Int {}
+}
+
+impl Float {
+    fn to_string(self) -> String {}
+    fn round(self) -> Int {}
+    fn floor(self) -> Int {}
+    fn ceil(self) -> Int {}
+}
+
+impl String {
+    fn len(self) -> Int {}
+    fn is_empty(self) -> Bool {}
+    fn upper(self) -> String {}
+    fn lower(self) -> String {}
+    fn trim(self) -> String {}
+    fn contains(self, part: String) -> Bool {}
+    fn starts_with(self, prefix: String) -> Bool {}
+    fn ends_with(self, suffix: String) -> Bool {}
+    fn replace(self, from: String, to: String) -> String {}
+    fn split(self, separator: String) -> List<String> {}
+    fn to_int(self) -> Int? {}
+}
+
+impl List<T> {
+    fn len(self) -> Int {}
+    fn is_empty(self) -> Bool {}
+    fn first(self) -> T? {}
+    fn last(self) -> T? {}
+    fn get(self, index: Int) -> T? {}
+    fn push(self, item: T) {}
+    fn contains(self, item: T) -> Bool {}
+    fn filter(self, keep: fn(T) -> Bool) -> List<T> {}
+    fn map<U>(self, transform: fn(T) -> U) -> List<U> {}
+    fn find(self, matches: fn(T) -> Bool) -> T? {}
+    fn any(self, matches: fn(T) -> Bool) -> Bool {}
+    fn all(self, matches: fn(T) -> Bool) -> Bool {}
+    fn sort_by<K>(self, key: fn(T) -> K) -> List<T> {}
+    fn reverse(self) -> List<T> {}
+    fn join(self, separator: String) -> String {}
+}
+
+impl Map<K, V> {
+    fn len(self) -> Int {}
+    fn is_empty(self) -> Bool {}
+    fn get(self, key: K) -> V? {}
+    fn set(self, key: K, value: V) {}
+    fn remove(self, key: K) -> V? {}
+    fn contains(self, key: K) -> Bool {}
+    fn keys(self) -> List<K> {}
+    fn values(self) -> List<V> {}
+}
+
+impl Set<T> {
+    fn len(self) -> Int {}
+    fn add(self, item: T) {}
+    fn contains(self, item: T) -> Bool {}
+}
