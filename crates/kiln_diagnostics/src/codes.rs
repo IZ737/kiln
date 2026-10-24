@@ -370,7 +370,7 @@ pub static ALL: &[ErrorCode] = &[
     ErrorCode {
         code: NOT_COMPILED_YET,
         title: "not supported by the compiler yet",
-        explanation: "The program is valid Kiln, but the compiler cannot build this part of it yet. `kiln check` accepts it; `kiln build` and `kiln run` do not. The standard library modules `web`, `sql`, `json` and `auth`, maps, sets and anonymous records arrive in later phases. Printing or comparing a value whose type is a generic parameter also needs a later phase.",
+        explanation: "The program is valid Kiln, but the compiler cannot build this part of it yet. `kiln check` accepts it; `kiln build` and `kiln run` do not. The standard library modules `web`, `sql`, `json` and `auth`, and anonymous records, arrive in later phases. Map keys and set items can be `Int`, `Float`, `Bool`, `Duration` or `String` for now. Printing or comparing a value whose type is a generic parameter also needs a later phase.",
         wrong: "import json\n\nfn main() {\n    print(json.encode(1))\n}",
         right: "fn main() {\n    print(1.to_string())\n}",
     },

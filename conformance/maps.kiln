@@ -1,0 +1,85 @@
+// Maps and sets: insertion order, growth, removal, printing and equality.
+fn word_counts(text: String) -> Map<String, Int> {
+    let counts: Map<String, Int> = Map()
+    for word in text.split(" ") where not word.is_empty() {
+        counts[word] = (counts[word] ?? 0) + 1
+    }
+    counts
+}
+
+fn main() {
+    let counts = word_counts("the cat and the hat and the bat")
+    print(counts)
+    print(counts["the"] ?? 0)
+    print(counts["dog"])
+    print(counts.len())
+    print(counts.contains("cat"))
+    print(counts.keys())
+    print(counts.values())
+
+    print(counts.remove("cat"))
+    print(counts.remove("cat"))
+    counts.set("cat", 9)
+    print(counts)
+
+    // Growth past the first table, then removal of most entries.
+    let squares: Map<Int, Int> = Map()
+    for n in 0..1000 {
+        squares[n] = n * n
+    }
+    print(squares.len())
+    print(squares[999] ?? -1)
+    for n in 0..990 {
+        squares.remove(n)
+    }
+    print(squares.len())
+    print(squares.keys())
+    for n in 0..20 {
+        squares[n] = n
+    }
+    print(squares.len())
+    print(squares[5] ?? -1)
+    print(squares[995] ?? -1)
+
+    let seen = Set<String>()
+    for name in ["ada", "bob", "ada", "cy", "bob"] {
+        seen.add(name)
+    }
+    print(seen)
+    print(seen.len())
+    print(seen.contains("cy"))
+    print(seen.remove("bob"))
+    print(seen.remove("bob"))
+    print(seen.to_list())
+    var total = 0
+    for name in seen {
+        total += name.len()
+    }
+    print(total)
+
+    let a: Map<String, List<Int>> = Map()
+    a["x"] = [1, 2]
+    a["y"] = []
+    let b: Map<String, List<Int>> = Map()
+    b["y"] = []
+    b["x"] = [1, 2]
+    print(a == b)
+    b["y"] = [3]
+    print(a == b)
+    let s1 = Set<Int>()
+    let s2 = Set<Int>()
+    s1.add(1)
+    s1.add(2)
+    s2.add(2)
+    s2.add(1)
+    print(s1 == s2)
+
+    let prices: Map<Float, String> = Map()
+    prices[0.5] = "half"
+    prices[-0.0] = "zero"
+    print(prices[0.0] ?? "missing")
+    let flags: Map<Bool, Int> = Map()
+    flags[true] = 1
+    print(flags)
+    print(Map<String, Int>().is_empty())
+}

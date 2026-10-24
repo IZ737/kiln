@@ -88,6 +88,9 @@ impl Map<K, V> {
 
 impl Set<T> {
     fn len(self) -> Int {}
+    fn is_empty(self) -> Bool {}
     fn add(self, item: T) {}
+    fn remove(self, item: T) -> Bool {}
     fn contains(self, item: T) -> Bool {}
+    fn to_list(self) -> List<T> {}
 }

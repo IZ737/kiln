@@ -342,6 +342,167 @@ static kstr *k_list_show(klist *l, kstr *(*show)(kv)) {
     return k_concat(r, k_str("]"));
 }
 
+/* ----- maps and sets -----
+ *
+ * A hash map from kv to kv that keeps keys in insertion order. Entries live
+ * in arrays in the order they were added; `index` is an open-addressing
+ * table of entry positions (-1 empty, -2 deleted). A set is a map whose
+ * values are unused. */
+
+typedef uint64_t (*k_hash_fn)(kv);
+typedef bool (*k_eq_fn)(kv, kv);
+
+typedef struct kmap {
+    int64_t len, used, cap;
+    kv *keys, *vals;
+    bool *live;
+    int64_t *index, slots;
+    k_hash_fn hash;
+    k_eq_fn eq;
+} kmap;
+
+static uint64_t k_hash_int(kv v) {
+    uint64_t x = v;
+    x ^= x >> 33; x *= 0xff51afd7ed558ccdULL;
+    x ^= x >> 33; x *= 0xc4ceb9fe1a85ec53ULL;
+    return x ^ (x >> 33);
+}
+
+static uint64_t k_hash_float(kv v) {
+    double f = k_kv2f(v);
+    if (f == 0) f = 0; /* -0.0 and 0.0 are equal, so they hash the same */
+    return k_hash_int(k_f2kv(f));
+}
+
+static uint64_t k_hash_str(kv v) {
+    kstr *s = K_KV2P(kstr *, v);
+    uint64_t h = 1469598103934665603ULL;
+    for (int64_t i = 0; i < s->len; i++) { h ^= (unsigned char)s->data[i]; h *= 1099511628211ULL; }
+    return h;
+}
+
+static kmap *k_map_new(k_hash_fn hash, k_eq_fn eq) {
+    kmap *m = k_alloc(sizeof(kmap));
+    m->cap = 8;
+    m->keys = k_alloc(sizeof(kv) * 8);
+    m->vals = k_alloc(sizeof(kv) * 8);
+    m->live = k_alloc_atomic(8);
+    m->slots = 16;
+    m->index = k_alloc_atomic(sizeof(int64_t) * 16);
+    for (int i = 0; i < 16; i++) m->index[i] = -1;
+    m->hash = hash;
+    m->eq = eq;
+    return m;
+}
+
+/* The index slot holding `key`, or the empty slot where it would go. */
+static int64_t k_map_slot(kmap *m, kv key) {
+    uint64_t mask = (uint64_t)m->slots - 1;
+    uint64_t i = m->hash(key) & mask;
+    int64_t tomb = -1;
+    for (;;) {
+        int64_t e = m->index[i];
+        if (e == -1) return tomb >= 0 ? tomb : (int64_t)i;
+        if (e == -2) { if (tomb < 0) tomb = (int64_t)i; }
+        else if (m->eq(m->keys[e], key)) return (int64_t)i;
+        i = (i + 1) & mask;
+    }
+}
+
+/* Rebuilds the entry arrays without deleted entries, and the index with
+ * room for `cap` entries. */
+static void k_map_rebuild(kmap *m, int64_t cap) {
+    kv *keys = k_alloc(sizeof(kv) * (size_t)cap);
+    kv *vals = k_alloc(sizeof(kv) * (size_t)cap);
+    bool *live = k_alloc_atomic((size_t)cap);
+    int64_t n = 0;
+    for (int64_t i = 0; i < m->used; i++) {
+        if (!m->live[i]) continue;
+        keys[n] = m->keys[i]; vals[n] = m->vals[i]; live[n] = true; n++;
+    }
+    m->keys = keys; m->vals = vals; m->live = live;
+    m->used = n; m->cap = cap;
+    m->slots = 16;
+    while (m->slots < cap * 2) m->slots *= 2;
+    m->index = k_alloc_atomic(sizeof(int64_t) * (size_t)m->slots);
+    for (int64_t i = 0; i < m->slots; i++) m->index[i] = -1;
+    for (int64_t i = 0; i < n; i++) m->index[k_map_slot(m, keys[i])] = i;
+}
+
+static void k_map_set(kmap *m, kv key, kv val) {
+    int64_t s = k_map_slot(m, key);
+    int64_t e = m->index[s];
+    if (e >= 0) { m->vals[e] = val; return; }
+    if (m->used == m->cap) {
+        k_map_rebuild(m, m->len * 2 > 8 ? m->len * 2 : 8);
+        s = k_map_slot(m, key);
+    }
+    e = m->used++;
+    m->keys[e] = key; m->vals[e] = val; m->live[e] = true;
+    m->index[s] = e;
+    m->len++;
+}
+
+static kbox *k_map_get(kmap *m, kv key) {
+    int64_t e = m->index[k_map_slot(m, key)];
+    return e >= 0 ? k_box(m->vals[e]) : NULL;
+}
+
+static bool k_map_contains(kmap *m, kv key) { return m->index[k_map_slot(m, key)] >= 0; }
+
+static kbox *k_map_remove(kmap *m, kv key) {
+    int64_t s = k_map_slot(m, key);
+    int64_t e = m->index[s];
+    if (e < 0) return NULL;
+    kbox *old = k_box(m->vals[e]);
+    m->index[s] = -2;
+    m->live[e] = false;
+    m->len--;
+    return old;
+}
+
+static klist *k_map_keys(kmap *m) {
+    klist *l = k_list(0, NULL);
+    for (int64_t i = 0; i < m->used; i++) if (m->live[i]) k_list_push(l, m->keys[i]);
+    return l;
+}
+
+static klist *k_map_values(kmap *m) {
+    klist *l = k_list(0, NULL);
+    for (int64_t i = 0; i < m->used; i++) if (m->live[i]) k_list_push(l, m->vals[i]);
+    return l;
+}
+
+static void k_set_add(kmap *m, kv item) { k_map_set(m, item, 0); }
+static bool k_set_remove(kmap *m, kv item) { return k_map_remove(m, item) != NULL; }
+
+/* `{"a": 1, "b": 2}`, or `{1, 2}` for a set when `show_val` is NULL. */
+static kstr *k_map_show(kmap *m, kstr *(*show_key)(kv), kstr *(*show_val)(kv)) {
+    kstr *r = k_str("{");
+    bool first = true;
+    for (int64_t i = 0; i < m->used; i++) {
+        if (!m->live[i]) continue;
+        if (!first) r = k_concat(r, k_str(", "));
+        first = false;
+        r = k_concat(r, show_key(m->keys[i]));
+        if (show_val) { r = k_concat(r, k_str(": ")); r = k_concat(r, show_val(m->vals[i])); }
+    }
+    return k_concat(r, k_str("}"));
+}
+
+/* Maps are equal when they hold the same keys with equal values, in any
+ * order; sets when they hold the same items. */
+static bool k_map_eq(kmap *a, kmap *b, k_eq_fn val_eq) {
+    if (a->len != b->len) return false;
+    for (int64_t i = 0; i < a->used; i++) {
+        if (!a->live[i]) continue;
+        int64_t e = b->index[k_map_slot(b, a->keys[i])];
+        if (e < 0) return false;
+        if (val_eq && !val_eq(a->vals[i], b->vals[e])) return false;
+    }
+    return true;
+}
+
 /* ----- string methods ----- */
 
 static int64_t k_str_len(kstr *s) {
