@@ -26,7 +26,8 @@ fn main() ! {
 ```
 
 > **Status: phase 1 (core compiler).** `kiln check` reports syntax and type
-> errors in `.kiln` files and glazes, and `kiln run` compiles command-line
+> errors in `.kiln` files and glazes, `kiln lsp` shows them in your editor,
+> and `kiln run` compiles command-line
 > programs to native code through C. The web standard library (`web`, `sql`,
 > `json`, `auth`) arrives in later phases. See the [roadmap](#roadmap).
 
@@ -77,6 +78,8 @@ cargo run -p kiln_cli -- parse examples/hello.kiln
 cargo run -p kiln_cli -- explain E0106
 ```
 
+For errors and quick fixes in your editor, see [docs/editors.md](docs/editors.md).
+
 ## Repository layout
 
 | Path | Contents |
@@ -92,6 +95,7 @@ cargo run -p kiln_cli -- explain E0106
 | `docs/syntax.md` | The syntax the parser accepts |
 | `docs/glazes.md` | Glaze (template and component) syntax |
 | `docs/types.md` | The type rules the checker enforces |
+| `docs/editors.md` | Setting up `kiln lsp` in Neovim, Helix and other editors |
 | `docs/design.md` | Language design overview and roadmap |
 
 ## Roadmap
