@@ -59,6 +59,8 @@ pub struct Checker {
     /// file's spans start at 0.
     pub(crate) duplicate_types: HashSet<usize>,
     subst: Vec<Option<Ty>>,
+    /// The type parameters in scope in the function being checked.
+    type_params: Vec<String>,
     scopes: Vec<HashMap<String, Local>>,
     fns: Vec<FnCtx>,
     pub(crate) diags: Vec<Diagnostic>,
@@ -113,6 +115,7 @@ impl Checker {
             declared_values: HashSet::new(),
             duplicate_types: HashSet::new(),
             subst: Vec::new(),
+            type_params: Vec::new(),
             scopes: Vec::new(),
             fns: Vec::new(),
             diags: Vec::new(),
@@ -555,7 +558,9 @@ impl Checker {
             self.record_binding(p.name.span, &ty);
             self.bind(&p.name.name, ty, false, None);
         }
+        let outer_params = std::mem::replace(&mut self.type_params, generics);
         self.check_body(&f.body, &ret);
+        self.type_params = outer_params;
         self.exit_fn();
     }
 
@@ -612,7 +617,8 @@ impl Checker {
             } => {
                 let ty = match ty {
                     Some(t) => {
-                        let ty = self.resolve_type(t, &[], Scope::Global);
+                        let params = self.type_params.clone();
+                        let ty = self.resolve_type(t, &params, Scope::Global);
                         self.check(value, &ty);
                         ty
                     }
@@ -918,7 +924,7 @@ impl Checker {
                 if matches!(expect, Expect::Discard) {
                     return Ty::Unit;
                 }
-                self.join(vec![(then_ty, then.span), (else_ty, other.span)])
+                self.join(vec![(then_ty, then.span), (else_ty, other.span)], expect)
             }
             ExprKind::Block(block) => self.check_block(block, expect),
             ExprKind::Match { scrutinee, arms } => {
@@ -985,22 +991,34 @@ impl Checker {
         }
     }
 
-    /// The common type of the branches of an `if` or `match`.
-    fn join(&mut self, branches: Vec<(Ty, Span)>) -> Ty {
-        let mut result: Option<Ty> = None;
+    /// The common type of the branches of an `if` or `match`. It is
+    /// optional when the surrounding code expects an optional or when a
+    /// branch is optional, so `none` may come after a value.
+    fn join(&mut self, branches: Vec<(Ty, Span)>, expect: &Expect) -> Ty {
+        let branches: Vec<(Ty, Span)> = branches
+            .into_iter()
+            .filter(|(ty, _)| self.resolve(ty) != Ty::Never)
+            .collect();
+        let Some((first, _)) = branches.first() else {
+            return Ty::Never;
+        };
+        let first = self.resolve(first);
+        let expected = self.expected_ty(expect).map(|t| self.resolve(&t));
+        let result = match expected {
+            Some(t @ Ty::Opt(_)) => t,
+            _ if !matches!(first, Ty::Opt(_))
+                && branches
+                    .iter()
+                    .any(|(ty, _)| matches!(self.resolve(ty), Ty::Opt(_))) =>
+            {
+                Ty::Opt(Box::new(first))
+            }
+            _ => first,
+        };
         for (ty, span) in branches {
-            if self.resolve(&ty) == Ty::Never {
-                continue;
-            }
-            match &result {
-                None => result = Some(ty),
-                Some(r) => {
-                    let r = r.clone();
-                    self.coerce(&ty, &r, span);
-                }
-            }
+            self.coerce(&ty, &result, span);
         }
-        result.unwrap_or(Ty::Never)
+        result
     }
 
     fn nothing_to_try(&mut self, span: Span, inner: Span) {
@@ -1570,9 +1588,10 @@ impl Checker {
         else {
             unreachable!("infer_call on a non-call");
         };
+        let params = self.type_params.clone();
         let explicit: Vec<Ty> = type_args
             .iter()
-            .map(|t| self.resolve_type(t, &[], Scope::Global))
+            .map(|t| self.resolve_type(t, &params, Scope::Global))
             .collect();
         let fn_name = match &callee.kind {
             ExprKind::Ident(n) => n.clone(),
@@ -1992,7 +2011,10 @@ impl Checker {
                 .and_then(|f| f.params.get(i))
                 .map(|t| self.resolve(t));
             let ty = match (&p.ty, from_expected) {
-                (Some(t), _) => self.resolve_type(t, &[], Scope::Global),
+                (Some(t), _) => {
+                    let params = self.type_params.clone();
+                    self.resolve_type(t, &params, Scope::Global)
+                }
                 (None, Some(t)) if t != Ty::Rest => t,
                 (None, Some(_)) => Ty::Unknown,
                 (None, None) => {
@@ -2027,7 +2049,10 @@ impl Checker {
             }
         }
         let ret_ty = match (ret, &expected) {
-            (Some(t), _) => self.resolve_type(t, &[], Scope::Global),
+            (Some(t), _) => {
+                let params = self.type_params.clone();
+                self.resolve_type(t, &params, Scope::Global)
+            }
             (None, Some(f)) => f.ret.clone(),
             (None, None) => self.fresh(),
         };
@@ -2102,7 +2127,7 @@ impl Checker {
         );
         match expect {
             Expect::Discard => Ty::Unit,
-            _ => self.join(branches),
+            _ => self.join(branches, expect),
         }
     }
 

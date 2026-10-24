@@ -356,6 +356,10 @@ impl<'a> Gen<'a> {
             return e.to_string();
         }
         let (fr, tr) = (self.rep(from), self.rep(to));
+        // A `T` stored in a `T?` is boxed, even when `T` lives in a slot.
+        if matches!(to, Ty::Opt(inner) if **inner == *from) {
+            return format!("k_box({})", self.to_kv(e, from));
+        }
         if tr == Rep::Kv {
             return if fr == Rep::Kv {
                 e.to_string()

@@ -1,0 +1,63 @@
+// Generic functions: type parameters in local annotations and closures,
+// generic values stored in optionals, and branches that end in `none`.
+struct Task {
+    id: Int
+    title: String
+    done: Bool = false
+}
+
+fn largest<T>(items: List<T>, key: fn(T) -> Int) -> T? {
+    var best: T? = none
+    var best_key = 0
+    for item in items {
+        if best == none or key(item) > best_key {
+            best = item
+            best_key = key(item)
+        }
+    }
+    best
+}
+
+fn keep<T>(items: List<T>, ok: fn(T) -> Bool) -> List<T> {
+    let out: List<T> = []
+    let check = fn(x: T) -> Bool { ok(x) }
+    for item in items where check(item) {
+        out.push(item)
+    }
+    out
+}
+
+fn wrap<T>(value: T) -> T? {
+    value
+}
+
+fn name(n: Int) -> String? {
+    match n {
+        1 => "one"
+        2 => "two"
+        _ => none
+    }
+}
+
+fn main() {
+    let tasks = [Task(id: 1, title: "write"), Task(id: 3, title: "ship", done: true), Task(id: 2, title: "test")]
+    print(largest(tasks, .id))
+    print(largest(["a", "ccc", "bb"], fn(s) { s.len() }))
+    print(largest([3, 9, 4], fn(n) { n }) ?? 0)
+    print(largest([1.5, 2.5], fn(x) { x.round() }))
+    print(largest([true], fn(b) { 1 }))
+    let empty: List<Int> = []
+    print(largest(empty, fn(n) { n }))
+
+    print(keep(tasks, .done))
+    print(keep([1, 2, 3, 4], fn(n) { n % 2 == 0 }))
+
+    print(wrap(7))
+    print(wrap("seven"))
+    print(wrap(wrap(7.5)))
+
+    print(name(1))
+    print(name(9))
+    let maybe = if tasks.len() > 5 { 5 } else { none }
+    print(maybe ?? -1)
+}

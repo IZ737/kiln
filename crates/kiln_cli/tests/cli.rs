@@ -237,3 +237,19 @@ fn compile_errors_point_into_the_right_file() {
     assert!(stderr.contains("E0401"), "{stderr}");
     assert!(stderr.contains("b.kiln:4:5"), "{stderr}");
 }
+
+#[cfg(unix)]
+#[test]
+fn run_reports_a_program_stopped_by_a_signal() {
+    let dir = scratch("signal");
+    std::fs::write(
+        dir.join("main.kiln"),
+        "fn down(n: Int) -> Int {\n    down(n + 1) + 1\n}\n\nfn main() {\n    print(down(0))\n}\n",
+    )
+    .unwrap();
+    let out = kiln().arg("run").arg(&dir).output().unwrap();
+    assert!(!out.status.success());
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(stderr.contains("stopped by signal"), "{stderr}");
+    std::fs::remove_dir_all(&dir).unwrap();
+}

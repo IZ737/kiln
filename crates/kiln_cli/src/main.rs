@@ -408,13 +408,37 @@ fn run(path: &Path, args: &[String]) -> ExitCode {
     match status {
         Ok(status) => match status.code() {
             Some(code) => ExitCode::from(code.clamp(0, 255) as u8),
-            None => ExitCode::FAILURE,
+            None => {
+                report_signal(&status);
+                ExitCode::FAILURE
+            }
         },
         Err(err) => {
             eprintln!("error: cannot run the program: {err}");
             ExitCode::from(2)
         }
     }
+}
+
+/// Explains a program that was stopped by a signal, which otherwise ends
+/// without a word.
+fn report_signal(status: &std::process::ExitStatus) {
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::ExitStatusExt;
+        let Some(signal) = status.signal() else {
+            return;
+        };
+        let detail = match signal {
+            11 => " (a crash: a stack overflow from deep recursion, or a compiler bug; please report it)",
+            9 => " (killed)",
+            6 => " (aborted)",
+            _ => "",
+        };
+        eprintln!("error: the program was stopped by signal {signal}{detail}");
+    }
+    #[cfg(not(unix))]
+    eprintln!("error: the program stopped abnormally ({status})");
 }
 
 fn same_file(a: &Path, b: &Path) -> bool {
