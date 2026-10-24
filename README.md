@@ -1,3 +1,10 @@
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/brand/logo/kiln-horizontal-dark.svg">
+    <img src="assets/brand/logo/kiln-horizontal.svg" alt="Kiln" width="320">
+  </picture>
+</p>
+
 # Kiln
 
 Kiln is a compiled, garbage-collected language for building web servers and
@@ -81,6 +88,7 @@ cargo run -p kiln_cli -- explain E0106
 | `crates/kiln_cli` | The `kiln` command |
 | `examples/` | Example programs and glazes; every one is checked in CI |
 | `conformance/` | Programs with their expected output; every one is compiled and run in CI |
+| `assets/brand/` | Logo, symbol and the vocabulary icons (`.kiln`, glaze, ware, ember, `kiln fire`), as SVG and PNG |
 | `docs/syntax.md` | The syntax the parser accepts |
 | `docs/glazes.md` | Glaze (template and component) syntax |
 | `docs/types.md` | The type rules the checker enforces |

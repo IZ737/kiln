@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Ember icon"><title>Ember — Interactive WebAssembly island</title>
+ <rect x="15" y="15" width="34" height="34" rx="5" fill="#1F232B"/>
+ <path d="M23 32 L32 21 L41 32 L32 43 Z" fill="#C65A34"/>
+ <path d="M32 27 L36 33 L32 38 L28 33 Z" fill="#1F232B"/>
+ <path d="M9 25 H15 M9 39 H15 M49 25 H55 M49 39 H55 M25 9 V15 M39 9 V15 M25 49 V55 M39 49 V55" stroke="#1F232B" stroke-width="3.3" stroke-linecap="round"/>
+ </svg>
