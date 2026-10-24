@@ -653,6 +653,22 @@ impl<'a> Gen<'a> {
                 let k = self.expr(key);
                 let k = self.to_kv(&k, &kt);
                 let v = self.expr(value);
+                let v = match op {
+                    None => v,
+                    Some(_) => {
+                        // `map[key] += v` needs the key to be there already.
+                        let (bt, kt) = (self.tmp_c("kmap *"), self.tmp_c("kv"));
+                        self.line(&format!("{bt} = {b};"));
+                        self.line(&format!("{kt} = {k};"));
+                        let cur = self.unkv(&format!("k_map_at({bt}, {kt})"), &vt);
+                        let new = self.compound(op, &cur, &vt, &v);
+                        self.line(&format!(
+                            "k_map_set({bt}, {kt}, {});",
+                            self.to_kv(&new, &vt)
+                        ));
+                        return;
+                    }
+                };
                 let v = self.to_kv(&v, &vt);
                 self.line(&format!("k_map_set({b}, {k}, {v});"));
             }
@@ -1855,22 +1871,77 @@ impl<'a> Gen<'a> {
         name
     }
 
-    /// The runtime hash function for map keys and set items of `ty`.
+    /// The runtime hash function for map keys and set items of `ty`. Values
+    /// that `eq_fn` finds equal hash the same.
     fn hash_fn(&mut self, ty: &Ty, span: Span) -> String {
         if self.is_string(ty) {
             return "k_hash_str".into();
         }
         match self.rep(ty) {
-            Rep::Int | Rep::Bool => "k_hash_int".into(),
-            Rep::Float => "k_hash_float".into(),
-            _ => {
-                self.unsupported(span, "a map key or set item of this type");
-                "k_hash_int".into()
-            }
+            Rep::Int | Rep::Bool => return "k_hash_int".into(),
+            Rep::Float => return "k_hash_float".into(),
+            _ => {}
         }
+        let (name, fresh) = self.helper(format!("hash:{ty:?}"), "khash");
+        if !fresh {
+            return name;
+        }
+        let _ = writeln!(self.protos, "static uint64_t {name}(kv v);");
+        let body = match self.parts(ty) {
+            Some(Parts::Opt(inner)) => {
+                let h = self.hash_fn(&inner, span);
+                format!("    kbox *x = K_KV2P(kbox *, v);\n    return x ? k_hash_combine(1, {h}(x->v)) : 0;\n")
+            }
+            Some(Parts::List(item)) => {
+                let h = self.hash_fn(&item, span);
+                format!("    klist *x = K_KV2P(klist *, v);\n    uint64_t r = (uint64_t)x->len;\n    for (int64_t i = 0; i < x->len; i++) r = k_hash_combine(r, {h}(x->items[i]));\n    return r;\n")
+            }
+            Some(Parts::Fields { cty, fields }) => {
+                let mut b = String::new();
+                if !fields.is_empty() {
+                    let _ = writeln!(b, "    {cty} x = K_KV2P({cty}, v);");
+                }
+                b.push_str("    uint64_t r = 0;\n");
+                for (access, fty) in fields {
+                    let h = self.hash_fn(&fty, span);
+                    let x = access.replace('@', "x");
+                    let _ = writeln!(b, "    r = k_hash_combine(r, {h}({x}));");
+                }
+                b.push_str("    return r;\n");
+                b
+            }
+            Some(Parts::Enum(variants)) => {
+                let mut b = "    kenum *x = K_KV2P(kenum *, v);\n    uint64_t r = k_hash_int((kv)x->tag);\n    switch (x->tag) {\n".to_string();
+                for (i, fields) in variants.into_iter().enumerate() {
+                    if fields.is_empty() {
+                        continue;
+                    }
+                    let _ = writeln!(b, "    case {i}:");
+                    for (j, fty) in fields.into_iter().enumerate() {
+                        let h = self.hash_fn(&fty, span);
+                        let _ = writeln!(b, "        r = k_hash_combine(r, {h}(x->f[{j}]));");
+                    }
+                    b.push_str("        break;\n");
+                }
+                b.push_str("    }\n    return r;\n");
+                b
+            }
+            None => {
+                self.unsupported(span, "a map key or set item of this type");
+                "    return 0;\n".to_string()
+            }
+        };
+        let _ = write!(
+            self.helpers,
+            "static uint64_t {name}(kv v) {{\n{body}}}\n\n"
+        );
+        name
     }
 
-    /// An `int (kv, kv)` function that orders values of `ty`.
+    /// An `int (kv, kv)` function that orders values of `ty`: numbers by
+    /// value, strings by bytes, `false` before `true`, `none` before any
+    /// value, lists item by item, structs and records field by field in
+    /// order, and enums by variant, then fields.
     fn cmp_fn(&mut self, ty: &Ty, span: Span) -> String {
         let (name, fresh) = self.helper(format!("cmp:{ty:?}"), "kcmp");
         if !fresh {
@@ -1890,10 +1961,55 @@ impl<'a> Gen<'a> {
                     .to_string()
             }
             Rep::Bool => "    return (int)(a != 0) - (int)(b != 0);\n".to_string(),
-            _ => {
-                self.unsupported(span, "sorting by a key of this type");
-                "    return 0;\n".to_string()
-            }
+            _ => match self.parts(ty) {
+                Some(Parts::Opt(inner)) => {
+                    let c = self.cmp_fn(&inner, span);
+                    format!("    kbox *x = K_KV2P(kbox *, a), *y = K_KV2P(kbox *, b);\n    if (!x || !y) return (x != NULL) - (y != NULL);\n    return {c}(x->v, y->v);\n")
+                }
+                Some(Parts::List(item)) => {
+                    let c = self.cmp_fn(&item, span);
+                    format!("    klist *x = K_KV2P(klist *, a), *y = K_KV2P(klist *, b);\n    for (int64_t i = 0; i < x->len && i < y->len; i++) {{\n        int c = {c}(x->items[i], y->items[i]);\n        if (c != 0) return c;\n    }}\n    return x->len < y->len ? -1 : x->len > y->len;\n")
+                }
+                Some(Parts::Fields { cty, fields }) => {
+                    let mut b = String::new();
+                    if !fields.is_empty() {
+                        let _ = writeln!(
+                            b,
+                            "    int c;\n    {cty} x = K_KV2P({cty}, a);\n    {cty} y = K_KV2P({cty}, b);"
+                        );
+                    }
+                    for (access, fty) in fields {
+                        let c = self.cmp_fn(&fty, span);
+                        let (x, y) = (access.replace('@', "x"), access.replace('@', "y"));
+                        let _ = writeln!(b, "    if ((c = {c}({x}, {y})) != 0) return c;");
+                    }
+                    b.push_str("    return 0;\n");
+                    b
+                }
+                Some(Parts::Enum(variants)) => {
+                    let mut b = "    int c;\n    kenum *x = K_KV2P(kenum *, a), *y = K_KV2P(kenum *, b);\n    if (x->tag != y->tag) return x->tag < y->tag ? -1 : 1;\n    switch (x->tag) {\n".to_string();
+                    for (i, fields) in variants.into_iter().enumerate() {
+                        if fields.is_empty() {
+                            continue;
+                        }
+                        let _ = writeln!(b, "    case {i}:");
+                        for (j, fty) in fields.into_iter().enumerate() {
+                            let c = self.cmp_fn(&fty, span);
+                            let _ = writeln!(
+                                b,
+                                "        if ((c = {c}(x->f[{j}], y->f[{j}])) != 0) return c;"
+                            );
+                        }
+                        b.push_str("        break;\n");
+                    }
+                    b.push_str("    }\n    return 0;\n");
+                    b
+                }
+                None => {
+                    self.unsupported(span, "sorting by a key of this type");
+                    "    return 0;\n".to_string()
+                }
+            },
         };
         let _ = write!(
             self.helpers,
@@ -1901,6 +2017,64 @@ impl<'a> Gen<'a> {
         );
         name
     }
+
+    /// How a compound value of `ty` breaks into parts, for hashing and
+    /// ordering, or `None` for types that have no such parts (maps, sets,
+    /// functions and generic parameters).
+    fn parts(&mut self, ty: &Ty) -> Option<Parts> {
+        match ty {
+            Ty::Opt(inner) => Some(Parts::Opt((**inner).clone())),
+            Ty::Adt(id, args) if *id == self.prims.list => Some(Parts::List(args[0].clone())),
+            Ty::Adt(id, args) if !self.is_prim(*id) => {
+                let adt = self.p.adts[*id].clone();
+                let map = self.type_map(*id, args);
+                match &adt.kind {
+                    AdtKind::Struct(fields) => {
+                        let cty = format!("{} *", self.struct_name(*id));
+                        let fields = fields
+                            .iter()
+                            .map(|f| {
+                                let fname = format!("f_{}", mangle(&f.name));
+                                let access = self.to_kv(&format!("@->{fname}"), &f.ty);
+                                (access, substitute(&f.ty, &map))
+                            })
+                            .collect();
+                        Some(Parts::Fields { cty, fields })
+                    }
+                    AdtKind::Enum(variants) => Some(Parts::Enum(
+                        variants
+                            .iter()
+                            .map(|v| v.fields.iter().map(|(_, t)| substitute(t, &map)).collect())
+                            .collect(),
+                    )),
+                }
+            }
+            Ty::Record(fields) => Some(Parts::Fields {
+                cty: "kv *".to_string(),
+                fields: fields
+                    .iter()
+                    .enumerate()
+                    .map(|(i, (_, t))| (format!("@[{i}]"), t.clone()))
+                    .collect(),
+            }),
+            _ => None,
+        }
+    }
+}
+
+/// The parts of a compound value, as [`Gen::parts`] gives them.
+enum Parts {
+    Opt(Ty),
+    List(Ty),
+    /// The C type of the value's pointer, then each field as a `kv`
+    /// expression with `@` standing for that pointer, with its type. A
+    /// struct without fields is NULL, so it has no fields to read.
+    Fields {
+        cty: String,
+        fields: Vec<(String, Ty)>,
+    },
+    /// Each variant's field types.
+    Enum(Vec<Vec<Ty>>),
 }
 
 /// A C identifier for a Kiln name.

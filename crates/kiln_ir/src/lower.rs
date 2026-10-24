@@ -768,10 +768,6 @@ impl<'a> Lowerer<'a> {
                 let bt = self.ty(base);
                 match &bt {
                     Ty::Adt(id, targs) if *id == self.prims.map => {
-                        if op.is_some() {
-                            self.unsupported(target.span, "this operator on a map entry");
-                            return None;
-                        }
                         let map = self.expr(base);
                         let k = self.expr(index);
                         let key = coerce(k, &targs[0]);
@@ -1659,7 +1655,31 @@ impl<'a> Lowerer<'a> {
             let (func, sig) = self.instance(func, template, &sig, span, Some(&recv_ty));
             return Some(self.user_call(func, &sig, decl, Some(recv), args, rt, span));
         }
-        let (prelude, recv, vals) = self.arrange(&sig.params, &[], Some(recv), args);
+        // A built-in method takes items of a type parameter in slots. Move
+        // each argument to the receiver's item type first, so that, say,
+        // an `Int` pushed onto a `List<Int?>` is boxed before it goes in.
+        let concrete: Vec<ParamSig> = match &recv.ty {
+            Ty::Adt(id, targs) => {
+                let map = self.type_map(*id, targs);
+                sig.params
+                    .iter()
+                    .map(|p| ParamSig {
+                        ty: match &p.ty {
+                            Ty::Param(_) => substitute(&p.ty, &map),
+                            _ => p.ty.clone(),
+                        },
+                        ..p.clone()
+                    })
+                    .collect()
+            }
+            _ => sig.params.clone(),
+        };
+        let (prelude, recv, vals) = self.arrange(&concrete, &[], Some(recv), args);
+        let vals = vals
+            .into_iter()
+            .zip(&sig.params)
+            .map(|(v, p)| coerce(v, &p.ty))
+            .collect();
         let recv = Box::new(recv.expect("the receiver is kept"));
         let call = mk(
             ExprKind::Method {

@@ -539,6 +539,11 @@ static uint64_t k_hash_int(kv v) {
     return x ^ (x >> 33);
 }
 
+/* Mixes the hash of one more part into `h`; the order of parts matters. */
+static uint64_t k_hash_combine(uint64_t h, uint64_t x) {
+    return k_hash_int(h ^ (x + 0x9e3779b97f4a7c15ULL + (h << 6) + (h >> 2)));
+}
+
 static uint64_t k_hash_float(kv v) {
     double f = k_kv2f(v);
     if (f == 0) f = 0; /* -0.0 and 0.0 are equal, so they hash the same */
@@ -617,6 +622,12 @@ static void k_map_set(kmap *m, kv key, kv val) {
 static kbox *k_map_get(kmap *m, kv key) {
     int64_t e = m->index[k_map_slot(m, key)];
     return e >= 0 ? k_box(m->vals[e]) : NULL;
+}
+
+static kv k_map_at(kmap *m, kv key) {
+    kbox *b = k_map_get(m, key);
+    if (!b) k_panic_c("the key is not in the map");
+    return b->v;
 }
 
 static bool k_map_contains(kmap *m, kv key) { return m->index[k_map_slot(m, key)] >= 0; }

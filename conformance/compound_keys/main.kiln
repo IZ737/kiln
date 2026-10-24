@@ -1,0 +1,93 @@
+// Structs, enums, records, lists and optionals as map keys and set items,
+// and as values to sort. Structs and records order field by field, enums
+// by variant and then fields, lists item by item, and none comes first.
+
+struct Point {
+    x: Int
+    y: Int
+}
+
+struct Pair<A, B> {
+    first: A
+    second: B
+}
+
+struct Unit {}
+
+enum Shape {
+    Dot
+    Circle(r: Float)
+    Label(text: String, at: Point)
+}
+
+fn main() {
+    let visits: Map<Point, Int> = Map()
+    for p in [Point(x: 1, y: 2), Point(x: 0, y: 0), Point(x: 1, y: 2)] {
+        visits[p] = (visits[p] ?? 0) + 1
+    }
+    print(visits)
+    print(visits[Point(x: 1, y: 2)])
+    print(visits.contains(Point(x: 2, y: 1)))
+
+    let shapes = Set<Shape>()
+    shapes.add(Shape.Circle(r: 1.5))
+    shapes.add(Shape.Dot)
+    shapes.add(Shape.Label(text: "a", at: Point(x: 0, y: 1)))
+    shapes.add(Shape.Circle(r: 1.5))
+    shapes.add(Shape.Label(text: "a", at: Point(x: 0, y: 1)))
+    print(shapes.len())
+    print(shapes.contains(Shape.Label(text: "a", at: Point(x: 0, y: 2))))
+
+    let grid: Map<{ row: Int, col: Int }, String> = Map()
+    grid[{ row: 0, col: 1 }] = "x"
+    print(grid[{ row: 0, col: 1 }])
+    print(grid[{ row: 1, col: 0 }])
+
+    let paths = Set<List<String>>()
+    paths.add(["usr", "bin"])
+    paths.add(["usr", "bin"])
+    paths.add(["usr"])
+    print(paths.len())
+
+    let maybe = Set<Int?>()
+    maybe.add(none)
+    maybe.add(3)
+    maybe.add(none)
+    print(maybe.len())
+
+    let pairs: Map<Pair<Int, String>, Bool> = Map()
+    pairs[Pair(first: 1, second: "one")] = true
+    print(pairs[Pair(first: 1, second: "one")])
+    print(pairs[Pair(first: 1, second: "uno")])
+
+    let units = Set<Unit>()
+    units.add(Unit())
+    units.add(Unit())
+    print(units.len())
+
+    // Ordering
+    let pts = [Point(x: 2, y: 1), Point(x: 1, y: 5), Point(x: 1, y: 2)]
+    print(pts.sort())
+    print(pts.min())
+    print(pts.max())
+    print([Shape.Label(text: "b", at: Point(x: 0, y: 0)), Shape.Circle(r: 2.0), Shape.Dot, Shape.Circle(r: 1.0)].sort())
+    print([[2], [1, 5], [1], []].sort())
+    print([3, none, 1].sort())
+    print([{ name: "b", n: 1 }, { name: "a", n: 2 }].sort_by(fn(r) { r }))
+    let words = ["pear", "fig", "apple", "kiwi"]
+    print(words.sort_by(fn(w) { { len: w.len(), word: w } }))
+
+    // Optional items and values, and operators on map entries
+    let opts: List<Int?> = []
+    opts.push(3)
+    opts.push(none)
+    print(opts)
+    let notes: Map<String, String?> = Map()
+    notes["a"] = "hi"
+    notes["b"] = none
+    print(notes)
+    let totals: Map<Point, Int> = Map()
+    totals[Point(x: 0, y: 0)] = 1
+    totals[Point(x: 0, y: 0)] += 10
+    print(totals)
+}

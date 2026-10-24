@@ -44,7 +44,15 @@ the details of any error.
   `list.get(i)` returns a `T?`.
 - Create an empty map or set with its type: `let m: Map<String, Int> = Map()`
   or `Set<String>()`. `map[key]` is a `V?` (`none` when the key is missing),
-  and `map[key] = value` adds or replaces an entry.
+  and `map[key] = value` adds or replaces an entry. `map[key] += n` (and the
+  other operators) updates an entry that must already be there; the program
+  panics if it is not.
+- Map keys and set items can be numbers, strings, booleans, optionals, lists,
+  records, structs and enums, compared by value: two structs with equal
+  fields are the same key. Maps, sets and functions cannot be keys. Don't
+  change a list or struct while it is a key.
+- `[3, none]` is a `List<Int?>`: like the branches of an `if`, the items of
+  a list share one type.
 - Maps and sets keep their keys in the order they were first added, so
   printing and looping are predictable. Two maps are equal when they hold the
   same keys with equal values, in any order.
