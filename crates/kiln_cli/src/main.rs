@@ -1,4 +1,6 @@
-//! The `kiln` command: `check`, `build`, `run`, `parse` and `explain`.
+//! The `kiln` command: `check`, `build`, `run`, `lsp`, `parse` and `explain`.
+
+mod lsp;
 
 use clap::{Parser, Subcommand};
 use kiln_diagnostics::{codes, Diagnostic, SourceFile};
@@ -44,6 +46,8 @@ enum Command {
         #[arg(trailing_var_arg = true)]
         args: Vec<String>,
     },
+    /// Run the language server, for editors, over standard input and output.
+    Lsp,
     /// Print the syntax tree of a file.
     Parse { file: PathBuf },
     /// Explain an error code, with a wrong and a right example.
@@ -68,6 +72,7 @@ fn main() -> ExitCode {
             }
         }
         Command::Run { file, args } => run(&file, &args),
+        Command::Lsp => ExitCode::from(lsp::run() as u8),
         Command::Parse { file } => parse(&file),
         Command::Explain { code } => explain(&code),
     }
@@ -167,10 +172,19 @@ enum Parsed {
 fn check_dir(
     paths: &[PathBuf],
 ) -> Result<Vec<(SourceFile, Vec<Diagnostic>)>, (PathBuf, std::io::Error)> {
-    let mut sources = Vec::new();
+    let mut texts = Vec::new();
     for path in paths {
         let text = std::fs::read_to_string(path).map_err(|e| (path.clone(), e))?;
-        let file = SourceFile::new(path.display().to_string(), text);
+        texts.push((path.clone(), text));
+    }
+    Ok(check_sources(texts))
+}
+
+/// Parses and type-checks the files of one directory, given their text.
+pub(crate) fn check_sources(texts: Vec<(PathBuf, String)>) -> Vec<(SourceFile, Vec<Diagnostic>)> {
+    let mut sources = Vec::new();
+    for (path, text) in &texts {
+        let file = SourceFile::new(path.display().to_string(), text.clone());
         let parsed = if is_glaze(path) {
             Parsed::Glaze(Box::new(kiln_syntax::glaze::parse_glaze(&file.text)))
         } else {
@@ -183,13 +197,13 @@ fn check_dir(
         Parsed::Glaze(r) => r.diagnostics.clone(),
     };
     if sources.iter().any(|(_, _, p)| !parse_errors(p).is_empty()) {
-        return Ok(sources
+        return sources
             .into_iter()
             .map(|(_, file, p)| {
                 let diags = parse_errors(&p);
                 (file, diags)
             })
-            .collect());
+            .collect();
     }
     let modules: Vec<&kiln_syntax::ast::Module> = sources
         .iter()
@@ -227,7 +241,7 @@ fn check_dir(
         };
         out.push((file.clone(), diags.unwrap_or_default()));
     }
-    Ok(out)
+    out
 }
 
 /// Parses, checks and compiles one file into an executable at `out`.
@@ -302,7 +316,7 @@ fn same_file(a: &Path, b: &Path) -> bool {
     }
 }
 
-fn is_glaze(path: &Path) -> bool {
+pub(crate) fn is_glaze(path: &Path) -> bool {
     path.extension().is_some_and(|ext| ext == "glaze")
 }
 

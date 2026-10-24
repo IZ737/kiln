@@ -34,8 +34,10 @@ Run `cargo fmt --all`, `cargo clippy --all-targets -- -D warnings` and
 - `crates/kiln_codegen`: the C backend. `emit.rs` turns a checked program
   (`kiln_check::check_program`) into C; `runtime/kiln.c` is prepended to it.
   Building needs a C compiler and the Boehm GC (`libgc-dev`).
-- `crates/kiln_cli`: the `kiln` binary (`check`, `build`, `run`, `parse`,
-  `explain`).
+- `crates/kiln_cli`: the `kiln` binary (`check`, `build`, `run`, `lsp`,
+  `parse`, `explain`). `lsp.rs` is the language server; it reuses
+  `check_sources` from `main.rs`, so editors and `kiln check` report the same
+  errors.
 - `conformance/`: programs with expected output (`.out`, and `.err` when
   they fail). `crates/kiln_cli/tests/conformance.rs` runs each one; add one
   for every feature the compiler learns.

@@ -171,7 +171,8 @@ background sync come with it.
 
 `kiln lsp` is a language server (LSP) for any editor. The first version, in
 phase 1, reports the same diagnostics as `kiln check` as you type and offers
-their suggested fixes as quick fixes. Phase 4 adds completion, hover types,
+their suggested fixes as quick fixes; [editors.md](editors.md) shows how to
+set it up. Phase 4 adds completion, hover types,
 go to definition, find references, rename, and the same support inside
 glazes, including props and component attributes.
 
