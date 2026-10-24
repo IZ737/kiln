@@ -144,6 +144,8 @@ pub enum TypeKind {
         ret: Option<Box<TypeExpr>>,
         throws: Throws,
     },
+    /// `{ name: String, age: Int }`, an anonymous record type.
+    Record(Vec<(Ident, TypeExpr)>),
     /// Produced after a syntax error so parsing can continue.
     Error,
 }

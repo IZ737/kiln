@@ -449,3 +449,16 @@ fn type_parameters_are_in_scope_in_the_body() {
 fn closure_arguments_are_checked_after_the_others() {
     ok("fn twice<T>(f: fn(T) -> T, x: T) -> T {\n    f(f(x))\n}\n\nfn main() {\n    print(twice(fn(n) { n * 3 }, 2))\n}\n");
 }
+
+#[test]
+fn record_types_in_signatures() {
+    ok("fn span(items: List<Int>) -> { lo: Int, hi: Int } {\n    { lo: items[0], hi: items[1] }\n}\n\nfn width(r: { lo: Int, hi: Int }) -> Int {\n    r.hi - r.lo\n}\n\nfn main() {\n    print(width(span([1, 5])))\n}\n");
+    assert_eq!(
+        error_codes("fn f() -> { a: Int } {\n    { a: \"x\" }\n}\n"),
+        vec![codes::TYPE_MISMATCH]
+    );
+    assert_eq!(
+        error_codes("fn f(r: { a: Int, a: Int }) {}\n"),
+        vec![codes::DUPLICATE_DEFINITION]
+    );
+}

@@ -1,5 +1,34 @@
 // Anonymous records: building them, field shorthand, reading and assigning
-// fields, printing, equality, and records in lists, closures and generics.
+// fields, printing, equality, records in lists, closures and generics, and
+// record types in signatures and struct fields.
+struct Report {
+    title: String
+    range: { lo: Int, hi: Int }
+}
+
+fn stats(items: List<Int>) -> { min: Int, max: Int, mean: Float } {
+    var lo = items[0]
+    var hi = items[0]
+    var sum = 0
+    for n in items {
+        lo = lo.min(n)
+        hi = hi.max(n)
+        sum += n
+    }
+    { min: lo, max: hi, mean: sum.to_float() / items.len().to_float() }
+}
+
+fn width(r: { lo: Int, hi: Int }) -> Int {
+    r.hi - r.lo
+}
+
+fn find(name: String) -> { id: Int, name: String }? {
+    if name == "ada" {
+        return { id: 1, name }
+    }
+    none
+}
+
 fn main() {
     let name = "Ada"
     let user = { name, age: 36, tags: ["math"], nick: none ?? "A" }
@@ -32,6 +61,18 @@ fn main() {
     r.count = 5
     r.count += 1
     print(r.count)
+    let s = stats([4, 1, 7])
+    print(s)
+    print(s.max - s.min)
+    let report = Report(title: "nums", range: { lo: s.min, hi: s.max })
+    print(report)
+    print(width(report.range))
+    print(find("ada"))
+    print(find("bob"))
+    let pairs: List<{ k: String, v: Int }> = [{ k: "a", v: 1 }]
+    print(pairs[0].k)
+    let f: fn(Int) -> { n: Int } = fn(n) { { n } }
+    print(f(3).n)
 }
 
 fn show<T>(v: T) -> String {

@@ -13,3 +13,11 @@ false
 { inner: { v: 1.5 } }
 <{ a: 1 }>
 6
+{ min: 1, max: 7, mean: 4.0 }
+6
+Report(title: "nums", range: { lo: 1, hi: 7 })
+6
+{ id: 1, name: "ada" }
+none
+a
+3

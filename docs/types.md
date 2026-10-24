@@ -32,8 +32,11 @@ the details of any error.
   `{ name: String, age: Int }`; `{ name }` is short for `{ name: name }`.
   Fields are read and assigned like struct fields. Two records are equal
   when their fields are, and they print as they are written.
-- Records have no type syntax yet, so they are used where their type is
-  inferred: locals, lists, closures and generic arguments.
+- A record type is written like the record: `{ name: String, age: Int }`.
+  Functions take and return records, and struct fields can hold them:
+  `fn stats(items: List<Int>) -> { min: Int, max: Int }`. Two record types
+  are the same when they have the same fields, with the same types, in the
+  same order.
 
 ## Lists, maps and sets
 

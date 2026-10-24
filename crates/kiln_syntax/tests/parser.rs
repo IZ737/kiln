@@ -284,3 +284,23 @@ fn function_types() {
     assert!(ret.is_some());
     assert_eq!(*throws, Throws::Default);
 }
+
+#[test]
+fn record_types() {
+    let src = "fn stats(items: List<Int>) -> { min: Int, max: Int }? {\n    none\n}\n";
+    let result = parse(src);
+    assert!(result.diagnostics.is_empty(), "{:#?}", result.diagnostics);
+    let Some(Item::Fn(f)) = result.module.items.first() else {
+        panic!("expected a function");
+    };
+    let ret = f.ret.as_ref().expect("a return type");
+    let TypeKind::Optional(inner) = &ret.kind else {
+        panic!("expected an optional, got {:?}", ret.kind);
+    };
+    let TypeKind::Record(fields) = &inner.kind else {
+        panic!("expected a record type, got {:?}", inner.kind);
+    };
+    let names: Vec<&str> = fields.iter().map(|(n, _)| n.name.as_str()).collect();
+    assert_eq!(names, ["min", "max"]);
+    assert_eq!(f.body.stmts.len(), 1);
+}

@@ -611,7 +611,26 @@ impl Parser {
                 span: start.to(self.previous_span()),
             };
         }
-        if !matches!(self.peek(), TokenKind::Ident(_)) {
+        let kind = if self.at(&TokenKind::LBrace) {
+            let fields = self.delimited(TokenKind::LBrace, TokenKind::RBrace, |p| {
+                let name = p.expect_ident("a field name");
+                p.expect(&TokenKind::Colon);
+                (name, p.parse_type())
+            });
+            TypeKind::Record(fields)
+        } else if matches!(self.peek(), TokenKind::Ident(_)) {
+            let mut path = vec![self.expect_ident("a type name")];
+            while self.at(&TokenKind::Dot) {
+                self.bump();
+                path.push(self.expect_ident("a type name"));
+            }
+            let args = if self.at(&TokenKind::Lt) {
+                self.delimited(TokenKind::Lt, TokenKind::Gt, |p| p.parse_type())
+            } else {
+                Vec::new()
+            };
+            TypeKind::Named { path, args }
+        } else {
             let found = self.peek().clone();
             self.error(Diagnostic::error(
                 codes::EXPECTED_TYPE,
@@ -622,19 +641,9 @@ impl Parser {
                 kind: TypeKind::Error,
                 span: start,
             };
-        }
-        let mut path = vec![self.expect_ident("a type name")];
-        while self.at(&TokenKind::Dot) {
-            self.bump();
-            path.push(self.expect_ident("a type name"));
-        }
-        let args = if self.at(&TokenKind::Lt) {
-            self.delimited(TokenKind::Lt, TokenKind::Gt, |p| p.parse_type())
-        } else {
-            Vec::new()
         };
         let mut ty = TypeExpr {
-            kind: TypeKind::Named { path, args },
+            kind,
             span: start.to(self.previous_span()),
         };
         while self.at(&TokenKind::Question) {

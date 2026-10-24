@@ -240,6 +240,22 @@ impl Checker {
     pub(crate) fn resolve_type(&mut self, t: &TypeExpr, generics: &[String], scope: Scope) -> Ty {
         match &t.kind {
             TypeKind::Error => Ty::Unknown,
+            TypeKind::Record(fields) => {
+                let mut out: Vec<(String, Ty)> = Vec::new();
+                for (name, ty) in fields {
+                    let ty = self.resolve_type(ty, generics, scope);
+                    if out.iter().any(|(n, _)| *n == name.name) {
+                        self.error(Diagnostic::error(
+                            codes::DUPLICATE_DEFINITION,
+                            format!("the field `{}` is listed twice", name.name),
+                            name.span,
+                        ));
+                        continue;
+                    }
+                    out.push((name.name.clone(), ty));
+                }
+                Ty::Record(out)
+            }
             TypeKind::Optional(inner) => {
                 Ty::Opt(Box::new(self.resolve_type(inner, generics, scope)))
             }
