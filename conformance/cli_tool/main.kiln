@@ -1,0 +1,111 @@
+// A small CLI-style program: generic structs, custom errors, match in loops
+// (the match flag must reset on every pass), files and maps of lists.
+
+import fs
+import os
+
+enum ParseError {
+    Empty
+    Bad(line: Int, text: String)
+}
+
+struct Stack<T> {
+    items: List<T>
+}
+
+impl Stack<T> {
+    fn push(self, item: T) {
+        self.items.push(item)
+    }
+    fn pop(self) -> T? {
+        self.items.pop()
+    }
+    fn size(self) -> Int {
+        self.items.len()
+    }
+}
+
+struct Counter {
+    count: Int = 0
+    name: String
+}
+
+impl Counter {
+    fn bump(self, by: Int = 1) {
+        self.count += by
+    }
+}
+
+fn parse_numbers(text: String) -> List<Int> ! ParseError {
+    if text.trim().is_empty() {
+        throw ParseError.Empty
+    }
+    var out: List<Int> = []
+    var n = 0
+    for line in text.lines() {
+        n += 1
+        match line.to_int() {
+            some(v) => out.push(v)
+            none => throw ParseError.Bad(line: n, text: line)
+        }
+    }
+    out
+}
+
+fn fib(n: Int) -> Int {
+    if n < 2 { n } else { fib(n - 1) + fib(n - 2) }
+}
+
+fn classify(n: Int) -> String {
+    match n {
+        0 => "zero"
+        x if x < 0 => "negative"
+        x if x % 2 == 0 => "even"
+        _ => "odd"
+    }
+}
+
+fn total(text: String) -> Int ! {
+    let nums = try parse_numbers(text)
+    nums.fold(0, fn(a, b) { a + b })
+}
+
+fn main() ! {
+    let s = Stack<Int>(items: [])
+    s.push(1)
+    s.push(2)
+    print("${s.size()} ${s.pop() ?? 0} ${s.size()}")
+    let c = Counter(name: "hits")
+    c.bump()
+    c.bump(by: 5)
+    print("${c.name}: ${c.count}")
+    print(fib(20))
+    print([0, -3, 4, 7].map(classify))
+    let r = parse_numbers("1\n2\nx\n") catch err {
+        match err {
+            Empty => print("empty")
+            Bad(line, text) => print("line ${line}: bad number '${text}'")
+        }
+        []
+    }
+    print(r)
+    print(try total("4\n5\n"))
+    let msg = total("") catch err { print(err.message)
+        -1 }
+    print(msg)
+    let groups: Map<String, List<Int>> = Map()
+    for n in 1..10 {
+        let k = if n % 3 == 0 { "fizz" } else { "other" }
+        if groups[k] is none {
+            groups[k] = []
+        }
+        if groups[k] is some(l) { l.push(n) }
+    }
+    print(groups)
+    let path = "${os.temp_dir()}/kiln_cli_tool.txt"
+    try fs.write(path, "10\n20\n")
+    print(try total(try fs.read(path)))
+    try fs.remove(path)
+    let missing = fs.read("/nope/nope") catch err { "missing: ${err.message}" }
+    print(missing)
+}

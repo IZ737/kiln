@@ -1157,7 +1157,10 @@ impl<'a> Gen<'a> {
         let sv = self.expr(scrutinee);
         let s = self.tmp(&st);
         self.line(&format!("{s} = {sv};"));
+        // Locals are declared once per function, so the flag is reset each
+        // time the match runs, as in a loop.
         let m = self.tmp_c("bool");
+        self.line(&format!("{m} = false;"));
         let r = (want && !self.is_void(&rt)).then(|| self.tmp(&rt));
         for arm in arms {
             let mut conds = Vec::new();
