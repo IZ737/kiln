@@ -22,6 +22,18 @@ the details of any error.
 - Unwrap with `??`, `match`, or `if x is some(v) { ... }`. Fields and methods
   of a `T?` are not available until it is unwrapped (E0208).
 
+## Lists, maps and sets
+
+- `[1, 2]` is a `List<Int>`; `list[i]` panics when `i` is out of range, while
+  `list.get(i)` returns a `T?`.
+- Create an empty map or set with its type: `let m: Map<String, Int> = Map()`
+  or `Set<String>()`. `map[key]` is a `V?` (`none` when the key is missing),
+  and `map[key] = value` adds or replaces an entry.
+- Maps and sets keep their keys in the order they were first added, so
+  printing and looping are predictable. Two maps are equal when they hold the
+  same keys with equal values, in any order.
+- `for x in set` loops over a snapshot of the set's items.
+
 ## Errors
 
 - `fn f() -> T ! E` can fail with an `E`. A bare `!` means the standard

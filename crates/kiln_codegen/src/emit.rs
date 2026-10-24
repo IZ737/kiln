@@ -83,6 +83,8 @@ struct Prims {
     string: AdtId,
     duration: AdtId,
     list: AdtId,
+    map: AdtId,
+    set: AdtId,
     error: AdtId,
 }
 
@@ -122,6 +124,8 @@ impl<'a> Gen<'a> {
                 string: id("String"),
                 duration: id("Duration"),
                 list: id("List"),
+                map: id("Map"),
+                set: id("Set"),
                 error: id("Error"),
             },
             diags: Vec::new(),
@@ -375,6 +379,7 @@ impl<'a> Gen<'a> {
                 Ty::Fn(_) => "kclosure *".into(),
                 Ty::Adt(id, _) if *id == self.prims.string => "kstr *".into(),
                 Ty::Adt(id, _) if *id == self.prims.list => "klist *".into(),
+                Ty::Adt(id, _) if *id == self.prims.map || *id == self.prims.set => "kmap *".into(),
                 Ty::Adt(id, _) => match &self.p.adts[*id].kind {
                     AdtKind::Enum(_) => "kenum *".into(),
                     AdtKind::Struct(fields) if fields.is_empty() => "void *".into(),
@@ -682,14 +687,21 @@ impl<'a> Gen<'a> {
             }
             _ => {
                 let it = self.ty(iter);
-                let elem = match &it {
-                    Ty::Adt(id, args) if *id == self.prims.list => args[0].clone(),
+                let (elem, is_set) = match &it {
+                    Ty::Adt(id, args) if *id == self.prims.list => (args[0].clone(), false),
+                    Ty::Adt(id, args) if *id == self.prims.set => (args[0].clone(), true),
                     _ => {
                         self.unsupported(iter.span, "looping over this type");
                         return;
                     }
                 };
                 let l = self.expr(iter);
+                // A set is looped over through a snapshot of its items.
+                let l = if is_set {
+                    format!("k_map_keys({l})")
+                } else {
+                    l
+                };
                 let lt = self.tmp_c("klist *");
                 self.line(&format!("{lt} = {l};"));
                 let i = self.tmp_c("int64_t");
@@ -747,8 +759,25 @@ impl<'a> Gen<'a> {
             }
             ExprKind::Index { expr: base, index } => {
                 let bt = self.ty(base);
+                if let Ty::Adt(id, targs) = &bt {
+                    if *id == self.prims.map {
+                        if op != AssignOp::Set {
+                            self.unsupported(target.span, "this operator on a map entry");
+                            return;
+                        }
+                        let b = self.expr(base);
+                        let k = self.expr(index);
+                        let k = self.convert(&k, &self.ty(index), &targs[0]);
+                        let k = self.to_kv(&k, &targs[0]);
+                        let v = self.expr(value);
+                        let v = self.convert(&v, &self.ty(value), &targs[1]);
+                        let v = self.to_kv(&v, &targs[1]);
+                        self.line(&format!("k_map_set({b}, {k}, {v});"));
+                        return;
+                    }
+                }
                 if !self.is_adt(&bt, self.prims.list) {
-                    self.unsupported(target.span, "assigning into maps");
+                    self.unsupported(target.span, "assigning into this value");
                     return;
                 }
                 let b = self.expr(base);
@@ -929,7 +958,17 @@ impl<'a> Gen<'a> {
                         let i = self.expr(index);
                         self.unkv(&format!("k_list_at({b}, {i})"), &elem)
                     }
-                    _ => self.unsupported(e.span, "indexing into a map"),
+                    Ty::Adt(id, args) if *id == self.prims.map => {
+                        let key = args[0].clone();
+                        let b = self.expr(base);
+                        let k = self.expr(index);
+                        let k = self.convert(&k, &self.ty(index), &key);
+                        let k = self.to_kv(&k, &key);
+                        let t = self.tmp_c("kbox *");
+                        self.line(&format!("{t} = k_map_get({b}, {k});"));
+                        t
+                    }
+                    _ => self.unsupported(e.span, "indexing into this value"),
                 }
             }
             ExprKind::FieldShorthand(name) => self.shorthand(e, name),
@@ -1663,7 +1702,7 @@ impl<'a> Gen<'a> {
                     _ => {}
                 }
                 if let Some(&id) = self.p.global_types.get(n) {
-                    return (self.construct(id, args, e.span), None);
+                    return (self.construct(id, args, rt, e.span), None);
                 }
                 let ct = self.ty(callee);
                 let c = self.expr(callee);
@@ -1757,7 +1796,18 @@ impl<'a> Gen<'a> {
     }
 
     /// `Post(title: "Hi", ...)`
-    fn construct(&mut self, id: AdtId, args: &[Arg], span: Span) -> String {
+    fn construct(&mut self, id: AdtId, args: &[Arg], rt: &Ty, span: Span) -> String {
+        if id == self.prims.map || id == self.prims.set {
+            let key = match rt {
+                Ty::Adt(_, targs) if !targs.is_empty() => targs[0].clone(),
+                _ => Ty::Unknown,
+            };
+            let hash = self.hash_fn(&key, span);
+            let eq = self.eq_fn(&key, span);
+            let t = self.tmp_c("kmap *");
+            self.line(&format!("{t} = k_map_new({hash}, {eq});"));
+            return t;
+        }
         let fields = match &self.p.adts[id].kind {
             AdtKind::Struct(fields) => fields.clone(),
             AdtKind::Enum(_) => return self.unsupported(span, "this call"),
@@ -1942,6 +1992,21 @@ impl<'a> Gen<'a> {
                 _ => self.unsupported(span, format!("`List.{name}`")),
             };
         }
+        if id == p.map || id == p.set {
+            let set = id == p.set;
+            return match name {
+                "len" => format!("(({r})->len)"),
+                "is_empty" => format!("(({r})->len == 0)"),
+                "keys" | "values" => format!("k_map_{name}({r})"),
+                "to_list" => format!("k_map_keys({r})"),
+                "get" | "contains" => format!("k_map_{name}({r}, {})", arg(0)),
+                "remove" if set => format!("k_set_remove({r}, {})", arg(0)),
+                "remove" => format!("k_map_remove({r}, {})", arg(0)),
+                "add" => format!("k_set_add({r}, {})", arg(0)),
+                "set" => format!("k_map_set({r}, {}, {})", arg(0), arg(1)),
+                _ => self.unsupported(span, format!("`{}.{name}`", self.p.adts[id].name)),
+            };
+        }
         let what = format!("`{}.{name}`", self.p.adts[id].name);
         self.unsupported(span, what)
     }
@@ -2055,6 +2120,15 @@ impl<'a> Gen<'a> {
             Ty::Adt(id, args) if *id == self.prims.list => {
                 let f = self.show_fn(&args[0], true, span);
                 format!("    return k_list_show(K_KV2P(klist *, v), {f});\n")
+            }
+            Ty::Adt(id, args) if *id == self.prims.map => {
+                let k = self.show_fn(&args[0], true, span);
+                let v = self.show_fn(&args[1], true, span);
+                format!("    return k_map_show(K_KV2P(kmap *, v), {k}, {v});\n")
+            }
+            Ty::Adt(id, args) if *id == self.prims.set => {
+                let k = self.show_fn(&args[0], true, span);
+                format!("    return k_map_show(K_KV2P(kmap *, v), {k}, NULL);\n")
             }
             Ty::Adt(id, args) if !self.is_prim(*id) => {
                 let adt = self.p.adts[*id].clone();
@@ -2178,6 +2252,13 @@ impl<'a> Gen<'a> {
                 let f = self.eq_fn(inner, span);
                 format!("    kbox *x = K_KV2P(kbox *, a), *y = K_KV2P(kbox *, b);\n    if (!x || !y) return x == y;\n    return {f}(x->v, y->v);\n")
             }
+            Ty::Adt(id, args) if *id == self.prims.map => {
+                let f = self.eq_fn(&args[1], span);
+                format!("    return k_map_eq(K_KV2P(kmap *, a), K_KV2P(kmap *, b), {f});\n")
+            }
+            Ty::Adt(id, _) if *id == self.prims.set => {
+                "    return k_map_eq(K_KV2P(kmap *, a), K_KV2P(kmap *, b), NULL);\n".to_string()
+            }
             Ty::Adt(id, args) if *id == self.prims.list => {
                 let f = self.eq_fn(&args[0], span);
                 format!("    klist *x = K_KV2P(klist *, a), *y = K_KV2P(klist *, b);\n    if (x->len != y->len) return false;\n    for (int64_t i = 0; i < x->len; i++)\n        if (!{f}(x->items[i], y->items[i])) return false;\n    return true;\n")
@@ -2240,6 +2321,21 @@ impl<'a> Gen<'a> {
             "static bool {name}(kv a, kv b) {{\n{body}}}\n\n"
         );
         name
+    }
+
+    /// The runtime hash function for map keys and set items of `ty`.
+    fn hash_fn(&mut self, ty: &Ty, span: Span) -> String {
+        if self.is_string(ty) {
+            return "k_hash_str".into();
+        }
+        match self.rep(ty) {
+            Rep::Int | Rep::Bool => "k_hash_int".into(),
+            Rep::Float => "k_hash_float".into(),
+            _ => {
+                self.unsupported(span, "a map key or set item of this type");
+                "k_hash_int".into()
+            }
+        }
     }
 
     /// An `int (kv, kv)` function that orders values of `ty`.
