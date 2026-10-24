@@ -118,6 +118,21 @@ hydrates the server-rendered HTML. `server fn` declarations are callable from
 embers as typed RPC; server-only modules such as `sql` cannot be referenced
 from browser code.
 
+### Static site generation
+
+The same app can be built as a static site, for blogs, docs and marketing
+pages that need no server:
+
+- `kiln fire --static` renders every route to HTML files, with assets, ready
+  for any static host or CDN. Routes with parameters list their pages:
+  `app.get("/posts/{id: Int}", show_post).static(fn() { all_post_ids() })`.
+- Mixed apps prerender the routes marked `.static(...)` at build time and
+  serve the rest dynamically from the same binary, optionally re-rendering a
+  static page on a schedule (`.static(..., refresh: 10m)`).
+- Embers still work on static pages: they hydrate in the browser as usual.
+  Server functions need a server, so a fully static export reports any ember
+  that calls one as a build error.
+
 ## Editor support
 
 `kiln lsp` is a language server (LSP) for any editor. The first version, in
