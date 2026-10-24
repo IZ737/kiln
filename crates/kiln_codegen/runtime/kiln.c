@@ -147,6 +147,22 @@ static int64_t k_abs(int64_t a) { return a < 0 ? k_neg(a) : a; }
 static int64_t k_min(int64_t a, int64_t b) { return a < b ? a : b; }
 static int64_t k_max(int64_t a, int64_t b) { return a > b ? a : b; }
 
+static int64_t k_pow(int64_t base, int64_t exp) {
+    if (exp < 0) k_panic_c("a negative exponent");
+    int64_t r = 1;
+    while (exp > 0) {
+        if (exp & 1) r = k_mul(r, base);
+        exp >>= 1;
+        if (exp > 0) base = k_mul(base, base);
+    }
+    return r;
+}
+
+static int64_t k_clamp(int64_t n, int64_t lo, int64_t hi) {
+    if (lo > hi) k_panic_c("clamp: the low bound is above the high bound");
+    return n < lo ? lo : n > hi ? hi : n;
+}
+
 static kstr *k_int_str(int64_t n) {
     char buf[32];
     int len = snprintf(buf, sizeof buf, "%" PRId64, n);
@@ -170,6 +186,14 @@ static kstr *k_float_str(double f) {
 }
 
 static kstr *k_bool_str(bool b) { return k_str(b ? "true" : "false"); }
+
+static kstr *k_float_fixed(double f, int64_t digits) {
+    if (digits < 0 || digits > 20) k_panic_c("fixed: digits must be between 0 and 20");
+    char buf[400];
+    int len = snprintf(buf, sizeof buf, "%.*f", (int)digits, f);
+    if (len < 0 || len >= (int)sizeof buf) return k_float_str(f);
+    return k_str_n(buf, len);
+}
 
 static kstr *k_duration_str(int64_t ns) {
     static const struct { int64_t unit; const char *name; } units[] = {
@@ -364,6 +388,88 @@ static kstr *k_list_show(klist *l, kstr *(*show)(kv)) {
     return k_concat(r, k_str("]"));
 }
 
+static inline kv k_call2(kclosure *c, kv a, kv b) { kv args[2] = {a, b}; return c->fn(c->env, args); }
+
+static kbox *k_list_pop(klist *l) { return l->len > 0 ? k_box(l->items[--l->len]) : NULL; }
+
+static void k_list_insert(klist *l, int64_t i, kv item) {
+    if (i < 0 || i > l->len) {
+        char buf[96];
+        snprintf(buf, sizeof buf, "index %" PRId64 " is out of range for inserting into a list of length %" PRId64, i, l->len);
+        k_panic_c(buf);
+    }
+    k_list_push(l, item);
+    memmove(l->items + i + 1, l->items + i, sizeof(kv) * (size_t)(l->len - 1 - i));
+    l->items[i] = item;
+}
+
+static kv k_list_remove_at(klist *l, int64_t i) {
+    kv v = k_list_at(l, i);
+    memmove(l->items + i, l->items + i + 1, sizeof(kv) * (size_t)(l->len - 1 - i));
+    l->len--;
+    return v;
+}
+
+static kbox *k_list_index_of(klist *l, kv item, bool (*eq)(kv, kv)) {
+    for (int64_t i = 0; i < l->len; i++)
+        if (eq(l->items[i], item)) return k_box((kv)i);
+    return NULL;
+}
+
+/* Items from `start` up to `end`, both clamped to the list. */
+static klist *k_list_slice(klist *l, int64_t start, int64_t end) {
+    if (start < 0) start = 0;
+    if (end > l->len) end = l->len;
+    if (end < start) end = start;
+    return k_list(end - start, l->items + start);
+}
+
+static klist *k_list_take(klist *l, int64_t n) { return k_list_slice(l, 0, n); }
+static klist *k_list_skip(klist *l, int64_t n) { return k_list_slice(l, n, l->len); }
+
+static klist *k_list_concat(klist *a, klist *b) {
+    klist *r = k_list(a->len, a->items);
+    for (int64_t i = 0; i < b->len; i++) k_list_push(r, b->items[i]);
+    return r;
+}
+
+static kv k_identity(void *env, kv *args) { (void)env; return args[0]; }
+
+static klist *k_list_sort(klist *l, int (*cmp)(kv, kv)) {
+    kclosure id = {k_identity, NULL};
+    return k_list_sort_by(l, &id, cmp);
+}
+
+/* The smallest item, or with `sign` -1 the largest; the first one on a tie. */
+static kbox *k_list_extreme(klist *l, int (*cmp)(kv, kv), int sign) {
+    if (l->len == 0) return NULL;
+    kv best = l->items[0];
+    for (int64_t i = 1; i < l->len; i++)
+        if (sign * cmp(l->items[i], best) < 0) best = l->items[i];
+    return k_box(best);
+}
+
+static int64_t k_list_count(klist *l, kclosure *f) {
+    int64_t n = 0;
+    for (int64_t i = 0; i < l->len; i++)
+        if ((bool)k_call1(f, l->items[i])) n++;
+    return n;
+}
+
+static kv k_list_fold(klist *l, kv acc, kclosure *f) {
+    for (int64_t i = 0; i < l->len; i++) acc = k_call2(f, acc, l->items[i]);
+    return acc;
+}
+
+static klist *k_list_flat_map(klist *l, kclosure *f) {
+    klist *r = k_list(0, NULL);
+    for (int64_t i = 0; i < l->len; i++) {
+        klist *part = K_KV2P(klist *, k_call1(f, l->items[i]));
+        for (int64_t j = 0; j < part->len; j++) k_list_push(r, part->items[j]);
+    }
+    return r;
+}
+
 /* ----- maps and sets -----
  *
  * A hash map from kv to kv that keeps keys in insertion order. Entries live
@@ -495,6 +601,19 @@ static klist *k_map_values(kmap *m) {
     return l;
 }
 
+/* `{ key, value }` records, in insertion order. */
+static klist *k_map_entries(kmap *m) {
+    klist *l = k_list(0, NULL);
+    for (int64_t i = 0; i < m->used; i++) {
+        if (!m->live[i]) continue;
+        kv *e = k_alloc(sizeof(kv) * 2);
+        e[0] = m->keys[i];
+        e[1] = m->vals[i];
+        k_list_push(l, K_P2KV(e));
+    }
+    return l;
+}
+
 static void k_set_add(kmap *m, kv item) { k_map_set(m, item, 0); }
 static bool k_set_remove(kmap *m, kv item) { return k_map_remove(m, item) != NULL; }
 
@@ -608,6 +727,101 @@ static kbox *k_str_to_int(kstr *s) {
     long long n = strtoll(s->data, &end, 10);
     if (errno != 0 || end != s->data + s->len) return NULL;
     return k_box((kv)(int64_t)n);
+}
+
+static kbox *k_str_to_float(kstr *s) {
+    if (s->len == 0 || k_is_space(s->data[0])) return NULL;
+    char *end;
+    errno = 0;
+    double f = strtod(s->data, &end);
+    if (errno == ERANGE || end != s->data + s->len || isnan(f) || isinf(f)) return NULL;
+    return k_box(k_f2kv(f));
+}
+
+/* The byte offset of character `i`, clamped to the string. */
+static int64_t k_str_offset(kstr *s, int64_t i) {
+    if (i <= 0) return 0;
+    int64_t n = 0;
+    for (int64_t b = 0; b < s->len; b++)
+        if ((s->data[b] & 0xC0) != 0x80 && n++ == i) return b;
+    return s->len;
+}
+
+/* The number of characters in the first `b` bytes. */
+static int64_t k_str_chars_before(kstr *s, int64_t b) {
+    int64_t n = 0;
+    for (int64_t i = 0; i < b; i++)
+        if ((s->data[i] & 0xC0) != 0x80) n++;
+    return n;
+}
+
+static kbox *k_str_index_of(kstr *s, kstr *part) {
+    int64_t b = k_str_find(s, part, 0);
+    return b < 0 ? NULL : k_box((kv)k_str_chars_before(s, b));
+}
+
+/* Characters from `start` up to `end`, both clamped to the string. */
+static kstr *k_str_slice(kstr *s, int64_t start, int64_t end) {
+    int64_t a = k_str_offset(s, start), b = k_str_offset(s, end);
+    return b > a ? k_str_n(s->data + a, b - a) : k_str("");
+}
+
+static klist *k_str_chars(kstr *s) {
+    klist *r = k_list(0, NULL);
+    for (int64_t i = 0; i < s->len;) {
+        int64_t j = i + 1;
+        while (j < s->len && (s->data[j] & 0xC0) == 0x80) j++;
+        k_list_push(r, K_P2KV(k_str_n(s->data + i, j - i)));
+        i = j;
+    }
+    return r;
+}
+
+/* Lines split on "\n" or "\r\n"; a final line break does not start an empty line. */
+static klist *k_str_lines(kstr *s) {
+    klist *r = k_list(0, NULL);
+    int64_t i = 0;
+    while (i < s->len) {
+        int64_t j = i;
+        while (j < s->len && s->data[j] != '\n') j++;
+        int64_t e = j > i && s->data[j - 1] == '\r' ? j - 1 : j;
+        k_list_push(r, K_P2KV(k_str_n(s->data + i, e - i)));
+        i = j + 1;
+    }
+    return r;
+}
+
+static kstr *k_str_repeat(kstr *s, int64_t n) {
+    if (n < 0) k_panic_c("repeat: the count is negative");
+    int64_t total = k_mul(s->len, n);
+    kstr *r = k_alloc_atomic(sizeof(kstr) + (size_t)total + 1);
+    r->len = total;
+    for (int64_t i = 0; i < n; i++) memcpy(r->data + i * s->len, s->data, (size_t)s->len);
+    r->data[total] = 0;
+    return r;
+}
+
+/* `fill` repeated before (or after) `s` until it is `width` characters long. */
+static kstr *k_str_pad(kstr *s, int64_t width, kstr *fill, bool start) {
+    int64_t have = k_str_len(s), step = k_str_len(fill);
+    if (have >= width || step == 0) return s;
+    kstr *pad = k_str_slice(k_str_repeat(fill, (width - have + step - 1) / step), 0, width - have);
+    return start ? k_concat(pad, s) : k_concat(s, pad);
+}
+
+static kstr *k_str_pad_start(kstr *s, int64_t w, kstr *fill) { return k_str_pad(s, w, fill, true); }
+static kstr *k_str_pad_end(kstr *s, int64_t w, kstr *fill) { return k_str_pad(s, w, fill, false); }
+
+static kstr *k_str_trim_start(kstr *s) {
+    int64_t a = 0;
+    while (a < s->len && k_is_space(s->data[a])) a++;
+    return k_str_n(s->data + a, s->len - a);
+}
+
+static kstr *k_str_trim_end(kstr *s) {
+    int64_t b = s->len;
+    while (b > 0 && k_is_space(s->data[b - 1])) b--;
+    return k_str_n(s->data, b);
 }
 
 /* `"text"` with quotes and escapes, for strings inside lists and structs. */
