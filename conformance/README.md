@@ -10,8 +10,9 @@ namespace, and one of them has `fn main()`. `cargo test` runs it with
   Without this file, the program must exit with 0 and write nothing to
   standard error.
 - `main.args`, if present, holds the program's arguments, one per line.
+- `main.in`, if present, is the program's standard input.
 - `main.code`, if present, holds the expected exit code, for a program
-  that ends itself with `os.exit`.
+  that ends itself with `os.exit` or writes to standard error and succeeds.
 
 Add a program here for every feature the compiler learns. The suite passing
 on the compiled programs is the exit gate of phase 1.
