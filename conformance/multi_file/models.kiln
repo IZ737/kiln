@@ -1,0 +1,23 @@
+const TAX_RATE = 20
+
+struct Item {
+    name: String
+    price: Int
+}
+
+struct Shop {
+    name: String
+    items: List<Item>
+}
+
+fn describe(shop: Shop) -> String {
+    "${shop.name}: ${shop.items.len()} item(s), ${total(shop)} with tax"
+}
+
+fn total(shop: Shop) -> Int {
+    var sum = 0
+    for item in shop.items {
+        sum += item.price * (100 + TAX_RATE) / 100
+    }
+    sum
+}

@@ -1,10 +1,11 @@
 # Conformance programs
 
-Each `.kiln` file here is a complete program. `cargo test` runs it with
-`kiln run` and compares the result with the files next to it:
+Each folder here is a complete program: its `.kiln` files share one
+namespace, and one of them has `fn main()`. `cargo test` runs it with
+`kiln run` and compares the result with the files in the folder:
 
-- `name.out` is the expected standard output.
-- `name.err` is the expected standard error, for a program that fails. A
+- `main.out` is the expected standard output.
+- `main.err` is the expected standard error, for a program that fails. A
   panic exits with code 101 and an error that leaves `main` with code 1.
   Without this file, the program must exit with 0 and write nothing to
   standard error.

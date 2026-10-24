@@ -1,0 +1,21 @@
+enum Found {
+    Some(item: Item)
+    None
+}
+
+fn cheapest(shop: Shop) -> Found {
+    var best: Item? = none
+    for item in shop.items {
+        if best is some(b) {
+            if item.price < b.price {
+                best = item
+            }
+        } else {
+            best = item
+        }
+    }
+    if best is some(b) {
+        return Found.Some(item: b)
+    }
+    Found.None
+}

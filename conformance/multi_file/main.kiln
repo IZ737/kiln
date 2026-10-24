@@ -1,0 +1,15 @@
+// The files in a folder share one namespace: `Shop`, `Item`, `describe`,
+// `total` and `TAX_RATE` come from models.kiln, with no import.
+
+fn main() {
+    let shop = Shop(name: "Kiln Mugs", items: [
+        Item(name: "mug", price: 1200),
+        Item(name: "bowl", price: 2500),
+    ])
+    print(describe(shop))
+    print("tax rate: ${TAX_RATE}%")
+    match cheapest(shop) {
+        Some(item) => print("cheapest: ${item.name}"),
+        None => print("no items"),
+    }
+}

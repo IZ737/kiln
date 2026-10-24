@@ -4,7 +4,7 @@
 use crate::types::*;
 use kiln_diagnostics::{codes, Diagnostic, Span};
 use kiln_syntax::ast::*;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 
 #[derive(Clone, Copy)]
@@ -50,6 +50,14 @@ pub struct Checker {
     pub(crate) global_types: HashMap<String, AdtId>,
     pub(crate) imports: HashMap<String, ModId>,
     pub(crate) consts: HashMap<String, Ty>,
+    /// The names of the program's own types, and of its functions and
+    /// constants, to report a name defined twice in a folder.
+    pub(crate) declared_types: HashSet<String>,
+    pub(crate) declared_values: HashSet<String>,
+    /// Struct and enum declarations that repeat a name, by the address of
+    /// their name in the tree. Spans cannot tell them apart, because each
+    /// file's spans start at 0.
+    pub(crate) duplicate_types: HashSet<usize>,
     subst: Vec<Option<Ty>>,
     scopes: Vec<HashMap<String, Local>>,
     fns: Vec<FnCtx>,
@@ -97,6 +105,9 @@ impl Checker {
             global_types: HashMap::new(),
             imports: HashMap::new(),
             consts: HashMap::new(),
+            declared_types: HashSet::new(),
+            declared_values: HashSet::new(),
+            duplicate_types: HashSet::new(),
             subst: Vec::new(),
             scopes: Vec::new(),
             fns: Vec::new(),
@@ -131,6 +142,9 @@ impl Checker {
             checker.diags
         );
         checker.std_adts = checker.adts.len();
+        // The program may reuse the prelude's names.
+        checker.declared_types.clear();
+        checker.declared_values.clear();
         checker
     }
 
@@ -141,6 +155,15 @@ impl Checker {
 
     /// Imports and declarations: everything other files can refer to.
     pub(crate) fn collect_module(&mut self, module: &Module) {
+        let imports = self.collect_imports(module);
+        self.imports.extend(imports);
+        self.declare_types(module, Scope::Global);
+        self.define_items(module, Scope::Global);
+    }
+
+    /// The standard library modules a file imports, by the name it uses.
+    pub(crate) fn collect_imports(&mut self, module: &Module) -> HashMap<String, ModId> {
+        let mut imports = HashMap::new();
         for item in &module.items {
             if let Item::Import(import) = item {
                 for path in &import.paths {
@@ -152,7 +175,7 @@ impl Checker {
                     let span = path[0].span.to(path[path.len() - 1].span);
                     match self.modules.iter().position(|m| m.name == name) {
                         Some(id) => {
-                            self.imports.insert(path[path.len() - 1].name.clone(), id);
+                            imports.insert(path[path.len() - 1].name.clone(), id);
                         }
                         None => {
                             let mut diag = Diagnostic::error(
@@ -171,12 +194,11 @@ impl Checker {
                 }
             }
         }
-        self.declare_types(module, Scope::Global);
-        self.define_items(module, Scope::Global);
+        imports
     }
 
-    /// Constants, function bodies and field defaults.
-    pub(crate) fn check_bodies(&mut self, module: &Module) {
+    /// The types of a file's constants, so other files can use them.
+    pub(crate) fn check_consts(&mut self, module: &Module) {
         for item in &module.items {
             if let Item::Const(c) = item {
                 self.enter_fn(Ty::Unit, None, None);
@@ -192,6 +214,11 @@ impl Checker {
                 self.consts.insert(c.name.name.clone(), ty);
             }
         }
+    }
+
+    /// Constants, function bodies and field defaults.
+    pub(crate) fn check_bodies(&mut self, module: &Module) {
+        self.check_consts(module);
         for item in &module.items {
             match item {
                 Item::Fn(f) => self.check_fn(f, None, &[]),

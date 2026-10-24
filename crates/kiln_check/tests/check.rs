@@ -378,3 +378,55 @@ fn main() {
     assert_eq!(error_codes(&bad), [codes::NO_SUCH_MEMBER]);
     ok(&apply_fix(&bad, &diags[0]));
 }
+
+/// Checks the `.kiln` files of one folder together and returns each file's
+/// error codes.
+fn folder_errors(files: &[&str]) -> Vec<Vec<&'static str>> {
+    let parsed: Vec<_> = files
+        .iter()
+        .map(|src| {
+            let r = kiln_syntax::parse(src);
+            assert!(r.diagnostics.is_empty(), "{:#?}", r.diagnostics);
+            r.module
+        })
+        .collect();
+    let modules: Vec<_> = parsed.iter().collect();
+    kiln_check::check_app(&modules, &[])
+        .modules
+        .iter()
+        .map(|d| d.iter().map(|d| d.code).collect())
+        .collect()
+}
+
+#[test]
+fn files_in_a_folder_share_names() {
+    let main = "fn main() {\n    let s = Shop(name: \"a\")\n    print(describe(s))\n    print(\"${LIMIT}\")\n}\n";
+    let models = "const LIMIT = 3\n\nstruct Shop {\n    name: String\n}\n\nfn describe(s: Shop) -> String {\n    \"${s.name} ${LIMIT}\"\n}\n";
+    let none: Vec<&str> = Vec::new();
+    assert_eq!(folder_errors(&[main, models]), vec![none.clone(), none]);
+}
+
+#[test]
+fn a_name_defined_in_two_files_is_reported_once() {
+    let a = "struct Item {\n    name: String\n}\n\nfn helper() -> Int {\n    1\n}\n";
+    let b = "struct Item {\n    price: Int\n}\n\nfn helper() -> Int {\n    2\n}\n\nfn use_it(i: Item) -> String {\n    i.name\n}\n";
+    // The second file's declarations are the duplicates; `Item` keeps the
+    // first file's fields.
+    assert_eq!(
+        folder_errors(&[a, b]),
+        vec![
+            vec![],
+            vec![codes::DUPLICATE_DEFINITION, codes::DUPLICATE_DEFINITION]
+        ]
+    );
+}
+
+#[test]
+fn imports_belong_to_one_file() {
+    let a = "import log\n\nfn main() {\n    log.info(\"a\")\n}\n";
+    let b = "fn helper() {\n    log.info(\"b\")\n}\n";
+    assert_eq!(
+        folder_errors(&[a, b]),
+        vec![vec![], vec![codes::UNDEFINED_NAME]]
+    );
+}

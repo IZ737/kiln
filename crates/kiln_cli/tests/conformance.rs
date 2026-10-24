@@ -1,8 +1,8 @@
-//! Runs every program in `conformance/` with `kiln run` and compares its
-//! output with the expected files next to it:
+//! Runs every program in `conformance/` (one folder each) with `kiln run`
+//! and compares its output with the expected files in the folder:
 //!
-//! - `name.out`: the expected standard output.
-//! - `name.err`: the expected standard error, if the program fails. The
+//! - `main.out`: the expected standard output.
+//! - `main.err`: the expected standard error, if the program fails. The
 //!   exit code must then be 101 for a panic and 1 for an error that left
 //!   `main`. Without this file, the program must exit with 0 and print
 //!   nothing on standard error.
@@ -16,7 +16,7 @@ fn conformance_programs_produce_expected_output() {
     let mut programs: Vec<_> = std::fs::read_dir(&root)
         .unwrap()
         .map(|e| e.unwrap().path())
-        .filter(|p| p.extension().is_some_and(|e| e == "kiln"))
+        .filter(|p| p.is_dir())
         .collect();
     programs.sort();
     assert!(
@@ -31,7 +31,8 @@ fn conformance_programs_produce_expected_output() {
             .arg(program)
             .output()
             .unwrap();
-        let read = |ext: &str| std::fs::read_to_string(program.with_extension(ext)).ok();
+        let read =
+            |ext: &str| std::fs::read_to_string(program.join("main").with_extension(ext)).ok();
         let expected_out = read("out").unwrap_or_default();
         let expected_err = read("err");
         let expected_code = match &expected_err {

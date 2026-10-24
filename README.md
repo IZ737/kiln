@@ -74,11 +74,11 @@ collector (`libgc-dev` on Debian and Ubuntu, `gc-devel` on Fedora, `bdw-gc`
 on Homebrew).
 
 ```sh
-cargo run -p kiln_cli -- run examples/hello.kiln # compile and run a program
-cargo run -p kiln_cli -- build examples/hello.kiln -o hello
+cargo run -p kiln_cli -- run examples/hello     # compile and run a program
+cargo run -p kiln_cli -- build examples/hello -o hello
 cargo run -p kiln_cli -- check examples          # check every .kiln file
 cargo run -p kiln_cli -- check --json examples   # machine-readable output
-cargo run -p kiln_cli -- parse examples/hello.kiln
+cargo run -p kiln_cli -- parse examples/hello/main.kiln
 cargo run -p kiln_cli -- explain E0106
 ```
 
