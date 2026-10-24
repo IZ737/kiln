@@ -148,7 +148,7 @@ impl<'a> Gen<'a> {
         let init = self.func_name(self.p.init);
         let _ = write!(
             out,
-            "int main(int argc, char **argv) {{\n    GC_INIT();\n    k_argc = argc;\n    k_argv = argv;\n    {init}();\n    {main}();\n    if (k_failed) {{\n        fflush(stdout);\n        fprintf(stderr, \"error: %s\\n\", k_error_show(k_error)->data);\n        return 1;\n    }}\n    return 0;\n}}\n"
+            "int main(int argc, char **argv) {{\n    GC_INIT();\n    k_argc = argc;\n    k_argv = argv;\n    {init}();\n    {main}();\n    if (k_failed) {{\n        fflush(stdout);\n        fprintf(stderr, \"error: %s\\n\", k_cstr(k_error_show(k_error)));\n        return 1;\n    }}\n    return 0;\n}}\n"
         );
         out
     }
