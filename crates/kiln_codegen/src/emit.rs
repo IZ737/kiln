@@ -155,10 +155,16 @@ impl<'a> Gen<'a> {
 
     fn func_name(&self, id: FuncId) -> String {
         let func = &self.p.funcs[id];
+        // Copies of a generic function are told apart by their id.
+        let copy = if func.type_args.is_empty() {
+            String::new()
+        } else {
+            format!("_{id}")
+        };
         match func.kind {
             FuncKind::Init => "k_init".into(),
-            FuncKind::Fn => format!("kf_{}", mangle(&func.name)),
-            FuncKind::Method(adt) => format!("km_{adt}_{}", mangle(&func.name)),
+            FuncKind::Fn => format!("kf_{}{copy}", mangle(&func.name)),
+            FuncKind::Method(adt) => format!("km_{adt}_{}{copy}", mangle(&func.name)),
             FuncKind::Closure => format!("kl_{id}"),
         }
     }

@@ -76,11 +76,16 @@ impl<'a> Printer<'a> {
 
     fn func_name(&self, id: FuncId) -> String {
         let func = &self.prog.funcs[id];
-        match func.kind {
+        let mut name = match func.kind {
             FuncKind::Method(adt) => format!("{}.{}", self.prog.adts[adt].name, func.name),
             FuncKind::Closure => format!("closure#{id}"),
             FuncKind::Init | FuncKind::Fn => func.name.clone(),
+        };
+        if !func.type_args.is_empty() {
+            let args: Vec<String> = func.type_args.iter().map(|t| self.ty(t)).collect();
+            name.push_str(&format!("<{}>", args.join(", ")));
         }
+        name
     }
 
     fn local(&self, id: LocalId) -> String {

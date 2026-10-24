@@ -36,8 +36,9 @@ Run `cargo fmt --all`, `cargo clippy --all-targets -- -D warnings` and
   `lib.rs` defines it, `lower.rs` turns a checked program
   (`kiln_check::check_program`) into it with `lower(module, program)`, and
   `print.rs` gives its readable form. Names, closures' captures, default
-  arguments and coercions are resolved here, so backends never look at the
-  syntax tree. Lowering reports E0401 for language features with no IR
+  arguments and coercions are resolved here, and each generic function or
+  method gets one copy per set of type arguments, so backends never look at
+  the syntax tree. Lowering reports E0401 for language features with no IR
   form yet; the backend reports it for library calls it cannot build.
 - `crates/kiln_codegen`: the C backend. `emit.rs` turns an IR program into
   C with `emit_c(&ir)`; `runtime/kiln.c` is prepended to it. Building needs

@@ -7,6 +7,10 @@
 //!
 //! - Names are resolved: locals are numbered per function, and calls name
 //!   the function they call.
+//! - Generic functions and methods are compiled once per set of type
+//!   arguments, so the types inside a function are concrete. Generic
+//!   structs and enums, and the built-in `List`, `Map` and `Set`, are not:
+//!   their fields and items of a type-parameter type live in slots.
 //! - Closures, field shorthands (`.title`) and nothing else become
 //!   functions of their own, with the locals they capture listed. A `var`
 //!   that a closure captures is marked as living in a cell.
@@ -96,6 +100,9 @@ pub struct Func {
     /// The source name; `<closure>` for closures.
     pub name: String,
     pub kind: FuncKind,
+    /// For a copy of a generic function or method: the types its type
+    /// parameters stand for, the `impl` target's first. Empty otherwise.
+    pub type_args: Vec<Ty>,
     pub params: Vec<LocalId>,
     /// For closures: the locals that receive the captured values, in the
     /// order of [`ExprKind::Closure::captures`].

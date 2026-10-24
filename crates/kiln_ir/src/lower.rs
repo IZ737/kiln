@@ -14,6 +14,7 @@ use kiln_syntax::ast::{
     AssignOp, BinaryOp, ExprKind as E, PatternKind, StrPiece, TypeKind, UnaryOp,
 };
 use std::collections::HashMap;
+use std::rc::Rc;
 
 /// Lowers a program that type-checked without errors. Returns E0401 for
 /// the parts the compiler does not support yet, and E0402 when there is
@@ -64,7 +65,29 @@ struct FnCtx {
     closure: bool,
     ret: Ty,
     throws: Option<Ty>,
+    /// In a copy of a generic function (and its closures): the type each
+    /// type parameter stands for.
+    subst: Rc<HashMap<String, Ty>>,
 }
+
+/// A generic function or method, compiled once per set of type arguments.
+#[derive(Clone, PartialEq, Eq, Hash)]
+enum Template {
+    Fn(String),
+    Method(AdtId, String),
+}
+
+/// A copy of a generic function still to lower: its id, template, type
+/// parameters with their types, and the type arguments in order.
+type PendingCopy = (FuncId, Template, HashMap<String, Ty>, Vec<Ty>);
+
+/// Stands for the id of a generic function or method in `fns` and
+/// `methods`: each use asks [`Lowerer::instance`] for its copy.
+const GENERIC: FuncId = usize::MAX;
+
+/// How many copies one generic function may have, which stops a function
+/// that calls itself with ever larger types.
+const MAX_COPIES: usize = 256;
 
 struct Lowerer<'a> {
     p: &'a kiln_check::Program,
@@ -80,6 +103,11 @@ struct Lowerer<'a> {
     diags: Vec<Diagnostic>,
     init: FuncId,
     main: FuncId,
+    /// The copies of generic functions made so far, by template and type
+    /// arguments.
+    instances: HashMap<(Template, String), FuncId>,
+    copies: HashMap<Template, usize>,
+    pending: Vec<PendingCopy>,
 }
 
 impl<'a> Lowerer<'a> {
@@ -109,6 +137,9 @@ impl<'a> Lowerer<'a> {
             diags: Vec::new(),
             init: 0,
             main: 0,
+            instances: HashMap::new(),
+            copies: HashMap::new(),
+            pending: Vec::new(),
         }
     }
 
@@ -119,8 +150,12 @@ impl<'a> Lowerer<'a> {
         for item in &module.items {
             match item {
                 ast::Item::Fn(f) => {
-                    if self.p.global_fns.contains_key(&f.name.name) {
-                        let id = self.reserve();
+                    if let Some(sig) = self.p.global_fns.get(&f.name.name) {
+                        let id = if is_generic(sig) {
+                            GENERIC
+                        } else {
+                            self.reserve()
+                        };
                         self.fns.insert(f.name.name.clone(), (id, f));
                     }
                 }
@@ -132,12 +167,16 @@ impl<'a> Lowerer<'a> {
                 ast::Item::Impl(imp) => {
                     if let Some(adt) = self.impl_target(imp) {
                         for m in &imp.methods {
-                            if self.p.adts[adt]
+                            let sig = self.p.adts[adt]
                                 .methods
                                 .iter()
-                                .any(|s| s.name == m.name.name)
-                            {
-                                let id = self.reserve();
+                                .find(|s| s.name == m.name.name);
+                            if let Some(sig) = sig {
+                                let id = if is_generic(sig) {
+                                    GENERIC
+                                } else {
+                                    self.reserve()
+                                };
                                 self.methods.insert((adt, m.name.name.clone()), (id, m));
                             }
                         }
@@ -160,7 +199,12 @@ impl<'a> Lowerer<'a> {
                 _ => {}
             }
         }
-        let Some(&(main, _)) = self.fns.get("main") else {
+        let main = self
+            .fns
+            .get("main")
+            .map(|f| f.0)
+            .filter(|&id| id != GENERIC);
+        let Some(main) = main else {
             self.diags.push(
                 Diagnostic::error(
                     codes::NO_MAIN,
@@ -178,8 +222,10 @@ impl<'a> Lowerer<'a> {
             match item {
                 ast::Item::Fn(f) => {
                     if let Some(&(id, _)) = self.fns.get(&f.name.name) {
-                        let sig = self.p.global_fns[&f.name.name].clone();
-                        self.function(id, f, &sig, FuncKind::Fn);
+                        if id != GENERIC {
+                            let sig = self.p.global_fns[&f.name.name].clone();
+                            self.function(id, f, &sig, FuncKind::Fn, HashMap::new(), Vec::new());
+                        }
                     }
                 }
                 ast::Item::Impl(imp) => {
@@ -187,13 +233,17 @@ impl<'a> Lowerer<'a> {
                         for m in &imp.methods {
                             let key = (adt, m.name.name.clone());
                             if let Some(&(id, _)) = self.methods.get(&key) {
+                                if id == GENERIC {
+                                    continue;
+                                }
                                 let sig = self.p.adts[adt]
                                     .methods
                                     .iter()
                                     .find(|s| s.name == m.name.name)
                                     .cloned()
                                     .expect("the method has a signature");
-                                self.function(id, m, &sig, FuncKind::Method(adt));
+                                let kind = FuncKind::Method(adt);
+                                self.function(id, m, &sig, kind, HashMap::new(), Vec::new());
                             }
                         }
                     }
@@ -201,6 +251,99 @@ impl<'a> Lowerer<'a> {
                 _ => {}
             }
         }
+        // Copies of generic functions, which can ask for more copies.
+        while let Some((id, template, map, args)) = self.pending.pop() {
+            let (decl, sig, kind) = match &template {
+                Template::Fn(name) => (
+                    self.fns[name].1,
+                    self.p.global_fns[name].clone(),
+                    FuncKind::Fn,
+                ),
+                Template::Method(adt, name) => (
+                    self.methods[&(*adt, name.clone())].1,
+                    self.p.adts[*adt]
+                        .methods
+                        .iter()
+                        .find(|s| &s.name == name)
+                        .cloned()
+                        .expect("the method has a signature"),
+                    FuncKind::Method(*adt),
+                ),
+            };
+            self.function(id, decl, &sig, kind, map, args);
+        }
+    }
+
+    /// The copy of a generic function for one use of it, by the span of
+    /// the call or name, and its signature with the type arguments filled
+    /// in. A method's receiver type gives the `impl` target's arguments.
+    /// Other functions are returned as they are.
+    fn instance(
+        &mut self,
+        func: FuncId,
+        template: Template,
+        sig: &FnSig,
+        span: Span,
+        recv: Option<&Ty>,
+    ) -> (FuncId, FnSig) {
+        if func != GENERIC {
+            return (func, sig.clone());
+        }
+        let mut map: HashMap<String, Ty> = self
+            .p
+            .instantiations
+            .get(&span)
+            .cloned()
+            .unwrap_or_default()
+            .into_iter()
+            .map(|(k, t)| (k, self.subst_ty(t)))
+            .collect();
+        if let Some(Ty::Adt(_, args)) = recv {
+            for (p, a) in sig.impl_params.iter().zip(args) {
+                map.insert(p.clone(), a.clone());
+            }
+        }
+        let names: Vec<String> = sig
+            .impl_params
+            .iter()
+            .chain(&sig.generics)
+            .cloned()
+            .collect();
+        let args: Vec<Ty> = names
+            .iter()
+            .map(|n| map.get(n).cloned().unwrap_or(Ty::Unknown))
+            .collect();
+        let inst = FnSig {
+            generics: Vec::new(),
+            impl_params: Vec::new(),
+            params: sig
+                .params
+                .iter()
+                .map(|p| ParamSig {
+                    ty: substitute(&p.ty, &map),
+                    ..p.clone()
+                })
+                .collect(),
+            ret: substitute(&sig.ret, &map),
+            throws: sig.throws.as_ref().map(|t| substitute(t, &map)),
+            ..sig.clone()
+        };
+        let key = (template.clone(), format!("{args:?}"));
+        if let Some(&id) = self.instances.get(&key) {
+            return (id, inst);
+        }
+        let copies = self.copies.entry(template.clone()).or_insert(0);
+        *copies += 1;
+        if *copies > MAX_COPIES {
+            let what = format!("`{}` calling itself with ever larger types", sig.name);
+            self.unsupported(span, what);
+            return (func, inst);
+        }
+        let id = self.reserve();
+        self.instances.insert(key, id);
+        let map = names.into_iter().zip(args.iter().cloned()).collect();
+        self.pending.push((id, template, map, args));
+        (id, inst)
     }
 
     fn impl_target(&self, imp: &ast::ImplDecl) -> Option<AdtId> {
@@ -238,8 +381,19 @@ impl<'a> Lowerer<'a> {
         );
     }
 
-    fn function(&mut self, id: FuncId, decl: &ast::FnDecl, sig: &FnSig, kind: FuncKind) {
-        self.enter(false, sig.ret.clone(), sig.throws.clone());
+    fn function(
+        &mut self,
+        id: FuncId,
+        decl: &ast::FnDecl,
+        sig: &FnSig,
+        kind: FuncKind,
+        subst: HashMap<String, Ty>,
+        type_args: Vec<Ty>,
+    ) {
+        let ret = substitute(&sig.ret, &subst);
+        let throws = sig.throws.as_ref().map(|t| substitute(t, &subst));
+        self.enter(false, ret.clone(), throws);
+        self.ctx().subst = Rc::new(subst);
         let params = decl
             .params
             .iter()
@@ -251,19 +405,21 @@ impl<'a> Lowerer<'a> {
             })
             .collect();
         let body = self.block(&decl.body);
-        let body = coerce_block(body, &sig.ret);
-        self.finish(
-            id,
-            decl.name.name.clone(),
-            kind,
-            params,
-            sig.ret.clone(),
-            body,
-        );
+        let body = coerce_block(body, &ret);
+        self.finish(id, decl.name.name.clone(), kind, params, ret, body);
+        if let Some(f) = self.funcs[id].as_mut() {
+            f.type_args = type_args;
+        }
     }
 
     fn enter(&mut self, closure: bool, ret: Ty, throws: Option<Ty>) {
+        // Closures see the type arguments of the function around them.
+        let subst = match self.ctxs.last() {
+            Some(outer) if closure => outer.subst.clone(),
+            _ => Rc::default(),
+        };
         self.ctxs.push(FnCtx {
+            subst,
             locals: Vec::new(),
             captured: Vec::new(),
             scopes: vec![HashMap::new()],
@@ -295,6 +451,7 @@ impl<'a> Lowerer<'a> {
         self.funcs[id] = Some(Func {
             name,
             kind,
+            type_args: Vec::new(),
             params,
             captures: inner,
             ret,
@@ -372,15 +529,27 @@ impl<'a> Lowerer<'a> {
     // ----- types -----
 
     fn ty(&self, e: &ast::Expr) -> Ty {
-        self.p
+        let ty = self
+            .p
             .expr_types
             .get(&e.span)
             .cloned()
-            .unwrap_or(Ty::Unknown)
+            .unwrap_or(Ty::Unknown);
+        self.subst_ty(ty)
     }
 
     fn binding_ty(&self, span: Span) -> Option<Ty> {
-        self.p.binding_types.get(&span).cloned()
+        let ty = self.p.binding_types.get(&span).cloned()?;
+        Some(self.subst_ty(ty))
+    }
+
+    /// A type the checker recorded, with the type arguments of the copy
+    /// being lowered filled in.
+    fn subst_ty(&self, ty: Ty) -> Ty {
+        match self.ctxs.last() {
+            Some(ctx) if !ctx.subst.is_empty() => substitute(&ty, &ctx.subst),
+            _ => ty,
+        }
     }
 
     fn is_adt(&self, ty: &Ty, id: AdtId) -> bool {
@@ -816,6 +985,9 @@ impl<'a> Lowerer<'a> {
             return mk(ExprKind::Local(local), ty, span);
         }
         if let Some(&(func, _)) = self.fns.get(name) {
+            let sig = self.p.global_fns[name].clone();
+            let template = Template::Fn(name.to_string());
+            let (func, _) = self.instance(func, template, &sig, span, None);
             return mk(ExprKind::FuncRef(func), ty, span);
         }
         if let Some(&id) = self.global_ids.get(name) {
@@ -1181,6 +1353,8 @@ impl<'a> Lowerer<'a> {
             E::Ident(n) if self.lookup(n).is_none() => {
                 if let Some(&(func, decl)) = self.fns.get(n) {
                     let sig = self.p.global_fns[n].clone();
+                    let (func, sig) =
+                        self.instance(func, Template::Fn(n.clone()), &sig, span, None);
                     return self.user_call(func, &sig, decl, None, args, &rt, span);
                 }
                 if matches!(n.as_str(), "print" | "env" | "panic") && args.len() == 1 {
@@ -1328,6 +1502,8 @@ impl<'a> Lowerer<'a> {
                 .find(|m| m.name == name.name)
                 .cloned();
             if let Some(sig) = sig.filter(|s| !s.has_self) {
+                let template = Template::Method(id, name.name.clone());
+                let (func, sig) = self.instance(func, template, &sig, span, None);
                 return self.user_call(func, &sig, decl, None, args, rt, span);
             }
         }
@@ -1453,6 +1629,9 @@ impl<'a> Lowerer<'a> {
         let sig = self.method_sig(&recv.ty, name)?;
         let Ty::Adt(id, _) = recv.ty else { return None };
         if let Some(&(func, decl)) = self.methods.get(&(id, name.to_string())) {
+            let template = Template::Method(id, name.to_string());
+            let recv_ty = recv.ty.clone();
+            let (func, sig) = self.instance(func, template, &sig, span, Some(&recv_ty));
             return Some(self.user_call(func, &sig, decl, Some(recv), args, rt, span));
         }
         let (prelude, recv, vals) = self.arrange(&sig.params, &[], Some(recv), args);
@@ -1549,6 +1728,10 @@ impl<'a> Lowerer<'a> {
 /// Modules whose functions become [`ExprKind::Lib`] calls, for the
 /// backend to build.
 const LIB_MODULES: &[&str] = &["time", "fs", "os", "io"];
+
+fn is_generic(sig: &FnSig) -> bool {
+    !sig.generics.is_empty() || !sig.impl_params.is_empty()
+}
 
 fn mk(kind: ExprKind, ty: Ty, span: Span) -> Expr {
     Expr { kind, ty, span }

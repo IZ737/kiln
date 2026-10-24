@@ -44,6 +44,9 @@ pub struct Program {
     /// The type of every name bound by `let`, a parameter, a loop or a
     /// pattern, by the span of the name.
     pub binding_types: HashMap<Span, types::Ty>,
+    /// The type arguments of every use of a generic function or method, by
+    /// the span of the call or name.
+    pub instantiations: HashMap<Span, HashMap<String, types::Ty>>,
 }
 
 /// Type-checks a whole program for compiling.
@@ -71,6 +74,7 @@ pub fn check_program(module: &Module) -> Program {
         consts: checker.consts,
         expr_types: checker.expr_types,
         binding_types: checker.binding_types,
+        instantiations: checker.instantiations,
     }
 }
 

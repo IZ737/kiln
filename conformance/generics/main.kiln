@@ -1,5 +1,7 @@
-// Generic functions: type parameters in local annotations and closures,
-// generic values stored in optionals, and branches that end in `none`.
+// Generic functions and methods: each use compiles a copy for its types,
+// so generic code can show, compare and hash its values. Also type
+// parameters in local annotations, generic values stored in optionals, and
+// branches that end in `none`.
 struct Task {
     id: Int
     title: String
@@ -39,6 +41,68 @@ fn name(n: Int) -> String? {
     }
 }
 
+struct Stack<T> {
+    items: List<T>
+}
+
+impl Stack<T> {
+    fn new() -> Stack<T> {
+        Stack(items: [])
+    }
+
+    fn push(self, item: T) {
+        self.items.push(item)
+    }
+
+    fn peek(self) -> T? {
+        self.items.last()
+    }
+
+    fn describe(self) -> String {
+        "stack of ${self.items.len()}: ${self.items}"
+    }
+
+    fn has(self, item: T) -> Bool {
+        for x in self.items {
+            if x == item {
+                return true
+            }
+        }
+        false
+    }
+
+    fn map<U>(self, f: fn(T) -> U) -> Stack<U> {
+        Stack(items: self.items.map(f))
+    }
+}
+
+fn describe<T>(label: String, value: T) -> String {
+    "${label}: ${value}"
+}
+
+fn same<T>(a: T, b: T) -> Bool {
+    a == b
+}
+
+fn count<T>(items: List<T>) -> Map<T, Int> {
+    let counts: Map<T, Int> = Map()
+    for item in items {
+        counts[item] = (counts[item] ?? 0) + 1
+    }
+    counts
+}
+
+fn twice<T>(f: fn(T) -> T, x: T) -> T {
+    f(f(x))
+}
+
+fn depth<T>(n: Int, value: T) -> String {
+    if n == 0 {
+        return describe("bottom", value)
+    }
+    depth(n - 1, value)
+}
+
 fn main() {
     let tasks = [Task(id: 1, title: "write"), Task(id: 3, title: "ship", done: true), Task(id: 2, title: "test")]
     print(largest(tasks, .id))
@@ -60,4 +124,31 @@ fn main() {
     print(name(9))
     let maybe = if tasks.len() > 5 { 5 } else { none }
     print(maybe ?? -1)
+
+    print(describe("count", 3))
+    print(describe("name", "Ada"))
+    print(describe("task", Task(id: 1, title: "t")))
+    print(describe("list", [1.5, 2.0]))
+    print(describe("maybe", none ?? 4))
+    print(same(1, 1))
+    print(same("a", "b"))
+    print(same(Task(id: 1, title: "t"), Task(id: 1, title: "t")))
+    print(count(["a", "b", "a"]))
+    print(count([3, 3, 3]))
+    print(twice(fn(n) { n * 3 }, 2))
+    print(twice(fn(s) { s + "!" }, "hi"))
+    let f: fn(String, Int) -> String = describe
+    print(f("via value", 9))
+    print(depth(3, true))
+
+    let s: Stack<Int> = Stack.new()
+    s.push(1)
+    s.push(2)
+    print(s.describe())
+    print(s.peek())
+    print(s.has(2))
+    print(s.has(5))
+    let names = s.map(fn(n) { "#${n}" })
+    print(names.describe())
+    print(names.has("#1"))
 }

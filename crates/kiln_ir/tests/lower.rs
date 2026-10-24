@@ -99,3 +99,24 @@ fn library_structs_are_constructed() {
     let ir = lower("import time\nfn main() {\n    print(time.Instant(unix_nanos: 5))\n}\n");
     assert!(ir.contains("Instant(unix_nanos: 5)"), "{ir}");
 }
+
+#[test]
+fn generic_functions_get_a_copy_per_type() {
+    let ir = lower(
+        "fn show<T>(value: T) -> String {\n    \"${value}\"\n}\n\nfn main() {\n    print(show(1))\n    print(show(\"a\"))\n    print(show(2))\n}\n",
+    );
+    assert!(ir.contains("fn show<Int>(value#0: Int) -> String"), "{ir}");
+    assert!(
+        ir.contains("fn show<String>(value#0: String) -> String"),
+        "{ir}"
+    );
+    assert_eq!(ir.matches("fn show<").count(), 2, "{ir}");
+}
+
+#[test]
+fn generic_recursion_that_grows_its_types_is_reported() {
+    let codes = lower_errors(
+        "struct Box<T> {\n    value: T\n}\n\nfn grow<T>(n: Int, value: T) -> Int {\n    if n == 0 {\n        return 0\n    }\n    grow(n - 1, Box(value: value))\n}\n\nfn main() {\n    print(grow(3, 1))\n}\n",
+    );
+    assert_eq!(codes, vec!["E0401"]);
+}
