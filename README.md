@@ -18,11 +18,17 @@ fn main() ! {
 }
 ```
 
-> **Status: phase 0 (spec and prototype).** The parsers and type checker work:
-> `kiln check` reports syntax and type errors in `.kiln` files and glazes. Nothing compiles or runs yet. See the [roadmap](#roadmap).
+> **Status: phase 1 (core compiler).** `kiln check` reports syntax and type
+> errors in `.kiln` files and glazes, and `kiln run` compiles command-line
+> programs to native code through C. The web standard library (`web`, `sql`,
+> `json`, `auth`) arrives in later phases. See the [roadmap](#roadmap).
 
 ## Highlights
 
+- **Convention over configuration.** Routing, templates, the ORM, auth, the
+  admin, builds and deployment ship with the language and already fit
+  together, so a project needs no glue code. Any piece can still be
+  configured in depth, or replaced, where it is used.
 - **One binary deploys.** `kiln fire` will produce a static executable with
   templates and assets embedded.
 - **Errors at compile time.** Routes, templates, SQL results and JSON shapes
@@ -51,9 +57,13 @@ fn main() ! {
 
 ## Try it
 
-You need a recent stable Rust toolchain.
+You need a recent stable Rust toolchain, a C compiler, and the Boehm garbage
+collector (`libgc-dev` on Debian and Ubuntu, `gc-devel` on Fedora, `bdw-gc`
+on Homebrew).
 
 ```sh
+cargo run -p kiln_cli -- run examples/hello.kiln # compile and run a program
+cargo run -p kiln_cli -- build examples/hello.kiln -o hello
 cargo run -p kiln_cli -- check examples          # check every .kiln file
 cargo run -p kiln_cli -- check --json examples   # machine-readable output
 cargo run -p kiln_cli -- parse examples/hello.kiln
@@ -67,8 +77,10 @@ cargo run -p kiln_cli -- explain E0106
 | `crates/kiln_diagnostics` | Spans, error codes, human and JSON rendering |
 | `crates/kiln_syntax` | Lexer, parser and syntax tree |
 | `crates/kiln_check` | Type checker, and standard library signatures in `std/` |
+| `crates/kiln_codegen` | The C backend, and the runtime in `runtime/kiln.c` |
 | `crates/kiln_cli` | The `kiln` command |
 | `examples/` | Example programs and glazes; every one is checked in CI |
+| `conformance/` | Programs with their expected output; every one is compiled and run in CI |
 | `docs/syntax.md` | The syntax the parser accepts |
 | `docs/glazes.md` | Glaze (template and component) syntax |
 | `docs/types.md` | The type rules the checker enforces |
@@ -81,9 +93,9 @@ cargo run -p kiln_cli -- explain E0106
 | 0 | Spec and prototype: grammar, parser, diagnostics, type rules | The sample blog app parses and type-checks |
 | 1 | Core compiler: type checker, IR, C backend, Boehm GC, a first language server (`kiln lsp`: diagnostics and quick fixes) | Compiled CLI programs pass a conformance suite |
 | 2 | Runtime and HTTP server: scheduler, network poller, HTTP/1.1 and 2, TLS | A hello-world server holds up under load next to Go's net/http |
-| 3 | Web standard library: router, glazes, JSON, forms, SQL, ORM with schema import, generated admin UI, sessions, auth | A blog with login, ORM models pulled from an existing Postgres database and a customized admin ships as one binary |
+| 3 | Web standard library: router, glazes, JSON, forms, SQL (SQLite first, for local development with no database server, then Postgres and MySQL), ORM with schema import, generated admin UI, sessions, auth | A blog with login, ORM models pulled from an existing Postgres database and a customized admin ships as one binary |
 | 4 | Tooling: full language server (completion, hover, go to definition, rename, glaze support), static site generation (`kiln fire --static`), formatter, wares, live reload, MCP server | Debug rebuilds finish in under a second |
-| 5 | Frontend: embers on WasmGC, server functions, JS interop | An ember hydrates and calls a server function |
+| 5 | Frontend: embers on WasmGC, server functions, JS interop; later, installable PWAs with local-first data that syncs with the server | An ember hydrates and calls a server function |
 | 6 | Performance and 1.0: precise concurrent GC, LLVM release backend | GC pauses under 1 ms; syntax frozen |
 | 7 | Self-hosting (optional) | The compiler builds itself |
 

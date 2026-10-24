@@ -49,7 +49,7 @@ pub struct Checker {
     pub(crate) global_fns: HashMap<String, FnSig>,
     pub(crate) global_types: HashMap<String, AdtId>,
     pub(crate) imports: HashMap<String, ModId>,
-    consts: HashMap<String, Ty>,
+    pub(crate) consts: HashMap<String, Ty>,
     subst: Vec<Option<Ty>>,
     scopes: Vec<HashMap<String, Local>>,
     fns: Vec<FnCtx>,
@@ -59,6 +59,14 @@ pub struct Checker {
     pub(crate) glazes: Option<HashMap<String, GlazeSig>>,
     /// Whether the code being checked runs in the browser.
     pub(crate) in_ember: bool,
+    /// The type of every expression, by span, for the code generator.
+    pub(crate) expr_types: HashMap<Span, Ty>,
+    /// The type of every name a declaration, parameter or pattern binds, by
+    /// the span of the name.
+    pub(crate) binding_types: HashMap<Span, Ty>,
+    /// Types and functions with ids or names below these come from the
+    /// standard library.
+    pub(crate) std_adts: usize,
 }
 
 /// What other files need to know about a glaze.
@@ -95,6 +103,9 @@ impl Checker {
             diags: Vec::new(),
             glazes: None,
             in_ember: false,
+            expr_types: HashMap::new(),
+            binding_types: HashMap::new(),
+            std_adts: 0,
         };
         let prelude = parse_std("prelude", PRELUDE);
         checker.declare_types(&prelude, Scope::Global);
@@ -119,6 +130,7 @@ impl Checker {
             "standard library signatures have errors: {:#?}",
             checker.diags
         );
+        checker.std_adts = checker.adts.len();
         checker
     }
 
@@ -509,6 +521,7 @@ impl Checker {
             if let Some(default) = &p.default {
                 self.check(default, &ty);
             }
+            self.record_binding(p.name.span, &ty);
             self.bind(&p.name.name, ty, false, None);
         }
         self.check_body(&f.body, &ret);
@@ -588,6 +601,7 @@ impl Checker {
                     }
                 };
                 let keyword = Span::new(span.start as usize, span.start as usize + 3);
+                self.record_binding(name.span, &ty);
                 self.bind(&name.name, ty, *mutable, Some(keyword));
             }
             Stmt::Assign {
@@ -659,6 +673,7 @@ impl Checker {
             } => {
                 let elem = self.element_type(iter);
                 self.push_scope();
+                self.record_binding(binding.span, &elem);
                 self.bind(&binding.name, elem, false, None);
                 if let Some(f) = filter {
                     let bool_ty = self.prim("Bool");
@@ -693,6 +708,30 @@ impl Checker {
     }
 
     pub(crate) fn infer(&mut self, e: &Expr, expect: &Expect) -> Ty {
+        let ty = self.infer_kind(e, expect);
+        self.expr_types.insert(e.span, ty.clone());
+        ty
+    }
+
+    pub(crate) fn record_binding(&mut self, span: Span, ty: &Ty) {
+        self.binding_types.insert(span, ty.clone());
+    }
+
+    /// Resolves every inference variable in the recorded types.
+    pub(crate) fn zonk_recorded(&mut self) {
+        let exprs: Vec<(Span, Ty)> = self.expr_types.drain().collect();
+        for (span, ty) in exprs {
+            let ty = self.zonk(&ty);
+            self.expr_types.insert(span, ty);
+        }
+        let bindings: Vec<(Span, Ty)> = self.binding_types.drain().collect();
+        for (span, ty) in bindings {
+            let ty = self.zonk(&ty);
+            self.binding_types.insert(span, ty);
+        }
+    }
+
+    fn infer_kind(&mut self, e: &Expr, expect: &Expect) -> Ty {
         match &e.kind {
             ExprKind::Int(_) => self.prim("Int"),
             ExprKind::Float(_) => self.prim("Float"),
@@ -893,6 +932,7 @@ impl Checker {
                 };
                 self.push_scope();
                 if let Some(b) = binding {
+                    self.record_binding(b.span, &err);
                     self.bind(&b.name, err, false, None);
                 }
                 let handled = self.check_block(handler, &Expect::Value(Some(ty.clone())));
@@ -1967,6 +2007,7 @@ impl Checker {
         self.enter_fn(ret_ty.clone(), throws.clone(), None);
         self.fns.last_mut().unwrap().infer_throws = infer;
         for (p, ty) in params.iter().zip(&param_tys) {
+            self.record_binding(p.name.span, ty);
             self.bind(&p.name.name, ty.clone(), false, None);
         }
         let resolved_ret = self.resolve(&ret_ty);
@@ -2059,7 +2100,10 @@ impl Checker {
     pub(crate) fn check_pattern(&mut self, p: &Pattern, ty: &Ty) {
         match &p.kind {
             PatternKind::Wildcard | PatternKind::Error => {}
-            PatternKind::Binding(name) => self.bind(name, ty.clone(), false, None),
+            PatternKind::Binding(name) => {
+                self.record_binding(p.span, ty);
+                self.bind(name, ty.clone(), false, None)
+            }
             PatternKind::Literal(e) => self.check(e, ty),
             PatternKind::None => match self.resolve(ty) {
                 Ty::Opt(_) | Ty::Unknown | Ty::Var(_) => {}

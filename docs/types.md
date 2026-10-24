@@ -39,7 +39,9 @@ the details of any error.
   }
   ```
 
-  Under a bare `!`, any error can be passed on.
+  Under a bare `!`, any error can be passed on. An error that is not an
+  `Error` becomes one on the way, with its shown value as the `message`, so
+  `catch err { err.message }` always works.
 - A closure can fail if its body uses `try` or `throw`; this is inferred.
 
 ## Calls

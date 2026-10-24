@@ -5,7 +5,7 @@
 //! entry carries a wrong and a right example.
 //!
 //! Ranges: `E00xx` lexing, `E01xx` parsing, `E02xx` names and types,
-//! `E03xx` glazes (templates and components).
+//! `E03xx` glazes (templates and components), `E04xx` the compiler.
 
 pub struct ErrorCode {
     pub code: &'static str,
@@ -61,6 +61,9 @@ pub const MISPLACED_DECLARATION: &str = "E0305";
 pub const FOREIGN_ATTRIBUTE: &str = "E0306";
 pub const UNCLOSED_GLAZE_CODE: &str = "E0307";
 pub const STRAY_CLOSING_TAG: &str = "E0308";
+
+pub const NOT_COMPILED_YET: &str = "E0401";
+pub const NO_MAIN: &str = "E0402";
 
 pub static ALL: &[ErrorCode] = &[
     ErrorCode {
@@ -363,6 +366,20 @@ pub static ALL: &[ErrorCode] = &[
         explanation: "This closing tag, `{% end %}`, `{% else %}`, `{% empty %}` or `{% case %}` has no matching opening element or block.",
         wrong: "<p>Hi</p></div>",
         right: "<p>Hi</p>",
+    },
+    ErrorCode {
+        code: NOT_COMPILED_YET,
+        title: "not supported by the compiler yet",
+        explanation: "The program is valid Kiln, but the compiler cannot build this part of it yet. `kiln check` accepts it; `kiln build` and `kiln run` do not. The standard library modules `web`, `sql`, `json` and `auth`, maps, sets and anonymous records arrive in later phases. Printing or comparing a value whose type is a generic parameter also needs a later phase.",
+        wrong: "import json\n\nfn main() {\n    print(json.encode(1))\n}",
+        right: "fn main() {\n    print(1.to_string())\n}",
+    },
+    ErrorCode {
+        code: NO_MAIN,
+        title: "no `main` function",
+        explanation: "A program that is built or run starts at `fn main()`, which takes no parameters. Files without `main` can still be checked with `kiln check`.",
+        wrong: "fn greet() {\n    print(\"hi\")\n}",
+        right: "fn main() {\n    print(\"hi\")\n}",
     },
 ];
 

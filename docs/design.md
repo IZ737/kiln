@@ -3,6 +3,17 @@
 This is a summary of the language design. Decisions here can still change
 until 1.0; open questions are listed at the end.
 
+## Core principle
+
+Most web development today is gluing together problems that were solved
+long ago (routing, templates, the ORM, auth, forms, the admin, asset builds,
+deployment) and sometimes reinventing one. Kiln removes that work: every one
+of those pieces ships with the language and they already fit together, so a
+project that follows the conventions needs no configuration and no glue
+code. The conventions are defaults, not walls. Any piece can be configured
+in depth, or replaced, where it is used. Every design decision is checked
+against this rule.
+
 ## Goals
 
 1. **One binary deploys**, with templates and assets embedded.
@@ -61,10 +72,20 @@ to a typed mid-level IR, which feeds a backend:
 | WasmGC | Browser code (embers) | 5 |
 | LLVM | Optimized release builds | 6 |
 
+The phase 1 C backend (`crates/kiln_codegen`) emits one C file with the
+runtime (`runtime/kiln.c`) in front, and builds it with `$CC` or `cc`
+against the Boehm collector. Values keep their natural C types (`int64_t`,
+`double`, `bool`, pointers); generic code, list items, enum fields and
+closure arguments use a uniform 64-bit slot, so generic functions are
+compiled once rather than monomorphized for now. A call that fails sets a
+thread-local flag that `try` and `catch` check. Parts of the language the
+backend does not support yet are reported as E0401.
+
 ## Web standard library
 
 `web` (server, router, static files), `template` (glazes), `json`, `form`,
-`validate`, `sql` (Postgres, MySQL, SQLite, migrations), `orm`, `admin`, `session`, `auth`
+`validate`, `sql` (SQLite first, so local development needs no database
+server, then Postgres and MySQL; migrations), `orm`, `admin`, `session`, `auth`
 (Argon2, CSRF, rate limiting, JWT, OAuth 2/OIDC), `http.client`, `log`,
 `metrics`, `trace`, `cache`, `jobs`, `ws`, `sse`, `mail`, `crypto`, `time`,
 `fs`, `os`, `env`, `io`, `text`, `test`.
@@ -132,6 +153,19 @@ pages that need no server:
 - Embers still work on static pages: they hydrate in the browser as usual.
   Server functions need a server, so a fully static export reports any ember
   that calls one as a build error.
+
+### Installable apps (PWAs)
+
+A later addition, after the frontend phase. Marking an app installable
+(`app.pwa(name: "Notes", icon: "icon.png")`) makes `kiln fire` generate the
+web manifest, icons at every size and a service worker that caches the app
+shell and assets, versioned with each release. A standard library `local`
+module gives embers a typed store in the browser (IndexedDB underneath) for
+local-first data: changes queue while offline, and a `sync` layer pushes
+them to the server and pulls other changes when the connection returns, with
+a conflict rule chosen per model (last write wins, merge fields, or a custom
+function). The same ORM models describe both sides. Push notifications and
+background sync come with it.
 
 ## Editor support
 

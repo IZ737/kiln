@@ -1,0 +1,10 @@
+// A panic stops the program with exit code 101.
+import log
+
+fn main() {
+    log.info("starting", 3, "items")
+    let items = [1, 2, 3]
+    print(items[2])
+    print(items[3])
+    print("unreachable")
+}

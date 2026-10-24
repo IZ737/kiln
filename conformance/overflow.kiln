@@ -1,0 +1,7 @@
+// Integer overflow panics instead of wrapping.
+fn main() {
+    var n = 9223372036854775800
+    n += 7
+    print(n)
+    n += 1
+}

@@ -1,0 +1,71 @@
+// Arithmetic, strings, control flow and loops.
+const LIMIT = 5
+
+fn add(a: Int, b: Int) -> Int {
+    a + b
+}
+
+fn describe(n: Int) -> String {
+    if n < 0 {
+        "negative"
+    } else if n == 0 {
+        "zero"
+    } else {
+        "positive"
+    }
+}
+
+fn main() {
+    print(add(2, 3))
+    print(7 / 2)
+    print(7 % 3)
+    print(-4)
+    print(1.5 + 2.25)
+    print(3.0)
+    print(10.0 / 4.0)
+    print(true and not false)
+    print(describe(-3))
+    print(describe(0))
+    print(describe(LIMIT))
+
+    var total = 0
+    for n in 0..LIMIT {
+        total += n
+    }
+    print("total ${total}")
+
+    var evens = 0
+    for n in 1..10 where n % 2 == 0 {
+        evens += 1
+    }
+    print("evens ${evens}")
+
+    var i = 0
+    while i < 3 {
+        i += 1
+        if i == 2 {
+            continue
+        }
+        print("i = ${i}")
+    }
+    while true {
+        break
+    }
+
+    var s = "ab"
+    s += "cd"
+    print(s)
+    print("len ${s.len()} upper ${s.upper()}")
+    print("  trim me  ".trim())
+    print("a,b,c".split(","))
+    print("hello".replace("l", "L"))
+    print("kiln".starts_with("ki") and "kiln".ends_with("ln") and "kiln".contains("il"))
+    print("42".to_int() ?? 0)
+    print("x".to_int() ?? -1)
+    print(250ms)
+    print(2s)
+    print(17.to_string() + "!")
+    print((-5).abs())
+    print(3.7.round())
+    print(2.min(9))
+}

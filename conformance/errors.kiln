@@ -1,0 +1,62 @@
+// Fallible functions: throw, try, catch, and errors leaving main.
+enum DbError {
+    NotFound
+    Timeout(after: Duration)
+}
+
+fn find(id: Int) -> String ! DbError {
+    if id == 0 {
+        throw DbError.NotFound
+    }
+    if id < 0 {
+        throw DbError.Timeout(after: 5s)
+    }
+    "user ${id}"
+}
+
+fn lookup(id: Int) -> String ! DbError {
+    let name = try find(id)
+    name.upper()
+}
+
+fn parse_age(text: String) -> Int ! {
+    let n = text.to_int() ?? throw Error(message: "not a number: ${text}")
+    if n < 0 {
+        throw "negative age"
+    }
+    n
+}
+
+fn load(id: Int) -> String ! {
+    try lookup(id)
+}
+
+fn main() ! {
+    print(lookup(7) catch err { "failed" })
+    let missing = lookup(0) catch err {
+        match err {
+            NotFound => "not found"
+            Timeout(after) => "timeout after ${after}"
+        }
+    }
+    print(missing)
+    print(lookup(-1) catch err { "${err}" })
+    print(parse_age("41") catch err { -1 })
+    print(parse_age("abc") catch err {
+        print(err.message)
+        0
+    })
+    print(parse_age("-3") catch err {
+        print(err.message)
+        0
+    })
+    print(load(0) catch err { err.message })
+    let safe = fn(x: Int) {
+        let v = try parse_age(x.to_string())
+        v + 1
+    }
+    print(safe(4) catch err { 0 })
+    print(try load(3))
+    try load(-2)
+    print("unreachable")
+}

@@ -10,6 +10,8 @@ cargo test                                   # all tests, including examples/
 cargo fmt --all                              # format; CI rejects unformatted code
 cargo clippy --all-targets -- -D warnings    # lint; CI rejects warnings
 cargo run -p kiln_cli -- check examples      # run the CLI on the examples
+cargo run -p kiln_cli -- run conformance/basics.kiln   # compile and run
+cargo run -p kiln_cli -- build file.kiln --emit-c out.c # see the generated C
 ```
 
 Run `cargo fmt --all`, `cargo clippy --all-targets -- -D warnings` and
@@ -29,7 +31,14 @@ Run `cargo fmt --all`, `cargo clippy --all-targets -- -D warnings` and
   directory's `.kiln` files and glazes together; `glaze.rs` holds the glaze
   rules. The standard library's signatures are Kiln stubs in `std/`; their
   bodies are ignored.
-- `crates/kiln_cli`: the `kiln` binary (`check`, `parse`, `explain`).
+- `crates/kiln_codegen`: the C backend. `emit.rs` turns a checked program
+  (`kiln_check::check_program`) into C; `runtime/kiln.c` is prepended to it.
+  Building needs a C compiler and the Boehm GC (`libgc-dev`).
+- `crates/kiln_cli`: the `kiln` binary (`check`, `build`, `run`, `parse`,
+  `explain`).
+- `conformance/`: programs with expected output (`.out`, and `.err` when
+  they fail). `crates/kiln_cli/tests/conformance.rs` runs each one; add one
+  for every feature the compiler learns.
 - `examples/`: Kiln programs. Tests in `crates/kiln_syntax/tests/examples.rs`
   and `crates/kiln_check/tests/examples.rs` parse and type-check every one of
   them, so they must stay valid.
@@ -44,7 +53,7 @@ Run `cargo fmt --all`, `cargo clippy --all-targets -- -D warnings` and
 - **Every diagnostic has a code.** Add new codes to `codes.rs` with a title,
   an explanation, and a wrong and right example; `kiln explain` prints them.
   Codes are never reused. Ranges: `E00xx` lexer, `E01xx` parser, `E02xx`
-  names and types, `E03xx` glazes.
+  names and types, `E03xx` glazes, `E04xx` the compiler.
 - **Give a fix when there is one.** Use `Diagnostic::with_suggestion` with
   the exact replacement text, so agents can apply it from `kiln check --json`.
 - **Syntax changes update three places:** the parser, a test in
@@ -54,6 +63,9 @@ Run `cargo fmt --all`, `cargo clippy --all-targets -- -D warnings` and
   which is compatible with everything, so later uses are not reported again.
 - **Standard library changes** go in `crates/kiln_check/std/*.kiln`. New
   modules are also listed in `STD_MODULES` in `checker.rs`.
+- **The compiler never guesses.** A program that type-checks but uses
+  something the backend cannot build yet gets E0401 at that spot, never
+  wrong C.
 - Keep error messages short, specific, and in plain words: say what was
   expected and what was found.
 

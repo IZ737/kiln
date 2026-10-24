@@ -1,0 +1,90 @@
+// Recursion, nested closures, generic methods, escapes and short-circuits.
+struct Stack<T> {
+    items: List<T>
+}
+
+impl Stack<T> {
+    fn push(self, item: T) {
+        self.items.push(item)
+    }
+
+    fn peek(self) -> T? {
+        self.items.last()
+    }
+
+    fn size(self) -> Int {
+        self.items.len()
+    }
+}
+
+enum Tree {
+    Leaf
+    Node(left: Tree, value: Int, right: Tree)
+}
+
+fn sum(t: Tree) -> Int {
+    match t {
+        Leaf => 0
+        Node(l, v, r) => sum(l) + v + sum(r)
+    }
+}
+
+fn fib(n: Int) -> Int {
+    if n < 2 { n } else { fib(n - 1) + fib(n - 2) }
+}
+
+fn noisy(b: Bool) -> Bool {
+    print("noisy ${b}")
+    b
+}
+
+fn greet(name: String, greeting: String = "Hello") -> String {
+    "${greeting}, ${name}!"
+}
+
+fn main() {
+    print(fib(20))
+    let t = Tree.Node(left: Tree.Node(left: Tree.Leaf, value: 1, right: Tree.Leaf), value: 2, right: Tree.Leaf)
+    print(sum(t))
+    let s = Stack(items: [1])
+    s.push(5)
+    print(s.peek() ?? 0)
+    print(s.size())
+    let words = Stack(items: ["a"])
+    print(words.peek() ?? "")
+    print("tab\there \"quoted\" back\\slash ? done")
+    print(false and noisy(true))
+    print(true or noisy(true))
+    print(true and noisy(false))
+    let adders = [1, 2, 3].map(fn(n) { fn(x: Int) { x + n } })
+    print(adders.map(fn(f) { f(10) }))
+    var count = 0
+    let bump = fn() {
+        let inner = fn() { count += 1 }
+        inner()
+        inner()
+    }
+    bump()
+    print(count)
+    var n = 0
+    while n < 10 and noisy(n < 2) {
+        n += 1
+    }
+    let kind = match n {
+        2 => {
+            let msg = "two"
+            msg.upper()
+        }
+        _ => "other"
+    }
+    print(kind)
+    print(greet("Ada"))
+    print(greet("Bob", greeting: "Hi"))
+    print(greet(greeting: "Hey", name: "Cy"))
+    let empty: List<Int> = []
+    print(empty)
+    print(empty.first())
+    print(1.5e3)
+    print(0.1 + 0.2)
+    print(-0.5)
+}

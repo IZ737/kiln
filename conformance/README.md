@@ -1,0 +1,13 @@
+# Conformance programs
+
+Each `.kiln` file here is a complete program. `cargo test` runs it with
+`kiln run` and compares the result with the files next to it:
+
+- `name.out` is the expected standard output.
+- `name.err` is the expected standard error, for a program that fails. A
+  panic exits with code 101 and an error that leaves `main` with code 1.
+  Without this file, the program must exit with 0 and write nothing to
+  standard error.
+
+Add a program here for every feature the compiler learns. The suite passing
+on the compiled programs is the exit gate of phase 1.
