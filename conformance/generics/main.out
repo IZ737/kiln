@@ -12,3 +12,23 @@ seven
 one
 none
 -1
+count: 3
+name: Ada
+task: Task(id: 1, title: "t", done: false)
+list: [1.5, 2.0]
+maybe: 4
+true
+false
+true
+{"a": 2, "b": 1}
+{3: 3}
+18
+hi!!
+via value: 9
+bottom: true
+stack of 2: [1, 2]
+2
+true
+false
+stack of 2: ["#1", "#2"]
+true

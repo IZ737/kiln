@@ -444,3 +444,8 @@ fn branches_may_end_in_none_after_a_value() {
 fn type_parameters_are_in_scope_in_the_body() {
     ok("fn first<T>(items: List<T>) -> T? {\n    var best: T? = none\n    let check = fn(x: T) -> T { x }\n    for item in items {\n        best = check(item)\n    }\n    best\n}\n");
 }
+
+#[test]
+fn closure_arguments_are_checked_after_the_others() {
+    ok("fn twice<T>(f: fn(T) -> T, x: T) -> T {\n    f(f(x))\n}\n\nfn main() {\n    print(twice(fn(n) { n * 3 }, 2))\n}\n");
+}

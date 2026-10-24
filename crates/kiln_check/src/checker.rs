@@ -74,6 +74,10 @@ pub struct Checker {
     /// The type of every name a declaration, parameter or pattern binds, by
     /// the span of the name.
     pub(crate) binding_types: HashMap<Span, Ty>,
+    /// The type arguments of every use of a generic function or method, by
+    /// the span of the call or name: each type parameter (the `impl`
+    /// target's and the function's own) and its type.
+    pub(crate) instantiations: HashMap<Span, HashMap<String, Ty>>,
     /// Types and functions with ids or names below these come from the
     /// standard library.
     pub(crate) std_adts: usize,
@@ -84,6 +88,16 @@ pub struct Checker {
 pub(crate) struct GlazeSig {
     pub(crate) props: Vec<ParamSig>,
     pub(crate) has_slot: bool,
+}
+
+/// Whether an argument is a closure that takes a parameter type from the
+/// call: `fn(x) { ... }` or `.field`.
+fn infers_from_call(e: &Expr) -> bool {
+    match &e.kind {
+        ExprKind::FieldShorthand(_) => true,
+        ExprKind::Closure { params, .. } => params.iter().any(|p| p.ty.is_none()),
+        _ => false,
+    }
 }
 
 /// Modules that need the server: they cannot be used in embers.
@@ -116,6 +130,7 @@ impl Checker {
             duplicate_types: HashSet::new(),
             subst: Vec::new(),
             type_params: Vec::new(),
+            instantiations: HashMap::new(),
             scopes: Vec::new(),
             fns: Vec::new(),
             diags: Vec::new(),
@@ -765,6 +780,11 @@ impl Checker {
         for (span, ty) in bindings {
             let ty = self.zonk(&ty);
             self.binding_types.insert(span, ty);
+        }
+        let uses: Vec<(Span, HashMap<String, Ty>)> = self.instantiations.drain().collect();
+        for (span, map) in uses {
+            let map = map.into_iter().map(|(k, t)| (k, self.zonk(&t))).collect();
+            self.instantiations.insert(span, map);
         }
     }
 
@@ -1570,6 +1590,9 @@ impl Checker {
                 has_default: p.has_default,
             })
             .collect();
+        if !map.is_empty() {
+            self.instantiations.insert(span, map.clone());
+        }
         (
             params,
             substitute(&sig.ret, &map),
@@ -1890,6 +1913,9 @@ impl Checker {
         // After a misspelled argument name, "missing" errors would be noise.
         let mut misnamed = false;
         let mut next = 0;
+        // Closures whose parameter types come from the call are checked
+        // last, once the other arguments have fixed the type arguments.
+        let mut deferred = Vec::new();
         for (i, arg) in args.iter().enumerate() {
             let index = match &arg.name {
                 None => {
@@ -1971,8 +1997,12 @@ impl Checker {
                     let handler = handler.clone();
                     self.check(&arg.value, &handler);
                 }
+                _ if infers_from_call(&arg.value) => deferred.push((&arg.value, param_ty)),
                 _ => self.check(&arg.value, &param_ty),
             }
+        }
+        for (value, ty) in deferred {
+            self.check(value, &ty);
         }
         let missing: Vec<String> = params
             .iter()
