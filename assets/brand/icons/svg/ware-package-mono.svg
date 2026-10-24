@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Ware icon"><title>Ware — Package</title>
+ <path d="M25 15 H39 V21 C39 24 45 25 49 32 C53 39 49 49 44 52 C39 56 25 56 20 52 C15 49 11 39 15 32 C19 25 25 24 25 21 Z" fill="#1F232B"/>
+ <path d="M23 13 H41" fill="none" stroke="#1F232B" stroke-width="4" stroke-linecap="round"/>
+ <path d="M25 21 H39" fill="none" stroke="#1F232B" stroke-width="3" stroke-linecap="round"/>
+ </svg>
