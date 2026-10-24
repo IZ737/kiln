@@ -1,0 +1,12 @@
+2 2 1
+hits: 6
+6765
+["zero", "negative", "even", "odd"]
+line 3: bad number 'x'
+[]
+9
+Empty
+-1
+{"other": [1, 2, 4, 5, 7, 8], "fizz": [3, 6, 9]}
+30
+missing: cannot read /nope/nope: No such file or directory
