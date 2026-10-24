@@ -1,0 +1,4 @@
+// JSON encoding and decoding.
+
+fn encode(value: Any) -> String {}
+fn decode<T>(text: String) -> T ! {}

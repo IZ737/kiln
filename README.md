@@ -18,8 +18,8 @@ fn main() ! {
 }
 ```
 
-> **Status: phase 0 (spec and prototype).** The parser and the `kiln check`
-> command work. Nothing compiles or runs yet. See the [roadmap](#roadmap).
+> **Status: phase 0 (spec and prototype).** The parser and type checker work:
+> `kiln check` reports syntax and type errors. Nothing compiles or runs yet. See the [roadmap](#roadmap).
 
 ## Highlights
 
@@ -61,9 +61,11 @@ cargo run -p kiln_cli -- explain E0106
 | --- | --- |
 | `crates/kiln_diagnostics` | Spans, error codes, human and JSON rendering |
 | `crates/kiln_syntax` | Lexer, parser and syntax tree |
+| `crates/kiln_check` | Type checker, and standard library signatures in `std/` |
 | `crates/kiln_cli` | The `kiln` command |
-| `examples/` | Example programs; every one is parsed in CI |
+| `examples/` | Example programs; every one is type-checked in CI |
 | `docs/syntax.md` | The syntax the parser accepts |
+| `docs/types.md` | The type rules the checker enforces |
 | `docs/design.md` | Language design overview and roadmap |
 
 ## Roadmap

@@ -264,3 +264,23 @@ fn missing_closing_brace_does_not_hang() {
     let result = parse("fn main() {\n    let x = foo(1, 2\n");
     assert!(!result.diagnostics.is_empty());
 }
+
+#[test]
+fn function_types() {
+    let result = parse("fn each(items: List<Int>, f: fn(Int) -> Bool !) {\n}\n");
+    assert!(result.diagnostics.is_empty(), "{:#?}", result.diagnostics);
+    let Item::Fn(f) = &result.module.items[0] else {
+        panic!()
+    };
+    let TypeKind::Fn {
+        params,
+        ret,
+        throws,
+    } = &f.params[1].ty.as_ref().unwrap().kind
+    else {
+        panic!("expected a function type")
+    };
+    assert_eq!(params.len(), 1);
+    assert!(ret.is_some());
+    assert_eq!(*throws, Throws::Default);
+}

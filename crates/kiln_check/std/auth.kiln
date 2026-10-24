@@ -1,0 +1,12 @@
+// Signed-in users and passwords.
+
+struct User {
+    id: Int
+    name: String
+    email: String
+}
+
+fn require() -> User ! {}
+fn current() -> User? {}
+fn hash_password(password: String) -> String ! {}
+fn verify_password(password: String, hash: String) -> Bool {}

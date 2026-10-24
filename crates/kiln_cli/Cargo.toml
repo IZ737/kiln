@@ -14,5 +14,6 @@ path = "src/main.rs"
 [dependencies]
 kiln_diagnostics.workspace = true
 kiln_syntax.workspace = true
+kiln_check.workspace = true
 serde_json.workspace = true
 clap = { version = "4", features = ["derive"] }
