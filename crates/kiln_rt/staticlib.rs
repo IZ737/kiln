@@ -126,7 +126,7 @@ pub fn prelink(cc: &str, nm: &str, libs: &[PathBuf], out: &Path) -> Result<(), S
         .arg(out)
         .status()
         .map_err(|e| format!("cannot run `{cc}`: {e}"))?;
-    if status.success() {
+    if status.success() && out.is_file() {
         Ok(())
     } else {
         Err(format!(

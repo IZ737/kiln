@@ -24,18 +24,17 @@ fn main() {
         Ok(lib) => {
             // One object with only what the runtime uses where the C
             // compiler can make it, otherwise the library without debug
-            // information, otherwise the whole library.
-            let (cc, nm, strip) = if target.contains("windows") {
-                (
-                    "x86_64-w64-mingw32-gcc",
-                    "x86_64-w64-mingw32-nm",
-                    "x86_64-w64-mingw32-strip",
-                )
+            // information, otherwise the whole library. mingw's linker
+            // cannot make one object of a library with thread-local storage.
+            let windows = target.contains("windows");
+            let strip = if windows {
+                "x86_64-w64-mingw32-strip"
             } else {
-                ("cc", "nm", "strip")
+                "strip"
             };
             let dest = out.join("kiln_rt");
-            if kiln_rt::prelink(cc, nm, std::slice::from_ref(&lib), &dest).is_err() {
+            let _ = std::fs::remove_file(&dest);
+            if windows || kiln_rt::prelink("cc", "nm", std::slice::from_ref(&lib), &dest).is_err() {
                 if let Err(why) = kiln_rt::strip_debug(strip, &lib, &dest) {
                     println!(
                         "cargo:warning=kiln carries all of the C backend's runtime library: {why}"
@@ -43,6 +42,11 @@ fn main() {
                     std::fs::copy(&lib, &dest).unwrap();
                 }
             }
+            assert!(
+                dest.is_file(),
+                "no {} after building kiln_rt",
+                dest.display()
+            );
             let _ = std::fs::remove_file(missing);
             println!("cargo:rustc-cfg=kiln_rt");
         }
