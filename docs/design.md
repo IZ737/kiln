@@ -448,3 +448,6 @@ of the developer workflow. Debugging remains a separate later milestone.
   (PHP style), or should every route go through a handler?
 - Whether the exact WasmGC browser support matches the plan should be
   confirmed before phase 6.
+- Should the network-facing parts of the runtime (HTTP, JSON, later TLS)
+  move from C to Rust libraries such as hyper and serde_json? See the
+  proposal in [runtime-rust.md](runtime-rust.md).
