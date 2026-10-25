@@ -1,17 +1,29 @@
 # Editor setup
 
 `kiln lsp` is a language server (LSP) that talks over standard input and
-output. It reports the same errors as `kiln check` while you type, including
-unsaved changes, and offers each error's suggested fix as a quick fix. A file
-is checked together with the other `.kiln` and `.glaze` files in its
-directory, so glazes see your types and pages see your glazes' props.
+output. A file is understood together with the other `.kiln` and `.glaze`
+files in its directory, so glazes see your types and pages see your glazes'
+props, and the editor's unsaved text is used for every open file. It gives:
 
-Phase 2.5 adds completion, hover, go to definition and symbol navigation
-to the shared Rust LSP, alongside a dedicated VS Code extension with syntax
-highlighting, Kiln file icons and Check/Build/Run commands. Find references,
-rename and deeper Glaze semantics remain in phase 5; a debugger is not part
-of phase 2.5. See [the phase 2.5 plan](phase-2.5.md). So far the extension
-has highlighting and icons; the LSP features are still to come.
+- **Diagnostics**: the same errors as `kiln check`, while you type, with
+  each error's suggested fix as a quick fix.
+- **Completion**: fields and methods after `value.`, functions and types
+  after `module.`, variants after `Enum.`, the locals in scope and the
+  program's functions, types and constants, types where a type is written,
+  and standard library modules not imported yet (choosing one adds the
+  `import`). It works in glazes' `{...}` code too.
+- **Hover**: the type of a name or expression, a function's signature, a
+  type's fields or variants, and the doc comment (`//` lines just above the
+  declaration), including for the standard library.
+- **Go to definition**: for locals, functions, types, fields, methods and
+  variants, across the files of the program.
+- **Symbols**: the outline of a file (document symbols), and the
+  declarations of every `.kiln` file in the workspace (workspace symbols).
+
+Code that does not parse yet still gets answers: whatever the parser
+recovered is analyzed, so completing `post.` on an unfinished line works.
+Find references, rename and deeper Glaze semantics come in phase 5; a
+debugger is not part of phase 2.5. See [the phase 2.5 plan](phase-2.5.md).
 
 Install the `kiln` binary first:
 
@@ -38,7 +50,9 @@ vim.lsp.config("kiln", {
 vim.lsp.enable("kiln")
 ```
 
-Quick fixes are under `vim.lsp.buf.code_action()` (`gra` by default).
+With Neovim's default mappings, quick fixes are under `gra`, hover under
+`K`, go to definition under `<C-]>`, the outline under `gO` and completion
+under `<C-x><C-o>`.
 
 ## Helix
 

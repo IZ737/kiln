@@ -426,8 +426,8 @@ current implementation.
 phase 1, reports the same diagnostics as `kiln check` as you type and offers
 their suggested fixes as quick fixes; [editors.md](editors.md) shows how to
 set it up. Phase 2.5 adds completion, hover types and signatures, go to
-definition and symbol navigation, plus a VS Code extension with Kiln/Glaze
-highlighting, icons and commands. These language features stay in the Rust
+definition and symbol navigation (done), plus a VS Code extension with
+Kiln/Glaze highlighting, icons and commands. These language features stay in the Rust
 LSP and benefit other LSP clients. Phase 5 expands refactoring (find
 references and rename), deep Glaze prop/component navigation and the rest
 of the developer workflow. Debugging remains a separate later milestone.

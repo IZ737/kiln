@@ -46,7 +46,7 @@ compiler/LSP, not from a second parser or type checker in the extension.
    language registrations, basic syntax grammars, brand-based file icons
    and a local extension launch configuration. Smoke-test associations
    on both light and dark VS Code themes.
-2. **Compiler-backed language intelligence.** Extend `kiln lsp` to
+2. **Compiler-backed language intelligence (done).** Extend `kiln lsp` to
    surface completions, hovers, definitions and symbols from shared
    compiler name/type resolution. Add focused protocol tests for
    same-file, cross-file and incomplete/unsaved Kiln programs. Keep

@@ -3,7 +3,10 @@
 //! It reports the same diagnostics as `kiln check` while you type, and turns
 //! each diagnostic's suggestion into a quick fix. A file is checked with the
 //! other `.kiln` and `.glaze` files in its directory, using the editor's
-//! unsaved text for any that are open.
+//! unsaved text for any that are open. `features.rs` answers hover, go to
+//! definition, completion and symbol requests.
+
+mod features;
 
 use kiln_diagnostics::{codes, Diagnostic};
 use serde_json::{json, Value};
@@ -19,6 +22,8 @@ struct Document {
 
 struct Server {
     docs: HashMap<String, Document>,
+    /// The workspace folders, for workspace symbols.
+    roots: Vec<PathBuf>,
     shutdown: bool,
 }
 
@@ -29,6 +34,7 @@ pub fn run() -> i32 {
     let mut input = stdin.lock();
     let mut server = Server {
         docs: HashMap::new(),
+        roots: Vec::new(),
         shutdown: false,
     };
     while let Some(message) = read_message(&mut input) {
@@ -63,13 +69,26 @@ impl Server {
             .unwrap_or_default()
             .to_string();
         match method {
-            "initialize" => Some(json!({
-                "capabilities": {
-                    "textDocumentSync": {"openClose": true, "change": 1, "save": true},
-                    "codeActionProvider": {"codeActionKinds": ["quickfix"]},
-                },
-                "serverInfo": {"name": "kiln", "version": env!("CARGO_PKG_VERSION")},
-            })),
+            "initialize" => {
+                let folders = params["workspaceFolders"].as_array();
+                let uris: Vec<&str> = match folders {
+                    Some(f) => f.iter().filter_map(|f| f["uri"].as_str()).collect(),
+                    None => params["rootUri"].as_str().into_iter().collect(),
+                };
+                self.roots = uris.into_iter().filter_map(uri_to_path).collect();
+                Some(json!({
+                    "capabilities": {
+                        "textDocumentSync": {"openClose": true, "change": 1, "save": true},
+                        "codeActionProvider": {"codeActionKinds": ["quickfix"]},
+                        "hoverProvider": true,
+                        "definitionProvider": true,
+                        "completionProvider": {"triggerCharacters": ["."]},
+                        "documentSymbolProvider": true,
+                        "workspaceSymbolProvider": true,
+                    },
+                    "serverInfo": {"name": "kiln", "version": env!("CARGO_PKG_VERSION")},
+                }))
+            }
             "shutdown" => {
                 self.shutdown = true;
                 Some(Value::Null)
@@ -111,26 +130,66 @@ impl Server {
                 None
             }
             "textDocument/codeAction" => Some(self.code_actions(&uri, params)),
+            "textDocument/hover" | "textDocument/definition" | "textDocument/completion" => {
+                let empty = match method {
+                    "textDocument/completion" => json!({"isIncomplete": false, "items": []}),
+                    _ => Value::Null,
+                };
+                let Some((sources, index)) = self.program(&uri) else {
+                    return Some(empty);
+                };
+                let offset = offset_of(&sources[index].text, &params["position"]);
+                Some(match method {
+                    "textDocument/hover" => features::hover(&sources, index, offset),
+                    "textDocument/definition" => features::definition(&sources, index, offset),
+                    _ => features::completion(&sources, index, offset),
+                })
+            }
+            "textDocument/documentSymbol" => Some(match self.docs.get(&uri) {
+                Some(doc) => {
+                    let path = uri_to_path(&uri).unwrap_or_else(|| PathBuf::from(&uri));
+                    features::document_symbols(&path, &doc.text)
+                }
+                None => json!([]),
+            }),
+            "workspace/symbol" => {
+                let query = params["query"].as_str().unwrap_or_default();
+                let open: Vec<features::Source> = self
+                    .docs
+                    .iter()
+                    .filter_map(|(u, d)| {
+                        Some(features::Source {
+                            path: uri_to_path(u)?,
+                            uri: Some(u.clone()),
+                            text: d.text.clone(),
+                        })
+                    })
+                    .collect();
+                Some(features::workspace_symbols(&self.roots, &open, query))
+            }
             _ => None,
         }
     }
 
     /// Checks a document with its directory and publishes diagnostics for
     /// every open document there.
-    fn check(&mut self, uri: &str) {
+    /// The files of the program an open document belongs to, with the
+    /// editor's text for open ones, and which of them the document is. An
+    /// unsaved document is a program on its own.
+    fn program(&self, uri: &str) -> Option<(Vec<features::Source>, usize)> {
+        let doc = self.docs.get(uri)?;
         let Some(path) = uri_to_path(uri) else {
-            // An unsaved buffer: check it on its own.
-            if let Some(doc) = self.docs.get_mut(uri) {
-                let name = PathBuf::from(if uri.ends_with(".glaze") {
-                    "untitled.glaze"
-                } else {
-                    "untitled.kiln"
-                });
-                let results = crate::check_sources(vec![(name, doc.text.clone())]);
-                doc.diagnostics = results.into_iter().next().map(|r| r.1).unwrap_or_default();
-                publish(uri, &doc.diagnostics, &doc.text);
-            }
-            return;
+            let name = if uri.ends_with(".glaze") {
+                "untitled.glaze"
+            } else {
+                "untitled.kiln"
+            };
+            let source = features::Source {
+                path: PathBuf::from(name),
+                uri: Some(uri.to_string()),
+                text: doc.text.clone(),
+            };
+            return Some((vec![source], 0));
         };
         let dir = path.parent().unwrap_or(Path::new(".")).to_path_buf();
         // Open documents in this directory, by path.
@@ -140,7 +199,7 @@ impl Server {
             .filter_map(|u| uri_to_path(u).map(|p| (p, u.clone())))
             .filter(|(p, _)| p.parent() == Some(dir.as_path()))
             .collect();
-        let mut texts: Vec<(PathBuf, String)> = Vec::new();
+        let mut sources = Vec::new();
         if let Ok(entries) = std::fs::read_dir(&dir) {
             for entry in entries.flatten() {
                 let p = entry.path();
@@ -149,17 +208,38 @@ impl Server {
                     continue;
                 }
                 if let Ok(text) = std::fs::read_to_string(&p) {
-                    texts.push((p, text));
+                    sources.push(features::Source {
+                        path: p,
+                        uri: None,
+                        text,
+                    });
                 }
             }
         }
         for (p, u) in &open {
-            texts.push((p.clone(), self.docs[u].text.clone()));
+            sources.push(features::Source {
+                path: p.clone(),
+                uri: Some(u.clone()),
+                text: self.docs[u].text.clone(),
+            });
         }
-        let names: Vec<PathBuf> = texts.iter().map(|(p, _)| p.clone()).collect();
+        let index = sources.iter().position(|s| s.path == path)?;
+        Some((sources, index))
+    }
+
+    /// Checks a document with its directory and publishes diagnostics for
+    /// every open document there.
+    fn check(&mut self, uri: &str) {
+        let Some((sources, _)) = self.program(uri) else {
+            return;
+        };
+        let texts = sources
+            .iter()
+            .map(|s| (s.path.clone(), s.text.clone()))
+            .collect();
         let results = crate::check_sources(texts);
-        for (p, (_, diagnostics)) in names.iter().zip(results) {
-            if let Some(u) = open.get(p) {
+        for (source, (_, diagnostics)) in sources.iter().zip(results) {
+            if let Some(u) = &source.uri {
                 let doc = self.docs.get_mut(u).unwrap();
                 doc.diagnostics = diagnostics;
                 publish(u, &doc.diagnostics, &doc.text);
