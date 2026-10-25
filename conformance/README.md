@@ -26,5 +26,8 @@ namespace, and one of them has `fn main()`. `cargo test` runs it with
   the `date` header, and `main.err` what the server logged, with the port
   written as `PORT`.
 
+`KILN_CONFORMANCE=web cargo test --test conformance` runs only the programs
+whose names contain `web`.
+
 Add a program here for every feature the compiler learns. The suite passing
 on the compiled programs is the exit gate of phase 1.

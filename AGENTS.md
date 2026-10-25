@@ -121,9 +121,11 @@ Run `cargo fmt --all`, `cargo clippy --all-targets -- -D warnings` and
   for every feature the compiler learns. A server program also has
   `main.requests` and `main.responses` (see `conformance/README.md`), and
   `scripts/lib/conformance.sh` sends them in the clean-system checks too.
-  The `web` server lives in `kiln.c`; it builds `Request` and reads
-  `Response` as slot arrays in the field order of `std/web.kiln`. It runs
-  each connection on a task (the scheduler is also in `kiln.c`): runtime
+  The `web` server's connections are hyper's, in `kiln_rt/src/server.rs`,
+  which builds `Request` and reads `Response` as slot arrays in the field
+  order of `std/web.kiln`; routing, handlers and error pages stay in
+  `kiln.c`. It runs each connection on a task (the scheduler is in
+  `kiln.c`), polling hyper and waiting through `k_task_wait`: runtime
   code that waits for a socket or for time calls `k_task_wait` or
   `k_task_sleep` instead of blocking, and a global that belongs to one
   request is saved in `k_task_switch`. `tests/server.rs` checks that

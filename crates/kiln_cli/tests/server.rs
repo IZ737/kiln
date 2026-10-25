@@ -4,7 +4,8 @@
 //! sleeping handler and a client that sends slowly do not hold up other
 //! requests, that the collector keeps a waiting task's values alive, that
 //! connections stay open for more requests, sent one after another or all
-//! at once, and that the timeout and keep-alive settings hold.
+//! at once, that the timeout and keep-alive settings hold, and that
+//! malformed requests are refused.
 
 use std::io::{Read, Write};
 use std::net::TcpStream;
@@ -48,6 +49,64 @@ fn timeouts_and_keep_alive_follow_the_settings() {
             took >= Duration::from_millis(900) && took < Duration::from_secs(5),
             "{backend}: the stalled client got its answer after {took:?}"
         );
+        server.stop();
+    }
+}
+
+/// Requests that HTTP parsers have got wrong, which hyper reads for the
+/// server: conflicting lengths, chunked bodies over the limit or malformed,
+/// `expect: 100-continue`, and a header name with a space.
+#[test]
+fn malformed_and_hostile_requests_are_refused() {
+    for backend in backends() {
+        let server = Server::start(&program("web_errors"), backend);
+        let status = |request: &[u8]| {
+            let mut c = server.connect();
+            c.write_all(request).unwrap();
+            read_response(&mut c).0
+        };
+        assert_eq!(
+            status(b"POST /notes HTTP/1.1\r\ncontent-length: 3\r\ncontent-length: 4\r\n\r\nabcd"),
+            "HTTP/1.1 400 Bad Request",
+            "{backend}"
+        );
+        assert_eq!(
+            status(b"GET /posts/1 HTTP/1.1\r\nhost : x\r\n\r\n"),
+            "HTTP/1.1 400 Bad Request",
+            "{backend}"
+        );
+        // `web_errors` takes bodies of up to 16 bytes.
+        assert_eq!(
+            status(b"POST /notes HTTP/1.1\r\ntransfer-encoding: chunked\r\n\r\n20\r\n0123456789abcdef0123456789abcdef\r\n0\r\n\r\n"),
+            "HTTP/1.1 413 Content Too Large",
+            "{backend}"
+        );
+        assert_eq!(
+            status(
+                b"POST /notes HTTP/1.1\r\ntransfer-encoding: chunked\r\n\r\nzz\r\nabc\r\n0\r\n\r\n"
+            ),
+            "HTTP/1.1 400 Bad Request",
+            "{backend}"
+        );
+        let mut c = server.connect();
+        c.write_all(b"POST /notes HTTP/1.1\r\ntransfer-encoding: chunked\r\n\r\n3\r\nabc\r\n4\r\ndefg\r\n0\r\n\r\n")
+            .unwrap();
+        assert_eq!(read_response(&mut c).2, "saved 7 characters", "{backend}");
+        // The client waits for `100 Continue` before it sends the body.
+        let mut c = server.connect();
+        c.write_all(b"POST /notes HTTP/1.1\r\ncontent-length: 3\r\nexpect: 100-continue\r\n\r\n")
+            .unwrap();
+        let mut head = Vec::new();
+        let mut byte = [0u8];
+        while !head.ends_with(b"\r\n\r\n") {
+            assert_eq!(c.read(&mut byte).unwrap(), 1, "{backend}");
+            head.push(byte[0]);
+        }
+        assert_eq!(head, b"HTTP/1.1 100 Continue\r\n\r\n", "{backend}");
+        c.write_all(b"abc").unwrap();
+        let (status, _, body) = read_response(&mut c);
+        assert_eq!(status, "HTTP/1.1 201 Created", "{backend}");
+        assert_eq!(body, "saved 3 characters", "{backend}");
         server.stop();
     }
 }

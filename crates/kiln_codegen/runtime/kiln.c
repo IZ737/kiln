@@ -63,6 +63,10 @@ struct kdesc;
 const char *k_web_reason(int64_t status);
 struct kstr *k_json_encode(const struct kdesc *d, kv v);
 kv k_rt_json_decode(const struct kdesc *d, struct kstr *text, struct kstr **error);
+struct kbox;
+struct kstr *k_rt_path_decode(struct kstr *s);
+struct kbox *k_rt_query(struct kstr *query, struct kstr *name);
+struct kbox *k_rt_cookie(struct kstr *header, struct kstr *name);
 
 static inline kv k_f2kv(double f) { kv v; memcpy(&v, &f, sizeof v); return v; }
 static inline double k_kv2f(kv v) { double f; memcpy(&f, &v, sizeof f); return f; }
@@ -1109,14 +1113,14 @@ static int64_t k_pollfds_cap;
 static k_gc_push_roots k_old_push_roots;
 
 #ifdef _WIN32
-K_API int64_t k_mono_now(void) {
+K_EXPORT int64_t k_mono_now(void) {
     LARGE_INTEGER f, c;
     QueryPerformanceFrequency(&f);
     QueryPerformanceCounter(&c);
     return c.QuadPart / f.QuadPart * K_NS_PER_SEC + c.QuadPart % f.QuadPart * K_NS_PER_SEC / f.QuadPart;
 }
 #else
-K_API int64_t k_mono_now(void) {
+K_EXPORT int64_t k_mono_now(void) {
     struct timespec ts;
     clock_gettime(CLOCK_MONOTONIC, &ts);
     return (int64_t)ts.tv_sec * K_NS_PER_SEC + ts.tv_nsec;
@@ -1374,7 +1378,7 @@ K_API void k_task_spawn(void (*fn)(void *), void *arg) {
 /* Waits until `fd` can be read, or written with `write`, or until the
  * monotonic time `deadline` (from `k_mono_now`; 0 for none). Returns false
  * if the deadline came first. With no socket, it waits for the deadline. */
-K_API bool k_task_wait(ksock fd, bool write, int64_t deadline) {
+K_EXPORT bool k_task_wait(ksock fd, bool write, int64_t deadline) {
     k_task_init();
     ktask *t = k_cur;
     t->fd = fd;
@@ -1390,7 +1394,7 @@ K_API bool k_task_wait(ksock fd, bool write, int64_t deadline) {
 }
 
 /* The monotonic time `ns` from now, saturating. */
-K_API int64_t k_task_deadline(int64_t ns) {
+K_EXPORT int64_t k_task_deadline(int64_t ns) {
     int64_t now = k_mono_now();
     return ns > INT64_MAX - now ? INT64_MAX : now + ns;
 }
@@ -1398,7 +1402,7 @@ K_API int64_t k_task_deadline(int64_t ns) {
 K_API void k_task_sleep(int64_t ns) { k_task_wait(K_BAD_SOCK, false, k_task_deadline(ns)); }
 
 /* Lets the other ready tasks run first. */
-K_API void k_task_yield(void) {
+K_EXPORT void k_task_yield(void) {
     k_task_init();
     k_task_ready(k_cur);
     k_task_park();
@@ -1933,7 +1937,7 @@ static const char *const k_web_methods[] = {"GET", "POST", "PUT", "PATCH", "DELE
 
 K_API bool k_web_str_eq(kv a, kv b) { return k_str_eq(K_KV2P(kstr *, a), K_KV2P(kstr *, b)); }
 
-K_API kmap *k_web_headers(void) { return k_map_new(k_hash_str, k_web_str_eq); }
+K_EXPORT kmap *k_web_headers(void) { return k_map_new(k_hash_str, k_web_str_eq); }
 
 K_API kstr *k_web_lower(const char *s, int64_t n) {
     kstr *r = k_str_n(s, n);
@@ -2036,59 +2040,12 @@ K_API kv *k_web_not_found(void) {
 
 /* ----- request data ----- */
 
-K_API int k_hex(char c) {
-    if (c >= '0' && c <= '9') return c - '0';
-    if (c >= 'a' && c <= 'f') return c - 'a' + 10;
-    if (c >= 'A' && c <= 'F') return c - 'A' + 10;
-    return -1;
-}
-
-/* Decodes `%XX` escapes, and `+` as a space when `plus` is set, as in a
- * query string. A `%` not followed by two hex digits stays as it is. */
-K_API kstr *k_web_decode(const char *s, int64_t n, bool plus) {
-    kstr *r = k_str_alloc(n, n);
-    int64_t j = 0;
-    for (int64_t i = 0; i < n; i++) {
-        char c = s[i];
-        if (c == '%' && i + 2 < n && k_hex(s[i + 1]) >= 0 && k_hex(s[i + 2]) >= 0) {
-            r->data[j++] = (char)(k_hex(s[i + 1]) * 16 + k_hex(s[i + 2]));
-            i += 2;
-        } else {
-            r->data[j++] = plus && c == '+' ? ' ' : c;
-        }
-    }
-    r->len = j;
-    r->data[j] = 0;
-    k_strbuf_of(r)->used = j;
-    return r;
-}
-
-/* The value of `name` in a list of `name=value` pairs split by `sep`, with
- * spaces around each pair trimmed, or NULL. */
-K_API kbox *k_web_pair(kstr *text, kstr *name, char sep, bool decode) {
-    const char *p = text->data, *end = p + text->len;
-    while (p < end) {
-        const char *next = memchr(p, sep, (size_t)(end - p));
-        if (!next) next = end;
-        const char *a = p, *b = next;
-        while (a < b && *a == ' ') a++;
-        while (b > a && b[-1] == ' ') b--;
-        const char *eq = memchr(a, '=', (size_t)(b - a));
-        const char *key_end = eq ? eq : b;
-        kstr *key = decode ? k_web_decode(a, key_end - a, true) : k_str_n(a, key_end - a);
-        if (k_str_eq(key, name)) {
-            const char *v = eq ? eq + 1 : b;
-            kstr *value = decode ? k_web_decode(v, b - v, true) : k_str_n(v, b - v);
-            return k_box(K_P2KV(value));
-        }
-        p = next + 1;
-    }
-    return NULL;
-}
+/* Percent-decoding, query strings and cookies are in `kiln_rt`
+ * (crates/kiln_rt/src/web.rs). */
 
 K_API kbox *k_web_query(void *request, kstr *name) {
     kv *req = request;
-    return k_web_pair(K_KV2P(kstr *, req[K_REQ_QUERY]), name, '&', true);
+    return (kbox *)k_rt_query(K_KV2P(kstr *, req[K_REQ_QUERY]), name);
 }
 
 K_API kbox *k_web_header(void *request, kstr *name) {
@@ -2100,7 +2057,7 @@ K_API kbox *k_web_header(void *request, kstr *name) {
 K_API kbox *k_web_cookie(void *request, kstr *name) {
     kbox *header = k_web_header(request, k_str("cookie"));
     if (!header) return NULL;
-    return k_web_pair(K_KV2P(kstr *, header->v), name, ';', false);
+    return (kbox *)k_rt_cookie(K_KV2P(kstr *, header->v), name);
 }
 
 /* ----- routing ----- */
@@ -2287,7 +2244,7 @@ K_API kv *k_web_dispatch(kapp *a, kv *req) {
     klist *segs = k_list(0, NULL);
     for (int64_t i = 0; i < raw->len; i++) {
         kstr *s = K_KV2P(kstr *, raw->items[i]);
-        k_list_push(segs, K_P2KV(k_web_decode(s->data, s->len, false)));
+        k_list_push(segs, K_P2KV(k_rt_path_decode(s)));
     }
     bool head = k_str_eq(method, k_str("HEAD"));
     kstr *allow = NULL;
@@ -2334,40 +2291,28 @@ K_API bool k_sock_would_block(void) { return errno == EAGAIN || errno == EWOULDB
 K_API void k_sock_nonblock(ksock fd) { fcntl(fd, F_SETFL, fcntl(fd, F_GETFL) | O_NONBLOCK); }
 #endif
 
-/* A connection, served on a task of its own: the app, the socket, the
- * bytes read but not used yet, and the request being answered. */
-typedef struct kconn {
-    kapp *app;
-    ksock fd;
-    kbuf in;
-    kv *req;
-    int64_t start; /* when the request's head arrived, for the access log */
-} kconn;
-
-/* Sockets do not block: when one is not ready, its task waits and the
- * other tasks run. A client that stops reading for the app's timeout
- * loses its connection. */
-K_API bool k_web_send(kconn *c, const char *p, int64_t n) {
-    while (n > 0) {
-        int chunk = n > (1 << 30) ? (1 << 30) : (int)n;
-        int sent = (int)send(c->fd, p, chunk, K_SEND_FLAGS);
-        if (sent > 0) {
-            p += sent;
-            n -= sent;
-        } else if (sent < 0 && k_sock_would_block()) {
-            if (!k_task_wait(c->fd, true, k_task_deadline(c->app->timeout))) return false;
-        } else {
-            return false;
-        }
-    }
-    return true;
+/* Reads up to `n` bytes from a socket that does not block: the count, 0
+ * at the end, -1 if none are ready yet and -2 on an error. */
+K_EXPORT int64_t k_sock_recv(ksock fd, char *buf, int64_t n) {
+    int got = (int)recv(fd, buf, n > (1 << 30) ? (1 << 30) : (int)n, 0);
+    if (got >= 0) return got;
+    return k_sock_would_block() ? -1 : -2;
 }
 
-/* Adds header text, leaving out line breaks so that a value cannot start a
- * header of its own. */
-K_API void k_buf_header_text(kbuf *b, kstr *s) {
-    for (int64_t i = 0; i < s->len; i++)
-        if (s->data[i] != '\r' && s->data[i] != '\n') k_buf_add(b, s->data + i, 1);
+/* Sends up to `n` bytes on a socket that does not block: the count sent,
+ * -1 if it cannot take any yet and -2 on an error. */
+K_EXPORT int64_t k_sock_send(ksock fd, const char *buf, int64_t n) {
+    int sent = (int)send(fd, buf, n > (1 << 30) ? (1 << 30) : (int)n, K_SEND_FLAGS);
+    if (sent >= 0) return sent;
+    return k_sock_would_block() ? -1 : -2;
+}
+
+/* A line for the server's log on standard error, after what the program
+ * printed. */
+K_EXPORT void k_web_log_line(const char *line, int64_t n) {
+    fflush(stdout);
+    fwrite(line, 1, (size_t)n, stderr);
+    fputc('\n', stderr);
 }
 
 /* How long a request took, for the access log: `850us`, `12.3ms` or
@@ -2378,254 +2323,51 @@ K_API void k_web_took(char *buf, size_t size, int64_t ns) {
     else snprintf(buf, size, "%.2fs", (double)ns / 1e9);
 }
 
-/* Logs a line per answered request: `info GET /posts/7 200 1.2ms`. The
- * path leaves out the query string, which can hold secrets. */
-K_API void k_web_access_log(kconn *c, int64_t status) {
-    if (!c->app->access_log) return;
+/* Logs a line per answered request: `info GET /posts/7 200 1.2ms`, with
+ * the time since `start` (from `k_mono_now`). The path leaves out the
+ * query string, which can hold secrets. `req` is NULL for a request the
+ * server could not read. */
+K_EXPORT void k_web_access_log(kapp *a, kv *req, int64_t status, int64_t start) {
+    if (!a->access_log) return;
     char took[32];
-    k_web_took(took, sizeof took, k_mono_now() - c->start);
+    k_web_took(took, sizeof took, k_mono_now() - start);
     fflush(stdout);
-    if (c->req)
-        fprintf(stderr, "info %s %s %" PRId64 " %s\n", k_cstr(K_KV2P(kstr *, c->req[K_REQ_METHOD])),
-                k_cstr(K_KV2P(kstr *, c->req[K_REQ_PATH])), status, took);
+    if (req)
+        fprintf(stderr, "info %s %s %" PRId64 " %s\n", k_cstr(K_KV2P(kstr *, req[K_REQ_METHOD])),
+                k_cstr(K_KV2P(kstr *, req[K_REQ_PATH])), status, took);
     else
         fprintf(stderr, "info - - %" PRId64 " %s\n", status, took);
 }
 
-/* Sends the response. `keep` says whether the connection stays open for
- * another request; the result says whether it still can. */
-K_API bool k_web_respond(kconn *c, kv *res, bool head, bool keep, bool http10) {
-    int64_t status = (int64_t)res[K_RES_STATUS];
-    kmap *headers = K_KV2P(kmap *, res[K_RES_HEADERS]);
-    kstr *body = K_KV2P(kstr *, res[K_RES_BODY]);
-    if (status < 100 || status > 999) {
-        fflush(stdout);
-        fprintf(stderr, "error a handler returned the status %" PRId64 ", which is not an HTTP status\n", status);
-        res = k_web_text(k_str("Internal Server Error"), 500);
-        status = 500;
-        headers = K_KV2P(kmap *, res[K_RES_HEADERS]);
-        body = K_KV2P(kstr *, res[K_RES_BODY]);
+/* The response to a request `kiln_rt` read: from the route that matches,
+ * or, with a `status`, the error response for a request the server will
+ * not answer otherwise (`req` is NULL if it could not read the head). Its
+ * status is one a response can have. */
+K_EXPORT kv *k_web_handle(kapp *a, kv *req, int64_t status) {
+    kv *res;
+    if (status) {
+        res = k_web_error_response(a, req, status, k_str(k_web_reason(status)), false);
+    } else {
+        k_web_client_error = NULL;
+        res = k_web_dispatch(a, req);
     }
-    char line[128];
-    kbuf b = {0};
-    snprintf(line, sizeof line, "HTTP/1.1 %" PRId64 " %s\r\n", status, k_web_reason(status));
-    k_buf_str(&b, line);
-    bool no_body = status == 204 || status == 304 || status < 200;
-    bool has_length = false;
-    for (int64_t i = 0; i < headers->used; i++) {
-        if (!headers->live[i]) continue;
-        kstr *name = K_KV2P(kstr *, headers->keys[i]);
-        kstr *lower = k_web_lower(name->data, name->len);
-        if (k_str_eq(lower, k_str("content-length"))) has_length = true;
-        if (k_str_eq(lower, k_str("connection"))) {
-            kstr *v = K_KV2P(kstr *, headers->vals[i]);
-            if (k_str_find(k_web_lower(v->data, v->len), k_str("close"), 0) >= 0) keep = false;
-            continue;
-        }
-        k_buf_header_text(&b, name);
-        k_buf_str(&b, ": ");
-        k_buf_header_text(&b, K_KV2P(kstr *, headers->vals[i]));
-        k_buf_str(&b, "\r\n");
-    }
-    if (!has_length && !no_body) {
-        snprintf(line, sizeof line, "content-length: %" PRId64 "\r\n", body->len);
-        k_buf_str(&b, line);
-    }
-    ktm t = k_time_parts(k_time_now());
-    snprintf(line, sizeof line, "date: %.3s, %02d %.3s %04d %02d:%02d:%02d GMT\r\n",
-             k_day_names[t.weekday], (int)t.day, k_month_names[t.month - 1], (int)t.year,
-             (int)t.hour, (int)t.minute, (int)t.second);
-    k_buf_str(&b, line);
-    if (c->app->keep_alive <= 0) keep = false;
-    if (!keep) k_buf_str(&b, "connection: close\r\n");
-    else if (http10) k_buf_str(&b, "connection: keep-alive\r\n");
-    k_buf_str(&b, "\r\n");
-    if (!head && !no_body) k_buf_add(&b, body->data, body->len);
-    bool sent = k_web_send(c, b.data, b.len);
-    k_web_access_log(c, status);
-    return sent && keep;
-}
-
-/* Answers a request the server cannot read, and ends the connection. */
-K_API bool k_web_fail(kconn *c, int64_t status) {
-    k_web_respond(c, k_web_error_response(c->app, c->req, status, k_str(k_web_reason(status)), false), false, false, false);
-    return false;
-}
-
-/* Reads more of the request; false at the end, or if nothing came before
- * `deadline` (0 for the app's timeout from now). */
-K_API bool k_web_read(kconn *c, int64_t deadline) {
-    char chunk[16384];
-    for (;;) {
-        int n = (int)recv(c->fd, chunk, sizeof chunk, 0);
-        if (n > 0) {
-            k_buf_add(&c->in, chunk, n);
-            return true;
-        }
-        if (n == 0 || !k_sock_would_block()) return false;
-        if (!k_task_wait(c->fd, false, deadline ? deadline : k_task_deadline(c->app->timeout))) return false;
-    }
-}
-
-/* Reads `n` body bytes starting at `start`; false if the connection ends. */
-K_API bool k_web_need(kconn *c, int64_t start, int64_t n) {
-    while (c->in.len - start < n)
-        if (!k_web_read(c, 0)) return false;
-    return true;
-}
-
-K_API int64_t k_web_find(const char *p, int64_t n, const char *what) {
-    int64_t w = (int64_t)strlen(what);
-    for (int64_t i = 0; i + w <= n; i++)
-        if (memcmp(p + i, what, (size_t)w) == 0) return i;
-    return -1;
-}
-
-/* Decodes a chunked body that starts at `at`, setting `*end` to where it
- * ends. Returns the status to fail with, or 0. */
-K_API int64_t k_web_chunked(kconn *c, int64_t at, kbuf *body, int64_t *end) {
-    kbuf *b = &c->in;
-    int64_t max = c->app->max_body;
-    for (;;) {
-        int64_t eol;
-        while ((eol = k_web_find(b->data + at, b->len - at, "\r\n")) < 0) {
-            if (b->len - at > c->app->max_header) return 400;
-            if (!k_web_read(c, 0)) return 400;
-        }
-        int64_t size = 0;
-        int64_t i = 0;
-        for (; i < eol && k_hex(b->data[at + i]) >= 0; i++) {
-            size = size * 16 + k_hex(b->data[at + i]);
-            if (size > max) return 413;
-        }
-        if (i == 0) return 400;
-        at += eol + 2;
-        if (body->len + size > max) return 413;
-        if (size == 0) {
-            /* Trailer lines, which are ignored, up to an empty line. */
-            for (;;) {
-                while ((eol = k_web_find(b->data + at, b->len - at, "\r\n")) < 0) {
-                    if (b->len - at > c->app->max_header) return 431;
-                    if (!k_web_read(c, 0)) return 400;
-                }
-                at += eol + 2;
-                if (eol == 0) break;
-            }
-            *end = at;
-            return 0;
-        }
-        if (!k_web_need(c, at, size + 2)) return 400;
-        k_buf_add(body, b->data + at, size);
-        at += size + 2;
-    }
-}
-
-/* Reads one request from the connection and answers it, leaving in
- * `c->in` what the client sent after it. Returns whether the connection
- * stays open for another request. The head of a request must arrive
- * within the app's timeout; a kept-alive connection may first wait for
- * the app's `keep_alive` time. */
-K_API bool k_web_serve(kconn *c, bool first) {
-    kapp *a = c->app;
-    kbuf *b = &c->in;
-    c->req = NULL;
-    int64_t end;
-    int64_t deadline = k_task_deadline(first ? a->timeout : a->keep_alive);
-    /* Empty lines before a request are allowed. */
-    for (;;) {
-        while (b->len >= 2 && b->data[0] == '\r' && b->data[1] == '\n') k_buf_drop(b, 2);
-        if (b->len >= 2 || (b->len == 1 && b->data[0] != '\r')) break;
-        if (!k_web_read(c, deadline)) return false;
-    }
-    if (!first) deadline = k_task_deadline(a->timeout);
-    c->start = k_mono_now();
-    while ((end = k_web_find(b->data, b->len, "\r\n\r\n")) < 0) {
-        if (b->len > a->max_header) return k_web_fail(c, 431);
-        if (!k_web_read(c, deadline)) return b->len > 0 ? k_web_fail(c, k_mono_now() >= deadline ? 408 : 400) : false;
-    }
-    c->start = k_mono_now();
-    if (end > a->max_header) return k_web_fail(c, 431);
-    /* The request line: method, target and version. */
-    const char *p = b->data, *head_end = b->data + end;
-    const char *eol = p + k_web_find(p, head_end - p + 2, "\r\n");
-    const char *sp1 = memchr(p, ' ', (size_t)(eol - p));
-    const char *sp2 = sp1 ? memchr(sp1 + 1, ' ', (size_t)(eol - sp1 - 1)) : NULL;
-    if (!sp1 || !sp2 || sp1 == p || sp2 == sp1 + 1 || sp1[1] != '/' ||
-        (eol - sp2 - 1 != 8) || memcmp(sp2 + 1, "HTTP/1.", 7) != 0)
-        return k_web_fail(c, 400);
-    bool http10 = sp2[8] == '0';
-    kv *req = k_alloc(sizeof(kv) * K_REQ_FIELDS);
-    req[K_REQ_METHOD] = K_P2KV(k_str_n(p, sp1 - p));
-    const char *target = sp1 + 1, *q = memchr(target, '?', (size_t)(sp2 - target));
-    req[K_REQ_PATH] = K_P2KV(k_str_n(target, (q ? q : sp2) - target));
-    req[K_REQ_QUERY] = K_P2KV(q ? k_str_n(q + 1, sp2 - q - 1) : k_str(""));
-    /* Headers: names in lower case; a repeated header's values are joined
-     * with ", ". */
-    kmap *headers = k_web_headers();
-    req[K_REQ_HEADERS] = K_P2KV(headers);
-    req[K_REQ_BODY] = K_P2KV(k_str(""));
-    c->req = req;
-    for (p = eol + 2; p < head_end; ) {
-        const char *line_end = p + k_web_find(p, head_end - p + 2, "\r\n");
-        const char *colon = memchr(p, ':', (size_t)(line_end - p));
-        if (!colon || colon == p || *p == ' ' || *p == '\t') return k_web_fail(c, 400);
-        const char *v = colon + 1, *v_end = line_end;
-        while (v < v_end && (*v == ' ' || *v == '\t')) v++;
-        while (v_end > v && (v_end[-1] == ' ' || v_end[-1] == '\t')) v_end--;
-        kv name = K_P2KV(k_web_lower(p, colon - p));
-        kstr *value = k_str_n(v, v_end - v);
-        kbox *old = k_map_get(headers, name);
-        if (old) value = k_concat(k_concat(K_KV2P(kstr *, old->v), k_str(", ")), value);
-        k_map_set(headers, name, K_P2KV(value));
-        p = line_end + 2;
-    }
-    /* HTTP/1.1 connections stay open unless the client asks to close them,
-     * and HTTP/1.0 ones close unless it asks to keep them. */
-    bool keep = !http10;
-    kbox *conn = k_map_get(headers, K_P2KV(k_str("connection")));
-    if (conn) {
-        kstr *v = K_KV2P(kstr *, conn->v);
-        v = k_web_lower(v->data, v->len);
-        if (k_str_find(v, k_str("close"), 0) >= 0) keep = false;
-        else if (k_str_find(v, k_str("keep-alive"), 0) >= 0) keep = true;
-    }
-    /* The body. */
-    int64_t at = end + 4;
-    kbox *expect = k_map_get(headers, K_P2KV(k_str("expect")));
-    kbox *te = k_map_get(headers, K_P2KV(k_str("transfer-encoding")));
-    kbox *cl = k_map_get(headers, K_P2KV(k_str("content-length")));
-    int64_t n = 0;
-    if (cl && !te) {
-        kstr *t = K_KV2P(kstr *, cl->v);
-        if (t->len == 0) return k_web_fail(c, 400);
-        for (int64_t i = 0; i < t->len; i++) {
-            if (t->data[i] < '0' || t->data[i] > '9') return k_web_fail(c, 400);
-            n = n * 10 + (t->data[i] - '0');
-            if (n > a->max_body) return k_web_fail(c, 413);
-        }
-    }
-    if ((te || cl) && expect && k_str_eq(k_web_lower(K_KV2P(kstr *, expect->v)->data, K_KV2P(kstr *, expect->v)->len), k_str("100-continue")))
-        if (!k_web_send(c, "HTTP/1.1 100 Continue\r\n\r\n", 25)) return false;
-    kstr *body = k_str("");
-    if (te) {
-        kstr *t = K_KV2P(kstr *, te->v);
-        if (!k_str_ends_with(k_web_lower(t->data, t->len), k_str("chunked"))) return k_web_fail(c, 501);
-        kbuf chunks = {0};
-        int64_t status = k_web_chunked(c, at, &chunks, &at);
-        if (status) return k_web_fail(c, status);
-        body = k_str_n(chunks.data ? chunks.data : "", chunks.len);
-    } else if (cl) {
-        if (!k_web_need(c, at, n)) return k_web_fail(c, 400);
-        body = k_str_n(b->data + at, n);
-        at += n;
-    }
-    k_buf_drop(b, at);
-    req[K_REQ_BODY] = K_P2KV(body);
-    k_web_client_error = NULL;
-    kv *res = k_web_dispatch(a, req);
     fflush(stdout);
-    return k_web_respond(c, res, k_str_eq(K_KV2P(kstr *, req[K_REQ_METHOD]), k_str("HEAD")), keep, http10);
+    int64_t s = (int64_t)res[K_RES_STATUS];
+    if (s < 200 || s > 999) {
+        fflush(stdout);
+        if (s < 100 || s > 999)
+            fprintf(stderr, "error a handler returned the status %" PRId64 ", which is not an HTTP status\n", s);
+        else
+            fprintf(stderr, "error a handler returned the status %" PRId64 ", which only the server sends\n", s);
+        res = k_web_text(k_str("Internal Server Error"), 500);
+    }
+    return res;
 }
+
+/* The connection itself (reading requests, body framing, keep-alive and
+ * writing responses) is hyper's, in `kiln_rt` (crates/kiln_rt/src/
+ * server.rs), driven on this task. */
+void k_rt_web_serve(kapp *a, ksock fd, int64_t timeout, int64_t keep_alive, int64_t max_header, int64_t max_body);
 
 #ifdef _WIN32
 K_API void k_web_sock_fail(kstr *address) {
@@ -2662,9 +2404,11 @@ K_API void k_web_close(ksock c) {
 }
 
 K_API void k_web_conn(void *p) {
-    kconn *c = p;
-    for (bool first = true; k_web_serve(c, first); first = false) {}
-    k_web_close(c->fd);
+    kv *conn = p;
+    kapp *a = K_KV2P(kapp *, conn[0]);
+    ksock fd = (ksock)conn[1];
+    k_rt_web_serve(a, fd, a->timeout, a->keep_alive, a->max_header, a->max_body);
+    k_web_close(fd);
 }
 
 K_API void k_web_listen_error(kstr *address, const char *why) {
@@ -2748,10 +2492,9 @@ K_API void k_web_listen(void *app, kstr *address) {
             continue;
         }
         k_sock_nonblock(c);
-        kconn *conn = k_alloc(sizeof *conn);
-        conn->app = (kapp *)app;
-        conn->fd = c;
-        conn->start = k_mono_now();
+        kv *conn = k_alloc(sizeof(kv) * 2);
+        conn[0] = K_P2KV(app);
+        conn[1] = (kv)c;
         k_task_spawn(k_web_conn, conn);
         k_task_yield();
     }

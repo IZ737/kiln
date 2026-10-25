@@ -40,10 +40,16 @@ fn conformance_programs_produce_expected_output() {
         .unwrap()
         .map(|e| e.unwrap().path())
         .filter(|p| p.is_dir())
+        // `KILN_CONFORMANCE=web` runs only the programs whose names have
+        // `web` in them.
+        .filter(|p| match std::env::var("KILN_CONFORMANCE") {
+            Ok(part) => p.file_name().unwrap().to_string_lossy().contains(&part),
+            Err(_) => true,
+        })
         .collect();
     programs.sort();
     assert!(
-        programs.len() >= 5,
+        programs.len() >= 5 || std::env::var_os("KILN_CONFORMANCE").is_some(),
         "expected programs in {}",
         root.display()
     );

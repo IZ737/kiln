@@ -1,6 +1,6 @@
 # Plan: less C in the runtime
 
-**Status: accepted; steps 0 and 1 done.** Jake chose option A (hyper on
+**Status: accepted; steps 0, 1 and 2 done.** Jake chose option A (hyper on
 Kiln's own tasks; see [The decision](#the-decision-hyper-and-kilns-tasks))
 on 2026-10-25. The work follows the [migration order](#migration-order):
 `crates/kiln_rt` is linked into every program, and JSON runs on
@@ -221,9 +221,13 @@ about 400 KB on Linux (130 KB to 530 KB for `conformance/basics`) and
 230 KB on Windows (230 KB to 460 KB). That is Rust's standard library's
 floor: panics, formatting and the stack-trace reader its panic message
 can use. It does not grow again with more Rust code, which costs what it
-uses. Estimates for what is still to come: hyper's HTTP/1 server, a few
-hundred KB; serde_json, around 100 KB; rustls with the `ring` provider,
-1 to 2 MB when TLS arrives.
+uses. serde_json added about 115 KB on Linux and 98 KB on Windows (step
+1). Hyper's HTTP/1 server added 300 KB to a server program on Linux (560 KB
+to 865 KB for `conformance/web_server`) and 250 KB on Windows (560 KB to
+810 KB), and nothing measurable to a program that does not serve; the
+stripped release `kiln`, which carries three runtimes, grew from 24.0 MB to
+25.5 MB (step 2). Still to come: rustls with the `ring` provider, 1 to 2
+MB when TLS arrives.
 
 For TLS the `ring` provider is preferred over `aws-lc-rs`, which needs
 CMake and is harder to cross-compile for musl and mingw. HTTPS clients use
@@ -275,10 +279,27 @@ replaces deleted in the same PR.
    formed, a trailing comma is reported as such, and typed values nest at
    most 128 deep (skipped members have no limit, and skipping does not
    recurse).
-2. **HTTP on hyper.** The adapter from option A, request data (percent
-   decoding, query strings and cookies on the `percent-encoding`,
-   `form_urlencoded` and `cookie` crates), and the limits and timeouts
-   mapped to hyper's settings. Delete the C parser and connection loop.
+2. **HTTP on hyper (done).** `kiln_rt/src/server.rs` is the adapter from
+   option A: `k_rt_web_serve` drives hyper's HTTP/1 connection on the
+   connection's task with a `block_on` whose socket records what it waits
+   for, and `k_task_wait` waits for it. The timeouts are the socket's
+   (hyper needs no timer): the head of a request must arrive within
+   `timeout`, an idle kept-alive connection waits `keep_alive`, and any
+   other read or write may stall for `timeout`; `max_header` is hyper's
+   `max_header_size`. The service collects the body within `max_body`
+   with nothing of Kiln's held across the wait, then builds the `Request`,
+   calls `k_web_handle` in `kiln.c` (routing, handlers and error pages,
+   with the panic trap below them, as before) and copies the `Response`
+   out. Query strings, cookies and path segments are decoded on
+   `form_urlencoded`, `cookie` and `percent-encoding`. The C parser,
+   chunked decoding and connection loop are deleted; the accept loop and
+   the graceful close stay in C. What changed for clients: a request whose
+   head cannot be read gets hyper's bare 400, 414 or 431 (no body, and not
+   through `app.on_error`), an HTTP/1.0 request gets an HTTP/1.0 status
+   line, a request may have at most 100 headers, response header names
+   are lower case, and decoded request data that is not UTF-8 gets U+FFFD.
+   `tests/server.rs` gained a test of conflicting lengths, malformed and
+   oversized chunked bodies, `expect: 100-continue` and a bad header.
 3. **Later, with the features that need them**: `req.form` (phase 3 or 4)
    on `form_urlencoded`, multipart on `multer`, the HTTP client and TLS on
    hyper and rustls, signed cookies for sessions (phase 4).

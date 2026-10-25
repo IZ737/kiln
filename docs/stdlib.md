@@ -212,9 +212,11 @@ app.get("/posts/{id: Int}", fn(req, id) {
 
 Errors of 500 and over are also logged. Error responses (from `web.error`,
 `web.not_found()`, 404 and 405 when no route matches, failed handlers, and
-requests the server cannot read) are `{"error": "message"}` when the
-request's `accept` or `content-type` mentions JSON, and the message as text
-otherwise. `app.on_error` makes them yourself, such as an HTML error page:
+requests whose body is too large or malformed) are `{"error": "message"}`
+when the request's `accept` or `content-type` mentions JSON, and the
+message as text otherwise. A request whose head the server cannot read
+gets a bare 400, 414 or 431 with no body, and one whose head does not
+arrive in time gets 408 as text. `app.on_error` makes them yourself, such as an HTML error page:
 
 ```kiln
 app.on_error(fn(req, status, message) {
@@ -240,7 +242,17 @@ the status and the time it took: `info GET /posts/7 200 1.2ms`.
 [tasks](#tasks)), so a handler that sleeps or a client that sends slowly
 holds up only its own request. Connections stay open for more requests
 (HTTP/1.1 keep-alive) until the client sends `connection: close`, and a
-handler can close one by setting that header on its response.
+handler can close one by setting that header on its response. The HTTP
+itself (reading requests, chunked bodies, `expect: 100-continue`,
+keep-alive and writing responses) is [hyper](https://hyper.rs)'s. Header
+names in responses are sent in lower case, a header whose name or value
+HTTP does not allow is left out (with an error logged), and the
+`content-length` of a response is its body's length, except in answer to
+`HEAD`.
+
+Query strings are decoded as forms are, path segments by their `%XX`
+escapes, and cookies as the `cookie` header lays them out; decoded bytes
+that are not UTF-8 become U+FFFD.
 `req.form` and `web.render` come later.
 
 **Settings.** `web.app()` works as it is in production, and takes
@@ -249,7 +261,7 @@ settings for when the defaults do not fit:
 | Setting | Default | |
 | --- | --- | --- |
 | `max_body` | `16_777_216` | Bytes of body; a larger request gets 413 |
-| `max_header` | `65_536` | Bytes of request line and headers; more gets 431 |
+| `max_header` | `65_536` | Bytes of request line and headers; more, or more than 100 headers, gets 431 |
 | `timeout` | `10s` | How long a client has to send a request's head (408 after that), and how long it may stall while sending the body or reading the response |
 | `keep_alive` | `5s` | How long an idle connection stays open; `0s` closes each after one response |
 | `access_log` | `true` | Whether to log each request |

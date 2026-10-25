@@ -1,6 +1,11 @@
-//! The `web` server.
+//! The `web` server's request data and status phrases. The connections
+//! are in `server.rs`.
 
 use std::ffi::{c_char, CStr};
+
+use percent_encoding::percent_decode;
+
+use crate::value::{bytes, k_box, kv, string, KBox, KStr};
 
 /// The reason phrase for an HTTP status, or "" for one without a phrase
 /// here.
@@ -9,7 +14,7 @@ pub extern "C" fn k_web_reason(status: i64) -> *const c_char {
     reason(status).as_ptr()
 }
 
-fn reason(status: i64) -> &'static CStr {
+pub fn reason(status: i64) -> &'static CStr {
     match status {
         100 => c"Continue",
         200 => c"OK",
@@ -43,6 +48,53 @@ fn reason(status: i64) -> &'static CStr {
         503 => c"Service Unavailable",
         _ => c"",
     }
+}
+
+/// A path segment with its `%XX` escapes decoded. A `%` not followed by
+/// two hex digits stays as it is, and bytes that are not UTF-8 become
+/// U+FFFD.
+///
+/// # Safety
+///
+/// `s` is a Kiln string.
+#[no_mangle]
+pub unsafe extern "C" fn k_rt_path_decode(s: *mut KStr) -> *mut KStr {
+    let text = bytes(kv(s));
+    let decoded = percent_decode(text).decode_utf8_lossy();
+    crate::value::ptr(string(decoded.as_bytes()))
+}
+
+/// The value of `name` in a query string (`a=1&b=two`), decoded as a form
+/// is, or NULL.
+///
+/// # Safety
+///
+/// Both are Kiln strings.
+#[no_mangle]
+pub unsafe extern "C" fn k_rt_query(query: *mut KStr, name: *mut KStr) -> *mut KBox {
+    let name = bytes(kv(name));
+    form_urlencoded::parse(bytes(kv(query)))
+        .find(|(key, _)| key.as_bytes() == name)
+        .map_or(std::ptr::null_mut(), |(_, value)| unsafe {
+            k_box(string(value.as_bytes()))
+        })
+}
+
+/// The value of the cookie `name` in a `cookie` header, or NULL.
+///
+/// # Safety
+///
+/// Both are Kiln strings.
+#[no_mangle]
+pub unsafe extern "C" fn k_rt_cookie(header: *mut KStr, name: *mut KStr) -> *mut KBox {
+    let name = bytes(kv(name));
+    let header = String::from_utf8_lossy(bytes(kv(header)));
+    cookie::Cookie::split_parse(header.as_ref())
+        .flatten()
+        .find(|c| c.name().as_bytes() == name)
+        .map_or(std::ptr::null_mut(), |c| unsafe {
+            k_box(string(c.value().as_bytes()))
+        })
 }
 
 #[cfg(test)]

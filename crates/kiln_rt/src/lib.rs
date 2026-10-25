@@ -17,8 +17,10 @@
 //!   generated code.
 
 mod json;
+mod server;
 mod value;
 mod web;
 
 pub use json::{k_json_encode, k_rt_json_decode};
-pub use web::k_web_reason;
+pub use server::k_rt_web_serve;
+pub use web::{k_rt_cookie, k_rt_path_decode, k_rt_query, k_web_reason};
