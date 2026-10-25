@@ -79,8 +79,8 @@ between today's implementation and future ideas.
 - **Static when you want it.** The same app can be exported as a static site,
   or mix prerendered pages with dynamic ones.
 - **Server-rendered by default (planned).** Glazes render to HTML on the
-  server; interactive Embers will target WebAssembly. Native CSS remains
-  fully supported.
+  server with typed `ui` styles, reusable Finishes, and native CSS/CSS
+  Modules; interactive Embers will target WebAssembly.
 - **Built for coding agents.** Familiar syntax, one way to do things, error
   messages with machine-applicable fixes (`kiln check --json`), and an
   explanation for every error code (`kiln explain E0106`).
@@ -91,6 +91,7 @@ between today's implementation and future ideas.
 | --- | --- |
 | `.kiln` | Source file |
 | Glaze (`.glaze`) | A template or component |
+| Finish (planned, Phase 3) | An ordinary function returning typed `Ui` styles or a multi-part style record |
 | Ware | A package |
 | Ember | An interactive component compiled to WebAssembly |
 | `kiln fire` | Make a release build |
@@ -204,6 +205,7 @@ For errors and quick fixes in your editor, see [docs/editors.md](docs/editors.md
 | `docs/stdlib.md` | The standard library modules the compiler builds |
 | `docs/editors.md` | Setting up `kiln lsp` in Neovim, Helix and other editors |
 | `docs/phase-2.5.md` | VS Code extension and enhanced LSP implementation stages and acceptance criteria |
+| `docs/phase-3.md` | Phase 3: compiled Glazes, typed `ui` styling, Finishes, themes, CSS and acceptance checks |
 | `docs/design.md` | Language design and technical decisions |
 | `docs/vision.md` | Full product vision: frontend DX, performance, interop, ecosystem and adoption |
 
@@ -219,7 +221,7 @@ For errors and quick fixes in your editor, see [docs/editors.md](docs/editors.md
 | ✅ Windows target (post-1.5, non-blocking) | Windows x86-64 support: standalone `kiln.exe` compiler and native Windows `.exe` outputs, with a bundled linker, statically linked Kiln runtime and GC, and Windows CI conformance | Download `kiln.exe`, compile a supported CLI app and run its `.exe` on a clean compatible Windows system without installing a C compiler, linker, Rust or a separate GC/runtime package |
 | ✅ 2 | Core runtime, HTTP server, typed routing, JSON, error handling | A real HTTP API runs as a native binary |
 | ✅ 2.5 | VS Code developer experience: dedicated extension, Kiln/Glaze highlighting and file icons, compiler-backed completion, hover, definition and symbol navigation, diagnostics/quick fixes, Check/Run/Build actions; [implementation plan](docs/phase-2.5.md) | A developer can edit, navigate, check, build and run Kiln programs comfortably in VS Code with the Rust LSP providing intelligence to other editors |
-| 3 | Glazes, server-rendered components, layouts, CSS, scoped styling, design tokens | The Kiln documentation website is built in Kiln |
+| 3 | Compiled Glazes/layouts, native typed `ui` styling, CSS/CSS Modules, design tokens, **Finishes**, typed themes and LSP support; [implementation plan](docs/phase-3.md) | A native Kiln docs site, restylable via two compatible themes without changing content/Glazes |
 | 4 | SQL (SQLite first, for local development with no database server, then Postgres and MySQL), ORM with schema import (`kiln db pull`), migrations, forms, validation, sessions and auth, generated admin UI | A database-backed application with authentication works |
 | 5 | Advanced developer tooling: find references, rename, richer Glaze semantic support, formatter, hot reload, testing, wares (package management), MCP server and agent guide | A complete application can be developed and tested comfortably |
 | 6 | Embers on WasmGC, reactive UI, server functions, generated RPC, JS interoperability | A full-stack interactive Kiln application works end-to-end |
