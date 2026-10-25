@@ -1,0 +1,92 @@
+// JSON encoding and decoding, derived from types.
+import json, time
+
+struct Author {
+    name: String
+    email: String?
+}
+
+struct Post {
+    id: Int
+    title: String
+    tags: List<String>
+    author: Author
+    rating: Float
+    draft: Bool
+}
+
+enum Shape {
+    Dot
+    Circle(radius: Float)
+    Rect(Float, Float)
+}
+
+struct Box<T> {
+    label: String
+    item: T
+}
+
+fn show_error(text: String) {
+    let p = json.decode<Post>(text) catch err {
+        print(err.message)
+        return
+    }
+    print("decoded ${p.title}")
+}
+
+fn main() ! {
+    let post = Post(
+        id: 7,
+        title: "Firing \"cone 6\"\nnotes",
+        tags: ["clay", "glaze"],
+        author: Author(name: "Ada", email: none),
+        rating: 4.5,
+        draft: false,
+    )
+    let text = json.encode(post)
+    print(text)
+    let back = try json.decode<Post>(text)
+    print(back == post)
+    print(back.author.name)
+
+    print(json.encode([1, 2, 3]))
+    print(json.encode({ ok: true, count: 2 }))
+    let scores = Map<String, Int>()
+    scores["ada"] = 3
+    scores["bob"] = 5
+    print(json.encode(scores))
+    let by_id = Map<Int, String>()
+    by_id[1] = "one"
+    print(json.encode(by_id))
+    print(json.encode([Shape.Dot, Shape.Circle(radius: 1.5), Shape.Rect(2.0, 3.0)]))
+    print(json.encode(Box(label: "n", item: 42)))
+    print(json.encode([0.1, 1.0, -2.5e-7, 1e21]))
+    print(json.encode("tab\there é"))
+    let maybe: Int? = none
+    print(json.encode(maybe))
+
+    let shapes = try json.decode<List<Shape>>("[\"Dot\", {\"Circle\": {\"radius\": 2}}, {\"Rect\": [1, 2.5]}]")
+    print(shapes)
+    let m = try json.decode<Map<Int, String>>("{\"1\": \"one\", \"2\": \"two\"}")
+    print(m[2] ?? "?")
+    let b = try json.decode<Box<List<Int>>>("{\"label\": \"xs\", \"item\": [1, 2]}")
+    print(b.item)
+    let u = try json.decode<String>("\"caf\\u00e9 \\ud83c\\udffa\"")
+    print(u)
+    let a = try json.decode<Author>("{\"name\": \"Bo\", \"extra\": [1, {\"x\": null}]}")
+    print(a)
+
+    show_error("{\"id\": 1}")
+    show_error("{\"id\": \"one\", \"title\": \"x\"}")
+    show_error("{\"id\": 1.5}")
+    show_error("{\"id\": 1, \"title\": \"x\", \"tags\": [\"a\", 2]}")
+    show_error("{\"id\": 1,}")
+    show_error("[1, 2")
+    show_error("{} extra")
+    show_error("{\"id\": 99999999999999999999}")
+    let s = json.decode<Shape>("\"Square\"") catch err {
+        print(err.message)
+        return
+    }
+    print(s)
+}

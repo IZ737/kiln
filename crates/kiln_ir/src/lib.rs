@@ -298,8 +298,13 @@ pub enum ExprKind {
         args: Vec<Expr>,
     },
     /// A function of a standard library module that the backend builds,
-    /// such as `fs.read`. Types are as for [`ExprKind::Call`]; when the
-    /// function can fail, it fails with the standard `Error`.
+    /// such as `fs.read`, or a method of one of its types, such as
+    /// `App.get`, with the receiver first. Types are as for
+    /// [`ExprKind::Call`], except that a generic function's type is the
+    /// one at this call (`json.decode<Post>` has type `Post`). An `Any`
+    /// argument is coerced, and the backend reads its type from under the
+    /// coercion. When the function can fail, it fails with the standard
+    /// `Error`.
     Lib {
         module: String,
         name: String,

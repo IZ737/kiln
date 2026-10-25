@@ -1740,7 +1740,7 @@ impl<'a> Lowerer<'a> {
                 name: format!("{type_name}.{name}"),
                 args: all,
             },
-            sig.ret.clone(),
+            lib_ret(sig, self.p.instantiations.get(&span)),
             span,
         );
         let call = coerce_value(call, rt);
@@ -1879,7 +1879,7 @@ impl<'a> Lowerer<'a> {
                         name: name.name.clone(),
                         args: vals,
                     },
-                    sig.ret.clone(),
+                    lib_ret(&sig, self.p.instantiations.get(&span)),
                     span,
                 );
                 let call = coerce_value(call, rt);
@@ -1893,11 +1893,21 @@ impl<'a> Lowerer<'a> {
 
 /// Modules whose functions become [`ExprKind::Lib`] calls, for the
 /// backend to build.
-const LIB_MODULES: &[&str] = &["time", "fs", "os", "io", "web"];
+const LIB_MODULES: &[&str] = &["time", "fs", "os", "io", "web", "json"];
 
 /// Types of those modules whose methods are [`ExprKind::Lib`] calls too,
 /// named `Type.method`, with the receiver as the first argument.
 const LIB_TYPES: &[(&str, &str)] = &[("web", "App"), ("web", "Request")];
+
+/// The type of a library call: its declared return type, with a generic
+/// one's type arguments at this call filled in (`json.decode<Post>` has type
+/// `Post`), so that the backend knows what to build.
+fn lib_ret(sig: &FnSig, inst: Option<&HashMap<String, Ty>>) -> Ty {
+    match inst {
+        Some(map) if !sig.generics.is_empty() => substitute(&sig.ret, map),
+        _ => sig.ret.clone(),
+    }
+}
 
 fn is_generic(sig: &FnSig) -> bool {
     !sig.generics.is_empty() || !sig.impl_params.is_empty()

@@ -130,7 +130,13 @@ impl<'a> Gen<'a> {
                 let _ = writeln!(out, "typedef struct {name} {name};");
                 let _ = writeln!(defs, "struct {name} {{");
                 for f in fields {
-                    let _ = writeln!(defs, "    {} f_{};", self.c_type(&f.ty), mangle(&f.name));
+                    // Every field is 8 bytes, as in the native backend, so
+                    // that runtime code can read a struct as slots.
+                    let c = match self.rep(&f.ty) {
+                        Rep::Bool => "int64_t".to_string(),
+                        _ => self.c_type(&f.ty),
+                    };
+                    let _ = writeln!(defs, "    {c} f_{};", mangle(&f.name));
                 }
                 defs.push_str("};\n");
             }
@@ -993,7 +999,8 @@ impl<'a> Gen<'a> {
             }
             ExprKind::Lib { module, name, args } => {
                 let vals: Vec<String> = args.iter().map(|a| self.expr(a)).collect();
-                self.lib_call(module, name, &vals, &e.ty, e.span)
+                let tys: Vec<Ty> = args.iter().map(|a| a.uncoerced().ty.clone()).collect();
+                self.lib_call(module, name, &vals, &tys, &e.ty, e.span)
             }
             ExprKind::Print(v) => {
                 let x = self.expr(v);
@@ -1515,7 +1522,15 @@ impl<'a> Gen<'a> {
     /// A call to a function of the `time`, `fs`, `os` or `io` module, returning
     /// its value. A function that can fail is followed by the check that
     /// turns the runtime's message into a failed standard `Error`.
-    fn lib_call(&mut self, module: &str, name: &str, a: &[String], ty: &Ty, span: Span) -> String {
+    fn lib_call(
+        &mut self,
+        module: &str,
+        name: &str,
+        a: &[String],
+        tys: &[Ty],
+        ty: &Ty,
+        span: Span,
+    ) -> String {
         let arg = |i: usize| a.get(i).cloned().unwrap_or_else(|| "0".into());
         let (v, fallible) = match (module, name) {
             ("time", "now") => (self.new_instant("k_time_now()", ty), false),
@@ -1573,6 +1588,28 @@ impl<'a> Gen<'a> {
                 self.store(&format!("k_web_listen({}, {})", arg(0), arg(1)), ty),
                 true,
             ),
+            ("json", "encode") => {
+                let d = self.desc(&tys[0]);
+                (
+                    self.store(&format!("k_json_encode(&{d}, {})", arg(0)), ty),
+                    false,
+                )
+            }
+            ("json", "decode") | ("web", "Request.json") => {
+                let d = self.desc(ty);
+                let f = if module == "json" {
+                    "k_json_decode"
+                } else {
+                    "k_web_req_json"
+                };
+                let raw = format!("{f}(&{d}, {})", arg(0));
+                (self.store(&self.unkv(&raw, ty), ty), true)
+            }
+            ("web", "json") => {
+                let d = self.desc(&tys[0]);
+                let call = format!("k_web_json(&{d}, {}, {})", arg(0), arg(1));
+                (self.store(&call, ty), false)
+            }
             ("web", "Request.query" | "Request.header" | "Request.cookie") => {
                 let f = &name["Request.".len()..];
                 (
@@ -1618,6 +1655,124 @@ impl<'a> Gen<'a> {
         let name = format!("{prefix}{}", self.next());
         self.helper_names.insert(key, name.clone());
         (name, true)
+    }
+
+    /// The name of a `kdesc` constant describing `ty`, for runtime code
+    /// such as JSON that works on values of any type. The layout matches the
+    /// native backend's descriptions (see `kdesc` in `kiln.c`).
+    fn desc(&mut self, ty: &Ty) -> String {
+        let (name, fresh) = self.helper(format!("desc:{ty:?}"), "kd");
+        if !fresh {
+            return name;
+        }
+        // Declared first, so that recursive types can refer to it.
+        let _ = writeln!(self.protos, "static const kdesc {name};");
+        let p = self.prims;
+        let (kind, title, parts, labels): (&str, Option<String>, Vec<String>, Vec<Option<String>>) =
+            match ty {
+                _ if self.is_string(ty) => ("K_D_STR", None, vec![], vec![]),
+                Ty::Adt(id, _) if *id == p.int => ("K_D_INT", None, vec![], vec![]),
+                Ty::Adt(id, _) if *id == p.float => ("K_D_FLOAT", None, vec![], vec![]),
+                Ty::Adt(id, _) if *id == p.bool_ => ("K_D_BOOL", None, vec![], vec![]),
+                Ty::Adt(id, _) if *id == p.duration => ("K_D_DURATION", None, vec![], vec![]),
+                Ty::Fn(_) => ("K_D_FN", None, vec![], vec![]),
+                Ty::Opt(inner) => ("K_D_OPT", None, vec![self.desc(inner)], vec![None]),
+                Ty::Adt(id, args) if *id == p.list => {
+                    ("K_D_LIST", None, vec![self.desc(&args[0])], vec![None])
+                }
+                Ty::Adt(id, args) if *id == p.set => {
+                    ("K_D_SET", None, vec![self.desc(&args[0])], vec![None])
+                }
+                Ty::Adt(id, args) if *id == p.map => {
+                    let parts = vec![self.desc(&args[0]), self.desc(&args[1])];
+                    ("K_D_MAP", None, parts, vec![None, None])
+                }
+                Ty::Adt(id, args) if !self.is_prim(*id) => {
+                    let adt = self.p.adts[*id].clone();
+                    let map = self.type_map(*id, args);
+                    match &adt.kind {
+                        AdtKind::Struct(fields) => {
+                            let parts = fields
+                                .iter()
+                                .map(|f| self.desc(&substitute(&f.ty, &map)))
+                                .collect();
+                            let labels = fields.iter().map(|f| Some(f.name.clone())).collect();
+                            ("K_D_STRUCT", Some(adt.name.clone()), parts, labels)
+                        }
+                        AdtKind::Enum(variants) => {
+                            let mut parts = Vec::new();
+                            for v in variants {
+                                let (vname, _) =
+                                    self.helper(format!("desc:{ty:?}:{}", v.name), "kd");
+                                let vparts: Vec<String> = v
+                                    .fields
+                                    .iter()
+                                    .map(|(_, t)| self.desc(&substitute(t, &map)))
+                                    .collect();
+                                let vlabels: Vec<Option<String>> =
+                                    v.fields.iter().map(|(n, _)| n.clone()).collect();
+                                let _ = writeln!(self.protos, "static const kdesc {vname};");
+                                self.define_desc(
+                                    &vname,
+                                    "K_D_VARIANT",
+                                    Some(&v.name),
+                                    &vparts,
+                                    &vlabels,
+                                );
+                                parts.push(vname);
+                            }
+                            let labels = variants.iter().map(|_| None).collect();
+                            ("K_D_ENUM", Some(adt.name.clone()), parts, labels)
+                        }
+                    }
+                }
+                Ty::Record(fields) => {
+                    let parts = fields.iter().map(|(_, t)| self.desc(t)).collect();
+                    let labels = fields.iter().map(|(n, _)| Some(n.clone())).collect();
+                    ("K_D_RECORD", None, parts, labels)
+                }
+                _ => ("K_D_UNKNOWN", None, vec![], vec![]),
+            };
+        self.define_desc(&name, kind, title.as_deref(), &parts, &labels);
+        name
+    }
+
+    fn define_desc(
+        &mut self,
+        name: &str,
+        kind: &str,
+        title: Option<&str>,
+        parts: &[String],
+        labels: &[Option<String>],
+    ) {
+        let c_str = |s: Option<&str>| match s {
+            Some(s) => format!("{s:?}"),
+            None => "NULL".into(),
+        };
+        let mut arrays = ("NULL".to_string(), "NULL".to_string());
+        if !parts.is_empty() {
+            let refs: Vec<String> = parts.iter().map(|p| format!("&{p}")).collect();
+            let names: Vec<String> = labels.iter().map(|l| c_str(l.as_deref())).collect();
+            let _ = writeln!(
+                self.helpers,
+                "static const kdesc *const {name}_parts[] = {{{}}};",
+                refs.join(", ")
+            );
+            let _ = writeln!(
+                self.helpers,
+                "static const char *const {name}_labels[] = {{{}}};",
+                names.join(", ")
+            );
+            arrays = (format!("{name}_parts"), format!("{name}_labels"));
+        }
+        let _ = writeln!(
+            self.helpers,
+            "static const kdesc {name} = {{{kind}, {}, {}, {}, {}}};\n",
+            parts.len(),
+            c_str(title),
+            arrays.0,
+            arrays.1
+        );
     }
 
     fn error_message_fn(&mut self) -> String {

@@ -1,0 +1,57 @@
+### GET /posts HTTP/1.1
+HTTP/1.1 200 OK
+content-type: application/json
+content-length: 60
+connection: close
+
+[{"id":1,"title":"Hello","tags":["intro"],"published":true}]
+### POST /posts HTTP/1.1
+HTTP/1.1 201 Created
+content-type: application/json
+content-length: 69
+connection: close
+
+{"id":2,"title":"Glazes","tags":["glaze","colour"],"published":false}
+### POST /posts HTTP/1.1
+HTTP/1.1 201 Created
+content-type: application/json
+content-length: 51
+connection: close
+
+{"id":3,"title":"Kilns","tags":[],"published":true}
+### GET /posts/2 HTTP/1.1
+HTTP/1.1 200 OK
+content-type: application/json
+content-length: 69
+connection: close
+
+{"id":2,"title":"Glazes","tags":["glaze","colour"],"published":false}
+### GET /posts/9 HTTP/1.1
+HTTP/1.1 404 Not Found
+content-type: application/json
+content-length: 21
+connection: close
+
+{"error":"no post 9"}
+### POST /posts HTTP/1.1
+HTTP/1.1 400 Bad Request
+content-type: application/json
+content-length: 74
+connection: close
+
+{"error":"cannot read JSON: expected a string at $.title, found a number"}
+### POST /posts HTTP/1.1
+HTTP/1.1 400 Bad Request
+content-type: application/json
+content-length: 62
+connection: close
+
+{"error":"invalid JSON: expected a value, but the text ended"}
+### GET /posts HTTP/1.1
+HTTP/1.1 200 OK
+content-type: application/json
+content-length: 182
+connection: close
+
+[{"id":1,"title":"Hello","tags":["intro"],"published":true},{"id":2,"title":"Glazes","tags":["glaze","colour"],"published":false},{"id":3,"title":"Kilns","tags":[],"published":true}]
+### GET /quit HTTP/1.1

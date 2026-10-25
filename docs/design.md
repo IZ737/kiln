@@ -200,8 +200,7 @@ Phase 1 is done when native CLI programs compile and run correctly; the
 programs in `conformance/` are the evidence. These gaps are known and
 deliberate:
 
-- The `sql`, `auth` and `json` modules type-check but report E0401 when
-  built; they arrive in phases 2 to 4. So do tasks and the scheduler.
+- The `sql` and `auth` modules type-check but report E0401 when built; they arrive in phases 2 to 4. So do tasks and the scheduler.
   Phase 2 has started with `web`'s server and routing; see below.
 - Built-in methods cannot have default arguments yet, so `pad_start` and
   `pad_end` take their fill text explicitly.
@@ -224,8 +223,12 @@ in steps, each on both backends and both targets:
    handler that fails or panics gets a 500 response and the error is
    logged; the server keeps running. Requests with no matching route get
    404, and a path that matches with another method gets 405 with `allow`.
-2. JSON: `json.encode`, `json.decode<T>`, `web.json` and `req.json<T>()`,
-   derived from types at compile time.
+2. **JSON (done).** `json.encode`, `json.decode<T>`, `web.json` and
+   `req.json<T>()`. The compiler writes a description of each type
+   involved (the same `kdesc` the native backend uses for showing and
+   comparing, now also written by the C backend), and one encoder and
+   decoder in the runtime walk it, so both backends behave the same. A
+   body that `req.json` cannot read gets 400 with the reason as JSON.
 3. Concurrency: requests on lightweight tasks, so a slow request does not
    hold up the others, and keep-alive connections.
 4. Error handling and configuration for real deployments: error pages and

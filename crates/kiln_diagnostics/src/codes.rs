@@ -370,9 +370,9 @@ pub static ALL: &[ErrorCode] = &[
     ErrorCode {
         code: NOT_COMPILED_YET,
         title: "not supported by the compiler yet",
-        explanation: "The program is valid Kiln, but the compiler cannot build this part of it yet. `kiln check` accepts it; `kiln build` and `kiln run` do not. JSON (`json`, `web.json`, `req.json`), forms, templates (`web.render`), `sql` and `auth` arrive in later phases. Map keys and set items can be `Int`, `Float`, `Bool`, `Duration` or `String` for now. Printing or comparing a value whose type is a generic parameter also needs a later phase.",
-        wrong: "import json\n\nfn main() {\n    print(json.encode(1))\n}",
-        right: "fn main() {\n    print(1.to_string())\n}",
+        explanation: "The program is valid Kiln, but the compiler cannot build this part of it yet. `kiln check` accepts it; `kiln build` and `kiln run` do not. Forms (`req.form`), templates (`web.render`), `sql` and `auth` arrive in later phases. Map keys and set items can be `Int`, `Float`, `Bool`, `Duration` or `String` for now. Printing or comparing a value whose type is a generic parameter also needs a later phase.",
+        wrong: "import sql\n\nfn main() ! {\n    let db = try sql.open(\"app.db\")\n}",
+        right: "import fs\n\nfn main() ! {\n    let text = try fs.read(\"app.txt\")\n}",
     },
     ErrorCode {
         code: NO_MAIN,
