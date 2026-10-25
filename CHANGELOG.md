@@ -16,6 +16,11 @@ binaries. [examples/api](examples/api/main.kiln) is a small JSON API.
   Windows download the latest release (or `--version`), check its
   checksum, install `kiln` to `~/.kiln/bin` and add it to PATH. See
   [Install](README.md#install).
+- **`kiln upgrade`:** replaces kiln with the latest release (or
+  `--version`), checking its checksum; `--check` only says whether there
+  is one. It works behind proxies (`HTTPS_PROXY`) and trusts the system's
+  certificates. On Windows it moves the running `kiln.exe` aside to
+  replace it.
 
 ## 0.2.0 (2026-10-25)
 

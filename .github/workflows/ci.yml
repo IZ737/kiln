@@ -34,6 +34,12 @@ jobs:
           env -i PATH=/nonexistent ./target/debug/kiln build examples/hello --target windows -o /tmp/hello.exe
           # A root with nothing in it but the executable: no libc, no /proc.
           sudo chroot /tmp/empty-root /hello
+      - name: kiln upgrade installs a real release over itself
+        run: |
+          mkdir -p /tmp/upgrade && cp target/debug/kiln /tmp/upgrade/kiln
+          /tmp/upgrade/kiln upgrade --version v0.3.0 --force
+          curl -fsSL https://github.com/IZ737/kiln/releases/download/v0.3.0/kiln-v0.3.0-x86_64-linux.tar.gz | tar xz -C /tmp
+          cmp /tmp/upgrade/kiln /tmp/kiln-v0.3.0-x86_64-linux/kiln
 
   # The kiln that releases ship: built against musl, so it is static and
   # runs on any Linux x86-64 system, then checked in an empty container.
@@ -79,3 +85,17 @@ jobs:
         shell: bash
         # Only Git's own tools (bash, diff) on the PATH: no C compiler.
         run: PATH=/usr/bin scripts/windows-check.sh kiln.exe
+      # Windows cannot overwrite a running executable, so kiln.exe moves
+      # itself aside first.
+      - name: kiln upgrade replaces the running kiln.exe
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory upgrade | Out-Null
+          Copy-Item kiln.exe upgrade\kiln.exe
+          upgrade\kiln.exe upgrade --version v0.3.0 --force
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          Invoke-WebRequest -UseBasicParsing https://github.com/IZ737/kiln/releases/download/v0.3.0/kiln-v0.3.0-x86_64-windows.zip -OutFile release.zip
+          Expand-Archive release.zip release
+          $installed = (Get-FileHash upgrade\kiln.exe).Hash
+          $released = (Get-FileHash release\kiln-v0.3.0-x86_64-windows\kiln.exe).Hash
+          if ($installed -ne $released) { throw "kiln.exe was not replaced" }

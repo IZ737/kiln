@@ -1,6 +1,8 @@
-//! The `kiln` command: `check`, `build`, `run`, `lsp`, `parse` and `explain`.
+//! The `kiln` command: `check`, `build`, `run`, `lsp`, `parse`, `explain` and
+//! `upgrade`.
 
 mod lsp;
+mod upgrade;
 
 use clap::{Parser, Subcommand};
 use kiln_diagnostics::{codes, Diagnostic, SourceFile};
@@ -94,6 +96,18 @@ enum Command {
         /// An error code such as E0106.
         code: String,
     },
+    /// Replace this kiln with the latest release, or the one you name.
+    Upgrade {
+        /// The release to install, such as v0.2.0. Defaults to the latest.
+        #[arg(long)]
+        version: Option<String>,
+        /// Only say whether a newer release is available.
+        #[arg(long)]
+        check: bool,
+        /// Install the release even if this kiln is already that version.
+        #[arg(long)]
+        force: bool,
+    },
 }
 
 fn main() -> ExitCode {
@@ -127,6 +141,15 @@ fn main() -> ExitCode {
         Command::Lsp => ExitCode::from(lsp::run() as u8),
         Command::Parse { file } => parse(&file),
         Command::Explain { code } => explain(&code),
+        Command::Upgrade {
+            version,
+            check,
+            force,
+        } => upgrade::run(upgrade::Options {
+            version,
+            check,
+            force,
+        }),
     }
 }
 

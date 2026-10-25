@@ -114,7 +114,18 @@ curl --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/IZ737/kil
 
 `--no-modify-path` (`-NoModifyPath`) leaves PATH alone, and the
 environment variables `KILN_VERSION`, `KILN_HOME` and
-`KILN_NO_MODIFY_PATH=1` do the same as the options. Then:
+`KILN_NO_MODIFY_PATH=1` do the same as the options.
+
+You only run the installer once. After that, `kiln upgrade` replaces kiln
+with the latest release, checking its checksum the same way:
+
+```sh
+kiln upgrade                    # the latest release
+kiln upgrade --check            # only say whether there is a newer one
+kiln upgrade --version v0.3.0   # a particular release, older or newer
+```
+
+Then:
 
 ```sh
 kiln run examples/hello
