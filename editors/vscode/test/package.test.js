@@ -125,3 +125,14 @@ test("the package holds only what VS Code loads", () => {
   }
   assert.ok(files.length < 20, `${files.length} files are packaged`);
 });
+
+test("the word pattern finds names as VS Code compiles it", () => {
+  // VS Code adds only the `g` flag, so the pattern cannot rely on `u`
+  // (`\p{L}` without it matches the letters p and L). Completion filters
+  // its list by the word at the cursor, which this pattern finds.
+  const config = JSON.parse(fs.readFileSync(path.join(root, "language-configuration.json"), "utf8"));
+  const words = (text) => text.match(new RegExp(config.wordPattern, "g"));
+  assert.deepStrictEqual(words("print(tes) -> Str"), ["print", "tes", "Str"]);
+  assert.deepStrictEqual(words("let café_2 = x.len"), ["let", "café_2", "x", "len"]);
+  assert.deepStrictEqual(words("sleep(250ms) + 1_000"), ["sleep", "250ms", "1_000"]);
+});

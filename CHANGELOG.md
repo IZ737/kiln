@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.5.4 (2026-10-25)
+
+- **Completion as you type in VS Code.** The extension told VS Code that
+  only the letters `p` and `L` make up words, so VS Code did not start
+  completion as you typed a name, and did not narrow the list to what
+  you had typed. Completions such as a function declared further down,
+  or `String` after `->`, now appear as you type.
+
 ## 0.5.3 (2026-10-25)
 
 - kiln says when a newer release is out, after a command finishes, and to

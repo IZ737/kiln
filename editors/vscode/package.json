@@ -2,7 +2,7 @@
   "name": "kiln",
   "displayName": "Kiln",
   "description": "Kiln and Glaze language support: highlighting, file icons, completion, hover, go to definition, and Check, Run and Build commands, from the Kiln language server.",
-  "version": "0.5.3",
+  "version": "0.5.4",
   "publisher": "iz737",
   "license": "MIT",
   "icon": "icons/kiln.png",

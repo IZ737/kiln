@@ -78,6 +78,12 @@ async function run() {
   );
   const labels = list.items.map((i) => (typeof i.label === "string" ? i.label : i.label.label));
   assert.ok(labels.includes("title") && labels.includes("id"), labels.join(", "));
+  // VS Code filters completions by the word at the cursor, found with the
+  // language's word pattern.
+  const word = doc.getWordRangeAtPosition(positionOf(doc, "    let x", 9));
+  assert.strictEqual(word && doc.getText(word), "x");
+  const name = doc.getWordRangeAtPosition(positionOf(doc, "print(helper", 10));
+  assert.strictEqual(name && doc.getText(name), "helper");
   await vscode.commands.executeCommand("undo");
   await doc.save();
 
