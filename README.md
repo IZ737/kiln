@@ -77,6 +77,49 @@ fn main() ! {
 | Ember | An interactive component compiled to WebAssembly |
 | `kiln fire` | Make a release build |
 
+## Install
+
+On Linux:
+
+```sh
+curl --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/IZ737/kiln/main/install.sh | sh
+```
+
+On Windows, in PowerShell:
+
+```powershell
+irm https://raw.githubusercontent.com/IZ737/kiln/main/install.ps1 | iex
+```
+
+Each downloads the latest release from the
+[releases page](https://github.com/IZ737/kiln/releases), checks it against
+the release's SHA-256 checksum, puts `kiln` in `~/.kiln/bin` and adds that
+folder to your PATH: through your shell's startup files on Linux, and your
+user PATH on Windows. Prebuilt releases are for x86-64; on other systems
+the script says so and stops. `kiln` is one executable that needs nothing
+else installed, so to uninstall, delete `~/.kiln` (and the line that
+sources `~/.kiln/env` from `~/.profile`, `~/.bashrc` and `~/.zshenv`, or
+the folder from your user PATH).
+
+To install a particular release, or somewhere else:
+
+```sh
+curl --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/IZ737/kiln/main/install.sh | sh -s -- --version v0.2.0 --dir /opt/kiln
+```
+
+```powershell
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/IZ737/kiln/main/install.ps1))) -Version v0.2.0 -InstallDir C:\kiln
+```
+
+`--no-modify-path` (`-NoModifyPath`) leaves PATH alone, and the
+environment variables `KILN_VERSION`, `KILN_HOME` and
+`KILN_NO_MODIFY_PATH=1` do the same as the options. Then:
+
+```sh
+kiln run examples/hello
+kiln build examples/hello --target windows   # hello.exe, from any system
+```
+
 ## Try it
 
 To build the compiler from source you need a recent stable Rust toolchain
@@ -90,17 +133,6 @@ executables are static and run on any Linux x86-64 system, and its Windows
 or with `--backend c`, `kiln` compiles through C and needs a C compiler and
 the Boehm garbage collector (`libgc-dev` on Debian and Ubuntu, `gc-devel`
 on Fedora, `bdw-gc` on Homebrew).
-
-Releases after 0.1.0 also ship a prebuilt `kiln` for Linux x86-64 and a
-`kiln.exe` for Windows x86-64 on the
-[releases page](https://github.com/IZ737/kiln/releases): one executable
-that needs nothing else installed.
-
-```sh
-tar xzf kiln-v*-x86_64-linux.tar.gz
-./kiln-v*-x86_64-linux/kiln run examples/hello
-./kiln-v*-x86_64-linux/kiln build examples/hello --target windows   # hello.exe
-```
 
 ```sh
 cargo run -p kiln_cli -- run examples/hello     # compile and run a program
