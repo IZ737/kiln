@@ -3,7 +3,8 @@ name: Release
 # Pushing a tag such as `v0.2.0` builds the standalone kiln for Linux and
 # Windows (x86-64), checks each with the conformance programs on a system
 # with nothing else installed, and publishes them as a GitHub release. Each
-# kiln can build executables for both systems.
+# kiln can build executables for both systems. Set the version in
+# Cargo.toml to the tag's first: the build stops if they differ.
 
 on:
   push:
@@ -26,6 +27,13 @@ jobs:
       - run: sudo apt-get update && sudo apt-get install -y musl-tools gcc-mingw-w64-x86-64
       - run: cargo build --release --target x86_64-unknown-linux-musl -p kiln_cli
       - run: strip target/x86_64-unknown-linux-musl/release/kiln
+      - name: The tag matches the version kiln reports
+        run: |
+          reported=$(target/x86_64-unknown-linux-musl/release/kiln --version)
+          if [ "$reported" != "kiln ${GITHUB_REF_NAME#v}" ]; then
+            echo "::error::tag $GITHUB_REF_NAME, but kiln --version says '$reported': set version in Cargo.toml"
+            exit 1
+          fi
       - run: scripts/clean-check.sh target/x86_64-unknown-linux-musl/release/kiln
       - name: Package
         run: |
