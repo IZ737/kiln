@@ -602,8 +602,11 @@ step and no expansion into Embers or the general module system.
 
 - **Phase 4:** SQL/ORM, database migrations, auth/sessions,
   generated admin UI and rich typed forms. Basic HTML forms are fine.
-- **Phase 5:** Wares, full hot reload/formatter/test-runner
-  improvements, advanced rename/find references and broad refactoring.
+- **Phase 5:** Wares, hot reload/formatter, advanced editor
+  refactoring and the integrated [`kiln test` runner](testing.md),
+  including **unit, integration and automated browser/Glaze tests**.
+  Phase 3 still needs compiler/HTML/CSS smoke and regression tests,
+  but does not depend on the finished public test command.
 - **Phase 6:** Embers/WasmGC, reactive UI and style updates,
   hydration, generated server RPC and JS/npm interop.
 - **Phase 7:** Static site export, deployment automation,
