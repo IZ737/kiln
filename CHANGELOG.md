@@ -1,5 +1,30 @@
 # Changelog
 
+## 0.6.0 (2026-10-25)
+
+The runtime's network-facing parts move from hand-written C to maintained
+Rust libraries ([docs/runtime-rust.md](docs/runtime-rust.md)).
+
+- **The web server runs on hyper.** Reading requests, chunked bodies,
+  `expect: 100-continue`, keep-alive and writing responses are hyper's,
+  driven on Kiln's own tasks, so handlers and concurrency work as before.
+  Query strings, cookies and path segments are decoded with the
+  `form_urlencoded`, `cookie` and `percent-encoding` crates. What clients
+  may notice: a request whose head cannot be read gets a bare 400, 414 or
+  431 with no body, HTTP/1.0 requests get an HTTP/1.0 status line, a
+  request may have at most 100 headers, response header names are lower
+  case, and decoded request data that is not UTF-8 gets U+FFFD. A server
+  program is about 300 KB larger.
+- **JSON is serde_json.** `json.encode`, `json.decode` and `req.json` use
+  it, with the same error messages and paths. Text must be UTF-8 with
+  well-formed escapes, and typed values nest at most 128 deep.
+- `kiln_rt`, the runtime's Rust part, is linked into every program on
+  both backends and both targets. Building kiln needs Rust's standard
+  library for `x86_64-unknown-linux-musl` and `x86_64-pc-windows-gnu`.
+- CI checks the dependencies for advisories and licences with
+  `cargo deny`, and Dependabot keeps them current. `kiln upgrade` uses
+  zip 9, which fixes advisories in the version before.
+
 ## 0.5.5 (2026-10-25)
 
 - The notice that a newer kiln is out now asks GitHub once an hour, not
