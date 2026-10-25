@@ -230,6 +230,49 @@ Kiln applications, nor a promise to match every systems-language feature.
 Where practical, improved internals should leave a function's public Kiln
 signature—and the code calling it—unchanged.
 
+### Freestanding Kiln: bare-metal and hobby operating systems
+
+Kiln is web-first, but a compelling **long-term experiment** is to compile
+Kiln programs for **freestanding (bare-metal) targets** with no underlying
+operating system. One particularly interesting dogfooding project would be
+to write a **small hobby operating system in Kiln**, first running under
+an emulator such as QEMU and, perhaps later, on real hardware. This is
+an exploratory direction **beyond the 1.0 web-platform goals**, not a
+near-term roadmap commitment or a promise of a general-purpose
+systems-programming language.
+
+The architectural principle is to **keep the language, IR and machine-code
+generation independent of any particular host OS where practical**.
+Hosted applications retain their normal batteries-included runtime;
+a separately selected freestanding target would provide only the
+platform facilities available at that stage. Both could reuse the
+same compiler frontend and architecture-specific instruction generation,
+while differing in startup code, linking, ABI assumptions and runtime
+services.
+
+A freestanding environment would need explicit, narrowly scoped
+low-level capabilities rather than pretend an operating system exists:
+
+- Startup/linker and bootloader integration; appropriate bare-metal
+  target triples and executable formats.
+- Hardware access through carefully designed raw-pointer, volatile
+  memory and interrupt facilities, with unsafe operations clearly
+  isolated from ordinary Kiln code.
+- A staged runtime: early boot cannot assume heap allocation or Boehm
+  GC; memory allocation and any collector must be initialized on top
+  of available physical/virtual memory services. Garbage collection
+  remains the default for normal hosted Kiln programs.
+- Clear availability checks for OS-dependent standard-library features,
+  plus emulator-based tests and reproducible cross-compilation.
+
+An eventual hobby-OS progression could be: **boot and draw to a
+framebuffer → memory management → interrupts and input → scheduling →
+a tiny shell and filesystem → running Kiln applications on a Kiln OS**.
+These are ideas for learning and experimentation, not acceptance criteria
+for Kiln's primary full-stack mission. The challenge is to make special
+low-level code possible **without imposing systems-language complexity on
+ordinary web developers**.
+
 ## 6. Interoperability in both directions is an adoption strategy
 
 A new language cannot expect developers to discard existing code or wait
@@ -602,7 +645,8 @@ Opt-in arenas and explicit allocation controls, SIMD/data-layout APIs,
 general bidirectional FFI/binding generation, Wasm Component Model/WIT,
 fully featured MCP application support, AI-assisted debugger snapshots,
 PWA offline synchronization, cross-target Glaze/Ember reuse in desktop,
-TUI and games, and additional platforms. These require design,
+TUI and games, freestanding/bare-metal targets and an experimental small OS
+written in Kiln, and additional platforms. These require design,
 compatibility and maintenance trade-off reviews.
 
 ### Deliberate non-goals
