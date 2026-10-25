@@ -67,6 +67,8 @@ fn main() ! {
     })
 
     // Handlers can keep state between requests in captured variables.
+    // Kiln does not promise this stays safe when tasks run on several
+    // cores; see "Memory and concurrency" in docs/design.md.
     var visits = 0
     app.get("/visits", fn(req) {
         visits += 1

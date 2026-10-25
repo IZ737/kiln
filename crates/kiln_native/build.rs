@@ -131,6 +131,7 @@ fn linux(p: &Paths) -> Result<(), String> {
             "-DNO_GETCONTEXT",
             "-DUSE_MMAP",
             "-DUSE_MMAP_ANON",
+            "-DALWAYS_SMALL_CLEAR_STACK",
         ],
     )?;
     for file in ["crt1.o", "crti.o", "crtn.o", "libc.a"] {
@@ -170,7 +171,11 @@ fn windows(p: &Paths) -> Result<(), String> {
     compile(
         &p.gc.join("extra/gc.c"),
         "gc.o",
-        &["-DALL_INTERIOR_POINTERS", "-DNO_EXECUTE_PERMISSION"],
+        &[
+            "-DALL_INTERIOR_POINTERS",
+            "-DNO_EXECUTE_PERMISSION",
+            "-DALWAYS_SMALL_CLEAR_STACK",
+        ],
     )?;
     run(
         Command::new(&windres)

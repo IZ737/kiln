@@ -1,0 +1,11 @@
+GET /fast HTTP/1.1
+###
+GET /slow HTTP/1.1
+###
+GET /churn HTTP/1.1
+###
+POST /echo HTTP/1.1
+
+fired
+###
+GET /quit HTTP/1.1

@@ -12,15 +12,16 @@
 # through bash's /dev/tcp.
 
 # Splits main.requests into one file per request, as the HTTP client in
-# conformance.rs sends them: lines in CRLF, and content-length added when
-# there is a body.
+# conformance.rs sends them: lines in CRLF, content-length added when there
+# is a body, and `connection: close` unless the request names a connection.
 split_requests() {
     LC_ALL=C awk -v dir="$2" '
-        function flush(   i, raw, has_len, chunked, body) {
+        function flush(   i, raw, has_len, chunked, has_conn, body) {
             if (n == 0) return
-            raw = ""; has_len = 0; chunked = 0; body = ""
+            raw = ""; has_len = 0; chunked = 0; has_conn = 0; body = ""
             for (i = 1; i <= head; i++) {
                 raw = raw lines[i] "\r\n"
+                if (tolower(lines[i]) ~ /^connection:/) has_conn = 1
                 if (tolower(lines[i]) ~ /^(content-length|transfer-encoding):/) has_len = 1
                 if (tolower(lines[i]) ~ /^transfer-encoding: chunked/) chunked = 1
             }
@@ -28,6 +29,7 @@ split_requests() {
             sub(/[\r\n]+$/, "", body)
             if (chunked) body = body "\r\n\r\n"
             else if (body != "" && !has_len) raw = raw "content-length: " length(body) "\r\n"
+            if (!has_conn) raw = raw "connection: close\r\n"
             count++
             printf "%s\r\n%s", raw, body > (dir "/" count)
             close(dir "/" count)

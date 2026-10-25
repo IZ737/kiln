@@ -7,6 +7,10 @@
  * fields, closure arguments) stores values in `kv`, a 64-bit slot. An
  * optional `T?` is a `kbox *` holding the value as a kv, or NULL for none.
  */
+#ifdef __APPLE__
+#define _XOPEN_SOURCE 600 /* for the ucontext functions tasks use */
+#define _DARWIN_C_SOURCE
+#endif
 #include <gc.h>
 #include <errno.h>
 #include <inttypes.h>
@@ -29,7 +33,10 @@
 #include <windows.h>
 #else
 #include <arpa/inet.h>
+#include <fcntl.h>
 #include <netinet/in.h>
+#include <poll.h>
+#include <sys/mman.h>
 #include <sys/socket.h>
 #include <sys/time.h>
 #endif
@@ -988,6 +995,402 @@ K_API void k_log(const char *level, kstr *message, int n, kstr **data) {
 K_API int64_t k_floor_div(int64_t a, int64_t b) { return a / b - (a % b != 0 && (a < 0) != (b < 0)); }
 
 #ifdef _WIN32
+typedef SOCKET ksock;
+#define K_BAD_SOCK INVALID_SOCKET
+#define k_sock_close closesocket
+#define K_SEND_FLAGS 0
+#else
+typedef int ksock;
+#define K_BAD_SOCK (-1)
+#define k_sock_close close
+#define K_SEND_FLAGS MSG_NOSIGNAL
+#endif
+
+/* ----- tasks: lightweight threads on one core -----
+ *
+ * The web server runs each connection on a task: a function with a stack
+ * of its own. Tasks are cooperative and share one core. A task runs until
+ * it waits for a socket (`k_task_wait`) or for time to pass
+ * (`k_task_sleep`); then the next ready task runs, and when no task is
+ * ready, the scheduler polls the sockets the tasks wait on. So a slow
+ * client or a sleeping handler holds up only its own request, while code
+ * that computes without waiting holds up every task. There is no scheduler
+ * stack: the task that waits picks the next one itself, and the program's
+ * main stack is a task too.
+ *
+ * The rest of the runtime only spawns, waits and sleeps. Running tasks on
+ * several cores later changes this section (a run queue per core, and the
+ * current task and the saved values below per thread), not its callers.
+ * Kiln does not promise that tasks can share mutable values safely.
+ *
+ * The state of a failing call and of a panic belongs to the running task,
+ * so a switch saves and restores it. The collector scans the running
+ * task's stack as the program's stack, and the stacks of the other tasks
+ * through its push-other-roots hook. Stacks are switched by a few lines
+ * of assembly on x86-64 Unix systems, by fibers on Windows, and by
+ * `swapcontext` elsewhere. */
+
+#if defined(_WIN32)
+#define K_TASK_FIBER 1
+#elif defined(__x86_64__) && defined(__ELF__) && !defined(K_TASK_UCONTEXT)
+#define K_TASK_ASM 1
+#else
+#undef K_TASK_UCONTEXT
+#define K_TASK_UCONTEXT 1
+#include <ucontext.h>
+#endif
+
+#define K_TASK_STACK (1024 * 1024)
+#define K_TASK_GUARD (64 * 1024)
+
+/* From the collector's gc_mark.h, which is installed in different places. */
+typedef void (GC_CALLBACK *k_gc_push_roots)(void);
+GC_API void GC_CALL GC_set_push_other_roots(k_gc_push_roots);
+GC_API k_gc_push_roots GC_CALL GC_get_push_other_roots(void);
+GC_API void GC_CALL GC_push_all_eager(void *, void *);
+
+typedef struct ktask {
+    void *sp;   /* the stack pointer while the task is switched out */
+    char *hi;   /* the high end of its stack; NULL for a fiber not yet run */
+    void (*fn)(void *);
+    void *arg;
+    struct ktask *next; /* in the ready queue or among the finished tasks */
+    int state;
+    /* What it waits for: a readable or writable socket, or a time. */
+    ksock fd;
+    bool write, woke_ready;
+    int64_t deadline;
+    int poll_index;
+    /* The runtime's values for this task while another one runs. */
+    bool failed, panic_trap;
+    kv error;
+    kstr *(*error_show)(kv);
+    kstr *lib_error, *client_error, *panic_message;
+    void *panic_jmp[5];
+#if K_TASK_FIBER
+    void *fiber;
+#elif K_TASK_UCONTEXT
+    ucontext_t ctx;
+#endif
+} ktask;
+
+enum { K_TASK_READY, K_TASK_RUNNING, K_TASK_WAITING, K_TASK_DONE };
+
+/* The message of the error `req.json` failed with for this request, which
+ * the server answers with 400 if the handler passes it on. */
+K_API kstr *k_web_client_error = NULL;
+
+static ktask k_main_task = {.state = K_TASK_RUNNING, .fd = K_BAD_SOCK};
+static ktask *k_cur = &k_main_task;
+static bool k_tasks_on = false;
+/* Every task but the main one, for the collector. Tasks are never freed:
+ * a finished task's stack runs the next task spawned. */
+static ktask **k_tasks;
+static int64_t k_ntasks, k_tasks_cap;
+static ktask *k_ready_first, *k_ready_last, *k_finished;
+static ktask **k_waiting;
+static int64_t k_nwaiting, k_waiting_cap;
+static struct pollfd *k_pollfds;
+static int64_t k_pollfds_cap;
+static k_gc_push_roots k_old_push_roots;
+
+#ifdef _WIN32
+K_API int64_t k_mono_now(void) {
+    LARGE_INTEGER f, c;
+    QueryPerformanceFrequency(&f);
+    QueryPerformanceCounter(&c);
+    return c.QuadPart / f.QuadPart * K_NS_PER_SEC + c.QuadPart % f.QuadPart * K_NS_PER_SEC / f.QuadPart;
+}
+#else
+K_API int64_t k_mono_now(void) {
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (int64_t)ts.tv_sec * K_NS_PER_SEC + ts.tv_nsec;
+}
+#endif
+
+static void *k_grow(void *items, int64_t *cap, int64_t need, size_t size) {
+    if (need <= *cap) return items;
+    int64_t n = *cap ? *cap * 2 : 64;
+    while (n < need) n *= 2;
+    items = realloc(items, (size_t)n * size);
+    if (!items) { fputs("panic: out of memory\n", stderr); exit(101); }
+    *cap = n;
+    return items;
+}
+
+static void GC_CALLBACK k_task_push_stacks(void) {
+    if (k_old_push_roots) k_old_push_roots();
+    for (int64_t i = 0; i < k_ntasks; i++) {
+        ktask *t = k_tasks[i];
+        if (t != k_cur && t->state != K_TASK_DONE && t->sp && t->hi) GC_push_all_eager(t->sp, t->hi);
+    }
+    if (k_cur != &k_main_task) GC_push_all_eager(k_main_task.sp, k_main_task.hi);
+}
+
+static void *k_task_bottom_locked(void *hi) {
+    struct GC_stack_base sb;
+    memset(&sb, 0, sizeof sb);
+    sb.mem_base = hi;
+    GC_set_stackbottom(NULL, &sb);
+    return NULL;
+}
+
+/* Tells the collector where the running stack ends. */
+static void k_task_set_bottom(char *hi) { GC_call_with_alloc_lock(k_task_bottom_locked, hi); }
+
+static void k_task_init(void) {
+    if (k_tasks_on) return;
+    k_tasks_on = true;
+    struct GC_stack_base sb;
+    memset(&sb, 0, sizeof sb);
+    GC_get_my_stackbottom(&sb);
+    k_main_task.hi = sb.mem_base;
+    k_old_push_roots = GC_get_push_other_roots();
+    GC_set_push_other_roots(k_task_push_stacks);
+#if K_TASK_FIBER
+    k_main_task.fiber = ConvertThreadToFiber(NULL);
+    if (!k_main_task.fiber) { fputs("panic: cannot start tasks\n", stderr); exit(101); }
+#endif
+}
+
+#if K_TASK_ASM
+/* Saves the callee-saved registers and the floating-point control words on
+ * the stack, stores the stack pointer in `*save`, and returns on the stack
+ * `to`, which this function saved earlier (or `k_task_spawn` set up). */
+void k_task_jump(void **save, void *to);
+__asm__(".text\n"
+        ".globl k_task_jump\n"
+        ".type k_task_jump, @function\n"
+        "k_task_jump:\n"
+        "  push %rbp\n  push %rbx\n  push %r12\n  push %r13\n  push %r14\n  push %r15\n"
+        "  sub $8, %rsp\n  stmxcsr (%rsp)\n  fnstcw 4(%rsp)\n"
+        "  mov %rsp, (%rdi)\n  mov %rsi, %rsp\n"
+        "  ldmxcsr (%rsp)\n  fldcw 4(%rsp)\n  add $8, %rsp\n"
+        "  pop %r15\n  pop %r14\n  pop %r13\n  pop %r12\n  pop %rbx\n  pop %rbp\n"
+        "  ret\n"
+        ".size k_task_jump, .-k_task_jump\n");
+
+static void k_task_jump_to(ktask *from, ktask *to) { k_task_jump(&from->sp, to->sp); }
+#elif K_TASK_FIBER
+/* A fiber keeps its registers outside its stack, where the collector does
+ * not look, so this function saves them on the stack first. */
+static __attribute__((noinline)) void k_task_jump_to(ktask *from, ktask *to) {
+    __builtin_unwind_init();
+    void *sp;
+    __asm__ volatile("mov %%rsp, %0" : "=r"(sp));
+    from->sp = sp;
+    SwitchToFiber(to->fiber);
+}
+#else
+/* The registers are saved in `ctx`, which the collector scans with the
+ * task. */
+static __attribute__((noinline)) void k_task_jump_to(ktask *from, ktask *to) {
+    char mark;
+    from->sp = &mark;
+    swapcontext(&from->ctx, &to->ctx);
+}
+#endif
+
+static void k_task_switch(ktask *to) {
+    ktask *from = k_cur;
+    from->failed = k_failed;
+    from->error = k_error;
+    from->error_show = k_error_show;
+    from->lib_error = k_lib_error;
+    from->client_error = k_web_client_error;
+    from->panic_trap = k_panic_trap;
+    from->panic_message = k_panic_message;
+    memcpy(from->panic_jmp, k_panic_jmp, sizeof k_panic_jmp);
+    k_cur = to;
+    to->state = K_TASK_RUNNING;
+    k_failed = to->failed;
+    k_error = to->error;
+    k_error_show = to->error_show;
+    k_lib_error = to->lib_error;
+    k_web_client_error = to->client_error;
+    k_panic_trap = to->panic_trap;
+    k_panic_message = to->panic_message;
+    memcpy(k_panic_jmp, to->panic_jmp, sizeof k_panic_jmp);
+    if (to->hi) k_task_set_bottom(to->hi);
+    k_task_jump_to(from, to);
+}
+
+static void k_task_ready(ktask *t) {
+    t->state = K_TASK_READY;
+    t->next = NULL;
+    if (k_ready_last) k_ready_last->next = t;
+    else k_ready_first = t;
+    k_ready_last = t;
+}
+
+/* Waits for the sockets and times the waiting tasks wait for, and makes
+ * the tasks whose wait is over ready. */
+static void k_task_poll(void) {
+    k_pollfds = k_grow(k_pollfds, &k_pollfds_cap, k_nwaiting, sizeof *k_pollfds);
+    int64_t now = k_mono_now(), soonest = 0;
+    int nfds = 0;
+    for (int64_t i = 0; i < k_nwaiting; i++) {
+        ktask *t = k_waiting[i];
+        if (t->deadline && (!soonest || t->deadline < soonest)) soonest = t->deadline;
+        t->poll_index = -1;
+        if (t->fd == K_BAD_SOCK) continue;
+        k_pollfds[nfds].fd = t->fd;
+        k_pollfds[nfds].events = t->write ? POLLOUT : POLLIN;
+        k_pollfds[nfds].revents = 0;
+        t->poll_index = nfds++;
+    }
+    if (nfds == 0 && !soonest) {
+        fputs("panic: every task is waiting, and nothing can wake them\n", stderr);
+        exit(101);
+    }
+    int timeout = -1;
+    if (soonest) {
+        int64_t ms = soonest <= now ? 0 : (soonest - now + 999999) / 1000000;
+        timeout = ms > 0x7fffffff ? 0x7fffffff : (int)ms;
+    }
+#ifdef _WIN32
+    if (nfds > 0) WSAPoll(k_pollfds, (ULONG)nfds, timeout);
+    else Sleep((DWORD)timeout);
+#else
+    poll(k_pollfds, (nfds_t)nfds, timeout);
+#endif
+    now = k_mono_now();
+    for (int64_t i = 0; i < k_nwaiting;) {
+        ktask *t = k_waiting[i];
+        bool ready = t->poll_index >= 0 && k_pollfds[t->poll_index].revents != 0;
+        if (!ready && !(t->deadline && t->deadline <= now)) { i++; continue; }
+        t->woke_ready = ready;
+        memmove(k_waiting + i, k_waiting + i + 1, (size_t)(k_nwaiting - i - 1) * sizeof *k_waiting);
+        k_nwaiting--;
+        k_task_ready(t);
+    }
+}
+
+/* Runs other tasks until this one is ready again. */
+static void k_task_park(void) {
+    for (;;) {
+        ktask *t = k_ready_first;
+        if (!t) { k_task_poll(); continue; }
+        k_ready_first = t->next;
+        if (!k_ready_first) k_ready_last = NULL;
+        if (t == k_cur) t->state = K_TASK_RUNNING;
+        else k_task_switch(t);
+        return;
+    }
+}
+
+/* Every task starts here, and a finished task waits here to run the next
+ * one spawned. */
+static void k_task_entry(void) {
+#if K_TASK_FIBER
+    k_cur->hi = (char *)((NT_TIB *)NtCurrentTeb())->StackBase;
+    k_task_set_bottom(k_cur->hi);
+#endif
+    for (;;) {
+        k_cur->fn(k_cur->arg);
+        k_cur->fn = NULL;
+        k_cur->arg = NULL;
+        k_cur->state = K_TASK_DONE;
+        k_cur->next = k_finished;
+        k_finished = k_cur;
+        k_task_park();
+    }
+}
+
+#if K_TASK_FIBER
+static void WINAPI k_task_fiber(void *t) {
+    (void)t;
+    k_task_entry();
+}
+#else
+/* A stack with an unmapped guard below it, so that running off its end
+ * crashes instead of overwriting memory. */
+static char *k_task_stack(void) {
+    char *p = mmap(NULL, K_TASK_STACK + K_TASK_GUARD, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    if (p == MAP_FAILED) { fputs("panic: out of memory for a task's stack\n", stderr); exit(101); }
+    mprotect(p, K_TASK_GUARD, PROT_NONE);
+    return p + K_TASK_GUARD + K_TASK_STACK;
+}
+#endif
+
+/* Runs `fn(arg)` on a task of its own once the running task waits. */
+K_API void k_task_spawn(void (*fn)(void *), void *arg) {
+    k_task_init();
+    ktask *t = k_finished;
+    if (t) {
+        k_finished = t->next;
+        t->failed = t->panic_trap = false;
+        t->error = 0;
+        t->error_show = NULL;
+        t->lib_error = t->client_error = t->panic_message = NULL;
+    } else {
+        t = GC_MALLOC_UNCOLLECTABLE(sizeof *t);
+        if (!t) { fputs("panic: out of memory\n", stderr); exit(101); }
+#if K_TASK_FIBER
+        t->fiber = CreateFiberEx(64 * 1024, K_TASK_STACK, 0, k_task_fiber, t);
+        if (!t->fiber) { fputs("panic: out of memory for a task's stack\n", stderr); exit(101); }
+#elif K_TASK_ASM
+        t->hi = k_task_stack();
+        uint64_t *sp = (uint64_t *)t->hi;
+        *--sp = 0;                        /* k_task_entry starts as if called */
+        *--sp = (uint64_t)k_task_entry;   /* where k_task_jump returns */
+        sp -= 7;                          /* six registers and the control words */
+        memset(sp, 0, 7 * sizeof *sp);
+        ((uint32_t *)sp)[0] = 0x1f80;     /* the default MXCSR */
+        ((uint16_t *)sp)[2] = 0x037f;     /* the default x87 control word */
+        t->sp = sp;
+#else
+        t->hi = k_task_stack();
+        getcontext(&t->ctx);
+        t->ctx.uc_stack.ss_sp = t->hi - K_TASK_STACK;
+        t->ctx.uc_stack.ss_size = K_TASK_STACK;
+        t->ctx.uc_link = NULL;
+        makecontext(&t->ctx, k_task_entry, 0);
+#endif
+        k_tasks = k_grow(k_tasks, &k_tasks_cap, k_ntasks + 1, sizeof *k_tasks);
+        k_tasks[k_ntasks++] = t;
+    }
+    t->fd = K_BAD_SOCK;
+    t->fn = fn;
+    t->arg = arg;
+    k_task_ready(t);
+}
+
+/* Waits until `fd` can be read, or written with `write`, or until the
+ * monotonic time `deadline` (from `k_mono_now`; 0 for none). Returns false
+ * if the deadline came first. With no socket, it waits for the deadline. */
+K_API bool k_task_wait(ksock fd, bool write, int64_t deadline) {
+    k_task_init();
+    ktask *t = k_cur;
+    t->fd = fd;
+    t->write = write;
+    t->deadline = deadline;
+    t->woke_ready = false;
+    t->state = K_TASK_WAITING;
+    k_waiting = k_grow(k_waiting, &k_waiting_cap, k_nwaiting + 1, sizeof *k_waiting);
+    k_waiting[k_nwaiting++] = t;
+    k_task_park();
+    t->fd = K_BAD_SOCK;
+    return t->woke_ready;
+}
+
+/* The monotonic time `ns` from now, saturating. */
+K_API int64_t k_task_deadline(int64_t ns) {
+    int64_t now = k_mono_now();
+    return ns > INT64_MAX - now ? INT64_MAX : now + ns;
+}
+
+K_API void k_task_sleep(int64_t ns) { k_task_wait(K_BAD_SOCK, false, k_task_deadline(ns)); }
+
+/* Lets the other ready tasks run first. */
+K_API void k_task_yield(void) {
+    k_task_init();
+    k_task_ready(k_cur);
+    k_task_park();
+}
+
+#ifdef _WIN32
 /* 100-nanosecond intervals between 1601-01-01 and 1970-01-01. */
 #define K_FILETIME_UNIX INT64_C(116444736000000000)
 
@@ -998,8 +1401,7 @@ K_API int64_t k_time_now(void) {
     return (t - K_FILETIME_UNIX) * 100;
 }
 
-K_API void k_time_sleep(int64_t ns) {
-    if (ns <= 0) return;
+static void k_time_sleep_os(int64_t ns) {
     int64_t ms = (ns + 999999) / 1000000;
     while (ms > 0) {
         DWORD part = ms > 0x7fffffff ? 0x7fffffff : (DWORD)ms;
@@ -1014,12 +1416,18 @@ K_API int64_t k_time_now(void) {
     return (int64_t)ts.tv_sec * K_NS_PER_SEC + ts.tv_nsec;
 }
 
-K_API void k_time_sleep(int64_t ns) {
-    if (ns <= 0) return;
+static void k_time_sleep_os(int64_t ns) {
     struct timespec ts = {(time_t)(ns / K_NS_PER_SEC), (long)(ns % K_NS_PER_SEC)};
     while (nanosleep(&ts, &ts) != 0 && errno == EINTR) {}
 }
 #endif
+
+/* Once there are tasks, sleeping lets the others run. */
+K_API void k_time_sleep(int64_t ns) {
+    if (ns <= 0) return;
+    if (k_tasks_on) k_task_sleep(ns);
+    else k_time_sleep_os(ns);
+}
 
 /* Days since 1970-01-01 to a civil date and back (Howard Hinnant's
  * algorithms, valid for every day an int64_t can hold here). */
@@ -1465,18 +1873,6 @@ enum { K_RES_STATUS, K_RES_HEADERS, K_RES_BODY, K_RES_FIELDS };
 #define K_WEB_MAX_BODY (16 * 1024 * 1024)
 #define K_WEB_TIMEOUT_SECS 10
 
-#ifdef _WIN32
-typedef SOCKET ksock;
-#define K_BAD_SOCK INVALID_SOCKET
-#define k_sock_close closesocket
-#define K_SEND_FLAGS 0
-#else
-typedef int ksock;
-#define K_BAD_SOCK (-1)
-#define k_sock_close close
-#define K_SEND_FLAGS MSG_NOSIGNAL
-#endif
-
 /* A route: its method (an index into `k_web_methods`), and its pattern's
  * segments. A literal segment has kind 0 and its text in `parts`; a
  * parameter has kind 's', 'i', 'f' or 'b' for `String`, `Int`, `Float` or
@@ -1708,10 +2104,6 @@ K_API void k_web_log(const char *level, kv *req, const char *what, kstr *message
             k_cstr(K_KV2P(kstr *, req[K_REQ_PATH])), what, k_cstr(message));
 }
 
-/* The message of the error `req.json` failed with for this request, which
- * the server answers with 400 if the handler passes it on. */
-K_API kstr *k_web_client_error = NULL;
-
 K_API kv *k_web_bad_json(kstr *message);
 
 /* Calls a handler, turning an error or a panic into a 500 response. The
@@ -1807,14 +2199,34 @@ K_API const char *k_web_reason(int64_t status) {
     return "";
 }
 
-K_API void k_web_send(ksock fd, const char *p, int64_t n) {
+#ifdef _WIN32
+K_API bool k_sock_would_block(void) { return WSAGetLastError() == WSAEWOULDBLOCK; }
+K_API void k_sock_nonblock(ksock fd) {
+    u_long one = 1;
+    ioctlsocket(fd, FIONBIO, &one);
+}
+#else
+K_API bool k_sock_would_block(void) { return errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR; }
+K_API void k_sock_nonblock(ksock fd) { fcntl(fd, F_SETFL, fcntl(fd, F_GETFL) | O_NONBLOCK); }
+#endif
+
+/* Sockets do not block: when one is not ready, its task waits and the
+ * other tasks run. A client that stops reading or sending for
+ * `K_WEB_TIMEOUT_SECS` loses its connection. */
+K_API bool k_web_send(ksock fd, const char *p, int64_t n) {
     while (n > 0) {
         int chunk = n > (1 << 30) ? (1 << 30) : (int)n;
         int sent = (int)send(fd, p, chunk, K_SEND_FLAGS);
-        if (sent <= 0) return;
-        p += sent;
-        n -= sent;
+        if (sent > 0) {
+            p += sent;
+            n -= sent;
+        } else if (sent < 0 && k_sock_would_block()) {
+            if (!k_task_wait(fd, true, k_task_deadline(K_WEB_TIMEOUT_SECS * K_NS_PER_SEC))) return false;
+        } else {
+            return false;
+        }
     }
+    return true;
 }
 
 /* Appends to a growing buffer of bytes. */
@@ -1835,6 +2247,13 @@ K_API void k_buf_add(kbuf *b, const char *s, int64_t n) {
 
 K_API void k_buf_str(kbuf *b, const char *s) { k_buf_add(b, s, (int64_t)strlen(s)); }
 
+/* Removes the first `n` bytes. */
+K_API void k_buf_drop(kbuf *b, int64_t n) {
+    if (n <= 0) return;
+    memmove(b->data, b->data + n, (size_t)(b->len - n));
+    b->len -= n;
+}
+
 /* Adds header text, leaving out line breaks so that a value cannot start a
  * header of its own. */
 K_API void k_buf_header_text(kbuf *b, kstr *s) {
@@ -1842,7 +2261,9 @@ K_API void k_buf_header_text(kbuf *b, kstr *s) {
         if (s->data[i] != '\r' && s->data[i] != '\n') k_buf_add(b, s->data + i, 1);
 }
 
-K_API void k_web_respond(ksock fd, kv *res, bool head) {
+/* Sends the response. `keep` says whether the connection stays open for
+ * another request; the result says whether it still can. */
+K_API bool k_web_respond(ksock fd, kv *res, bool head, bool keep, bool http10) {
     int64_t status = (int64_t)res[K_RES_STATUS];
     kmap *headers = K_KV2P(kmap *, res[K_RES_HEADERS]);
     kstr *body = K_KV2P(kstr *, res[K_RES_BODY]);
@@ -1863,7 +2284,13 @@ K_API void k_web_respond(ksock fd, kv *res, bool head) {
     for (int64_t i = 0; i < headers->used; i++) {
         if (!headers->live[i]) continue;
         kstr *name = K_KV2P(kstr *, headers->keys[i]);
-        if (k_str_eq(k_web_lower(name->data, name->len), k_str("content-length"))) has_length = true;
+        kstr *lower = k_web_lower(name->data, name->len);
+        if (k_str_eq(lower, k_str("content-length"))) has_length = true;
+        if (k_str_eq(lower, k_str("connection"))) {
+            kstr *v = K_KV2P(kstr *, headers->vals[i]);
+            if (k_str_find(k_web_lower(v->data, v->len), k_str("close"), 0) >= 0) keep = false;
+            continue;
+        }
         k_buf_header_text(&b, name);
         k_buf_str(&b, ": ");
         k_buf_header_text(&b, K_KV2P(kstr *, headers->vals[i]));
@@ -1878,22 +2305,31 @@ K_API void k_web_respond(ksock fd, kv *res, bool head) {
              k_day_names[t.weekday], (int)t.day, k_month_names[t.month - 1], (int)t.year,
              (int)t.hour, (int)t.minute, (int)t.second);
     k_buf_str(&b, line);
-    k_buf_str(&b, "connection: close\r\n\r\n");
+    if (!keep) k_buf_str(&b, "connection: close\r\n");
+    else if (http10) k_buf_str(&b, "connection: keep-alive\r\n");
+    k_buf_str(&b, "\r\n");
     if (!head && !no_body) k_buf_add(&b, body->data, body->len);
-    k_web_send(fd, b.data, b.len);
+    return k_web_send(fd, b.data, b.len) && keep;
 }
 
-K_API void k_web_fail(ksock fd, int64_t status) {
-    k_web_respond(fd, k_web_text(k_str(k_web_reason(status)), status), false);
+/* Answers a request the server cannot read, and ends the connection. */
+K_API bool k_web_fail(ksock fd, int64_t status) {
+    k_web_respond(fd, k_web_text(k_str(k_web_reason(status)), status), false, false, false);
+    return false;
 }
 
 /* Reads more of the request into `b`; false at the end or on a timeout. */
 K_API bool k_web_read(ksock fd, kbuf *b) {
     char chunk[16384];
-    int n = (int)recv(fd, chunk, sizeof chunk, 0);
-    if (n <= 0) return false;
-    k_buf_add(b, chunk, n);
-    return true;
+    for (;;) {
+        int n = (int)recv(fd, chunk, sizeof chunk, 0);
+        if (n > 0) {
+            k_buf_add(b, chunk, n);
+            return true;
+        }
+        if (n == 0 || !k_sock_would_block()) return false;
+        if (!k_task_wait(fd, false, k_task_deadline(K_WEB_TIMEOUT_SECS * K_NS_PER_SEC))) return false;
+    }
 }
 
 /* Reads `n` body bytes starting at `start`; false if the connection ends. */
@@ -1910,9 +2346,9 @@ K_API int64_t k_web_find(const char *p, int64_t n, const char *what) {
     return -1;
 }
 
-/* Decodes a chunked body that starts at `at`. Returns the status to fail
- * with, or 0. */
-K_API int64_t k_web_chunked(ksock fd, kbuf *b, int64_t at, kbuf *body) {
+/* Decodes a chunked body that starts at `at`, setting `*end` to where it
+ * ends. Returns the status to fail with, or 0. */
+K_API int64_t k_web_chunked(ksock fd, kbuf *b, int64_t at, kbuf *body, int64_t *end) {
     for (;;) {
         int64_t eol;
         while ((eol = k_web_find(b->data + at, b->len - at, "\r\n")) < 0)
@@ -1926,35 +2362,50 @@ K_API int64_t k_web_chunked(ksock fd, kbuf *b, int64_t at, kbuf *body) {
         if (i == 0) return 400;
         at += eol + 2;
         if (body->len + size > K_WEB_MAX_BODY) return 413;
-        if (size == 0) return 0; /* trailers are ignored */
+        if (size == 0) {
+            /* Trailer lines, which are ignored, up to an empty line. */
+            for (;;) {
+                while ((eol = k_web_find(b->data + at, b->len - at, "\r\n")) < 0) {
+                    if (b->len - at > K_WEB_MAX_HEAD) return 431;
+                    if (!k_web_read(fd, b)) return 400;
+                }
+                at += eol + 2;
+                if (eol == 0) break;
+            }
+            *end = at;
+            return 0;
+        }
         if (!k_web_need(fd, b, at, size + 2)) return 400;
         k_buf_add(body, b->data + at, size);
         at += size + 2;
     }
 }
 
-/* Reads one request and answers it. */
-K_API void k_web_serve(kapp *a, ksock fd) {
-    kbuf b = {0};
+/* Reads one request from the connection's bytes in `b` and answers it,
+ * leaving in `b` what the client sent after it. Returns whether the
+ * connection stays open for another request. */
+K_API bool k_web_serve(kapp *a, ksock fd, kbuf *b) {
     int64_t end;
-    while ((end = k_web_find(b.data, b.len, "\r\n\r\n")) < 0) {
-        if (b.len > K_WEB_MAX_HEAD) { k_web_fail(fd, 431); return; }
-        if (!k_web_read(fd, &b)) {
-            if (b.len > 0) k_web_fail(fd, 400);
-            return;
-        }
+    /* Empty lines before a request are allowed. */
+    for (;;) {
+        while (b->len >= 2 && b->data[0] == '\r' && b->data[1] == '\n') k_buf_drop(b, 2);
+        if (b->len >= 2 || (b->len == 1 && b->data[0] != '\r')) break;
+        if (!k_web_read(fd, b)) return false;
     }
-    if (end > K_WEB_MAX_HEAD) { k_web_fail(fd, 431); return; }
+    while ((end = k_web_find(b->data, b->len, "\r\n\r\n")) < 0) {
+        if (b->len > K_WEB_MAX_HEAD) return k_web_fail(fd, 431);
+        if (!k_web_read(fd, b)) return b->len > 0 ? k_web_fail(fd, 400) : false;
+    }
+    if (end > K_WEB_MAX_HEAD) return k_web_fail(fd, 431);
     /* The request line: method, target and version. */
-    const char *p = b.data, *head_end = b.data + end;
+    const char *p = b->data, *head_end = b->data + end;
     const char *eol = p + k_web_find(p, head_end - p + 2, "\r\n");
     const char *sp1 = memchr(p, ' ', (size_t)(eol - p));
     const char *sp2 = sp1 ? memchr(sp1 + 1, ' ', (size_t)(eol - sp1 - 1)) : NULL;
     if (!sp1 || !sp2 || sp1 == p || sp2 == sp1 + 1 || sp1[1] != '/' ||
-        (eol - sp2 - 1 != 8) || memcmp(sp2 + 1, "HTTP/1.", 7) != 0) {
-        k_web_fail(fd, 400);
-        return;
-    }
+        (eol - sp2 - 1 != 8) || memcmp(sp2 + 1, "HTTP/1.", 7) != 0)
+        return k_web_fail(fd, 400);
+    bool http10 = sp2[8] == '0';
     kv *req = k_alloc(sizeof(kv) * K_REQ_FIELDS);
     req[K_REQ_METHOD] = K_P2KV(k_str_n(p, sp1 - p));
     const char *target = sp1 + 1, *q = memchr(target, '?', (size_t)(sp2 - target));
@@ -1967,7 +2418,7 @@ K_API void k_web_serve(kapp *a, ksock fd) {
     for (p = eol + 2; p < head_end; ) {
         const char *line_end = p + k_web_find(p, head_end - p + 2, "\r\n");
         const char *colon = memchr(p, ':', (size_t)(line_end - p));
-        if (!colon || colon == p || *p == ' ' || *p == '\t') { k_web_fail(fd, 400); return; }
+        if (!colon || colon == p || *p == ' ' || *p == '\t') return k_web_fail(fd, 400);
         const char *v = colon + 1, *v_end = line_end;
         while (v < v_end && (*v == ' ' || *v == '\t')) v++;
         while (v_end > v && (v_end[-1] == ' ' || v_end[-1] == '\t')) v_end--;
@@ -1978,38 +2429,50 @@ K_API void k_web_serve(kapp *a, ksock fd) {
         k_map_set(headers, name, K_P2KV(value));
         p = line_end + 2;
     }
+    /* HTTP/1.1 connections stay open unless the client asks to close them,
+     * and HTTP/1.0 ones close unless it asks to keep them. */
+    bool keep = !http10;
+    kbox *conn = k_map_get(headers, K_P2KV(k_str("connection")));
+    if (conn) {
+        kstr *v = K_KV2P(kstr *, conn->v);
+        v = k_web_lower(v->data, v->len);
+        if (k_str_find(v, k_str("close"), 0) >= 0) keep = false;
+        else if (k_str_find(v, k_str("keep-alive"), 0) >= 0) keep = true;
+    }
     /* The body. */
     int64_t at = end + 4;
     kbox *expect = k_map_get(headers, K_P2KV(k_str("expect")));
     kbox *te = k_map_get(headers, K_P2KV(k_str("transfer-encoding")));
     kbox *cl = k_map_get(headers, K_P2KV(k_str("content-length")));
     if ((te || cl) && expect && k_str_eq(k_web_lower(K_KV2P(kstr *, expect->v)->data, K_KV2P(kstr *, expect->v)->len), k_str("100-continue")))
-        k_web_send(fd, "HTTP/1.1 100 Continue\r\n\r\n", 25);
+        if (!k_web_send(fd, "HTTP/1.1 100 Continue\r\n\r\n", 25)) return false;
     kstr *body = k_str("");
     if (te) {
         kstr *t = K_KV2P(kstr *, te->v);
-        if (!k_str_ends_with(k_web_lower(t->data, t->len), k_str("chunked"))) { k_web_fail(fd, 501); return; }
+        if (!k_str_ends_with(k_web_lower(t->data, t->len), k_str("chunked"))) return k_web_fail(fd, 501);
         kbuf chunks = {0};
-        int64_t status = k_web_chunked(fd, &b, at, &chunks);
-        if (status) { k_web_fail(fd, status); return; }
+        int64_t status = k_web_chunked(fd, b, at, &chunks, &at);
+        if (status) return k_web_fail(fd, status);
         body = k_str_n(chunks.data ? chunks.data : "", chunks.len);
     } else if (cl) {
         kstr *t = K_KV2P(kstr *, cl->v);
         int64_t n = 0;
-        if (t->len == 0) { k_web_fail(fd, 400); return; }
+        if (t->len == 0) return k_web_fail(fd, 400);
         for (int64_t i = 0; i < t->len; i++) {
-            if (t->data[i] < '0' || t->data[i] > '9') { k_web_fail(fd, 400); return; }
+            if (t->data[i] < '0' || t->data[i] > '9') return k_web_fail(fd, 400);
             n = n * 10 + (t->data[i] - '0');
-            if (n > K_WEB_MAX_BODY) { k_web_fail(fd, 413); return; }
+            if (n > K_WEB_MAX_BODY) return k_web_fail(fd, 413);
         }
-        if (!k_web_need(fd, &b, at, n)) { k_web_fail(fd, 400); return; }
-        body = k_str_n(b.data + at, n);
+        if (!k_web_need(fd, b, at, n)) return k_web_fail(fd, 400);
+        body = k_str_n(b->data + at, n);
+        at += n;
     }
+    k_buf_drop(b, at);
     req[K_REQ_BODY] = K_P2KV(body);
     k_web_client_error = NULL;
     kv *res = k_web_dispatch(a, req);
     fflush(stdout);
-    k_web_respond(fd, res, k_str_eq(K_KV2P(kstr *, req[K_REQ_METHOD]), k_str("HEAD")));
+    return k_web_respond(fd, res, k_str_eq(K_KV2P(kstr *, req[K_REQ_METHOD]), k_str("HEAD")), keep, http10);
 }
 
 #ifdef _WIN32
@@ -2033,15 +2496,27 @@ K_API void k_web_sock_fail(kstr *address) { k_lib_fail("listen on", address); }
 K_API void k_web_close(ksock c) {
 #ifdef _WIN32
     shutdown(c, SD_SEND);
-    DWORD timeout = 1000;
 #else
     shutdown(c, SHUT_WR);
-    struct timeval timeout = {1, 0};
 #endif
-    setsockopt(c, SOL_SOCKET, SO_RCVTIMEO, (const char *)&timeout, sizeof timeout);
+    int64_t deadline = k_task_deadline(K_NS_PER_SEC);
     char rest[4096];
-    for (int i = 0; i < 256 && recv(c, rest, sizeof rest, 0) > 0; i++) {}
+    for (int i = 0; i < 256;) {
+        int n = (int)recv(c, rest, sizeof rest, 0);
+        if (n > 0) i++;
+        else if (n == 0 || !k_sock_would_block() || !k_task_wait(c, false, deadline)) break;
+    }
     k_sock_close(c);
+}
+
+/* A connection, served on a task of its own. */
+typedef struct kconn { kapp *app; ksock fd; } kconn;
+
+K_API void k_web_conn(void *p) {
+    kconn *c = p;
+    kbuf b = {0};
+    while (k_web_serve(c->app, c->fd, &b)) {}
+    k_web_close(c->fd);
 }
 
 K_API void k_web_listen_error(kstr *address, const char *why) {
@@ -2114,18 +2589,22 @@ K_API void k_web_listen(void *app, kstr *address) {
     if (family == AF_INET6) host[hn - 1] = ']';
     const char *shown = hn == 0 || strcmp(host, "0.0.0.0") == 0 ? "localhost" : host;
     fprintf(stderr, "info listening on http://%s:%d\n", shown, bound);
+    /* This task accepts connections and starts a task for each. */
+    k_task_init();
+    k_sock_nonblock(fd);
     for (;;) {
         ksock c = accept(fd, NULL, NULL);
-        if (c == K_BAD_SOCK) continue;
-#ifdef _WIN32
-        DWORD timeout = K_WEB_TIMEOUT_SECS * 1000;
-#else
-        struct timeval timeout = {K_WEB_TIMEOUT_SECS, 0};
-#endif
-        setsockopt(c, SOL_SOCKET, SO_RCVTIMEO, (const char *)&timeout, sizeof timeout);
-        setsockopt(c, SOL_SOCKET, SO_SNDTIMEO, (const char *)&timeout, sizeof timeout);
-        k_web_serve((kapp *)app, c);
-        k_web_close(c);
+        if (c == K_BAD_SOCK) {
+            if (k_sock_would_block()) k_task_wait(fd, false, 0);
+            else k_task_sleep(10 * 1000000); /* such as out of file descriptors */
+            continue;
+        }
+        k_sock_nonblock(c);
+        kconn *conn = k_alloc(sizeof *conn);
+        conn->app = (kapp *)app;
+        conn->fd = c;
+        k_task_spawn(k_web_conn, conn);
+        k_task_yield();
     }
 }
 

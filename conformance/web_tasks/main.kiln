@@ -1,0 +1,43 @@
+// Each connection runs on a task of its own, so a handler that sleeps or a
+// client that sends slowly holds up only its own request. The test in
+// crates/kiln_cli/tests/server.rs sends requests at the same time and on
+// kept-alive connections; main.requests checks the answers one at a time.
+import web, os, time
+
+fn main() ! {
+    let app = web.app()
+
+    app.get("/fast", fn(req) {
+        return web.text("fast")
+    })
+
+    // Sleeps while holding values the collector must keep alive, and
+    // checks them afterwards.
+    app.get("/slow", fn(req) {
+        let items = (0..5000).map(fn(i) { "item ${i}" })
+        time.sleep(1s)
+        let last = items[4999]
+        return web.text("slow: ${items.len()} items, the last is ${last}")
+    })
+
+    // Makes garbage, so the collector runs while other tasks are waiting.
+    app.get("/churn", fn(req) {
+        var total = 0
+        for i in 0..100000 {
+            let parts = ["x", "${i}"]
+            total += parts.join("").len()
+        }
+        return web.text("churned ${total}")
+    })
+
+    app.post("/echo", fn(req) {
+        return web.text(req.body)
+    })
+
+    app.get("/quit", fn(req) {
+        print("bye")
+        os.exit(0)
+    })
+
+    try app.listen("127.0.0.1:${env("PORT")}")
+}

@@ -18,7 +18,8 @@
 //!   it accepts connections, and sends each request on a connection of its
 //!   own. A request's lines up to the first empty one are its head, and the
 //!   rest is its body; `content-length` is added when there is a body (a
-//!   chunked body gets `\r\n` line ends instead). The
+//!   chunked body gets `\r\n` line ends instead), and `connection: close`
+//!   unless the request has a `connection` header. The
 //!   last request should make the program exit. Its exit code must then be
 //!   0 (or `main.code`), and `main.err`, with the port written as `PORT`, is
 //!   what it logged on standard error.
@@ -230,6 +231,10 @@ fn send_requests(port: u16, requests: &str) -> String {
             && !lower.contains("\ntransfer-encoding:")
         {
             raw.push_str(&format!("content-length: {}\r\n", body.len()));
+        }
+        // One connection per request, so the client reads to the end.
+        if !lower.contains("\nconnection:") {
+            raw.push_str("connection: close\r\n");
         }
         raw.push_str("\r\n");
         if lower.contains("\ntransfer-encoding: chunked") {
