@@ -1,8 +1,10 @@
-//! The runtime that native executables link with, built by `build.rs` and
-//! carried inside `kiln`, and the signatures of the functions in it that
-//! generated code calls.
+//! The runtimes that native executables are made from, one for each
+//! target, built by `build.rs` and carried inside `kiln`, and the signatures
+//! of the functions in them that generated code calls.
 
-#[cfg(kiln_runtime)]
+use crate::Target;
+
+#[cfg(kiln_runtime_linux)]
 macro_rules! runtime_file {
     ($name:literal) => {
         (
@@ -12,11 +14,11 @@ macro_rules! runtime_file {
     };
 }
 
-/// The runtime's files, in link order: musl's start files, the Kiln
+/// The Linux runtime's files, in link order: musl's start files, the Kiln
 /// runtime, the garbage collector and the C library. The generated object
 /// goes after `crti.o`.
-#[cfg(kiln_runtime)]
-pub(crate) const FILES: &[(&str, &[u8])] = &[
+#[cfg(kiln_runtime_linux)]
+pub(crate) const LINUX_FILES: &[(&str, &[u8])] = &[
     runtime_file!("crt1.o"),
     runtime_file!("crti.o"),
     runtime_file!("native.o"),
@@ -25,14 +27,35 @@ pub(crate) const FILES: &[(&str, &[u8])] = &[
     runtime_file!("crtn.o"),
 ];
 
-#[cfg(not(kiln_runtime))]
-pub(crate) const FILES: &[(&str, &[u8])] = &[];
+#[cfg(not(kiln_runtime_linux))]
+pub(crate) const LINUX_FILES: &[(&str, &[u8])] = &[];
 
-pub(crate) fn unavailable() -> Option<&'static str> {
-    #[cfg(kiln_runtime)]
-    return None;
-    #[cfg(not(kiln_runtime))]
-    return Some(include_str!(concat!(env!("OUT_DIR"), "/missing.txt")));
+/// The Windows runtime: an executable that programs are added to, and
+/// where its symbols are, one `name rva` line each (`rva` in hex).
+#[cfg(kiln_runtime_windows)]
+pub(crate) const WINDOWS_EXE: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/runtime.exe"));
+#[cfg(kiln_runtime_windows)]
+pub(crate) const WINDOWS_SYMBOLS: &str = include_str!(concat!(env!("OUT_DIR"), "/runtime.sym"));
+
+#[cfg(not(kiln_runtime_windows))]
+pub(crate) const WINDOWS_EXE: &[u8] = &[];
+#[cfg(not(kiln_runtime_windows))]
+pub(crate) const WINDOWS_SYMBOLS: &str = "";
+
+pub(crate) fn unavailable(target: Target) -> Option<&'static str> {
+    match target {
+        #[cfg(kiln_runtime_linux)]
+        Target::Linux => None,
+        #[cfg(not(kiln_runtime_linux))]
+        Target::Linux => Some(include_str!(concat!(env!("OUT_DIR"), "/missing-linux.txt"))),
+        #[cfg(kiln_runtime_windows)]
+        Target::Windows => None,
+        #[cfg(not(kiln_runtime_windows))]
+        Target::Windows => Some(include_str!(concat!(
+            env!("OUT_DIR"),
+            "/missing-windows.txt"
+        ))),
+    }
 }
 
 /// The C types of runtime parameters and results.

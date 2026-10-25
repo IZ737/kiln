@@ -117,10 +117,15 @@ thread-local flag that `try` and `catch` check. Parts of the language the
 backend does not support yet are reported as E0401.
 
 The native backend (`crates/kiln_native`, phase 1.5) generates machine code
-from the same IR with Cranelift and links it into a static executable with
-the wild linker, run inside `kiln`. Values are stored as in the C backend
-and both call the same runtime, which `kiln`'s build compiles once, with the
-Boehm collector and the musl C library, for `kiln` to carry. Struct fields
+from the same IR with Cranelift. For Linux it links the code into a static
+executable with the wild linker, run inside `kiln`. For Windows, `kiln`'s
+build links the runtime into an executable with no base relocations, and
+`kiln` adds each program's code and data to a copy of it as new sections,
+applying the relocations itself and writing the program's entry points into
+a table the runtime's `main` reads. Values are stored as in the C backend
+and both call the same runtime, which `kiln`'s build compiles once per
+target, with the Boehm collector and a C library (musl for Linux, the
+`msvcrt` that ships with Windows), for `kiln` to carry. Struct fields
 are slots, so a struct is an array of them. Where the C backend writes a
 show, equality, hash or ordering function for each type, the native one
 writes a description of the type into the executable's data, and runtime
@@ -178,8 +183,16 @@ program gives the same output as with the C backend, a build runs with no
 (about 18 MB) that runs on any Linux x86-64 system. CI and every release
 run all the conformance programs with it inside an empty `FROM scratch`
 container (`scripts/clean-check.sh`), and pushing a `v*` tag publishes it
-as a GitHub release. That meets the phase 1.5 goal for Linux x86-64; the
-Windows target is next.
+as a GitHub release. That meets the phase 1.5 goal for Linux x86-64.
+
+For Windows, `kiln build --target windows` makes `.exe` files that use only
+`kernel32`, `msvcrt` and `user32`, with a manifest that makes file names,
+arguments and the console UTF-8. `kiln.exe` is cross-compiled from Linux
+(`x86_64-pc-windows-gnu`) and carries both runtimes, as the Linux `kiln`
+does, so each builds for both systems. CI runs every conformance program
+with `kiln.exe` on a Windows machine with no C compiler on the `PATH`
+(`scripts/windows-check.sh`), and releases ship it next to the Linux
+`kiln`.
 
 ### What phase 1 leaves for later
 

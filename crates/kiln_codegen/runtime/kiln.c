@@ -21,6 +21,11 @@
 #include <sys/stat.h>
 #include <time.h>
 #include <unistd.h>
+#ifdef _WIN32
+#define WIN32_LEAN_AND_MEAN
+#define NOMINMAX
+#include <windows.h>
+#endif
 
 /* Runtime functions and variables are `K_API`: `static` when the runtime is
  * prepended to generated C, and visible to the linker when the native
@@ -923,6 +928,27 @@ K_API void k_log(const char *level, kstr *message, int n, kstr **data) {
 
 K_API int64_t k_floor_div(int64_t a, int64_t b) { return a / b - (a % b != 0 && (a < 0) != (b < 0)); }
 
+#ifdef _WIN32
+/* 100-nanosecond intervals between 1601-01-01 and 1970-01-01. */
+#define K_FILETIME_UNIX INT64_C(116444736000000000)
+
+K_API int64_t k_time_now(void) {
+    FILETIME ft;
+    GetSystemTimePreciseAsFileTime(&ft);
+    int64_t t = (int64_t)(((uint64_t)ft.dwHighDateTime << 32) | ft.dwLowDateTime);
+    return (t - K_FILETIME_UNIX) * 100;
+}
+
+K_API void k_time_sleep(int64_t ns) {
+    if (ns <= 0) return;
+    int64_t ms = (ns + 999999) / 1000000;
+    while (ms > 0) {
+        DWORD part = ms > 0x7fffffff ? 0x7fffffff : (DWORD)ms;
+        Sleep(part);
+        ms -= part;
+    }
+}
+#else
 K_API int64_t k_time_now(void) {
     struct timespec ts;
     clock_gettime(CLOCK_REALTIME, &ts);
@@ -934,6 +960,7 @@ K_API void k_time_sleep(int64_t ns) {
     struct timespec ts = {(time_t)(ns / K_NS_PER_SEC), (long)(ns % K_NS_PER_SEC)};
     while (nanosleep(&ts, &ts) != 0 && errno == EINTR) {}
 }
+#endif
 
 /* Days since 1970-01-01 to a civil date and back (Howard Hinnant's
  * algorithms, valid for every day an int64_t can hold here). */
@@ -1197,13 +1224,31 @@ K_API klist *k_fs_list(kstr *path) {
     return names;
 }
 
+static inline bool k_path_sep(char c) {
+#ifdef _WIN32
+    return c == '/' || c == '\\';
+#else
+    return c == '/';
+#endif
+}
+
+static inline int k_mkdir(const char *path) {
+#ifdef _WIN32
+    return mkdir(path);
+#else
+    return mkdir(path, 0777);
+#endif
+}
+
 K_API void k_fs_mkdir(kstr *path) {
     kstr *p = k_str_n(path->data, path->len);
     for (int64_t i = 1; i <= p->len; i++) {
-        if (i < p->len && p->data[i] != '/') continue;
+        if (i < p->len && !k_path_sep(p->data[i])) continue;
+        /* A drive, such as `C:`, is there already. */
+        if (p->data[i - 1] == ':') continue;
         char saved = p->data[i];
         p->data[i] = 0;
-        if (mkdir(p->data, 0777) != 0 && !(errno == EEXIST && k_fs_is_dir(p))) {
+        if (k_mkdir(p->data) != 0 && !(errno == EEXIST && k_fs_is_dir(p))) {
             p->data[i] = saved;
             k_lib_fail("create the directory", path);
             return;
@@ -1213,11 +1258,23 @@ K_API void k_fs_mkdir(kstr *path) {
 }
 
 K_API void k_fs_remove(kstr *path) {
-    if (remove(k_cstr(path)) != 0) k_lib_fail("remove", path);
+#ifdef _WIN32
+    /* Windows' remove removes only files. */
+    int failed = k_fs_is_dir(path) ? rmdir(k_cstr(path)) : remove(k_cstr(path));
+#else
+    int failed = remove(k_cstr(path));
+#endif
+    if (failed != 0) k_lib_fail("remove", path);
 }
 
 K_API void k_fs_rename(kstr *from, kstr *to) {
+#ifdef _WIN32
+    /* Unlike rename on POSIX systems, Windows' rename keeps a file already
+     * at `to`. */
+    if (!MoveFileExA(k_cstr(from), k_cstr(to), MOVEFILE_REPLACE_EXISTING)) k_lib_fail("rename", from);
+#else
     if (rename(k_cstr(from), k_cstr(to)) != 0) k_lib_fail("rename", from);
+#endif
 }
 
 /* ----- os ----- */
@@ -1252,10 +1309,16 @@ K_API kstr *k_os_cwd(void) {
 }
 
 K_API kstr *k_os_temp_dir(void) {
+#ifdef _WIN32
+    const char *v = getenv("TEMP");
+    if (!v || !*v) v = getenv("TMP");
+    if (!v || !*v) return k_str("C:\\Windows\\Temp");
+#else
     const char *v = getenv("TMPDIR");
     if (!v || !*v) return k_str("/tmp");
+#endif
     size_t n = strlen(v);
-    while (n > 1 && v[n - 1] == '/') n--;
+    while (n > 1 && k_path_sep(v[n - 1])) n--;
     return k_str_n(v, (int64_t)n);
 }
 

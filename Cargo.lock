@@ -809,7 +809,7 @@ dependencies = [
 
 [[package]]
 name = "kiln_native"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "cranelift-codegen",
  "cranelift-frontend",
@@ -820,6 +820,7 @@ dependencies = [
  "kiln_ir",
  "kiln_syntax",
  "libwild",
+ "object",
 ]
 
 [[package]]

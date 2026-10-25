@@ -1,6 +1,6 @@
 [package]
 name = "kiln_native"
-description = "The native backend of the Kiln compiler: Cranelift code generation and a built-in linker"
+description = "The native backend of the Kiln compiler: Cranelift code generation and built-in linking for Linux and Windows"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -16,6 +16,7 @@ cranelift-frontend = "0.137"
 cranelift-module = "0.137"
 cranelift-object = "0.137"
 libwild = "=0.10.0"
+object = { version = "0.40", default-features = false, features = ["std", "read_core", "coff"] }
 
 [dev-dependencies]
 kiln_syntax.workspace = true

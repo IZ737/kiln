@@ -15,6 +15,7 @@
 //! `runtime/native.c`).
 
 use crate::runtime::{self, C};
+use crate::Target;
 use cranelift_codegen::ir::condcodes::{FloatCC, IntCC};
 use cranelift_codegen::ir::{
     self, types, AbiParam, BlockArg, InstBuilder, MemFlagsData, Signature, StackSlotData,
@@ -30,8 +31,8 @@ use kiln_diagnostics::{codes, Diagnostic, Span};
 use kiln_ir::*;
 use std::collections::{HashMap, HashSet};
 
-pub(crate) fn compile(program: &Program) -> Result<Vec<u8>, Vec<Diagnostic>> {
-    let mut gen = Gen::new(program);
+pub(crate) fn compile(program: &Program, target: Target) -> Result<Vec<u8>, Vec<Diagnostic>> {
+    let mut gen = Gen::new(program, target);
     gen.program();
     if !gen.diags.is_empty() {
         let mut diags = gen.diags;
@@ -91,6 +92,8 @@ struct Gen<'a> {
     p: &'a Program,
     prims: Prims,
     m: ObjectModule,
+    /// The C calling convention of the target, used by every function.
+    cc: CallConv,
     diags: Vec<Diagnostic>,
     /// The object's function for each IR function.
     funcs: Vec<ObjFn>,
@@ -108,14 +111,25 @@ struct Gen<'a> {
 }
 
 impl<'a> Gen<'a> {
-    fn new(p: &'a Program) -> Self {
+    fn new(p: &'a Program, target: Target) -> Self {
         let mut flags = settings::builder();
         flags.set("opt_level", "speed").unwrap();
         flags.set("is_pic", "false").unwrap();
-        let isa = cranelift_codegen::isa::lookup_by_name("x86_64-unknown-linux-gnu")
+        let triple = match target {
+            Target::Linux => "x86_64-unknown-linux-gnu",
+            Target::Windows => {
+                // Windows grows the stack one guard page at a time, so a
+                // frame larger than a page must touch each page in turn.
+                flags.set("enable_probestack", "true").unwrap();
+                flags.set("probestack_strategy", "inline").unwrap();
+                "x86_64-pc-windows-gnu"
+            }
+        };
+        let isa = cranelift_codegen::isa::lookup_by_name(triple)
             .unwrap()
             .finish(settings::Flags::new(flags))
             .unwrap();
+        let cc = isa.default_call_conv();
         let builder =
             ObjectBuilder::new(isa, "kiln", cranelift_module::default_libcall_names()).unwrap();
         let mut m = ObjectModule::new(builder);
@@ -126,6 +140,7 @@ impl<'a> Gen<'a> {
             p,
             prims: p.prims,
             m,
+            cc,
             diags: Vec::new(),
             funcs: Vec::new(),
             imports: HashMap::new(),
@@ -172,7 +187,7 @@ impl<'a> Gen<'a> {
     fn func_sig(&self, id: FuncId) -> Signature {
         let func = &self.p.funcs[id];
         if func.kind == FuncKind::Closure {
-            return sig(&[types::I64, types::I64], Some(types::I64));
+            return sig(self.cc, &[types::I64, types::I64], Some(types::I64));
         }
         let params: Vec<Type> = func
             .params
@@ -180,7 +195,7 @@ impl<'a> Gen<'a> {
             .map(|&l| self.cty(&func.locals[l].ty))
             .collect();
         let ret = (!is_void(&func.ret)).then(|| self.cty(&func.ret));
-        sig(&params, ret)
+        sig(self.cc, &params, ret)
     }
 
     /// Generates a function's body with `body`.
@@ -369,7 +384,7 @@ impl<'a> Gen<'a> {
         }
         let (params, ret) = runtime::signature(name)
             .unwrap_or_else(|| panic!("internal compiler error: no signature for `{name}`"));
-        let mut s = Signature::new(CallConv::SystemV);
+        let mut s = Signature::new(self.cc);
         let abi = |c: C| match c {
             C::I64 => AbiParam::new(types::I64),
             C::F64 => AbiParam::new(types::F64),
@@ -638,7 +653,7 @@ impl<'a> Gen<'a> {
         self.check(Op::Show, ty, span);
         let d = self.desc(ty);
         let key = format!("show:{quote}:{ty:?}");
-        self.helper(key, sig(&[types::I64], Some(types::I64)), |fx| {
+        self.helper(key, sig(self.cc, &[types::I64], Some(types::I64)), |fx| {
             let v = fx.param(0);
             let addr = fx.data_addr(d);
             let q = fx.b.ins().iconst(types::I8, i64::from(quote));
@@ -652,12 +667,16 @@ impl<'a> Gen<'a> {
         self.check(Op::Eq, ty, span);
         let d = self.desc(ty);
         let key = format!("eq:{ty:?}");
-        self.helper(key, sig(&[types::I64, types::I64], Some(types::I8)), |fx| {
-            let (a, b) = (fx.param(0), fx.param(1));
-            let addr = fx.data_addr(d);
-            let r = fx.call_rt("k_desc_eq", &[addr, a, b]);
-            fx.b.ins().return_(&[r]);
-        })
+        self.helper(
+            key,
+            sig(self.cc, &[types::I64, types::I64], Some(types::I8)),
+            |fx| {
+                let (a, b) = (fx.param(0), fx.param(1));
+                let addr = fx.data_addr(d);
+                let r = fx.call_rt("k_desc_eq", &[addr, a, b]);
+                fx.b.ins().return_(&[r]);
+            },
+        )
     }
 
     /// The hash function for map keys and set items of `ty`.
@@ -673,7 +692,7 @@ impl<'a> Gen<'a> {
         self.check(Op::Hash, ty, span);
         let d = self.desc(ty);
         let key = format!("hash:{ty:?}");
-        self.helper(key, sig(&[types::I64], Some(types::I64)), |fx| {
+        self.helper(key, sig(self.cc, &[types::I64], Some(types::I64)), |fx| {
             let v = fx.param(0);
             let addr = fx.data_addr(d);
             let r = fx.call_rt("k_desc_hash", &[addr, v]);
@@ -688,7 +707,7 @@ impl<'a> Gen<'a> {
         let key = format!("cmp:{ty:?}");
         self.helper(
             key,
-            sig(&[types::I64, types::I64], Some(types::I32)),
+            sig(self.cc, &[types::I64, types::I64], Some(types::I32)),
             |fx| {
                 let (a, b) = (fx.param(0), fx.param(1));
                 let addr = fx.data_addr(d);
@@ -704,7 +723,7 @@ impl<'a> Gen<'a> {
         let offset = 8 * self.field_index(self.prims.error, "message") as i32;
         self.helper(
             "error-message".into(),
-            sig(&[types::I64], Some(types::I64)),
+            sig(self.cc, &[types::I64], Some(types::I64)),
             |fx| {
                 let v = fx.param(0);
                 let m = fx.load(types::I64, v, offset);
@@ -720,7 +739,7 @@ impl<'a> Gen<'a> {
         let target = self.funcs[id];
         self.helper(
             format!("fn:{id}"),
-            sig(&[types::I64, types::I64], Some(types::I64)),
+            sig(self.cc, &[types::I64, types::I64], Some(types::I64)),
             |fx| {
                 let args = fx.param(1);
                 let mut vals = Vec::new();
@@ -1060,7 +1079,7 @@ impl Fx<'_, '_, '_> {
             let err = self.load(types::I64, err_addr, 0);
             let sigref = self
                 .b
-                .import_signature(sig(&[types::I64], Some(types::I64)));
+                .import_signature(sig(self.g.cc, &[types::I64], Some(types::I64)));
             let call = self.b.ins().call_indirect(sigref, show, &[err]);
             let message = self.b.inst_results(call)[0];
             let w = self.new_error(message);
@@ -1771,9 +1790,11 @@ impl Fx<'_, '_, '_> {
                 let arr = self.stack_array(&kvs);
                 let func = self.load(types::I64, c, 0);
                 let env = self.load(types::I64, c, 8);
-                let sigref = self
-                    .b
-                    .import_signature(sig(&[types::I64, types::I64], Some(types::I64)));
+                let sigref = self.b.import_signature(sig(
+                    self.g.cc,
+                    &[types::I64, types::I64],
+                    Some(types::I64),
+                ));
                 let call = self.b.ins().call_indirect(sigref, func, &[env, arr]);
                 let raw = self.b.inst_results(call)[0];
                 if is_void(&f.ret) {
@@ -2419,8 +2440,8 @@ impl Fx<'_, '_, '_> {
     }
 }
 
-fn sig(params: &[Type], ret: Option<Type>) -> Signature {
-    let mut s = Signature::new(CallConv::SystemV);
+fn sig(cc: CallConv, params: &[Type], ret: Option<Type>) -> Signature {
+    let mut s = Signature::new(cc);
     s.params.extend(params.iter().map(|&t| AbiParam::new(t)));
     s.returns.extend(ret.map(AbiParam::new));
     s

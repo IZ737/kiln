@@ -261,14 +261,46 @@ int k_desc_cmp(const kdesc *d, kv a, kv b) {
     return 0;
 }
 
+#ifdef _WIN32
+#include <fcntl.h>
+#include <io.h>
+
+/* On Windows the runtime is an executable linked when `kiln` is built, and
+ * `kiln` adds a program to it as new sections (see `pe.rs`). It writes the
+ * addresses of the program's `kiln_init` and `kiln_main` here. The table is
+ * in `.data`, not `.bss`, so that it has bytes in the file to write. */
+typedef struct kiln_program {
+    void (*init)(void);
+    void (*main)(void);
+} kiln_program;
+__attribute__((section(".data"))) volatile kiln_program kiln_entry = {0, 0};
+
+/* C library functions that generated code calls, kept in the executable. */
+double (*const kiln_keep_math1[])(double) = {round, floor, ceil};
+double (*const kiln_keep_math2[])(double, double) = {fmod, fmin, fmax};
+
+#define kiln_init kiln_entry.init
+#define kiln_main kiln_entry.main
+#else
 /* Defined by the generated code: they set the globals and run `main`. */
 extern void kiln_init(void);
 extern void kiln_main(void);
+#endif
 
 int main(int argc, char **argv) {
+#ifdef _WIN32
+    /* Output is bytes, as on other systems: no `\r` before each `\n`. The
+     * executable's manifest makes `argv`, file names and the environment
+     * UTF-8, and the console shows UTF-8 output. */
+    _setmode(_fileno(stdin), _O_BINARY);
+    _setmode(_fileno(stdout), _O_BINARY);
+    _setmode(_fileno(stderr), _O_BINARY);
+    SetConsoleOutputCP(CP_UTF8);
+#else
     /* The collector would read /proc to find the stack, which a minimal
      * system may not have. Kiln code runs in frames below this one. */
     GC_stackbottom = (char *)__builtin_frame_address(0);
+#endif
     GC_INIT();
     k_argc = argc;
     k_argv = argv;
