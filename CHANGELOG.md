@@ -1,6 +1,9 @@
 # Changelog
 
-## Unreleased
+## 0.7.0 (2026-10-25)
+
+Phase 3: glazes render, with styles, typed `ui`, Finishes and themes, and
+Kiln's documentation site is a Kiln program.
 
 - **Glazes render.** `web.render("page.glaze", { props })` runs the glaze
   and answers with HTML. Glazes are compiled into the program on both
