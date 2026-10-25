@@ -16,6 +16,9 @@
 //!   Rust panic is a bug in the runtime and never unwinds into C or
 //!   generated code.
 
+mod json;
+mod value;
 mod web;
 
+pub use json::{k_json_encode, k_rt_json_decode};
 pub use web::k_web_reason;

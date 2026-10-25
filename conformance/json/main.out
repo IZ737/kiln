@@ -19,7 +19,7 @@ cannot read JSON: missing field `title` at $
 cannot read JSON: expected an integer at $.id, found a string
 cannot read JSON: expected an integer at $.id, found a number
 cannot read JSON: expected a string at $.tags[1], found a number
-invalid JSON at line 1, column 10: expected a member name in quotes
+invalid JSON at line 1, column 10: expected another value after `,`
 cannot read JSON: expected an object at $, found an array
 cannot read JSON: missing field `id` at $
 cannot read JSON: expected an integer that fits in 64 bits at $.id, found a number

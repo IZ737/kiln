@@ -317,6 +317,13 @@ field's default value is not used yet. Errors say what was expected and
 where: `cannot read JSON: expected a string at $.tags[1], found a number`,
 or `invalid JSON at line 1, column 10: ...` for text that is not JSON.
 
+The encoder and decoder are [serde_json](https://github.com/serde-rs/json),
+in the runtime's Rust part. Text to decode must be UTF-8, and string
+escapes must be well formed (a `\u` surrogate needs its other half);
+encoding writes bytes of a string that are not UTF-8 as U+FFFD. Values
+nested past 128 levels in the type being read are rejected; nesting in
+members that are skipped has no limit and cannot overflow the stack.
+
 ## Adding to the standard library
 
 1. Declare the signature in `crates/kiln_check/std/<module>.kiln`, and list a

@@ -1,0 +1,29 @@
+ok a 1
+ok a 1
+ok 🏺 é	 2
+invalid JSON at line 1, column 18: expected the second half of a surrogate pair
+invalid JSON at line 1, column 17: unexpected second half of a surrogate pair
+invalid JSON at line 1, column 13: unknown escape
+invalid JSON at line 1, column 17: unknown escape
+invalid JSON at line 1, column 17: unknown escape
+invalid JSON at line 1, column 15: control characters must be escaped in strings
+invalid JSON: expected the end of the string, but the text ended
+[0, 0, 9223372036854775807, -9223372036854775808]
+cannot read JSON: expected an integer that fits in 64 bits at $[0], found a number
+cannot read JSON: expected an integer that fits in 64 bits at $[0], found a number
+invalid JSON at line 1, column 6: the number is too large
+invalid JSON at line 1, column 3: not a valid number
+invalid JSON at line 1, column 4: not a valid number
+invalid JSON at line 1, column 3: not a valid number
+invalid JSON at line 1, column 2: expected a value
+invalid JSON: expected a value, but the text ended
+invalid JSON: expected a value, but the text ended
+invalid JSON at line 1, column 28: unexpected text after the value
+invalid JSON at line 1, column 15: expected `,` or `}`
+invalid JSON at line 1, column 27: expected another value after `,`
+invalid JSON at line 1, column 2: expected a member name in quotes
+ok b 3
+invalid JSON at line 1, column 7: expected another value after `,`
+invalid JSON at line 1, column 4: expected `,` or `]`
+invalid JSON at line 1, column 5: expected a value
+cannot read JSON: expected an integer at $[0], found a boolean

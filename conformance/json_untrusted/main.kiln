@@ -1,0 +1,66 @@
+// JSON from outside the program: malformed, hostile or unusual text gets
+// an error, never a crash or a wrong value.
+import json
+
+struct Note {
+    title: String
+    count: Int
+}
+
+fn read(text: String) {
+    let n = json.decode<Note>(text) catch err {
+        print(err.message)
+        return
+    }
+    print("ok ${n.title} ${n.count}")
+}
+
+fn read_ints(text: String) {
+    let xs = json.decode<List<Int>>(text) catch err {
+        print(err.message)
+        return
+    }
+    print(xs)
+}
+
+fn main() {
+    // Nesting: values the program skips are skipped without recursion, so
+    // depth cannot overflow the stack.
+    let deep = "[".repeat(100) + "]".repeat(100)
+    read("{\"title\": \"a\", \"count\": 1, \"extra\": ${deep}}")
+    let deeper = "[".repeat(10000) + "]".repeat(10000)
+    read("{\"title\": \"a\", \"count\": 1, \"extra\": ${deeper}}")
+
+    // Strings: escapes, surrogates and control characters.
+    read("{\"title\": \"\\ud83c\\udffa \\u00e9\\t\", \"count\": 2}")
+    read("{\"title\": \"\\ud83c\", \"count\": 2}")
+    read("{\"title\": \"\\udffa\", \"count\": 2}")
+    read("{\"title\": \"\\q\", \"count\": 2}")
+    read("{\"title\": \"\\u12\", \"count\": 2}")
+    read("{\"title\": \"\\u12xy\", \"count\": 2}")
+    read("{\"title\": \"tab\there\", \"count\": 2}")
+    read("{\"title\": \"no end")
+
+    // Numbers.
+    read_ints("[0, -0, 9223372036854775807, -9223372036854775808]")
+    read_ints("[9223372036854775808]")
+    read_ints("[-9223372036854775809]")
+    read_ints("[1e400]")
+    read_ints("[01]")
+    read_ints("[1.]")
+    read_ints("[-]")
+    read_ints("[.5]")
+
+    // Structure.
+    read("")
+    read("   ")
+    read("{\"title\": \"a\", \"count\": 1} {}")
+    read("{\"title\": \"a\" \"count\": 1}")
+    read("{\"title\": \"a\", \"count\": 1,}")
+    read("{title: \"a\"}")
+    read("{\"title\": \"a\", \"title\": \"b\", \"count\": 3}")
+    read_ints("[1, 2,]")
+    read_ints("[1 2]")
+    read_ints("[nul]")
+    read_ints("[true]")
+}
