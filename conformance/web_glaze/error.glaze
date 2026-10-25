@@ -1,0 +1,4 @@
+{% props status: Int, message: String %}
+{% layout "layout.glaze" title: "Error ${status}" %}
+<h1>{status}</h1>
+<p>{message}</p>

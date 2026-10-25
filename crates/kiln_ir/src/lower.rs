@@ -1853,6 +1853,9 @@ impl<'a> Lowerer<'a> {
         if let Some(id) = ty {
             return (self.construct(id, args, rt.clone(), span), None);
         }
+        if module == "web" && name.name == "render" {
+            return self.render(args, rt, span);
+        }
         if LIB_MODULES.contains(&module) {
             let sig = self
                 .p
@@ -1881,9 +1884,63 @@ impl<'a> Lowerer<'a> {
     }
 }
 
+impl Lowerer<'_> {
+    /// `web.render("post.glaze", { post })` calls the function compiled from
+    /// the glaze (see [`crate::glaze`]) with the data as named arguments,
+    /// and makes an HTML response of what it returns.
+    fn render(&mut self, args: &[ast::Arg], rt: &Ty, span: Span) -> (Expr, Option<Ty>) {
+        let file = args.first().and_then(|a| match &a.value.kind {
+            E::Str(pieces) => match pieces.as_slice() {
+                [ast::StrPiece::Text(t)] => Some(t.clone()),
+                _ => None,
+            },
+            _ => None,
+        });
+        let Some(file) = file else {
+            let what = "`web.render` with a glaze name worked out at run time";
+            return (self.unsupported(span, what), None);
+        };
+        let fname = crate::glaze::render_fn(&file);
+        let Some(&(func, decl)) = self.fns.get(&fname) else {
+            return (self.unsupported(span, format!("rendering `{file}`")), None);
+        };
+        let mut data = Vec::new();
+        if let Some(arg) = args.get(1) {
+            let E::Record(fields) = &arg.value.kind else {
+                return (
+                    self.unsupported(arg.value.span, "render data that is not a record literal"),
+                    None,
+                );
+            };
+            for f in fields {
+                let value = f.value.clone().unwrap_or_else(|| ast::Expr {
+                    kind: E::Ident(f.name.name.clone()),
+                    span: f.name.span,
+                });
+                data.push(ast::Arg {
+                    name: Some(f.name.clone()),
+                    value,
+                });
+            }
+        }
+        let sig = self.p.global_fns[&fname].clone();
+        let string = Ty::Adt(self.prims.string, Vec::new());
+        let (func, sig) = self.instance(func, Template::Fn(fname), &sig, span, None);
+        let (html, _) = self.user_call(func, &sig, decl, None, &data, &string, span);
+        let int = Ty::Adt(self.prims.int, Vec::new());
+        let status = mk(ExprKind::Int(200), int, span);
+        let kind = ExprKind::Lib {
+            module: "web".into(),
+            name: "html".into(),
+            args: vec![html, status],
+        };
+        (mk(kind, rt.clone(), span), None)
+    }
+}
+
 /// Modules whose functions become [`ExprKind::Lib`] calls, for the
 /// backend to build.
-const LIB_MODULES: &[&str] = &["time", "fs", "os", "io", "web", "json"];
+const LIB_MODULES: &[&str] = &["time", "fs", "os", "io", "web", "json", "html"];
 
 /// Types of those modules whose methods are [`ExprKind::Lib`] calls too,
 /// named `Type.method`, with the receiver as the first argument.

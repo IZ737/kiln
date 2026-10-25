@@ -1,0 +1,12 @@
+{# The layout: pages fill its slot. #}
+{% props title: String %}
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <title>{title} · Kiln</title>
+  </head>
+  <body>
+    {% slot %}
+  </body>
+</html>

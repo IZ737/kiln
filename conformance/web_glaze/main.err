@@ -1,0 +1,7 @@
+info listening on http://127.0.0.1:PORT
+info GET / 200 TIME
+info GET / 200 TIME
+info GET / 200 TIME
+info GET /pots/2 200 TIME
+info GET /pots/7 404 TIME
+info GET /missing/%3Cb%3E 404 TIME

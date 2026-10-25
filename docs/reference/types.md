@@ -128,6 +128,9 @@ files, and its `.kiln` files see the props of its glazes.
   hydration hints, not props.
 - `{% layout "base.glaze" title: value %}` passes props to the layout, which
   must contain `{% slot %}`.
+- A value in an attribute where escaping does not make it safe is E0309:
+  any value in `onclick` and the other `on...` attributes or in `srcdoc`,
+  and a value other than an `Int` or `Float` in `style`.
 - An ember (a glaze with `{% state %}` or an `on:` handler) runs in the
   browser: `sql` and `auth` are server-only (E0218). Call a `server fn`
   instead. Handlers cannot fail, so errors from a `server fn` are handled with

@@ -8,6 +8,19 @@ use kiln_diagnostics::{codes, Diagnostic, Span};
 use kiln_syntax::ast::*;
 use std::collections::HashMap;
 
+/// What a value a glaze outputs is, which decides how the compiler turns it
+/// into text: a `Bool` attribute value adds or leaves out the attribute,
+/// and other values are shown and escaped.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ValueKind {
+    String,
+    Bool,
+    /// `Int` or `Float`.
+    Number,
+    /// Any other type that has a text form, or an error.
+    Other,
+}
+
 /// How a prop is given: an attribute value or a named argument.
 enum PropValue<'a> {
     Expr(&'a Expr),
@@ -87,6 +100,7 @@ impl Checker {
                 Node::Text { .. } | Node::Slot { .. } => {}
                 Node::Expr { expr, raw, .. } => {
                     let ty = self.infer(expr, &Expect::Value(None));
+                    self.record_value(expr.span, &ty);
                     if *raw {
                         let string = self.prim("String");
                         self.coerce(&ty, &string, expr.span);
@@ -179,25 +193,81 @@ impl Checker {
     fn check_attr(&mut self, attr: &Attr) {
         match &attr.value {
             AttrValue::Flag => {}
-            AttrValue::Text(parts) => self.check_text_parts(parts),
+            AttrValue::Text(parts) => {
+                let kinds = self.check_text_parts(parts);
+                for (span, kind) in kinds {
+                    self.check_attr_value(&attr.name, kind, span);
+                }
+            }
             AttrValue::Expr(e) => {
                 let ty = self.infer(e, &Expect::Value(None));
+                let kind = self.record_value(e.span, &ty);
                 // `disabled={busy}`: a boolean adds or leaves out the attribute.
-                if !self.is_prim(&self.resolve(&ty), "Bool") {
+                if kind != ValueKind::Bool {
                     self.displayable(&ty, e.span);
+                    self.check_attr_value(&attr.name, kind, e.span);
                 }
             }
             AttrValue::Handler(block) => self.check_handler(block),
         }
     }
 
-    fn check_text_parts(&mut self, parts: &[AttrPart]) {
+    /// Reports a value in an attribute whose text the browser runs as code
+    /// or reads as CSS, where escaping does not make it safe.
+    fn check_attr_value(&mut self, name: &Ident, kind: ValueKind, span: Span) {
+        let attr = name.name.to_ascii_lowercase();
+        let help = if attr == "style" {
+            if kind == ValueKind::Number {
+                return;
+            }
+            "only numbers can go in `style`; choose a class for the value instead"
+        } else if attr.starts_with("on") && !attr.starts_with("on:") {
+            "write the JavaScript out in full, or handle the event with `on:...` in an ember"
+        } else if attr == "srcdoc" {
+            "render the page at a route of its own and use `src`"
+        } else {
+            return;
+        };
+        self.error(
+            Diagnostic::error(
+                codes::UNSAFE_ATTRIBUTE,
+                format!(
+                    "a value in `{}` could run code or change the page",
+                    name.name
+                ),
+                span,
+            )
+            .with_help(help),
+        );
+    }
+
+    /// Checks the values in a text attribute or prop, returning what each is.
+    fn check_text_parts(&mut self, parts: &[AttrPart]) -> Vec<(Span, ValueKind)> {
+        let mut kinds = Vec::new();
         for part in parts {
             if let AttrPart::Expr(e) = part {
                 let ty = self.infer(e, &Expect::Value(None));
+                kinds.push((e.span, self.record_value(e.span, &ty)));
                 self.displayable(&ty, e.span);
             }
         }
+        kinds
+    }
+
+    /// Records what a value that a glaze outputs is, for the compiler.
+    fn record_value(&mut self, span: Span, ty: &Ty) -> ValueKind {
+        let ty = self.resolve(ty);
+        let kind = if self.is_prim(&ty, "String") {
+            ValueKind::String
+        } else if self.is_prim(&ty, "Bool") {
+            ValueKind::Bool
+        } else if self.is_prim(&ty, "Int") || self.is_prim(&ty, "Float") {
+            ValueKind::Number
+        } else {
+            ValueKind::Other
+        };
+        self.glaze_values.insert(span, kind);
+        kind
     }
 
     /// `on:click={ ... }`: statements that run in the browser and cannot
@@ -484,6 +554,8 @@ impl Checker {
                 PropValue::Expr(x) => self.check(x, &prop.ty),
                 PropValue::Shorthand(id) => {
                     let ty = self.infer_ident(&id.name, id.span);
+                    // The compiler reads `{ posts }` as `posts: posts`.
+                    self.expr_types.insert(id.span, ty.clone());
                     self.coerce(&ty, &prop.ty, id.span);
                 }
                 PropValue::Text(parts) => {

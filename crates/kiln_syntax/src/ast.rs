@@ -363,6 +363,9 @@ pub struct Glaze {
     /// `{% layout "base.glaze" title: post.title %}`
     pub layout: Option<Layout>,
     pub nodes: Vec<Node>,
+    /// Where each `{% tag %}` and `{# comment #}` is. A line that holds
+    /// only these renders as nothing, not as a blank line.
+    pub tags: Vec<Span>,
 }
 
 impl Glaze {

@@ -1,0 +1,13 @@
+GET / HTTP/1.1
+###
+GET /?q=%3Cscript%3Ealert(1)%3C/script%3E HTTP/1.1
+###
+GET /?q=ju HTTP/1.1
+###
+GET /pots/2 HTTP/1.1
+###
+GET /pots/7 HTTP/1.1
+###
+GET /missing/%3Cb%3E HTTP/1.1
+###
+GET /quit HTTP/1.1

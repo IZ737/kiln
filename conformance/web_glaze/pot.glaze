@@ -1,0 +1,4 @@
+{% props pot: Pot %}
+{% layout "layout.glaze" title: pot.name %}
+<h1>{pot.name}</h1>
+<p>Glazed in {pot.glaze}.</p>

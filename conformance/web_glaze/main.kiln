@@ -1,0 +1,36 @@
+// A server that renders pages from glazes: the page's data comes from the
+// request, so these responses show how values from clients are escaped.
+import web, os
+
+struct Pot {
+    id: Int
+    name: String
+    glaze: String
+}
+
+fn pots() -> List<Pot> {
+    return [Pot(id: 1, name: "Bowl", glaze: "celadon"), Pot(id: 2, name: "Jug", glaze: "tenmoku")]
+}
+
+fn main() ! {
+    let app = web.app()
+    app.get("/", fn(req) {
+        return web.render("index.glaze", { pots: pots(), search: req.query("q") ?? "" })
+    })
+    app.get("/pots/{id: Int}", fn(req, id) {
+        let pot = pots().find(fn(p) { p.id == id }) ?? throw web.error(404, "there is no pot ${id}")
+        var res = web.render("pot.glaze", { pot })
+        res.headers["cache-control"] = "no-store"
+        return res
+    })
+    app.on_error(fn(req, status, message) {
+        let page = web.render("error.glaze", { status, message })
+        return web.html(page.body, status: status)
+    })
+    app.get("/quit", fn(req) {
+        os.exit(0)
+        return web.text("bye")
+    })
+    let port = os.env("PORT") ?? "8080"
+    try app.listen("127.0.0.1:${port}")
+}

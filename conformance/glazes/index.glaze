@@ -1,0 +1,30 @@
+{% props posts: List<Post>, status: Status, title: String = "Posts" %}
+{% layout "base.glaze" title: title %}
+<h1>{title}</h1>
+<ul class="posts count-{posts.len()}">
+  {% for post in posts where post.published %}
+    <li id="post-{post.id}" data-tags={post.tags.len()}>
+      <a href="/posts/{post.id}">{post.title}</a>
+      {% for tag in post.tags %}<Tag name={tag} />{% empty %}<em>untagged</em>{% end %}
+    </li>
+  {% empty %}
+    <li>Nothing published yet.</li>
+  {% end %}
+</ul>
+{% let shown = posts.filter(.published).len() %}
+<Card title="{shown} of {posts.len()} shown" highlight>
+  <p>Inside the card: {title}</p>
+</Card>
+<p class="status">
+  {% match status %}
+    {% case Draft %}draft
+    {% case Live(views) if views >= 1000 %}popular: {views} views
+    {% case Live(views) %}{views} views
+  {% end %}
+</p>
+{% if shown > 2 %}many{% else if shown > 0 %}some{% else %}none{% end %}
+<input type="checkbox" checked={shown > 0} disabled={shown > 5}>
+<p>{1.5} {true} {-7} {2s}</p>
+{raw "<hr>"}
+<script>if (a < b && c) { go("{not a value}") }</script>
+<style>.posts { color: red; }</style>

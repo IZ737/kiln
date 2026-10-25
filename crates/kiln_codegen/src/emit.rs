@@ -1598,6 +1598,10 @@ impl<'a> Gen<'a> {
                 self.store(&format!("k_web_listen({}, {})", arg(0), arg(1)), ty),
                 true,
             ),
+            ("html", "escape" | "safe_url") => {
+                let call = format!("k_rt_html_{name}({})", arg(0));
+                (self.store(&call, ty), false)
+            }
             ("json", "encode") => {
                 let d = self.desc(&tys[0]);
                 (

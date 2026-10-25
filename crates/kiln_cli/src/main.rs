@@ -6,9 +6,9 @@ mod notice;
 mod upgrade;
 
 use clap::{Parser, Subcommand};
-use kiln_diagnostics::{codes, Diagnostic, SourceFile};
+use kiln_diagnostics::{codes, Diagnostic, SourceFile, Span};
 use kiln_native::Target;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
@@ -281,6 +281,18 @@ fn check_dir(
 
 /// Parses and type-checks the files of one directory, given their text.
 pub(crate) fn check_sources(texts: Vec<(PathBuf, String)>) -> Vec<(SourceFile, Vec<Diagnostic>)> {
+    check_app_sources(texts).0
+}
+
+/// What the checker found each value a glaze outputs to be, for each glaze
+/// in the order given.
+type GlazeValues = Vec<HashMap<Span, kiln_check::ValueKind>>;
+
+/// [`check_sources`], also returning what the compiler needs to know about
+/// the glazes' values when the files have no errors.
+fn check_app_sources(
+    texts: Vec<(PathBuf, String)>,
+) -> (Vec<(SourceFile, Vec<Diagnostic>)>, GlazeValues) {
     let mut sources = Vec::new();
     for (path, text) in &texts {
         let file = SourceFile::new(path.display().to_string(), text.clone());
@@ -296,13 +308,14 @@ pub(crate) fn check_sources(texts: Vec<(PathBuf, String)>) -> Vec<(SourceFile, V
         Parsed::Glaze(r) => r.diagnostics.clone(),
     };
     if sources.iter().any(|(_, _, p)| !parse_errors(p).is_empty()) {
-        return sources
+        let files = sources
             .into_iter()
             .map(|(_, file, p)| {
                 let diags = parse_errors(&p);
                 (file, diags)
             })
             .collect();
+        return (files, Vec::new());
     }
     let modules: Vec<&kiln_syntax::ast::Module> = sources
         .iter()
@@ -340,7 +353,7 @@ pub(crate) fn check_sources(texts: Vec<(PathBuf, String)>) -> Vec<(SourceFile, V
         };
         out.push((file.clone(), diags.unwrap_or_default()));
     }
-    out
+    (out, result.glaze_values)
 }
 
 /// The folder a program lives in, and its `.kiln` and `.glaze` files. A
@@ -424,10 +437,15 @@ fn build(
         eprintln!("{count} error(s). Run `kiln explain <code>` for details.");
         ExitCode::FAILURE
     };
-    let checked = check_dir(&files).map_err(|(p, err)| {
-        eprintln!("error: cannot read {}: {err}", p.display());
-        ExitCode::from(2)
-    })?;
+    let mut texts = Vec::new();
+    for path in &files {
+        let text = std::fs::read_to_string(path).map_err(|err| {
+            eprintln!("error: cannot read {}: {err}", path.display());
+            ExitCode::from(2)
+        })?;
+        texts.push((path.clone(), text));
+    }
+    let (checked, glaze_values) = check_app_sources(texts);
     let count: usize = checked.iter().map(|(_, d)| d.len()).sum();
     if count > 0 {
         for (file, diagnostics) in &checked {
@@ -458,14 +476,76 @@ fn build(
             combined.push('\n');
         }
     }
+
+    // Glazes are compiled into Kiln functions, which follow the files'
+    // text. Errors in them are mapped back to the glazes.
+    let glaze_files: Vec<&SourceFile> = checked
+        .iter()
+        .map(|(f, _)| f)
+        .filter(|f| is_glaze(Path::new(&f.name)))
+        .collect();
+    let parsed_glazes: Vec<kiln_syntax::ast::Glaze> = glaze_files
+        .iter()
+        .map(|f| kiln_syntax::glaze::parse_glaze(&f.text).glaze)
+        .collect();
+    let glaze_names: Vec<String> = glaze_files
+        .iter()
+        .map(|f| {
+            Path::new(&f.name)
+                .file_name()
+                .unwrap_or_default()
+                .to_string_lossy()
+                .into_owned()
+        })
+        .collect();
+    let inputs: Vec<kiln_ir::glaze::GlazeInput> = (0..glaze_files.len())
+        .map(|i| kiln_ir::glaze::GlazeInput {
+            file: &glaze_names[i],
+            src: &glaze_files[i].text,
+            glaze: &parsed_glazes[i],
+            values: &glaze_values[i],
+        })
+        .collect();
+    let generated = kiln_ir::glaze::generate(&inputs);
+    let generated_at = combined.len() as u32;
+    let generated_file = generated
+        .as_ref()
+        .map(|g| SourceFile::new("<glazes>", g.text.clone()));
+    if let Some(g) = &generated {
+        if !g.diagnostics.is_empty() {
+            for (i, diag) in &g.diagnostics {
+                eprintln!("{}", diag.render(glaze_files[*i]));
+            }
+            return Err(failed(g.diagnostics.len()));
+        }
+        combined.push_str(&g.text);
+    }
+
     let report = |diagnostics: Vec<Diagnostic>| {
         let count = diagnostics.len();
         for mut diag in diagnostics {
+            if let (Some(g), Some(gen_file)) = (&generated, &generated_file) {
+                if diag.span.start >= generated_at {
+                    diag.span = Span {
+                        start: diag.span.start - generated_at,
+                        end: diag.span.end.saturating_sub(generated_at),
+                    };
+                    diag.suggestion = None;
+                    match g.locate(diag.span) {
+                        Some((i, span)) => {
+                            diag.span = span;
+                            eprintln!("{}", diag.render(glaze_files[i]));
+                        }
+                        None => eprintln!("{}", diag.render(gen_file)),
+                    }
+                    continue;
+                }
+            }
             let i = offsets
                 .iter()
                 .rposition(|&o| o <= diag.span.start)
                 .unwrap_or(0);
-            let shift = |s: &mut kiln_diagnostics::Span| {
+            let shift = |s: &mut Span| {
                 s.start = s.start.saturating_sub(offsets[i]);
                 s.end = s.end.saturating_sub(offsets[i]);
             };
@@ -481,7 +561,12 @@ fn build(
     if !parsed.diagnostics.is_empty() {
         return Err(report(parsed.diagnostics));
     }
-    let program = kiln_check::check_program(&parsed.module);
+    let glaze_refs: Vec<(&str, &kiln_syntax::ast::Glaze)> = glaze_names
+        .iter()
+        .map(String::as_str)
+        .zip(&parsed_glazes)
+        .collect();
+    let program = kiln_check::check_program_with_glazes(&parsed.module, &glaze_refs);
     if !program.diagnostics.is_empty() {
         return Err(report(program.diagnostics));
     }

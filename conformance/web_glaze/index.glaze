@@ -1,0 +1,12 @@
+{% props pots: List<Pot>, search: String %}
+{% layout "layout.glaze" title: "Pots" %}
+{% if search != "" %}
+<p>Results for <b>{search}</b> (<a href="?q={search}">again</a>)</p>
+{% end %}
+<ul>
+  {% for pot in pots where search == "" or pot.name.lower().contains(search.lower()) %}
+  <li><a href="/pots/{pot.id}">{pot.name}</a></li>
+  {% empty %}
+  <li>No pots match.</li>
+  {% end %}
+</ul>

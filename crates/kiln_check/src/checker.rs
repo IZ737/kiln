@@ -72,6 +72,8 @@ pub struct Checker {
     pub(crate) glazes: Option<HashMap<String, GlazeSig>>,
     /// Whether the code being checked runs in the browser.
     pub(crate) in_ember: bool,
+    /// What each value a glaze outputs is, by the span of its expression.
+    pub(crate) glaze_values: HashMap<Span, crate::glaze::ValueKind>,
     /// The type of every expression, by span, for the code generator.
     pub(crate) expr_types: HashMap<Span, Ty>,
     /// The type of every name a declaration, parameter or pattern binds, by
@@ -123,6 +125,7 @@ const STD_MODULES: &[(&str, &str)] = &[
     ("fs", include_str!("../std/fs.kiln")),
     ("os", include_str!("../std/os.kiln")),
     ("io", include_str!("../std/io.kiln")),
+    ("html", include_str!("../std/html.kiln")),
 ];
 const PRELUDE: &str = include_str!("../std/prelude.kiln");
 
@@ -146,6 +149,7 @@ impl Checker {
             diags: Vec::new(),
             glazes: None,
             in_ember: false,
+            glaze_values: HashMap::new(),
             expr_types: HashMap::new(),
             binding_types: HashMap::new(),
             std_adts: 0,

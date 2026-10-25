@@ -1,5 +1,19 @@
 # Changelog
 
+## Unreleased
+
+- **Glazes render.** `web.render("page.glaze", { props })` runs the glaze
+  and answers with HTML. Glazes are compiled into the program on both
+  backends: values, props with defaults, attributes, `{% let %}`,
+  `{% if %}`, `{% for %}` with `where` and `{% empty %}`, `{% match %}`,
+  components with children, and layouts. Values are escaped for HTML,
+  values that decide a link's scheme must be relative or `http`, `https`,
+  `mailto` or `tel`, and values in `on...`, `style` (except numbers) and
+  `srcdoc` attributes are an error (E0309). Lines holding only tags render
+  as nothing.
+- The new `html` module has `html.escape` and `html.safe_url`, on the
+  html-escape crate.
+
 ## 0.6.0 (2026-10-25)
 
 The runtime's network-facing parts move from hand-written C to maintained

@@ -180,6 +180,7 @@ or made directly with `web.Response(status: 204, headers: Map(), body: "")`.
 | `web.json(value, status: 200)` | `value` as JSON, `application/json` |
 | `web.text(body, status: 200)` | `text/plain; charset=utf-8` |
 | `web.html(body, status: 200)` | `text/html; charset=utf-8` |
+| `web.render("page.glaze", { props })` | The glaze rendered as HTML (see [Rendering](glazes.md#rendering)) |
 | `web.redirect(to, status: 302)` | Sends the client to `to` |
 | `web.not_found()` | 404, made like the server's own (see Errors) |
 
@@ -253,7 +254,7 @@ HTTP does not allow is left out (with an error logged), and the
 Query strings are decoded as forms are, path segments by their `%XX`
 escapes, and cookies as the `cookie` header lays them out; decoded bytes
 that are not UTF-8 become U+FFFD.
-`req.form` and `web.render` come later.
+`req.form` comes later.
 
 **Settings.** `web.app()` works as it is in production, and takes
 settings for when the defaults do not fit:
@@ -283,6 +284,29 @@ several handlers is safe: today's single-core scheduler only switches
 tasks where they wait, and a later one will run tasks on several cores.
 Keep shared values immutable; `Mutex`, `Atomic` and channels will come for
 the rest.
+
+## `html`
+
+Rendered glazes escape every value themselves; these are for HTML a
+program builds by hand.
+
+| Function | |
+| --- | --- |
+| `html.escape(text) -> String` | `&`, `<`, `>`, `"` and `'` as entities, safe in HTML text and quoted attributes |
+| `html.safe_url(url) -> String` | The URL when it is relative or `http`, `https`, `mailto` or `tel`, otherwise `about:invalid#kiln-unsafe-url` |
+
+```kiln
+import html, web
+
+fn greeting(name: String) -> web.Response {
+    return web.html("<p>Hello, ${html.escape(name)}</p>")
+}
+```
+
+Escaping is the [html-escape](https://github.com/magiclen/html-escape)
+crate's, in the runtime's Rust part. `safe_url` finds the scheme as
+browsers do, ignoring leading spaces and control characters and tabs or
+line breaks inside it, so `java\tscript:` is not safe either.
 
 ## `json`
 

@@ -11,7 +11,8 @@ directory: see [types.md](types.md#glazes) for the rules.
 **Phase 3 plan:** [compiled Glazes, native typed `ui`, Finishes, local CSS,
 CSS Modules, design tokens and themes](../plans/phase-3.md). That plan contains
 *target syntax* and implementation steps not yet part of this syntax
-reference. This page documents the currently recognized forms.
+reference. This page documents the currently recognized forms, and
+[Rendering](#rendering) what the compiler makes of them.
 
 ## A page
 
@@ -47,6 +48,40 @@ reference. This page documents the currently recognized forms.
 
 `<script>` and `<style>` contents are raw text: braces there are CSS or
 JavaScript, not values.
+
+## Rendering
+
+`web.render("post.glaze", { post })` renders a glaze into a `200` response
+with `content-type: text/html; charset=utf-8`. Glazes are compiled into the
+program like any other code, with nothing interpreted at run time; the
+glaze must be named in quotes, so the compiler knows which one it is.
+
+- **Values are escaped.** `{value}` and values in attributes have `&`, `<`,
+  `>`, `"` and `'` escaped, so a value cannot add markup or end an
+  attribute. Values that are not strings are shown as `print` shows them.
+  Text written in the glaze itself is copied as written.
+- **Links cannot run code.** In attributes that browsers follow as URLs
+  (`href`, `src`, `action`, `formaction`, `poster`, `cite` and the like),
+  a value that decides the URL's scheme must be relative or `http`,
+  `https`, `mailto` or `tel`; anything else, such as `javascript:...`,
+  becomes `about:invalid#kiln-unsafe-url`. A value after a fixed start,
+  as in `href="/posts/{post.id}"`, is only escaped.
+- **Some attributes take no values** (E0309): `on...` attributes such as
+  `onclick` run JavaScript, `srcdoc` is a whole page, and `style` is CSS,
+  which accepts only `Int` and `Float` values (`style="width: {pct}%"`).
+- **`{raw value}` is the trust boundary.** It outputs a `String` as HTML,
+  unescaped: use it only for HTML your program made or trusts, never for
+  text from users.
+- A `Bool` attribute value adds the attribute or leaves it out:
+  `disabled={busy}` renders `disabled` or nothing. Void elements render
+  without a closing tag, and `<div />` renders as `<div></div>`.
+- A line holding only tags and comments, such as `{% if %}` or
+  `{% end %}`, renders as nothing rather than a blank line, and the line
+  break that ends the file is left out, so a component fits inside a line.
+- A layout renders around the page, with the page in its `{% slot %}`; a
+  component renders where its tag is, with its children in its slot.
+- Embers are not compiled yet (E0401): building a glaze with
+  `{% state %}`, an `on:` handler or a `client:` hint needs phase 6.
 
 ## Tags
 

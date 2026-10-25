@@ -33,10 +33,12 @@
 //! assert!(ir.to_string().contains("fn main()"));
 //! ```
 
+pub mod glaze;
 mod lower;
 mod print;
 
 pub use kiln_check::types::{AdtDef, AdtId, AdtKind, FnTy, Ty};
+pub use kiln_check::ValueKind;
 pub use lower::lower;
 
 use kiln_diagnostics::Span;

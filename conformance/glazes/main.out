@@ -1,0 +1,94 @@
+200 text/html; charset=utf-8
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <title>Posts · Kiln</title>
+  </head>
+  <body>
+    <h1>Posts</h1>
+<ul class="posts count-3">
+    <li id="post-1" data-tags="2">
+      <a href="/posts/1">Firing &lt;schedules&gt; &amp; &quot;glazes&quot; &#x27;n&#x27; things</a>
+      <span class="tag">#kiln</span><span class="tag">#clay</span>
+    </li>
+    <li id="post-3" data-tags="0">
+      <a href="/posts/3">Üñíçødé ☕ 陶器</a>
+      <em>untagged</em>
+    </li>
+</ul>
+<section class="card highlight">
+  <h2>2 of 3 shown</h2>
+  
+  <p>Inside the card: Posts</p>
+
+</section>
+<p class="status">
+popular: 1500 views
+    </p>
+some
+<input type="checkbox" checked>
+<p>1.5 true -7 2s</p>
+<hr>
+<script>if (a < b && c) { go("{not a value}") }</script>
+<style>.posts { color: red; }</style>
+  </body>
+</html>
+---
+200 text/html; charset=utf-8
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <title>Empty · Kiln</title>
+  </head>
+  <body>
+    <h1>Empty</h1>
+<ul class="posts count-0">
+    <li>Nothing published yet.</li>
+</ul>
+<section class="card highlight">
+  <h2>0 of 0 shown</h2>
+  
+  <p>Inside the card: Empty</p>
+
+</section>
+<p class="status">
+draft
+    </p>
+none
+<input type="checkbox">
+<p>1.5 true -7 2s</p>
+<hr>
+<script>if (a < b && c) { go("{not a value}") }</script>
+<style>.posts { color: red; }</style>
+  </body>
+</html>
+---
+200 text/html; charset=utf-8
+<p title="&lt;script&gt;alert(1)&lt;/script&gt;" data-x="&lt;script&gt;alert(1)&lt;/script&gt;">&lt;script&gt;alert(1)&lt;/script&gt;</p>
+<a href="&lt;script&gt;alert(1)&lt;/script&gt;">link</a> <a href="&lt;script&gt;alert(1)&lt;/script&gt;">link</a> <a href="/search?q=&lt;script&gt;alert(1)&lt;/script&gt;">search</a> <img src="https://img.example/&lt;script&gt;alert(1)&lt;/script&gt;">
+---
+200 text/html; charset=utf-8
+<p title="&quot; onmouseover=&quot;alert(1)" data-x="&quot; onmouseover=&quot;alert(1)">&quot; onmouseover=&quot;alert(1)</p>
+<a href="&quot; onmouseover=&quot;alert(1)">link</a> <a href="&quot; onmouseover=&quot;alert(1)">link</a> <a href="/search?q=&quot; onmouseover=&quot;alert(1)">search</a> <img src="https://img.example/&quot; onmouseover=&quot;alert(1)">
+---
+200 text/html; charset=utf-8
+<p title="javascript:alert(1)" data-x="javascript:alert(1)">javascript:alert(1)</p>
+<a href="about:invalid#kiln-unsafe-url">link</a> <a href="about:invalid#kiln-unsafe-url">link</a> <a href="/search?q=javascript:alert(1)">search</a> <img src="https://img.example/javascript:alert(1)">
+---
+200 text/html; charset=utf-8
+<p title=" JaVa	ScRiPt:alert(1)" data-x=" JaVa	ScRiPt:alert(1)"> JaVa	ScRiPt:alert(1)</p>
+<a href="about:invalid#kiln-unsafe-url">link</a> <a href="about:invalid#kiln-unsafe-url">link</a> <a href="/search?q= JaVa	ScRiPt:alert(1)">search</a> <img src="https://img.example/ JaVa	ScRiPt:alert(1)">
+---
+200 text/html; charset=utf-8
+<p title="https://example.com/?a=1&amp;b=2" data-x="https://example.com/?a=1&amp;b=2">https://example.com/?a=1&amp;b=2</p>
+<a href="https://example.com/?a=1&amp;b=2">link</a> <a href="https://example.com/?a=1&amp;b=2">link</a> <a href="/search?q=https://example.com/?a=1&amp;b=2">search</a> <img src="https://img.example/https://example.com/?a=1&amp;b=2">
+---
+200 text/html; charset=utf-8
+<p title="/relative/path" data-x="/relative/path">/relative/path</p>
+<a href="/relative/path">link</a> <a href="/relative/path">link</a> <a href="/search?q=/relative/path">search</a> <img src="https://img.example//relative/path">
+---
+200 text/html; charset=utf-8
+<p>No props, no layout.</p>
+---
