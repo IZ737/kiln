@@ -139,7 +139,13 @@ remove as much *frontend* integration work as it removes from the backend.
 Glazes (`.glaze`) are typed, HTML-oriented templates and components. The
 planned frontend experience includes layouts, slots, reusable components,
 scoped styles, design tokens, context-aware escaping and server rendering
-by default.
+by default. Phase 3 adds native typed `Ui` records with concise
+Tailwind-inspired keys (`bg`, `fg`, `p`, etc.), co-located `<style>`,
+ordinary CSS/CSS Modules and **Finishes**: ordinary functions returning
+reusable styling values or multi-part records. Compatible theme contracts
+can radically restyle the same content and Glazes, including layout.
+See the [Phase 3 implementation plan](phase-3.md) for the agreed scope,
+API sketches and acceptance gates.
 
 - **CSS-first:** full native CSS must always work. Provide helpful design
   tokens, responsive defaults and optionally attractive, accessible
