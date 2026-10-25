@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.5.1 (2026-10-25)
+
+- The VS Code extension is bundled: its code and the libraries it uses are
+  one file, so the `.vsix` holds 15 files (96 KB) instead of 331, and VS
+  Code loads it faster. A test checks that the package holds only what VS
+  Code loads.
+
 ## 0.5.0 (2026-10-25)
 
 The end of phase 2.5: Kiln has a VS Code extension, and `kiln lsp` knows

@@ -2,7 +2,7 @@
   "name": "kiln",
   "displayName": "Kiln",
   "description": "Kiln and Glaze language support: highlighting, file icons, completion, hover, go to definition, and Check, Run and Build commands, from the Kiln language server.",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "publisher": "iz737",
   "license": "MIT",
   "icon": "icons/kiln.png",
@@ -24,7 +24,7 @@
     "glaze",
     "web"
   ],
-  "main": "./src/extension.js",
+  "main": "./dist/extension.js",
   "activationEvents": [
     "onLanguage:kiln",
     "onLanguage:glaze",
@@ -221,13 +221,17 @@
     ]
   },
   "scripts": {
+    "bundle": "esbuild src/extension.js --bundle --outfile=dist/extension.js --external:vscode --format=cjs --platform=node --target=node18 --minify",
+    "vscode:prepublish": "npm run bundle",
     "test": "node --test test/*.test.js",
+    "pretest:integration": "npm run bundle",
     "test:integration": "node test/integration/run.js",
     "package": "vsce package"
   },
   "devDependencies": {
     "@vscode/test-electron": "3.1.0",
     "@vscode/vsce": "4.0.0",
+    "esbuild": "0.27.7",
     "vscode-oniguruma": "2.0.1",
     "vscode-textmate": "9.3.2"
   },

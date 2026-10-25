@@ -96,8 +96,8 @@ Run `cargo fmt --all`, `cargo clippy --all-targets -- -D warnings` and
 - `editors/vscode`: the VS Code extension. `syntaxes/` holds the TextMate
   grammars for Kiln (`source.kiln`) and Glaze (`text.html.glaze`), `icons/`
   copies of the brand icons, and `src/extension.js` starts `kiln lsp` and
-  runs `kiln check`, `run` and `build` as tasks (plain JavaScript, no build
-  step). It stays a thin client: anything
+  runs `kiln check`, `run` and `build` as tasks (plain JavaScript, which
+  esbuild bundles into `dist/extension.js` for VS Code to load). It stays a thin client: anything
   other editors could use belongs in `kiln lsp`. `npm test` there tokenizes
   code with VS Code's TextMate engine; a syntax change updates the
   grammars and their tests too.

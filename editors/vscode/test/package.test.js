@@ -2,13 +2,18 @@ const test = require("node:test");
 const assert = require("node:assert");
 const fs = require("node:fs");
 const path = require("node:path");
+const os = require("node:os");
+const Module = require("node:module");
+const { execFileSync } = require("node:child_process");
 const { root } = require("./textmate");
 
 const manifest = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8"));
 const brand = path.join(root, "..", "..", "assets", "brand");
 
 test("every file the manifest names exists", () => {
-  const files = [manifest.icon, manifest.main];
+  // `main` is the bundle, which `npm run bundle` makes; the next test
+  // checks it.
+  const files = [manifest.icon];
   for (const lang of manifest.contributes.languages) {
     files.push(lang.configuration, lang.icon.light, lang.icon.dark);
   }
@@ -72,4 +77,51 @@ test("the extension's version is kiln's", () => {
   const cargo = fs.readFileSync(path.join(root, "..", "..", "Cargo.toml"), "utf8");
   const version = /^version = "(.*)"/m.exec(cargo)[1];
   assert.strictEqual(manifest.version, version, "set the version in package.json to Cargo.toml's");
+});
+
+test("the bundle is the extension, with its libraries inside", () => {
+  const script = (outfile) =>
+    "esbuild src/extension.js --bundle " +
+    `--outfile=${outfile} --external:vscode --format=cjs --platform=node --target=node18 --minify`;
+  assert.strictEqual(manifest.scripts.bundle, script(manifest.main.replace("./", "")));
+  assert.strictEqual(manifest.scripts["vscode:prepublish"], "npm run bundle");
+  // Build it the same way elsewhere, and load it with only `vscode` given:
+  // anything else it needs must be inside.
+  const out = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "kiln-bundle-")), "extension.js");
+  require("esbuild").buildSync({
+    entryPoints: [path.join(root, "src", "extension.js")],
+    bundle: true,
+    outfile: out,
+    external: ["vscode"],
+    format: "cjs",
+    platform: "node",
+    target: "node18",
+    minify: true,
+    logLevel: "silent",
+  });
+  const original = Module._load;
+  Module._load = function (request, ...rest) {
+    // Each name is a class, as the client library extends some at load.
+    if (request === "vscode") return new Proxy({}, { get: (t, k) => (t[k] ??= class {}) });
+    assert.ok(request === out || Module.isBuiltin(request), `the bundle requires ${request}`);
+    return original.call(this, request, ...rest);
+  };
+  try {
+    const extension = require(out);
+    assert.strictEqual(typeof extension.activate, "function");
+    assert.strictEqual(typeof extension.deactivate, "function");
+  } finally {
+    Module._load = original;
+  }
+});
+
+test("the package holds only what VS Code loads", () => {
+  const vsce = require.resolve("@vscode/vsce/vsce");
+  const files = execFileSync(process.execPath, [vsce, "ls"], { cwd: root, encoding: "utf8" })
+    .split("\n")
+    .filter(Boolean);
+  for (const file of files) {
+    assert.ok(!/^(node_modules|src|test|\.vscode)\//.test(file), `${file} is packaged`);
+  }
+  assert.ok(files.length < 20, `${files.length} files are packaged`);
 });
