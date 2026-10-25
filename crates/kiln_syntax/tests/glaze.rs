@@ -343,3 +343,20 @@ fn tags_and_comments_are_recorded() {
         ]
     );
 }
+
+#[test]
+fn fill_gives_a_named_slot_its_content() {
+    let g = ok("<Card>{% fill title %}<b>Hi</b>{% end %}body</Card>");
+    let Node::Element(card) = &g.nodes[0] else {
+        panic!("{g:#?}")
+    };
+    let Node::Fill { name, body, .. } = &card.children[0] else {
+        panic!("{card:#?}")
+    };
+    assert_eq!(name.name, "title");
+    assert_eq!(body.len(), 1);
+    assert_eq!(
+        error_codes("{% fill title %}<b>Hi</b>"),
+        [codes::UNCLOSED_GLAZE_TAG]
+    );
+}

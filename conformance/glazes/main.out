@@ -19,9 +19,7 @@
 </ul>
 <section class="card highlight">
   <h2>2 of 3 shown</h2>
-  
   <p>Inside the card: Posts</p>
-
 </section>
 <p class="status">
 popular: 1500 views
@@ -49,9 +47,7 @@ some
 </ul>
 <section class="card highlight">
   <h2>0 of 0 shown</h2>
-  
   <p>Inside the card: Empty</p>
-
 </section>
 <p class="status">
 draft

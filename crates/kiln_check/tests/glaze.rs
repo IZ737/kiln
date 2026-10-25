@@ -257,3 +257,70 @@ fn the_compiler_learns_what_values_are() {
     use kiln_check::ValueKind::*;
     assert_eq!(kinds, [Bool, String, Number, Other]);
 }
+
+/// Checks glazes on their own, with `APP`, returning each one's error codes.
+fn glaze_codes(glazes: &[(&str, &str)]) -> Vec<Vec<&'static str>> {
+    let module = kiln_syntax::parse(APP).module;
+    let parsed: Vec<_> = glazes
+        .iter()
+        .map(|(n, src)| {
+            let r = kiln_syntax::glaze::parse_glaze(src);
+            assert!(r.diagnostics.is_empty(), "{n}: {:#?}", r.diagnostics);
+            (*n, r.glaze)
+        })
+        .collect();
+    let refs: Vec<_> = parsed.iter().map(|(n, g)| (*n, g)).collect();
+    kiln_check::check_app(&[&module], &refs)
+        .glazes
+        .iter()
+        .map(|d| d.iter().map(|d| d.code).collect())
+        .collect()
+}
+
+#[test]
+fn fills_name_slots_of_a_layout_or_component() {
+    let layout = "{% props title: String %}<head>{% slot head %}</head>{% slot %}";
+    let card = "<div>{% slot title %}{% slot %}</div>";
+    let page = "{% layout \"base.glaze\" title: \"Hi\" %}{% fill head %}<meta>{% end %}<Card>{% fill title %}T{% end %}body</Card>";
+    assert_eq!(
+        glaze_codes(&[
+            ("base.glaze", layout),
+            ("card.glaze", card),
+            ("page.glaze", page)
+        ]),
+        [Vec::<&str>::new(), vec![], vec![]]
+    );
+    let wrong = "{% layout \"base.glaze\" title: \"Hi\" %}{% fill haed %}x{% end %}<Card>{% fill title %}a{% end %}{% fill title %}b{% end %}</Card><div>{% fill head %}x{% end %}</div>";
+    assert_eq!(
+        glaze_codes(&[
+            ("base.glaze", layout),
+            ("card.glaze", card),
+            ("page.glaze", wrong)
+        ])[2],
+        [
+            codes::MISPLACED_FILL,
+            codes::MISPLACED_FILL,
+            codes::MISPLACED_FILL
+        ]
+    );
+    // Without a layout, there is nothing to fill.
+    assert_eq!(
+        glaze_codes(&[("page.glaze", "{% fill head %}x{% end %}")])[0],
+        [codes::MISPLACED_FILL]
+    );
+}
+
+#[test]
+fn glazes_cannot_render_themselves_without_end() {
+    let codes = glaze_codes(&[
+        ("a.glaze", "{% layout \"b.glaze\" %}<p>{% slot %}</p>"),
+        ("b.glaze", "<div><A /></div>{% slot %}"),
+    ]);
+    assert_eq!(
+        codes,
+        [vec![codes::ENDLESS_GLAZE], vec![codes::ENDLESS_GLAZE]]
+    );
+    // Inside a block that ends, a component may render itself.
+    let tree = "{% props post: Post %}{% for t in post.tags %}<Tree post={post} />{% end %}";
+    assert_eq!(glaze_codes(&[("tree.glaze", tree)]), [Vec::<&str>::new()]);
+}

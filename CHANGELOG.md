@@ -11,6 +11,10 @@
   `mailto` or `tel`, and values in `on...`, `style` (except numbers) and
   `srcdoc` attributes are an error (E0309). Lines holding only tags render
   as nothing.
+- **Named slots fill.** `{% fill name %} ... {% end %}` gives a layout's
+  or component's `{% slot name %}` its content (E0311 when misplaced). A
+  glaze that renders itself without end, through layouts or components, is
+  E0310. Slot content is placed without its surrounding whitespace.
 - The new `html` module has `html.escape` and `html.safe_url`, on the
   html-escape crate.
 

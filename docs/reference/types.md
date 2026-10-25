@@ -128,6 +128,9 @@ files, and its `.kiln` files see the props of its glazes.
   hydration hints, not props.
 - `{% layout "base.glaze" title: value %}` passes props to the layout, which
   must contain `{% slot %}`.
+- `{% fill name %}` names a `{% slot name %}` of the layout or component it
+  fills, once (E0311). A glaze whose layout or components (outside blocks)
+  lead back to itself never finishes rendering (E0310).
 - A value in an attribute where escaping does not make it safe is E0309:
   any value in `onclick` and the other `on...` attributes or in `srcdoc`,
   and a value other than an `Int` or `Float` in `style`.

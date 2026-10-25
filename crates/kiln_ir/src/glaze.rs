@@ -549,6 +549,9 @@ impl<'a> Gen<'a> {
                 self.line("}");
                 self.segment(start, *span);
             }
+            // The checker allows fills only where `component` and `layout`
+            // take them.
+            Node::Fill { .. } => {}
             Node::Slot { name, span } => {
                 let start = self.text.len();
                 let name = name.as_ref().map(|n| n.name.as_str());
@@ -663,12 +666,7 @@ impl<'a> Gen<'a> {
                 AttrValue::Handler(_) => {}
             }
         }
-        if e.children.iter().any(|n| !is_blank(n)) {
-            self.text.push_str(", __slot: fn(__out) {\n");
-            self.block(&e.children);
-            self.start_line();
-            self.text.push('}');
-        }
+        self.slot_args(&e.children, false);
         self.text.push_str(")\n");
         self.segment(call, e.span);
         self.segment(start, e.span);
@@ -693,11 +691,40 @@ impl<'a> Gen<'a> {
                 self.copy(arg.value.span, true);
             }
         }
-        self.text.push_str(", __slot: fn(__out) {\n");
-        self.block(nodes);
-        self.start_line();
-        self.text.push_str("})\n");
+        self.slot_args(nodes, true);
+        self.text.push_str(")\n");
         self.segment(start, layout.span);
+    }
+
+    /// Writes the arguments that fill a component's or layout's slots:
+    /// one function per `{% fill %}`, and one for the other nodes, unless
+    /// they are blank (and `always` is false).
+    fn slot_args(&mut self, nodes: &[Node], always: bool) {
+        let (fills, rest): (Vec<&Node>, Vec<&Node>) =
+            nodes.iter().partition(|n| matches!(n, Node::Fill { .. }));
+        for fill in fills {
+            if let Node::Fill { name, body, .. } = fill {
+                self.text.push_str(&format!(
+                    ", {}: fn(__out) {{\n",
+                    slot_param(Some(&name.name))
+                ));
+                let body: Vec<&Node> = body.iter().collect();
+                self.block(&trim_ends(&body));
+                self.start_line();
+                self.text.push('}');
+            }
+        }
+        if always || rest.iter().any(|n| !is_blank(n)) {
+            self.text.push_str(", __slot: fn(__out) {\n");
+            self.indent += 1;
+            for n in trim_ends(&rest) {
+                self.node(&n);
+            }
+            self.flush();
+            self.indent -= 1;
+            self.start_line();
+            self.text.push('}');
+        }
     }
 }
 
@@ -773,6 +800,7 @@ fn for_each_slot(nodes: &[Node], f: &mut impl FnMut(Option<&Ident>, Span)) {
             match n {
                 Node::Slot { name, span } => f(name.as_ref(), *span),
                 Node::Element(e) => walk(&e.children, f),
+                Node::Fill { body, .. } => walk(body, f),
                 Node::If {
                     branches,
                     otherwise,
@@ -808,6 +836,29 @@ fn slot_param(name: Option<&str>) -> String {
         None => "__slot".into(),
         Some(n) => format!("__slot_{n}"),
     }
+}
+
+/// The nodes without the whitespace they start and end with, so that slot
+/// content sits where its slot is.
+fn trim_ends(nodes: &[&Node]) -> Vec<Node> {
+    let mut out: Vec<Node> = nodes
+        .iter()
+        .skip_while(|n| is_blank(n))
+        .map(|n| (*n).clone())
+        .collect();
+    while out.last().is_some_and(is_blank) {
+        out.pop();
+    }
+    if let Some(Node::Text { text, span }) = out.first_mut() {
+        let trimmed = text.trim_start().len();
+        span.start += (text.len() - trimmed) as u32;
+        *text = text.trim_start().to_string();
+    }
+    if let Some(Node::Text { text, span }) = out.last_mut() {
+        span.end -= (text.len() - text.trim_end().len()) as u32;
+        *text = text.trim_end().to_string();
+    }
+    out
 }
 
 fn is_blank(node: &Node) -> bool {

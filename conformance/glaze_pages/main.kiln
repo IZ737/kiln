@@ -1,0 +1,25 @@
+// A multi-page site from glazes: one layout with named slots that pages
+// fill, components with named slots, and a component that renders
+// itself for each child of a tree.
+import web
+
+struct Section {
+    title: String
+    children: List<Section>
+}
+
+fn toc() -> List<Section> {
+    return [
+        Section(title: "Basics", children: [
+            Section(title: "Values", children: []),
+            Section(title: "Functions", children: [Section(title: "Closures", children: [])]),
+        ]),
+        Section(title: "Glazes", children: []),
+    ]
+}
+
+fn main() {
+    print(web.render("home.glaze").body)
+    print("---")
+    print(web.render("guide.glaze", { sections: toc(), page: "Glazes" }).body)
+}

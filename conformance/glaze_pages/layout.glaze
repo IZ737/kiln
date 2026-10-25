@@ -1,0 +1,15 @@
+{% props title: String, nav: String = "home" %}
+<!doctype html>
+<html>
+<head>
+  <title>{title} · Kiln docs</title>
+  {% slot head %}
+</head>
+<body>
+  <nav>{% if nav == "home" %}<b>Home</b>{% else %}<a href="/">Home</a>{% end %}</nav>
+  <aside>{% slot sidebar %}</aside>
+  <main>
+    {% slot %}
+  </main>
+</body>
+</html>

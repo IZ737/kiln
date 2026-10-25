@@ -47,9 +47,22 @@ impl Checker {
                 has_default: p.default.is_some(),
             })
             .collect();
+        let mut slots = Vec::new();
+        let mut has_slot = false;
+        for_each_slot(&glaze.nodes, &mut |name| match name {
+            None => has_slot = true,
+            Some(n) if !slots.contains(&n.name) => slots.push(n.name.clone()),
+            Some(_) => {}
+        });
+        let renders = always_renders(glaze)
+            .into_iter()
+            .map(|(file, _)| file)
+            .collect();
         let sig = GlazeSig {
             props,
-            has_slot: has_slot(&glaze.nodes),
+            has_slot,
+            slots,
+            renders,
         };
         self.glazes
             .get_or_insert_with(HashMap::new)
@@ -74,10 +87,16 @@ impl Checker {
             let ty = self.local_value(state);
             self.bind(&state.name.name, state.name.span, ty, true, None);
         }
-        if let Some(layout) = &glaze.layout {
-            self.check_layout(layout);
+        let layout = glaze.layout.as_ref().and_then(|l| self.check_layout(l));
+        self.check_endless(file, glaze);
+        // A page with a layout fills the layout's named slots.
+        let (fills, rest) = split_fills(&glaze.nodes);
+        match &layout {
+            Some(sig) => self.check_fills(sig, &fills, "the layout"),
+            None if glaze.layout.is_none() => self.misplaced_fills(&fills),
+            None => self.check_fills_loosely(&fills),
         }
-        self.check_nodes(&glaze.nodes);
+        self.check_node_refs(&rest);
         self.pop_scope();
         self.exit_fn();
         self.in_ember = false;
@@ -94,10 +113,24 @@ impl Checker {
         }
     }
 
+    fn check_node_refs(&mut self, nodes: &[&Node]) {
+        for node in nodes {
+            self.check_nodes(std::slice::from_ref(*node));
+        }
+    }
+
     fn check_nodes(&mut self, nodes: &[Node]) {
         for node in nodes {
             match node {
                 Node::Text { .. } | Node::Slot { .. } => {}
+                Node::Fill { name, body, .. } => {
+                    self.error(Diagnostic::error(
+                        codes::MISPLACED_FILL,
+                        format!("`{{% fill {} %}}` must be directly inside a component tag, or at the top level of a page with a layout", name.name),
+                        name.span,
+                    ));
+                    self.nested(body);
+                }
                 Node::Expr { expr, raw, .. } => {
                     let ty = self.infer(expr, &Expect::Value(None));
                     self.record_value(expr.span, &ty);
@@ -378,10 +411,10 @@ impl Checker {
             }
             given.push((&attr.name, value, attr.span));
         }
+        let (fills, rest) = split_fills(&e.children);
         if let Some(sig) = &sig {
             self.check_props(sig, &given, &format!("<{name}>"), e.name.span);
-            let has_children = e
-                .children
+            let has_children = rest
                 .iter()
                 .any(|n| !matches!(n, Node::Text { text, .. } if text.trim().is_empty()));
             if has_children && !sig.has_slot {
@@ -391,28 +424,141 @@ impl Checker {
                     e.name.span,
                 ));
             }
+            self.check_fills(sig, &fills, &format!("`<{name}>`"));
         } else {
             for (_, value, _) in &given {
                 if let PropValue::Expr(x) = value {
                     self.infer(x, &Expect::Value(None));
                 }
             }
+            self.check_fills_loosely(&fills);
         }
-        self.nested(&e.children);
+        self.push_scope();
+        self.check_node_refs(&rest);
+        self.pop_scope();
     }
 
-    fn check_layout(&mut self, layout: &Layout) {
+    /// Checks `{% fill %}` blocks against the named slots of `sig`.
+    fn check_fills(&mut self, sig: &GlazeSig, fills: &[&Node], what: &str) {
+        let mut seen: Vec<&str> = Vec::new();
+        for fill in fills {
+            let Node::Fill { name, body, .. } = fill else {
+                continue;
+            };
+            if !sig.slots.contains(&name.name) {
+                let mut diag = Diagnostic::error(
+                    codes::MISPLACED_FILL,
+                    format!("{what} has no `{{% slot {} %}}`", name.name),
+                    name.span,
+                );
+                diag = match similar(&name.name, sig.slots.iter().map(String::as_str)) {
+                    Some(s) => diag.with_suggestion(format!("did you mean `{s}`?"), name.span, s),
+                    None if sig.slots.is_empty() => {
+                        diag.with_help(format!("{what} has no named slots"))
+                    }
+                    None => diag.with_help(format!(
+                        "its named slots are {}",
+                        sig.slots
+                            .iter()
+                            .map(|s| format!("`{s}`"))
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    )),
+                };
+                self.error(diag);
+            } else if seen.contains(&name.name.as_str()) {
+                self.error(Diagnostic::error(
+                    codes::MISPLACED_FILL,
+                    format!("`{}` is filled more than once", name.name),
+                    name.span,
+                ));
+            }
+            seen.push(&name.name);
+            self.nested(body);
+        }
+    }
+
+    /// Checks the code in fills whose target glaze is unknown.
+    fn check_fills_loosely(&mut self, fills: &[&Node]) {
+        for fill in fills {
+            if let Node::Fill { body, .. } = fill {
+                self.nested(body);
+            }
+        }
+    }
+
+    fn misplaced_fills(&mut self, fills: &[&Node]) {
+        for fill in fills {
+            if let Node::Fill { name, body, .. } = fill {
+                self.error(Diagnostic::error(
+                    codes::MISPLACED_FILL,
+                    format!(
+                        "`{{% fill {} %}}` fills a layout's slot, but this glaze has no `{{% layout %}}`",
+                        name.name
+                    ),
+                    name.span,
+                ));
+                self.nested(body);
+            }
+        }
+    }
+
+    /// Reports glazes that always render themselves again, through their
+    /// layout or components outside blocks.
+    fn check_endless(&mut self, file: &str, glaze: &Glaze) {
+        let glazes = self.glazes.clone().unwrap_or_default();
+        for (target, span) in always_renders(glaze) {
+            // Is there a path from `target` back to `file`?
+            let mut path = vec![target.clone()];
+            let mut seen = vec![target.clone()];
+            let found = loop {
+                let Some(last) = path.last().cloned() else {
+                    break None;
+                };
+                if last == file {
+                    break Some(path.clone());
+                }
+                let next = glazes
+                    .get(&last)
+                    .and_then(|s| s.renders.iter().find(|r| !seen.contains(r)).cloned());
+                match next {
+                    Some(n) => {
+                        seen.push(n.clone());
+                        path.push(n);
+                    }
+                    None => {
+                        path.pop();
+                    }
+                }
+            };
+            if let Some(path) = found {
+                let chain: Vec<String> = std::iter::once(file.to_string())
+                    .chain(path)
+                    .map(|f| format!("`{f}`"))
+                    .collect();
+                self.error(
+                    Diagnostic::error(
+                        codes::ENDLESS_GLAZE,
+                        format!("rendering never ends: {}", chain.join(" renders ")),
+                        span,
+                    )
+                    .with_help("render it only inside an `{% if %}`, `{% for %}` or `{% match %}` that ends"),
+                );
+            }
+        }
+    }
+
+    /// Checks a page's layout tag, returning the layout's signature.
+    fn check_layout(&mut self, layout: &Layout) -> Option<GlazeSig> {
         let Some(file) = string_literal(&layout.path) else {
             self.error(Diagnostic::error(
                 codes::TYPE_MISMATCH,
                 "the layout must be a file name in quotes, such as `\"base.glaze\"`",
                 layout.path.span,
             ));
-            return;
+            return None;
         };
-        let Some(sig) = self.glaze_sig(&file, "layout", layout.path.span) else {
-            return;
-        };
+        let sig = self.glaze_sig(&file, "layout", layout.path.span)?;
         if !sig.has_slot {
             self.error(Diagnostic::error(
                 codes::UNKNOWN_GLAZE,
@@ -430,6 +576,7 @@ impl Checker {
             })
             .collect();
         self.check_props(&sig, &given, &file, layout.path.span);
+        Some(sig)
     }
 
     /// `web.render("post.glaze", { post })`: the data must match the page's
@@ -621,19 +768,69 @@ pub(crate) fn snake_case(name: &str) -> String {
     out
 }
 
-fn has_slot(nodes: &[Node]) -> bool {
-    nodes.iter().any(|n| match n {
-        Node::Slot { .. } => true,
-        Node::Element(e) => has_slot(&e.children),
-        Node::If {
-            branches,
-            otherwise,
-            ..
-        } => {
-            branches.iter().any(|b| has_slot(&b.body)) || otherwise.as_deref().is_some_and(has_slot)
+/// Calls `f` with the name of each `{% slot %}` in `nodes`, `None` for the
+/// default one. Slots in a component's children or a fill belong to this
+/// glaze too: they pass its caller's content on.
+pub(crate) fn for_each_slot(nodes: &[Node], f: &mut impl FnMut(Option<&Ident>)) {
+    for n in nodes {
+        match n {
+            Node::Slot { name, .. } => f(name.as_ref()),
+            Node::Element(e) => for_each_slot(&e.children, f),
+            Node::Fill { body, .. } => for_each_slot(body, f),
+            Node::If {
+                branches,
+                otherwise,
+                ..
+            } => {
+                for b in branches {
+                    for_each_slot(&b.body, f);
+                }
+                if let Some(o) = otherwise {
+                    for_each_slot(o, f);
+                }
+            }
+            Node::For { body, empty, .. } => {
+                for_each_slot(body, f);
+                if let Some(e) = empty {
+                    for_each_slot(e, f);
+                }
+            }
+            Node::Match { cases, .. } => {
+                for c in cases {
+                    for_each_slot(&c.body, f);
+                }
+            }
+            _ => {}
         }
-        Node::For { body, empty, .. } => has_slot(body) || empty.as_deref().is_some_and(has_slot),
-        Node::Match { cases, .. } => cases.iter().any(|c| has_slot(&c.body)),
-        _ => false,
-    })
+    }
+}
+
+/// The `{% fill %}` nodes among `nodes`, and the others.
+fn split_fills(nodes: &[Node]) -> (Vec<&Node>, Vec<&Node>) {
+    nodes.iter().partition(|n| matches!(n, Node::Fill { .. }))
+}
+
+/// The glazes a glaze always renders, with where it names them: its
+/// layout, and components outside `if`, `for` and `match` blocks, fills and
+/// other components' children.
+fn always_renders(glaze: &Glaze) -> Vec<(String, Span)> {
+    fn walk(nodes: &[Node], out: &mut Vec<(String, Span)>) {
+        for n in nodes {
+            if let Node::Element(e) = n {
+                if e.is_component() {
+                    out.push((format!("{}.glaze", snake_case(&e.name.name)), e.name.span));
+                } else {
+                    walk(&e.children, out);
+                }
+            }
+        }
+    }
+    let mut out = Vec::new();
+    if let Some(layout) = &glaze.layout {
+        if let Some(file) = string_literal(&layout.path) {
+            out.push((file, layout.path.span));
+        }
+    }
+    walk(&glaze.nodes, &mut out);
+    out
 }

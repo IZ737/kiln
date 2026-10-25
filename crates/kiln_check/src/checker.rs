@@ -99,7 +99,13 @@ pub struct Checker {
 #[derive(Clone, Debug)]
 pub(crate) struct GlazeSig {
     pub(crate) props: Vec<ParamSig>,
+    /// Whether it has a default `{% slot %}`, so it takes children.
     pub(crate) has_slot: bool,
+    /// Its named slots, which callers fill with `{% fill name %}`.
+    pub(crate) slots: Vec<String>,
+    /// The glazes it always renders: its layout, and components outside
+    /// blocks. A glaze that reaches itself through these never ends.
+    pub(crate) renders: Vec<String>,
 }
 
 /// Whether an argument is a closure that takes a parameter type from the

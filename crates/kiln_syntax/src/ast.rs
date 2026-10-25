@@ -392,6 +392,7 @@ impl Glaze {
                     handles_events(body) || empty.as_deref().is_some_and(handles_events)
                 }
                 Node::Match { cases, .. } => cases.iter().any(|c| handles_events(&c.body)),
+                Node::Fill { body, .. } => handles_events(body),
                 _ => false,
             })
         }
@@ -459,6 +460,14 @@ pub enum Node {
     /// `{% slot %}` in a layout or component: where the caller's children go.
     Slot {
         name: Option<Ident>,
+        span: Span,
+    },
+    /// `{% fill name %} ... {% end %}` among a component's children, or at
+    /// the top level of a page with a layout: the content for the slot
+    /// `{% slot name %}`.
+    Fill {
+        name: Ident,
+        body: Vec<Node>,
         span: Span,
     },
 }

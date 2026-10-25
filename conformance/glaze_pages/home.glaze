@@ -1,0 +1,11 @@
+{% layout "layout.glaze" title: "Welcome" %}
+{% fill head %}<meta name="description" content="Kiln docs">{% end %}
+<h1>Kiln</h1>
+<Panel>
+  {% fill header %}Getting started{% end %}
+  <p>Install Kiln, then write your first program.</p>
+  {% fill footer %}<a href="/guide">Read the guide</a>{% end %}
+</Panel>
+<Panel>
+  <p>A panel with only a body.</p>
+</Panel>

@@ -62,6 +62,8 @@ pub const FOREIGN_ATTRIBUTE: &str = "E0306";
 pub const UNCLOSED_GLAZE_CODE: &str = "E0307";
 pub const STRAY_CLOSING_TAG: &str = "E0308";
 pub const UNSAFE_ATTRIBUTE: &str = "E0309";
+pub const ENDLESS_GLAZE: &str = "E0310";
+pub const MISPLACED_FILL: &str = "E0311";
 
 pub const NOT_COMPILED_YET: &str = "E0401";
 pub const NO_MAIN: &str = "E0402";
@@ -374,6 +376,20 @@ pub static ALL: &[ErrorCode] = &[
         explanation: "Escaping keeps a value from ending an attribute, but in some attributes the browser reads the text as code: JavaScript in `onclick` and the other `on...` attributes, CSS in `style`, and a whole HTML page in `srcdoc`. A value there could run code or change the page, so glazes accept only numbers in `style` and no values in the others. Use classes and a stylesheet to style, and event handlers (`on:click={...}`) in embers.",
         wrong: "<p style=\"color: {user.colour}\">Hi</p>",
         right: "<p class=\"{user.theme}\">Hi</p>",
+    },
+    ErrorCode {
+        code: ENDLESS_GLAZE,
+        title: "a glaze that renders itself without end",
+        explanation: "A glaze always renders its layout, and the components it uses outside `{% if %}`, `{% for %}` and `{% match %}` blocks. When following those leads back to the same glaze, rendering it would never finish. A component may use itself inside a block that ends, such as a loop over a tree's children.",
+        wrong: "{# base.glaze #}\n{% layout \"base.glaze\" %}\n<main>{% slot %}</main>",
+        right: "{# base.glaze #}\n<main>{% slot %}</main>",
+    },
+    ErrorCode {
+        code: MISPLACED_FILL,
+        title: "`{% fill %}` in the wrong place",
+        explanation: "`{% fill name %} ... {% end %}` gives the content for a layout's or component's `{% slot name %}`. It goes directly inside a component tag, or at the top level of a page that has a `{% layout %}`, and names a slot that glaze has, once.",
+        wrong: "{% layout \"base.glaze\" title: \"Home\" %}\n<div>{% fill sidebar %}<p>Links</p>{% end %}</div>",
+        right: "{% layout \"base.glaze\" title: \"Home\" %}\n{% fill sidebar %}<p>Links</p>{% end %}\n<div>Content</div>",
     },
     ErrorCode {
         code: NOT_COMPILED_YET,
