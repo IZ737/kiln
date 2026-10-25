@@ -11,6 +11,11 @@ executables, and the start of phase 2: HTTP servers.
   parameters, cookies and bodies, and `app.listen`. A handler that fails or
   panics gets a 500 response and the server keeps going. It works with both
   backends, on Linux and Windows. See [docs/stdlib.md](docs/stdlib.md#web).
+- **JSON:** `json.encode(value)` and `json.decode<T>(text)`, derived from
+  types at compile time, with errors that say where a value went wrong.
+  `web.json(value)` responds with JSON and `req.json<T>()` reads a request
+  body; a body that does not decode gets 400. See
+  [docs/stdlib.md](docs/stdlib.md#json).
 - **Default arguments of standard library functions** are filled in when
   they are left out, as in `web.text("hi")`.
 

@@ -35,7 +35,8 @@ fn main() ! {
 > machine code with Cranelift and makes Linux and Windows x86-64
 > executables itself (`--target linux` or `--target windows`, from either
 > system), so it needs no C compiler, linker or libraries; the C backend
-> (`--backend c`) remains for other platforms. JSON, templates, `sql` and
+> (`--backend c`) remains for other platforms. JSON works in both
+> directions (`json`, `web.json`, `req.json<T>()`); templates, `sql` and
 > `auth` arrive in later phases. See the [roadmap](#roadmap) and
 > [what phase 1 leaves for later](docs/design.md#what-phase-1-leaves-for-later).
 

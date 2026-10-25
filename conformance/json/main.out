@@ -1,0 +1,26 @@
+{"id":7,"title":"Firing \"cone 6\"\nnotes","tags":["clay","glaze"],"author":{"name":"Ada","email":null},"rating":4.5,"draft":false}
+true
+Ada
+[1,2,3]
+{"ok":true,"count":2}
+{"ada":3,"bob":5}
+{"1":"one"}
+["Dot",{"Circle":{"radius":1.5}},{"Rect":[2,3]}]
+{"label":"n","item":42}
+[0.1,1,-2.5e-07,1e+21]
+"tab\there é"
+null
+[Dot, Circle(radius: 2.0), Rect(1.0, 2.5)]
+two
+[1, 2]
+café 🏺
+Author(name: "Bo", email: none)
+cannot read JSON: missing field `title` at $
+cannot read JSON: expected an integer at $.id, found a string
+cannot read JSON: expected an integer at $.id, found a number
+cannot read JSON: expected a string at $.tags[1], found a number
+invalid JSON at line 1, column 10: expected a member name in quotes
+cannot read JSON: expected an object at $, found an array
+cannot read JSON: missing field `id` at $
+cannot read JSON: expected an integer that fits in 64 bits at $.id, found a number
+cannot read JSON: expected Dot, Circle or Rect at $, found "Square"

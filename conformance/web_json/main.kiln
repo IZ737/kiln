@@ -1,0 +1,47 @@
+// A JSON API: an in-memory list of posts with typed request and response
+// bodies. A body that does not decode gets 400.
+import web, os
+
+struct Post {
+    id: Int
+    title: String
+    tags: List<String>
+    published: Bool
+}
+
+struct NewPost {
+    title: String
+    tags: List<String>
+    published: Bool?
+}
+
+fn main() ! {
+    var posts: List<Post> = [Post(id: 1, title: "Hello", tags: ["intro"], published: true)]
+    var next_id = 2
+    let app = web.app()
+
+    app.get("/posts", fn(req) {
+        return web.json(posts)
+    })
+
+    app.get("/posts/{id: Int}", fn(req, id) {
+        match posts.find(fn(p) { p.id == id }) {
+            some(p) => web.json(p)
+            none => web.json({ error: "no post ${id}" }, status: 404)
+        }
+    })
+
+    app.post("/posts", fn(req) {
+        let input = try req.json<NewPost>()
+        let post = Post(id: next_id, title: input.title, tags: input.tags, published: input.published ?? false)
+        next_id += 1
+        posts.push(post)
+        return web.json(post, status: 201)
+    })
+
+    app.get("/quit", fn(req) {
+        os.exit(0)
+    })
+
+    try app.listen("127.0.0.1:${env("PORT")}")
+}

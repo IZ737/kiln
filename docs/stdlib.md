@@ -4,7 +4,7 @@ The standard library's signatures are Kiln files in
 [`crates/kiln_check/std/`](../crates/kiln_check/std). The prelude is visible
 everywhere; every other module is imported by name (`import fs`). This page
 lists the modules the compiler can build into native programs today. The
-others (`sql`, `auth`, `json`), and the parts of `web` not listed here,
+others (`sql`, `auth`), and the parts of `web` not listed here,
 type-check, and building a program that uses them reports E0401 until their
 phase arrives.
 
@@ -165,6 +165,11 @@ lower case) and `body`.
 | `req.query(name) -> String?` | A query parameter, decoded (`+` is a space) |
 | `req.header(name) -> String?` | A header; the name is not case-sensitive |
 | `req.cookie(name) -> String?` | A cookie from the `cookie` header |
+| `req.json<T>() -> T !` | The body read as JSON into a `T` (see [`json`](#json)) |
+
+When `req.json` fails and the handler passes the error on with `try`, the
+server answers 400 with `{"error": "..."}` naming what was wrong, instead
+of 500.
 
 **Responses.** A `web.Response` has `status`, `headers` and `body`, and can
 be changed before it is returned (`res.headers["cache-control"] = "no-store"`)
@@ -172,6 +177,7 @@ or made directly with `web.Response(status: 204, headers: Map(), body: "")`.
 
 | Function | |
 | --- | --- |
+| `web.json(value, status: 200)` | `value` as JSON, `application/json` |
 | `web.text(body, status: 200)` | `text/plain; charset=utf-8` |
 | `web.html(body, status: 200)` | `text/html; charset=utf-8` |
 | `web.redirect(to, status: 302)` | Sends the client to `to` |
@@ -193,8 +199,52 @@ if it cannot listen, such as when the port is in use.
 For now the server handles one connection at a time and closes it after
 each response; requests are limited to 64 KiB of
 headers and 16 MiB of body, and a client that sends nothing for 10 seconds
-is dropped. `web.json`, `req.json`, `req.form` and `web.render` come later
-in phase 2 and in phase 3.
+is dropped. `req.form` and `web.render` come later.
+
+## `json`
+
+JSON is derived from types when the program is compiled; there is no
+reflection at run time.
+
+| Function | |
+| --- | --- |
+| `json.encode(value) -> String` | `value` as compact JSON |
+| `json.decode<T>(text) -> T !` | Reads `text` as a `T` |
+
+```kiln
+import json
+
+struct Post {
+    id: Int
+    title: String
+    tags: List<String>
+    summary: String?
+}
+
+fn main() ! {
+    let post = try json.decode<Post>("{\"id\": 1, \"title\": \"Hi\", \"tags\": []}")
+    print(post.summary ?? "no summary")        // no summary
+    print(json.encode(post))  // {"id":1,"title":"Hi","tags":[],"summary":null}
+}
+```
+
+| Kiln | JSON |
+| --- | --- |
+| `String`, `Bool` | string, `true` or `false` |
+| `Int` | an integer; decoding rejects fractions and numbers past 64 bits |
+| `Float` | a number; infinities and NaN encode as `null` |
+| `Duration` | an integer number of nanoseconds |
+| `T?` | `null` when none |
+| `List<T>`, `Set<T>` | an array (sets of strings or integers decode) |
+| `Map<K, V>` | an object; `Int` keys are written as strings |
+| structs, records | objects with a member per field |
+| enum variants | the name as a string (`"Dot"`) when it has no fields, otherwise `{"Circle": {"radius": 1.5}}`, `{"Some": 3}` for one unnamed field, or `{"Rect": [2, 3]}` for several |
+
+When decoding, members a struct does not have are ignored, and a missing
+field is an error unless its type is optional (it becomes `none`); a
+field's default value is not used yet. Errors say what was expected and
+where: `cannot read JSON: expected a string at $.tags[1], found a number`,
+or `invalid JSON at line 1, column 10: ...` for text that is not JSON.
 
 ## Adding to the standard library
 

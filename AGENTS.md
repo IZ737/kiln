@@ -68,7 +68,9 @@ Run `cargo fmt --all`, `cargo clippy --all-targets -- -D warnings` and
   Code in `kiln.c` that differs on Windows goes under `#ifdef _WIN32`. `runtime.rs` lists the C signatures of the runtime functions the
   generated code calls. Generated code shows, compares, hashes and orders
   compound values through `k_desc_*` in `native.c`, which read a
-  description of the type. The two backends must behave the same: the
+  description of the type; the C backend writes the same descriptions
+  (`desc` in `emit.rs`) for runtime code that works on any type, such as
+  JSON in `kiln.c`. The two backends must behave the same: the
   conformance tests run every program with both.
 - `crates/kiln_cli`: the `kiln` binary (`check`, `build`, `run`, `lsp`,
   `parse`, `explain`). `lsp.rs` is the language server; it reuses

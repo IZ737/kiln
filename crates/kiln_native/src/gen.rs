@@ -1809,7 +1809,8 @@ impl Fx<'_, '_, '_> {
             }
             ExprKind::Lib { module, name, args } => {
                 let vals: Vec<Value> = args.iter().map(|a| self.expr(a)).collect();
-                self.lib_call(module, name, &vals, &e.ty, e.span)
+                let tys: Vec<Ty> = args.iter().map(|a| a.uncoerced().ty.clone()).collect();
+                self.lib_call(module, name, &vals, &tys, &e.ty, e.span)
             }
             ExprKind::Print(v) => {
                 let x = self.expr(v);
@@ -2352,7 +2353,15 @@ impl Fx<'_, '_, '_> {
     /// or a method of a `web` type. A
     /// function that can fail is followed by the check that turns the
     /// runtime's message into a failed standard `Error`.
-    fn lib_call(&mut self, module: &str, name: &str, a: &[Value], ty: &Ty, span: Span) -> Value {
+    fn lib_call(
+        &mut self,
+        module: &str,
+        name: &str,
+        a: &[Value],
+        tys: &[Ty],
+        ty: &Ty,
+        span: Span,
+    ) -> Value {
         let (v, fallible) = match (module, name) {
             ("time", "now") => {
                 let n = self.call_rt("k_time_now", &[]);
@@ -2418,6 +2427,27 @@ impl Fx<'_, '_, '_> {
                     _ => return self.unsupported(span, format!("`{module}.{name}`")),
                 };
                 (self.call_rt(f, a), false)
+            }
+            ("json", "encode") => {
+                let d = self.g.desc(&tys[0]);
+                let addr = self.data_addr(d);
+                (self.call_rt("k_json_encode", &[addr, a[0]]), false)
+            }
+            ("json", "decode") | ("web", "Request.json") => {
+                let d = self.g.desc(ty);
+                let addr = self.data_addr(d);
+                let f = if module == "json" {
+                    "k_json_decode"
+                } else {
+                    "k_web_req_json"
+                };
+                let raw = self.call_rt(f, &[addr, a[0]]);
+                (self.unkv(raw, ty), true)
+            }
+            ("web", "json") => {
+                let d = self.g.desc(&tys[0]);
+                let addr = self.data_addr(d);
+                (self.call_rt("k_web_json", &[addr, a[0], a[1]]), false)
             }
             ("web", "App.listen") => (self.call_rt("k_web_listen", a), true),
             ("web", _) => {

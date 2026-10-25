@@ -334,6 +334,44 @@ K_API kv *k_record(int n, const kv *fields) {
     return r;
 }
 
+/* ----- type descriptions -----
+ *
+ * Runtime code that works on values of any type, such as JSON, reads a
+ * description of the type. The native backend writes one into the program's
+ * data for every type that needs it, and the C backend writes one as a C
+ * constant. Structs, records and enum fields are arrays of `kv` slots in
+ * both backends; a struct without fields is NULL. */
+enum {
+    K_D_UNKNOWN = 0,
+    K_D_STR = 1,
+    K_D_INT = 2,
+    K_D_FLOAT = 3,
+    K_D_BOOL = 4,
+    K_D_DURATION = 5,
+    K_D_OPT = 6,
+    K_D_FN = 7,
+    K_D_LIST = 8,
+    K_D_MAP = 9,
+    K_D_SET = 10,
+    K_D_STRUCT = 11,
+    K_D_ENUM = 12,
+    K_D_RECORD = 13,
+    K_D_VARIANT = 14,
+};
+
+/* A type. `parts` are the item type of an optional, list or set, the key
+ * and value types of a map, the field types of a struct, record or enum
+ * variant, and the variants of an enum. `labels` are field names, NULL for
+ * a variant's unnamed fields. Every member is 8 bytes, which is how the code
+ * generator lays it out. */
+typedef struct kdesc {
+    int64_t kind;
+    int64_t n;
+    const char *name;
+    const struct kdesc *const *parts;
+    const char *const *labels;
+} kdesc;
+
 /* ----- lists ----- */
 
 typedef struct klist { int64_t len, cap; kv *items; } klist;
@@ -1604,7 +1642,6 @@ K_API kbox *k_web_header(void *request, kstr *name) {
 }
 
 K_API kbox *k_web_cookie(void *request, kstr *name) {
-    kv *req = request;
     kbox *header = k_web_header(request, k_str("cookie"));
     if (!header) return NULL;
     return k_web_pair(K_KV2P(kstr *, header->v), name, ';', false);
@@ -1671,6 +1708,12 @@ K_API void k_web_log(const char *level, kv *req, const char *what, kstr *message
             k_cstr(K_KV2P(kstr *, req[K_REQ_PATH])), what, k_cstr(message));
 }
 
+/* The message of the error `req.json` failed with for this request, which
+ * the server answers with 400 if the handler passes it on. */
+K_API kstr *k_web_client_error = NULL;
+
+K_API kv *k_web_bad_json(kstr *message);
+
 /* Calls a handler, turning an error or a panic into a 500 response. The
  * call is in a function of its own because `__builtin_setjmp` must not
  * return to a frame whose locals changed after it. */
@@ -1685,7 +1728,13 @@ K_API kv *k_web_call(kroute *r, kv *req, kv *args) {
     k_panic_trap = false;
     if (k_failed) {
         kv err = k_take_error();
-        k_web_log("error", req, "failed", k_error_show(err));
+        kstr *message = k_error_show(err);
+        /* A body that `req.json` could not read is the client's mistake. */
+        if (k_web_client_error && message == k_web_client_error) {
+            k_web_client_error = NULL;
+            return k_web_bad_json(message);
+        }
+        k_web_log("error", req, "failed", message);
         return k_web_text(k_str("Internal Server Error"), 500);
     }
     return K_KV2P(kv *, res);
@@ -1957,6 +2006,7 @@ K_API void k_web_serve(kapp *a, ksock fd) {
         body = k_str_n(b.data + at, n);
     }
     req[K_REQ_BODY] = K_P2KV(body);
+    k_web_client_error = NULL;
     kv *res = k_web_dispatch(a, req);
     fflush(stdout);
     k_web_respond(fd, res, k_str_eq(K_KV2P(kstr *, req[K_REQ_METHOD]), k_str("HEAD")));
@@ -2077,4 +2127,644 @@ K_API void k_web_listen(void *app, kstr *address) {
         k_web_serve((kapp *)app, c);
         k_web_close(c);
     }
+}
+
+/* ----- json: encoding and decoding by type description -----
+ *
+ * Structs and records are objects, lists and sets arrays, maps objects (an
+ * `Int` key is written as a string), optionals null when none, and a
+ * `Duration` a number of nanoseconds. An enum variant without fields is its
+ * name as a string; one with fields is an object with one member, the
+ * variant's name, holding an object of the named fields, the one unnamed
+ * field, or an array of several. */
+
+K_API void k_json_string(kbuf *b, const char *s, int64_t n) {
+    static const char hex[] = "0123456789abcdef";
+    k_buf_add(b, "\"", 1);
+    for (int64_t i = 0; i < n; i++) {
+        unsigned char c = (unsigned char)s[i];
+        const char *esc = NULL;
+        switch (c) {
+        case '"': esc = "\\\""; break;
+        case '\\': esc = "\\\\"; break;
+        case '\n': esc = "\\n"; break;
+        case '\r': esc = "\\r"; break;
+        case '\t': esc = "\\t"; break;
+        case '\b': esc = "\\b"; break;
+        case '\f': esc = "\\f"; break;
+        }
+        if (esc) k_buf_str(b, esc);
+        else if (c < 0x20) {
+            char u[6] = {'\\', 'u', '0', '0', hex[c >> 4], hex[c & 15]};
+            k_buf_add(b, u, 6);
+        } else k_buf_add(b, (const char *)&c, 1);
+    }
+    k_buf_add(b, "\"", 1);
+}
+
+/* The shortest text that reads back as the same number. */
+K_API void k_json_float(kbuf *b, double f) {
+    if (!isfinite(f)) { k_buf_str(b, "null"); return; }
+    char s[32];
+    for (int p = 1; p <= 17; p++) {
+        snprintf(s, sizeof s, "%.*g", p, f);
+        if (strtod(s, NULL) == f) break;
+    }
+    k_buf_str(b, s);
+}
+
+K_API void k_json_put(kbuf *b, const kdesc *d, kv v);
+
+K_API void k_json_fields(kbuf *b, const kdesc *d, const kv *x) {
+    k_buf_add(b, "{", 1);
+    for (int64_t i = 0; i < d->n; i++) {
+        if (i > 0) k_buf_add(b, ",", 1);
+        k_json_string(b, d->labels[i], (int64_t)strlen(d->labels[i]));
+        k_buf_add(b, ":", 1);
+        k_json_put(b, d->parts[i], x[i]);
+    }
+    k_buf_add(b, "}", 1);
+}
+
+K_API void k_json_put(kbuf *b, const kdesc *d, kv v) {
+    char num[32];
+    switch (d->kind) {
+    case K_D_STR: {
+        kstr *s = K_KV2P(kstr *, v);
+        k_json_string(b, s->data, s->len);
+        return;
+    }
+    case K_D_INT:
+    case K_D_DURATION:
+        snprintf(num, sizeof num, "%" PRId64, (int64_t)v);
+        k_buf_str(b, num);
+        return;
+    case K_D_FLOAT: k_json_float(b, k_kv2f(v)); return;
+    case K_D_BOOL: k_buf_str(b, v ? "true" : "false"); return;
+    case K_D_OPT: {
+        kbox *box = K_KV2P(kbox *, v);
+        if (box) k_json_put(b, d->parts[0], box->v);
+        else k_buf_str(b, "null");
+        return;
+    }
+    case K_D_LIST: {
+        klist *l = K_KV2P(klist *, v);
+        k_buf_add(b, "[", 1);
+        for (int64_t i = 0; i < l->len; i++) {
+            if (i > 0) k_buf_add(b, ",", 1);
+            k_json_put(b, d->parts[0], l->items[i]);
+        }
+        k_buf_add(b, "]", 1);
+        return;
+    }
+    case K_D_SET:
+    case K_D_MAP: {
+        kmap *m = K_KV2P(kmap *, v);
+        bool map = d->kind == K_D_MAP;
+        k_buf_add(b, map ? "{" : "[", 1);
+        bool first = true;
+        for (int64_t i = 0; i < m->used; i++) {
+            if (!m->live[i]) continue;
+            if (!first) k_buf_add(b, ",", 1);
+            first = false;
+            if (!map) { k_json_put(b, d->parts[0], m->keys[i]); continue; }
+            if (d->parts[0]->kind == K_D_STR) {
+                k_json_put(b, d->parts[0], m->keys[i]);
+            } else {
+                kbuf key = {0};
+                k_json_put(&key, d->parts[0], m->keys[i]);
+                k_json_string(b, key.data, key.len);
+            }
+            k_buf_add(b, ":", 1);
+            k_json_put(b, d->parts[1], m->vals[i]);
+        }
+        k_buf_add(b, map ? "}" : "]", 1);
+        return;
+    }
+    case K_D_STRUCT:
+    case K_D_RECORD:
+        if (d->n == 0) { k_buf_str(b, "{}"); return; }
+        k_json_fields(b, d, K_KV2P(kv *, v));
+        return;
+    case K_D_ENUM: {
+        kenum *e = K_KV2P(kenum *, v);
+        const kdesc *var = d->parts[e->tag];
+        if (var->n == 0) {
+            k_json_string(b, var->name, (int64_t)strlen(var->name));
+            return;
+        }
+        k_buf_add(b, "{", 1);
+        k_json_string(b, var->name, (int64_t)strlen(var->name));
+        k_buf_add(b, ":", 1);
+        if (var->labels[0]) k_json_fields(b, var, e->f);
+        else if (var->n == 1) k_json_put(b, var->parts[0], e->f[0]);
+        else {
+            k_buf_add(b, "[", 1);
+            for (int64_t i = 0; i < var->n; i++) {
+                if (i > 0) k_buf_add(b, ",", 1);
+                k_json_put(b, var->parts[i], e->f[i]);
+            }
+            k_buf_add(b, "]", 1);
+        }
+        k_buf_add(b, "}", 1);
+        return;
+    }
+    }
+    k_buf_str(b, "null");
+}
+
+K_API kstr *k_json_encode(const kdesc *d, kv v) {
+    kbuf b = {0};
+    k_json_put(&b, d, v);
+    return k_str_n(b.data ? b.data : "", b.len);
+}
+
+/* The decoder: a recursive descent over the text, guided by the type. On
+ * failure it records the first error and every level returns false. */
+typedef struct kjson {
+    const char *start, *p, *end;
+    kbuf path; /* where in the value it is, such as `.posts[2].title` */
+    kstr *error;
+    int depth;
+} kjson;
+
+K_API void k_json_ws(kjson *j) {
+    while (j->p < j->end && (*j->p == ' ' || *j->p == '\t' || *j->p == '\n' || *j->p == '\r')) j->p++;
+}
+
+/* A syntax error, with its line and column. */
+K_API bool k_json_syntax(kjson *j, const char *what) {
+    if (j->error) return false;
+    int64_t line = 1, col = 1;
+    for (const char *c = j->start; c < j->p; c++) {
+        if (*c == '\n') { line++; col = 1; } else col++;
+    }
+    char buf[256];
+    if (j->p >= j->end) snprintf(buf, sizeof buf, "invalid JSON: %s, but the text ended", what);
+    else snprintf(buf, sizeof buf, "invalid JSON at line %" PRId64 ", column %" PRId64 ": %s", line, col, what);
+    j->error = k_str(buf);
+    return false;
+}
+
+K_API const char *k_json_found(kjson *j) {
+    if (j->p >= j->end) return "nothing";
+    switch (*j->p) {
+    case '"': return "a string";
+    case '{': return "an object";
+    case '[': return "an array";
+    case 't': case 'f': return "a boolean";
+    case 'n': return "null";
+    }
+    return (*j->p == '-' || (*j->p >= '0' && *j->p <= '9')) ? "a number" : "something else";
+}
+
+/* A value of the wrong type, with where it is. */
+K_API bool k_json_mismatch(kjson *j, const char *expected) {
+    if (j->error) return false;
+    if (j->p >= j->end) return k_json_syntax(j, "expected a value");
+    char buf[512];
+    snprintf(buf, sizeof buf, "cannot read JSON: expected %s at $%.*s, found %s", expected,
+             (int)j->path.len, j->path.data ? j->path.data : "", k_json_found(j));
+    j->error = k_str(buf);
+    return false;
+}
+
+K_API bool k_json_lit(kjson *j, const char *word) {
+    size_t n = strlen(word);
+    if ((size_t)(j->end - j->p) >= n && memcmp(j->p, word, n) == 0) { j->p += n; return true; }
+    return false;
+}
+
+K_API void k_utf8(kbuf *b, uint32_t c) {
+    char u[4];
+    int n;
+    if (c < 0x80) { u[0] = (char)c; n = 1; }
+    else if (c < 0x800) { u[0] = (char)(0xc0 | (c >> 6)); u[1] = (char)(0x80 | (c & 0x3f)); n = 2; }
+    else if (c < 0x10000) { u[0] = (char)(0xe0 | (c >> 12)); u[1] = (char)(0x80 | ((c >> 6) & 0x3f)); u[2] = (char)(0x80 | (c & 0x3f)); n = 3; }
+    else { u[0] = (char)(0xf0 | (c >> 18)); u[1] = (char)(0x80 | ((c >> 12) & 0x3f)); u[2] = (char)(0x80 | ((c >> 6) & 0x3f)); u[3] = (char)(0x80 | (c & 0x3f)); n = 4; }
+    k_buf_add(b, u, n);
+}
+
+K_API bool k_json_hex4(kjson *j, uint32_t *out) {
+    if (j->end - j->p < 4) return k_json_syntax(j, "expected four hex digits after \\u");
+    uint32_t v = 0;
+    for (int i = 0; i < 4; i++) {
+        int h = k_hex(j->p[i]);
+        if (h < 0) return k_json_syntax(j, "expected four hex digits after \\u");
+        v = v * 16 + (uint32_t)h;
+    }
+    j->p += 4;
+    *out = v;
+    return true;
+}
+
+/* Reads a string at `j->p`, which is a `"`. */
+K_API bool k_json_str(kjson *j, kstr **out) {
+    j->p++;
+    kbuf b = {0};
+    for (;;) {
+        const char *run = j->p;
+        while (j->p < j->end && *j->p != '"' && *j->p != '\\' && (unsigned char)*j->p >= 0x20) j->p++;
+        k_buf_add(&b, run, j->p - run);
+        if (j->p >= j->end) return k_json_syntax(j, "expected the end of the string");
+        char c = *j->p;
+        if (c == '"') { j->p++; break; }
+        if (c != '\\') return k_json_syntax(j, "control characters must be escaped in strings");
+        j->p++;
+        if (j->p >= j->end) return k_json_syntax(j, "expected an escape");
+        char e = *j->p++;
+        switch (e) {
+        case '"': k_buf_add(&b, "\"", 1); break;
+        case '\\': k_buf_add(&b, "\\", 1); break;
+        case '/': k_buf_add(&b, "/", 1); break;
+        case 'b': k_buf_add(&b, "\b", 1); break;
+        case 'f': k_buf_add(&b, "\f", 1); break;
+        case 'n': k_buf_add(&b, "\n", 1); break;
+        case 'r': k_buf_add(&b, "\r", 1); break;
+        case 't': k_buf_add(&b, "\t", 1); break;
+        case 'u': {
+            uint32_t c1, c2;
+            if (!k_json_hex4(j, &c1)) return false;
+            if (c1 >= 0xd800 && c1 < 0xdc00) {
+                if (!k_json_lit(j, "\\u") || !k_json_hex4(j, &c2) || c2 < 0xdc00 || c2 >= 0xe000)
+                    return k_json_syntax(j, "expected the second half of a surrogate pair");
+                c1 = 0x10000 + ((c1 - 0xd800) << 10) + (c2 - 0xdc00);
+            } else if (c1 >= 0xdc00 && c1 < 0xe000) {
+                return k_json_syntax(j, "unexpected second half of a surrogate pair");
+            }
+            k_utf8(&b, c1);
+            break;
+        }
+        default:
+            j->p--;
+            return k_json_syntax(j, "unknown escape");
+        }
+    }
+    *out = k_str_n(b.data ? b.data : "", b.len);
+    return true;
+}
+
+/* Reads a number's text; `integer` is set when it has no fraction or
+ * exponent. */
+K_API bool k_json_number(kjson *j, const char **s, int64_t *n, bool *integer) {
+    const char *p = j->p;
+    *s = p;
+    *integer = true;
+    if (p < j->end && *p == '-') p++;
+    if (p >= j->end || *p < '0' || *p > '9') return k_json_syntax(j, "expected a digit");
+    if (*p == '0') p++;
+    else while (p < j->end && *p >= '0' && *p <= '9') p++;
+    if (p < j->end && *p == '.') {
+        *integer = false;
+        p++;
+        if (p >= j->end || *p < '0' || *p > '9') { j->p = p; return k_json_syntax(j, "expected a digit after the decimal point"); }
+        while (p < j->end && *p >= '0' && *p <= '9') p++;
+    }
+    if (p < j->end && (*p == 'e' || *p == 'E')) {
+        *integer = false;
+        p++;
+        if (p < j->end && (*p == '+' || *p == '-')) p++;
+        if (p >= j->end || *p < '0' || *p > '9') { j->p = p; return k_json_syntax(j, "expected a digit in the exponent"); }
+        while (p < j->end && *p >= '0' && *p <= '9') p++;
+    }
+    *n = p - *s;
+    j->p = p;
+    return true;
+}
+
+K_API bool k_json_skip(kjson *j);
+
+/* Reads `[ item, ... ]` or `{ "key": value, ... }`, calling `each` for
+ * every item (with `key` NULL) or member. */
+typedef bool (*k_json_each)(kjson *j, void *ctx, kstr *key, int64_t index);
+
+K_API bool k_json_compound(kjson *j, bool object, k_json_each each, void *ctx) {
+    if (++j->depth > 512) return k_json_syntax(j, "values are nested too deeply");
+    j->p++;
+    k_json_ws(j);
+    char close = object ? '}' : ']';
+    int64_t index = 0;
+    if (j->p < j->end && *j->p == close) { j->p++; j->depth--; return true; }
+    for (;;) {
+        kstr *key = NULL;
+        if (object) {
+            if (j->p >= j->end || *j->p != '"') return k_json_syntax(j, "expected a member name in quotes");
+            if (!k_json_str(j, &key)) return false;
+            k_json_ws(j);
+            if (j->p >= j->end || *j->p != ':') return k_json_syntax(j, "expected `:` after the member name");
+            j->p++;
+            k_json_ws(j);
+        }
+        if (!each(j, ctx, key, index++)) return false;
+        k_json_ws(j);
+        if (j->p < j->end && *j->p == ',') { j->p++; k_json_ws(j); continue; }
+        if (j->p < j->end && *j->p == close) { j->p++; break; }
+        return k_json_syntax(j, object ? "expected `,` or `}`" : "expected `,` or `]`");
+    }
+    j->depth--;
+    return true;
+}
+
+K_API bool k_json_skip_each(kjson *j, void *ctx, kstr *key, int64_t index) {
+    (void)ctx; (void)key; (void)index;
+    return k_json_skip(j);
+}
+
+/* Reads any value and drops it, as for a member a struct does not have. */
+K_API bool k_json_skip(kjson *j) {
+    k_json_ws(j);
+    if (j->p >= j->end) return k_json_syntax(j, "expected a value");
+    switch (*j->p) {
+    case '"': { kstr *s; return k_json_str(j, &s); }
+    case '{': return k_json_compound(j, true, k_json_skip_each, NULL);
+    case '[': return k_json_compound(j, false, k_json_skip_each, NULL);
+    }
+    if (k_json_lit(j, "true") || k_json_lit(j, "false") || k_json_lit(j, "null")) return true;
+    const char *s;
+    int64_t n;
+    bool integer;
+    return k_json_number(j, &s, &n, &integer);
+}
+
+K_API bool k_json_read(kjson *j, const kdesc *d, kv *out);
+
+K_API void k_json_path_index(kjson *j, int64_t index) {
+    char s[32];
+    snprintf(s, sizeof s, "[%" PRId64 "]", index);
+    k_buf_str(&j->path, s);
+}
+
+K_API void k_json_path_key(kjson *j, kstr *key) {
+    k_buf_add(&j->path, ".", 1);
+    k_buf_add(&j->path, key->data, key->len);
+}
+
+typedef struct kjson_items { const kdesc *d; klist *list; kmap *set; } kjson_items;
+
+K_API bool k_json_item(kjson *j, void *ctx, kstr *key, int64_t index) {
+    (void)key;
+    kjson_items *c = ctx;
+    int64_t mark = j->path.len;
+    k_json_path_index(j, index);
+    kv v;
+    if (!k_json_read(j, c->d->parts[0], &v)) return false;
+    j->path.len = mark;
+    if (c->set) k_set_add(c->set, v);
+    else k_list_push(c->list, v);
+    return true;
+}
+
+K_API bool k_eq_int(kv a, kv b) { return a == b; }
+
+/* A new map or set whose keys have the description `key`, or NULL for a key
+ * type that decoding does not support. */
+K_API kmap *k_json_new_map(const kdesc *key) {
+    switch (key->kind) {
+    case K_D_STR: return k_map_new(k_hash_str, k_web_str_eq);
+    case K_D_INT:
+    case K_D_BOOL:
+    case K_D_DURATION: return k_map_new(k_hash_int, k_eq_int);
+    }
+    return NULL;
+}
+
+typedef struct kjson_map { const kdesc *d; kmap *map; } kjson_map;
+
+K_API bool k_json_member(kjson *j, void *ctx, kstr *key, int64_t index) {
+    (void)index;
+    kjson_map *c = ctx;
+    kv k = K_P2KV(key);
+    if (c->d->parts[0]->kind != K_D_STR) {
+        kv n;
+        if (!k_web_param(key, 'i', &n)) {
+            char buf[512];
+            snprintf(buf, sizeof buf, "cannot read JSON: expected an integer key at $%.*s, found \"%s\"",
+                     (int)j->path.len, j->path.data ? j->path.data : "", k_cstr(key));
+            j->error = k_str(buf);
+            return false;
+        }
+        k = n;
+    }
+    int64_t mark = j->path.len;
+    k_json_path_key(j, key);
+    kv v;
+    if (!k_json_read(j, c->d->parts[1], &v)) return false;
+    j->path.len = mark;
+    k_map_set(c->map, k, v);
+    return true;
+}
+
+typedef struct kjson_fields { const kdesc *d; kv *slots; bool *seen; } kjson_fields;
+
+K_API bool k_json_field(kjson *j, void *ctx, kstr *key, int64_t index) {
+    (void)index;
+    kjson_fields *c = ctx;
+    for (int64_t i = 0; i < c->d->n; i++) {
+        if (!k_str_eq(key, k_str(c->d->labels[i]))) continue;
+        int64_t mark = j->path.len;
+        k_json_path_key(j, key);
+        if (!k_json_read(j, c->d->parts[i], &c->slots[i])) return false;
+        j->path.len = mark;
+        c->seen[i] = true;
+        return true;
+    }
+    return k_json_skip(j);
+}
+
+/* Reads an object into the fields of a struct, record or variant. A field
+ * that is missing is an error unless it is optional. */
+K_API bool k_json_object(kjson *j, const kdesc *d, kv *slots) {
+    if (j->p >= j->end || *j->p != '{') return k_json_mismatch(j, "an object");
+    bool *seen = k_alloc_atomic((size_t)d->n + 1);
+    memset(seen, 0, (size_t)d->n + 1);
+    kjson_fields c = {d, slots, seen};
+    if (!k_json_compound(j, true, k_json_field, &c)) return false;
+    for (int64_t i = 0; i < d->n; i++) {
+        if (seen[i]) continue;
+        if (d->parts[i]->kind == K_D_OPT) { slots[i] = 0; continue; }
+        if (j->error) return false;
+        char buf[512];
+        snprintf(buf, sizeof buf, "cannot read JSON: missing field `%s` at $%.*s", d->labels[i],
+                 (int)j->path.len, j->path.data ? j->path.data : "");
+        j->error = k_str(buf);
+        return false;
+    }
+    return true;
+}
+
+K_API bool k_json_read(kjson *j, const kdesc *d, kv *out) {
+    k_json_ws(j);
+    *out = 0;
+    switch (d->kind) {
+    case K_D_OPT: {
+        if (k_json_lit(j, "null")) return true;
+        kv v;
+        if (!k_json_read(j, d->parts[0], &v)) return false;
+        *out = K_P2KV(k_box(v));
+        return true;
+    }
+    case K_D_STR: {
+        if (j->p >= j->end || *j->p != '"') return k_json_mismatch(j, "a string");
+        kstr *s;
+        if (!k_json_str(j, &s)) return false;
+        *out = K_P2KV(s);
+        return true;
+    }
+    case K_D_BOOL:
+        if (k_json_lit(j, "true")) { *out = 1; return true; }
+        if (k_json_lit(j, "false")) return true;
+        return k_json_mismatch(j, "true or false");
+    case K_D_INT:
+    case K_D_DURATION:
+    case K_D_FLOAT: {
+        if (j->p >= j->end || !(*j->p == '-' || (*j->p >= '0' && *j->p <= '9')))
+            return k_json_mismatch(j, d->kind == K_D_FLOAT ? "a number" : "an integer");
+        const char *at = j->p, *s;
+        int64_t n;
+        bool integer;
+        if (!k_json_number(j, &s, &n, &integer)) return false;
+        kstr *text = k_str_n(s, n);
+        if (d->kind == K_D_FLOAT) {
+            *out = k_f2kv(strtod(text->data, NULL));
+            return true;
+        }
+        if (!integer || !k_web_param(text, 'i', out)) {
+            j->p = at;
+            return k_json_mismatch(j, integer ? "an integer that fits in 64 bits" : "an integer");
+        }
+        return true;
+    }
+    case K_D_LIST:
+    case K_D_SET: {
+        if (j->p >= j->end || *j->p != '[') return k_json_mismatch(j, "an array");
+        kjson_items c = {d, NULL, NULL};
+        if (d->kind == K_D_SET) {
+            c.set = k_json_new_map(d->parts[0]);
+            if (!c.set) return k_json_mismatch(j, "a set of strings or integers");
+        } else {
+            c.list = k_list(0, NULL);
+        }
+        if (!k_json_compound(j, false, k_json_item, &c)) return false;
+        *out = c.set ? K_P2KV(c.set) : K_P2KV(c.list);
+        return true;
+    }
+    case K_D_MAP: {
+        if (j->p >= j->end || *j->p != '{') return k_json_mismatch(j, "an object");
+        kjson_map c = {d, k_json_new_map(d->parts[0])};
+        if (!c.map || (d->parts[0]->kind != K_D_STR && d->parts[0]->kind != K_D_INT))
+            return k_json_mismatch(j, "a map with `String` or `Int` keys");
+        if (!k_json_compound(j, true, k_json_member, &c)) return false;
+        *out = K_P2KV(c.map);
+        return true;
+    }
+    case K_D_STRUCT:
+    case K_D_RECORD: {
+        kv *slots = k_alloc(sizeof(kv) * (size_t)(d->n + 1));
+        if (!k_json_object(j, d, slots)) return false;
+        *out = d->n == 0 ? 0 : K_P2KV(slots);
+        return true;
+    }
+    case K_D_ENUM: {
+        bool object = j->p < j->end && *j->p == '{';
+        if (j->p >= j->end || (*j->p != '"' && !object)) return k_json_mismatch(j, "a string or an object");
+        const char *at = j->p;
+        kstr *name;
+        if (object) {
+            j->p++;
+            k_json_ws(j);
+            if (j->p >= j->end || *j->p != '"') return k_json_syntax(j, "expected a member name in quotes");
+        }
+        if (!k_json_str(j, &name)) return false;
+        for (int64_t i = 0; i < d->n; i++) {
+            const kdesc *var = d->parts[i];
+            if (!k_str_eq(name, k_str(var->name))) continue;
+            if ((var->n == 0) == object) break;
+            kv *f = k_alloc(sizeof(kv) * (size_t)(var->n + 1));
+            if (object) {
+                k_json_ws(j);
+                if (j->p >= j->end || *j->p != ':') return k_json_syntax(j, "expected `:` after the member name");
+                j->p++;
+                k_json_ws(j);
+                int64_t mark = j->path.len;
+                k_json_path_key(j, name);
+                if (var->labels[0]) {
+                    if (!k_json_object(j, var, f)) return false;
+                } else if (var->n == 1) {
+                    if (!k_json_read(j, var->parts[0], &f[0])) return false;
+                } else {
+                    if (j->p >= j->end || *j->p != '[') return k_json_mismatch(j, "an array");
+                    j->p++;
+                    for (int64_t k = 0; k < var->n; k++) {
+                        k_json_ws(j);
+                        if (k > 0) {
+                            if (j->p >= j->end || *j->p != ',') return k_json_mismatch(j, "more items");
+                            j->p++;
+                        }
+                        if (!k_json_read(j, var->parts[k], &f[k])) return false;
+                    }
+                    k_json_ws(j);
+                    if (j->p >= j->end || *j->p != ']') return k_json_syntax(j, "expected `]`");
+                    j->p++;
+                }
+                j->path.len = mark;
+                k_json_ws(j);
+                if (j->p >= j->end || *j->p != '}') return k_json_syntax(j, "expected `}` after the variant");
+                j->p++;
+            }
+            *out = K_P2KV(k_enum(i, (int)var->n, f));
+            return true;
+        }
+        j->p = at;
+        kbuf names = {0};
+        for (int64_t i = 0; i < d->n; i++) {
+            if (i > 0) k_buf_str(&names, i == d->n - 1 ? " or " : ", ");
+            k_buf_str(&names, d->parts[i]->name);
+        }
+        k_buf_add(&names, "", 1);
+        char buf[512];
+        snprintf(buf, sizeof buf, "cannot read JSON: expected %s at $%.*s, found \"%s\"%s", names.data,
+                 (int)j->path.len, j->path.data ? j->path.data : "", k_cstr(name),
+                 object ? " with fields" : "");
+        j->error = k_str(buf);
+        return false;
+    }
+    }
+    return k_json_mismatch(j, "a type JSON can hold");
+}
+
+/* Reads `text` as a value of the described type. On failure it returns 0
+ * with the reason in `k_lib_error`. */
+K_API kv k_json_decode(const kdesc *d, kstr *text) {
+    kjson j = {text->data, text->data, text->data + text->len, {0}, NULL, 0};
+    kv v;
+    if (k_json_read(&j, d, &v)) {
+        k_json_ws(&j);
+        if (j.p == j.end) return v;
+        k_json_syntax(&j, "unexpected text after the value");
+    }
+    k_lib_error = j.error ? j.error : k_str("invalid JSON");
+    return 0;
+}
+
+/* The 400 response to a JSON body that `req.json` could not read:
+ * `{"error": "..."}`, since the client speaks JSON. */
+K_API kv *k_web_bad_json(kstr *message) {
+    kbuf b = {0};
+    k_buf_str(&b, "{\"error\":");
+    k_json_string(&b, message->data, message->len);
+    k_buf_str(&b, "}");
+    return k_web_response(400, k_str_n(b.data, b.len), "application/json");
+}
+
+K_API void *k_web_json(const kdesc *d, kv v, int64_t status) {
+    return k_web_response(status, k_json_encode(d, v), "application/json");
+}
+
+/* `req.json<T>()`: the body read as a `T`. A failure is the client's: if
+ * the handler passes the error on, the server answers 400. */
+K_API kv k_web_req_json(const kdesc *d, void *request) {
+    kv *req = request;
+    kv v = k_json_decode(d, K_KV2P(kstr *, req[K_REQ_BODY]));
+    if (k_lib_error) k_web_client_error = k_lib_error;
+    return v;
 }

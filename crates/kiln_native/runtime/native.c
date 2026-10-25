@@ -13,36 +13,6 @@
 #define K_API
 #include "kiln.c"
 
-enum {
-    K_D_UNKNOWN = 0,
-    K_D_STR = 1,
-    K_D_INT = 2,
-    K_D_FLOAT = 3,
-    K_D_BOOL = 4,
-    K_D_DURATION = 5,
-    K_D_OPT = 6,
-    K_D_FN = 7,
-    K_D_LIST = 8,
-    K_D_MAP = 9,
-    K_D_SET = 10,
-    K_D_STRUCT = 11,
-    K_D_ENUM = 12,
-    K_D_RECORD = 13,
-    K_D_VARIANT = 14,
-};
-
-/* A type. `parts` are the item type of an optional, list or set, the key
- * and value types of a map, the field types of a struct, record or enum
- * variant, and the variants of an enum. `labels` are field names, NULL for
- * a variant's unnamed fields. Every member is 8 bytes, which is how the code
- * generator lays it out. */
-typedef struct kdesc {
-    int64_t kind;
-    int64_t n;
-    const char *name;
-    const struct kdesc *const *parts;
-    const char *const *labels;
-} kdesc;
 
 kstr *k_desc_show(const kdesc *d, kv v, bool quote);
 bool k_desc_eq(const kdesc *d, kv a, kv b);
