@@ -100,8 +100,17 @@ bindings).
 A folder is one program, as in Go. All of its `.kiln` files share one
 namespace, so splitting a file in two never needs an import, and the
 folder's glazes see the same types and functions. Imports stay per file.
-A subfolder will be a module, imported by its name, with `pub` items as its
-interface; that arrives with wares.
+
+**Phase 5 explicitly adds multi-folder projects and local modules.** A
+subfolder is a module, imported by its name, with `pub` items defining its
+interface. Compiler resolution, type checking, builds, Glaze/component
+references, diagnostics and LSP navigation must work across module folders.
+Local imports work **without publishing, installing or configuring a Ware
+registry**. Wares will reuse compatible module-resolution concepts for
+external versioned packages, but are not a prerequisite for organizing
+one app into multiple folders. Phase 5 is complete on this dimension when
+a multi-folder app builds and runs, access control through `pub` is checked,
+and cross-folder editing/navigation works.
 
 ## Memory and concurrency
 
