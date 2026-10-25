@@ -60,6 +60,7 @@ enum Open {
     If,
     For,
     Match,
+    Fill,
 }
 
 /// What ended a run of nodes.
@@ -83,6 +84,7 @@ enum Tag {
     Let(LocalDecl),
     Layout(Layout),
     Slot(Option<Ident>),
+    Fill(Ident),
     If(Expr),
     For {
         binding: Ident,
@@ -550,6 +552,7 @@ impl GlazeParser<'_> {
                 });
                 Tag::Slot(name)
             }
+            "fill" => Tag::Fill(self.parse_code(tokens, |p| p.expect_ident("a slot name"))),
             "if" => Tag::If(self.parse_code(tokens, |p| p.parse_expr())),
             "else" if tokens[0].kind == TokenKind::If => {
                 tokens.remove(0);
@@ -625,12 +628,14 @@ impl GlazeParser<'_> {
             "include" | "render" | "partial" => {
                 "use a component as a tag: `<PostCard post={post} />` renders post_card.glaze"
             }
-            "block" | "yield" | "section" => "a layout marks where the page goes with `{% slot %}`",
+            "block" | "yield" | "section" => {
+                "a layout marks where the page goes with `{% slot %}`, and a page fills a named slot with `{% fill name %}`"
+            }
             "set" | "assign" | "var" => "use `{% let name = value %}`",
             "each" | "foreach" => "use `{% for item in items %}`",
             "unless" => "use `{% if not condition %}`",
             "switch" | "when" => "use `{% match value %}` with `{% case pattern %}`",
-            _ => "the tags are `props`, `state`, `layout`, `slot`, `let`, `if`, `else`, `for`, `empty`, `match`, `case` and `end`",
+            _ => "the tags are `props`, `state`, `layout`, `slot`, `fill`, `let`, `if`, `else`, `for`, `empty`, `match`, `case` and `end`",
         };
         self.error(
             Diagnostic::error(
@@ -691,6 +696,17 @@ impl GlazeParser<'_> {
             }
             Tag::Let(decl) => nodes.push(Node::Let(decl)),
             Tag::Slot(name) => nodes.push(Node::Slot { name, span }),
+            Tag::Fill(name) => {
+                let (body, end) = self.block_body(Open::Fill);
+                let span = match end {
+                    Ending::EndBlock(s) => span.to(s),
+                    other => {
+                        self.unclosed("`{% fill %}`".into(), span, "{% end %}", other);
+                        span
+                    }
+                };
+                nodes.push(Node::Fill { name, body, span });
+            }
             Tag::If(cond) => nodes.push(self.parse_if(cond, span)),
             Tag::For {
                 binding,
@@ -1180,7 +1196,8 @@ fn node_span(node: &Node) -> Span {
         | Node::If { span, .. }
         | Node::For { span, .. }
         | Node::Match { span, .. }
-        | Node::Slot { span, .. } => *span,
+        | Node::Slot { span, .. }
+        | Node::Fill { span, .. } => *span,
         Node::Element(e) => e.span,
         Node::Let(d) => d.span,
     }

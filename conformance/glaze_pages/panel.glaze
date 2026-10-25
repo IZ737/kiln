@@ -1,0 +1,5 @@
+<section class="panel">
+  {% if true %}<header>{% slot header %}</header>{% end %}
+  <div class="body">{% slot %}</div>
+  <footer>{% slot footer %}</footer>
+</section>

@@ -1,0 +1,2 @@
+{% props section: Section %}
+<li>{section.title}{% if section.children.len() > 0 %}<ul>{% for c in section.children %}<TocEntry section={c} />{% end %}</ul>{% end %}</li>

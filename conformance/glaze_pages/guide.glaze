@@ -1,0 +1,11 @@
+{% props sections: List<Section>, page: String %}
+{% layout "layout.glaze" title: page, nav: "guide" %}
+{% fill sidebar %}
+<ul class="toc">
+  {% for s in sections %}
+  <TocEntry section={s} />
+  {% end %}
+</ul>
+{% end %}
+<h1>{page}</h1>
+<p>The guide has {sections.len()} parts.</p>

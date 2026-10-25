@@ -1,0 +1,43 @@
+<!doctype html>
+<html>
+<head>
+  <title>Welcome · Kiln docs</title>
+  <meta name="description" content="Kiln docs">
+</head>
+<body>
+  <nav><b>Home</b></nav>
+  <aside></aside>
+  <main>
+    <h1>Kiln</h1>
+<section class="panel">
+  <header>Getting started</header>
+  <div class="body"><p>Install Kiln, then write your first program.</p></div>
+  <footer><a href="/guide">Read the guide</a></footer>
+</section>
+<section class="panel">
+  <header></header>
+  <div class="body"><p>A panel with only a body.</p></div>
+  <footer></footer>
+</section>
+  </main>
+</body>
+</html>
+---
+<!doctype html>
+<html>
+<head>
+  <title>Glazes · Kiln docs</title>
+  
+</head>
+<body>
+  <nav><a href="/">Home</a></nav>
+  <aside><ul class="toc">
+  <li>Basics<ul><li>Values</li><li>Functions<ul><li>Closures</li></ul></li></ul></li>
+  <li>Glazes</li>
+</ul></aside>
+  <main>
+    <h1>Glazes</h1>
+<p>The guide has 2 parts.</p>
+  </main>
+</body>
+</html>

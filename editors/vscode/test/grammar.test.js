@@ -91,6 +91,7 @@ test("Glaze tags, output, components and attributes", async () => {
       "<style>.a { color: red; }</style>",
       "<p>{ { a: 1 }.a }</p>",
       '<script type="module">let a = {b: 1}</script>',
+      "{% fill sidebar %}<nav></nav>{% end %}",
     ].join("\n"),
   );
   assertScope(lines, 0, "{%", "punctuation.definition.tag.begin.glaze");
@@ -128,6 +129,7 @@ test("Glaze tags, output, components and attributes", async () => {
   assertScope(lines, 8, "a", "variable.other.property.kiln");
   assertScope(lines, 8, "p", "entity.name.tag.html", 1);
   assertScope(lines, 9, "type", "entity.other.attribute-name.html");
+  assertScope(lines, 10, "fill", "keyword.control.glaze");
   assertScope(lines, 9, "let a = {b: 1}", "source.js");
 });
 

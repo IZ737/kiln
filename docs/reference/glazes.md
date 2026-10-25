@@ -79,7 +79,12 @@ glaze must be named in quotes, so the compiler knows which one it is.
   `{% end %}`, renders as nothing rather than a blank line, and the line
   break that ends the file is left out, so a component fits inside a line.
 - A layout renders around the page, with the page in its `{% slot %}`; a
-  component renders where its tag is, with its children in its slot.
+  component renders where its tag is, with its children in its slot. A
+  named slot renders the matching `{% fill %}`, or nothing. Slot content
+  is placed without the whitespace it starts and ends with.
+- A glaze that always renders itself again, through its layout or
+  components outside `if`, `for` and `match` blocks, is E0310. Inside a
+  block that ends, a component can render itself, as for a tree.
 - Embers are not compiled yet (E0401): building a glaze with
   `{% state %}`, an `on:` handler or a `client:` hint needs phase 6.
 
@@ -90,6 +95,7 @@ glaze must be named in quotes, so the compiler knows which one it is.
 | `{% props name: Type, other: Type = default %}` | The glaze's inputs. Once, at the top level |
 | `{% layout "base.glaze" title: value %}` | Wrap this glaze in a layout. Once, at the top level |
 | `{% slot %}`, `{% slot name %}` | In a layout or component: where the caller's content goes |
+| `{% fill name %} ... {% end %}` | Content for `{% slot name %}`: directly inside a component tag, or at the top level of a page with a layout |
 | `{% state name = value %}` | Browser-side state; makes the glaze an ember. At the top level |
 | `{% let name = value %}` | A local value |
 | `{% if c %} ... {% else if d %} ... {% else %} ... {% end %}` | Conditional |
@@ -97,6 +103,29 @@ glaze must be named in quotes, so the compiler knows which one it is.
 | `{% match v %} {% case pattern if guard %} ... {% end %}` | Pattern match, with the patterns of `match` |
 
 Every block ends with `{% end %}`.
+
+## Layouts and slots
+
+A layout marks where pages go with `{% slot %}`, and other places with
+named slots, which pages fill with `{% fill %}`:
+
+```glaze
+{# base.glaze #}
+{% props title: String %}
+<head><title>{title}</title>{% slot head %}</head>
+<body><aside>{% slot sidebar %}</aside><main>{% slot %}</main></body>
+```
+
+```glaze
+{# guide.glaze #}
+{% layout "base.glaze" title: "Guide" %}
+{% fill sidebar %}<a href="/">Home</a>{% end %}
+<h1>Guide</h1>      {# everything else fills the default slot #}
+```
+
+Components fill their named slots the same way, among their children:
+`<Card>{% fill title %}Hi{% end %}<p>Body</p></Card>`. A fill must name a
+slot the glaze has, once each (E0311).
 
 ## Elements and components
 
