@@ -64,6 +64,7 @@ pub const STRAY_CLOSING_TAG: &str = "E0308";
 pub const UNSAFE_ATTRIBUTE: &str = "E0309";
 pub const ENDLESS_GLAZE: &str = "E0310";
 pub const MISPLACED_FILL: &str = "E0311";
+pub const BAD_CSS: &str = "E0312";
 
 pub const NOT_COMPILED_YET: &str = "E0401";
 pub const NO_MAIN: &str = "E0402";
@@ -390,6 +391,13 @@ pub static ALL: &[ErrorCode] = &[
         explanation: "`{% fill name %} ... {% end %}` gives the content for a layout's or component's `{% slot name %}`. It goes directly inside a component tag, or at the top level of a page that has a `{% layout %}`, and names a slot that glaze has, once.",
         wrong: "{% layout \"base.glaze\" title: \"Home\" %}\n<div>{% fill sidebar %}<p>Links</p>{% end %}</div>",
         right: "{% layout \"base.glaze\" title: \"Home\" %}\n{% fill sidebar %}<p>Links</p>{% end %}\n<div>Content</div>",
+    },
+    ErrorCode {
+        code: BAD_CSS,
+        title: "CSS that cannot be used",
+        explanation: "A glaze's `<style>`, or a stylesheet it imports with `{% css %}`, is read as CSS when the program is checked. The file must exist inside the program's folder, and the CSS must parse. Files that CSS refers to with `url(...)` or `@import` must exist too, inside the folder. A CSS Module or `<style>` cannot `@import`: import the stylesheet with `{% css %}` instead.",
+        wrong: "{% css \"../shared/site.css\" %}",
+        right: "{% css \"site.css\" %}",
     },
     ErrorCode {
         code: NOT_COMPILED_YET,

@@ -1,0 +1,12 @@
+[package]
+name = "kiln_css"
+description = "CSS for Kiln glazes: scoped styles, CSS Modules and the app's stylesheet, on Lightning CSS"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+kiln_diagnostics.workspace = true
+lightningcss = { version = "1.0.0-alpha.72", default-features = false, features = ["visitor"] }

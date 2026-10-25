@@ -308,6 +308,18 @@ crate's, in the runtime's Rust part. `safe_url` finds the scheme as
 browsers do, ignoring leading spaces and control characters and tabs or
 line breaks inside it, so `java\tscript:` is not safe either.
 
+## `base64`
+
+| Function | |
+| --- | --- |
+| `base64.encode(data) -> String` | The bytes of `data` in standard Base64, with `=` padding |
+| `base64.decode(text) -> String !` | The bytes `text` encodes; fails when it is not Base64 |
+
+The decoded bytes need not be UTF-8, so a decoded image can be a
+response's body. Programs carry their binary files (see
+[Styles](glazes.md#styles)) this way. The runtime uses the
+[base64](https://github.com/marshallpierce/rust-base64) crate.
+
 ## `json`
 
 JSON is derived from types when the program is compiled; there is no

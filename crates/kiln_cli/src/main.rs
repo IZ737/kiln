@@ -3,6 +3,7 @@
 
 mod lsp;
 mod notice;
+mod styles;
 mod upgrade;
 
 use clap::{Parser, Subcommand};
@@ -284,15 +285,36 @@ pub(crate) fn check_sources(texts: Vec<(PathBuf, String)>) -> Vec<(SourceFile, V
     check_app_sources(texts).0
 }
 
+/// What `kiln build` needs besides the checked files: what each glaze's
+/// values are, and the app's CSS.
+#[derive(Default)]
+struct AppInfo {
+    glaze_values: GlazeValues,
+    styles: styles::AppStyles,
+}
+
 /// What the checker found each value a glaze outputs to be, for each glaze
 /// in the order given.
 type GlazeValues = Vec<HashMap<Span, kiln_check::ValueKind>>;
 
 /// [`check_sources`], also returning what the compiler needs to know about
-/// the glazes' values when the files have no errors.
+/// the glazes when the files have no errors. The CSS the glazes import is
+/// read from the folder of the files.
 fn check_app_sources(
     texts: Vec<(PathBuf, String)>,
-) -> (Vec<(SourceFile, Vec<Diagnostic>)>, GlazeValues) {
+) -> (Vec<(SourceFile, Vec<Diagnostic>)>, AppInfo) {
+    let dir = texts
+        .first()
+        .and_then(|(p, _)| p.parent())
+        .map(|p| {
+            if p.as_os_str().is_empty() {
+                Path::new(".")
+            } else {
+                p
+            }
+        })
+        .unwrap_or(Path::new("."))
+        .to_path_buf();
     let mut sources = Vec::new();
     for (path, text) in &texts {
         let file = SourceFile::new(path.display().to_string(), text.clone());
@@ -315,7 +337,7 @@ fn check_app_sources(
                 (file, diags)
             })
             .collect();
-        return (files, Vec::new());
+        return (files, AppInfo::default());
     }
     let modules: Vec<&kiln_syntax::ast::Module> = sources
         .iter()
@@ -341,19 +363,39 @@ fn check_app_sources(
             Parsed::Kiln(_) => None,
         })
         .collect();
-    let mut result = kiln_check::check_app(&modules, &glazes);
+    let glaze_files: Vec<styles::GlazeFile> = sources
+        .iter()
+        .zip(&names)
+        .filter_map(|((_, _, p), name)| match p {
+            Parsed::Glaze(r) => Some(styles::GlazeFile {
+                name,
+                glaze: &r.glaze,
+            }),
+            Parsed::Kiln(_) => None,
+        })
+        .collect();
+    let mut styles = styles::load(&dir, &glaze_files);
+    let mut result = kiln_check::check_app_with_css(&modules, &glazes, &styles.modules);
     let mut module_diags = result.modules.drain(..);
     let mut glaze_diags = result.glazes.drain(..);
     let mut out = Vec::new();
-    for (path, file, _) in &sources {
+    for ((path, file, _), name) in sources.iter().zip(&names) {
         let diags = if is_glaze(path) {
-            glaze_diags.next()
+            glaze_diags.next().map(|mut d| {
+                d.extend(styles.diagnostics.remove(name).unwrap_or_default());
+                d.sort_by_key(|d| d.span.start);
+                d
+            })
         } else {
             module_diags.next()
         };
         out.push((file.clone(), diags.unwrap_or_default()));
     }
-    (out, result.glaze_values)
+    let info = AppInfo {
+        glaze_values: result.glaze_values,
+        styles,
+    };
+    (out, info)
 }
 
 /// The folder a program lives in, and its `.kiln` and `.glaze` files. A
@@ -445,7 +487,9 @@ fn build(
         })?;
         texts.push((path.clone(), text));
     }
-    let (checked, glaze_values) = check_app_sources(texts);
+    let (checked, info) = check_app_sources(texts);
+    let glaze_values = &info.glaze_values;
+    let styles = &info.styles;
     let count: usize = checked.iter().map(|(_, d)| d.len()).sum();
     if count > 0 {
         for (file, diagnostics) in &checked {
@@ -504,9 +548,20 @@ fn build(
             src: &glaze_files[i].text,
             glaze: &parsed_glazes[i],
             values: &glaze_values[i],
+            scope: styles.scopes.get(&glaze_names[i]).map(String::as_str),
+            modules: styles.exports.get(&glaze_names[i]),
         })
         .collect();
-    let generated = kiln_ir::glaze::generate(&inputs);
+    let mut assets = styles.assets.clone();
+    assets.extend(styles::static_files(&dir).map_err(|err| {
+        eprintln!("error: {err}");
+        ExitCode::from(2)
+    })?);
+    let app = kiln_ir::glaze::App {
+        stylesheet: styles.stylesheet.as_deref(),
+        assets: &assets,
+    };
+    let generated = kiln_ir::glaze::generate(&inputs, &app);
     let generated_at = combined.len() as u32;
     let generated_file = generated
         .as_ref()

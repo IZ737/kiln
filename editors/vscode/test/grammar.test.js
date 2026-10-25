@@ -92,6 +92,7 @@ test("Glaze tags, output, components and attributes", async () => {
       "<p>{ { a: 1 }.a }</p>",
       '<script type="module">let a = {b: 1}</script>',
       "{% fill sidebar %}<nav></nav>{% end %}",
+      '{% css module card from "card.module.css" %}',
     ].join("\n"),
   );
   assertScope(lines, 0, "{%", "punctuation.definition.tag.begin.glaze");
@@ -131,6 +132,8 @@ test("Glaze tags, output, components and attributes", async () => {
   assertScope(lines, 9, "type", "entity.other.attribute-name.html");
   assertScope(lines, 10, "fill", "keyword.control.glaze");
   assertScope(lines, 9, "let a = {b: 1}", "source.js");
+  assertScope(lines, 11, "css", "keyword.control.glaze");
+  assertScope(lines, 11, "card.module.css", "string.quoted.double.kiln");
 });
 
 /// Every example program must tokenize back to where it started, so no rule

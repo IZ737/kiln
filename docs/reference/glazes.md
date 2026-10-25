@@ -97,6 +97,8 @@ glaze must be named in quotes, so the compiler knows which one it is.
 | `{% layout "base.glaze" title: value %}` | Wrap this glaze in a layout. Once, at the top level |
 | `{% slot %}`, `{% slot name %}` | In a layout or component: where the caller's content goes |
 | `{% fill name %} ... {% end %}` | Content for `{% slot name %}`: directly inside a component tag, or at the top level of a page with a layout |
+| `{% css "site.css" %}` | Use a global stylesheet. At the top level |
+| `{% css module name from "card.module.css" %}` | Use a CSS Module: `name.card` is its renamed class. At the top level |
 | `{% state name = value %}` | Browser-side state; makes the glaze an ember. At the top level |
 | `{% let name = value %}` | A local value |
 | `{% if c %} ... {% else if d %} ... {% else %} ... {% end %}` | Conditional |
@@ -127,6 +129,47 @@ named slots, which pages fill with `{% fill %}`:
 Components fill their named slots the same way, among their children:
 `<Card>{% fill title %}Hi{% end %}<p>Body</p></Card>`. A fill must name a
 slot the glaze has, once each (E0311).
+
+## Styles
+
+Glazes bring CSS three ways, and the program serves all of it itself:
+
+```glaze
+{% css "styles/site.css" %}                      {# global #}
+{% css module card from "styles/card.module.css" %}
+<article class={card.card}>
+    <h2 class="title {card.card_title}">A pot</h2>
+</article>
+<style>
+.title { color: #C65A34; }                       {# only this glaze's .title #}
+:global(.dark) .title { color: white; }
+</style>
+```
+
+- **`<style>` is scoped.** Its rules apply only to the glaze's own
+  elements, which get an attribute such as `data-k-1a2b3c`, so two glazes
+  can both style `.title`. `:global(...)` leaves a part of a selector
+  unscoped. Content a glaze passes into a component's slot belongs to that
+  glaze. The `<style>` element itself is not in the HTML.
+- **`{% css "file.css" %}` is global**, as if linked. Its `@import`s and
+  `url(...)`s are followed.
+- **`{% css module x from "file.module.css" %}`** renames each class so it
+  cannot clash, and gives the glaze a record `x` of the new names, one
+  field per class with `-` written `_`: `x.card_title`. A class the file
+  does not have is a type error.
+
+Every `<head>` gets a `<link>` to one stylesheet built from all of this, in
+CSS cascade layers in a fixed order: `kiln.global`, then `kiln.modules`,
+then `kiln.scoped` (and `kiln.ui`, for later). CSS outside layers, such as a
+framework's, still wins over them as CSS says. The stylesheet and the files
+it refers to are served from inside the program at `/_kiln/name-hash.ext`
+and cached for good, since a change gives a new name. The files in the
+program's `static/` folder are served at `/static/...`.
+
+Paths are relative to the program's folder, and must stay inside it. CSS
+that does not parse, a missing file, or an `@import` in a `<style>` or CSS
+Module is E0312. CSS is read with
+[Lightning CSS](https://lightningcss.dev), and written minified.
 
 ## Elements and components
 

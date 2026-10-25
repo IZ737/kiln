@@ -69,6 +69,8 @@ struct kbox *k_rt_query(struct kstr *query, struct kstr *name);
 struct kbox *k_rt_cookie(struct kstr *header, struct kstr *name);
 struct kstr *k_rt_html_escape(struct kstr *s);
 struct kstr *k_rt_html_safe_url(struct kstr *s);
+struct kstr *k_rt_base64_encode(struct kstr *s);
+struct kstr *k_rt_base64_decode(struct kstr *s, struct kstr **error);
 
 static inline kv k_f2kv(double f) { kv v; memcpy(&v, &f, sizeof v); return v; }
 static inline double k_kv2f(kv v) { double f; memcpy(&f, &v, sizeof f); return f; }
@@ -2552,6 +2554,15 @@ K_EXPORT kmap *k_json_new_map(const kdesc *key) {
 K_API kv k_json_decode(const kdesc *d, kstr *text) {
     kstr *error = NULL;
     kv v = k_rt_json_decode(d, text, &error);
+    if (error) k_lib_error = error;
+    return v;
+}
+
+/* `base64.decode`: the bytes `text` encodes. On failure it returns NULL
+ * with the reason in `k_lib_error`. */
+K_API kstr *k_base64_decode(kstr *text) {
+    kstr *error = NULL;
+    kstr *v = k_rt_base64_decode(text, &error);
     if (error) k_lib_error = error;
     return v;
 }

@@ -15,8 +15,17 @@
   or component's `{% slot name %}` its content (E0311 when misplaced). A
   glaze that renders itself without end, through layouts or components, is
   E0310. Slot content is placed without its surrounding whitespace.
+- **Glazes have CSS.** A glaze's `<style>` is scoped to its own elements,
+  `{% css "site.css" %}` adds a global stylesheet and
+  `{% css module card from "card.module.css" %}` gives typed, renamed
+  class names (`card.card_title`; an unknown class is a type error). It is
+  all built into one stylesheet, in fixed cascade layers, which every
+  `<head>` links. The program serves it, the files CSS refers to and the
+  `static/` folder from inside itself. CSS is read with Lightning CSS;
+  CSS errors and missing files are E0312.
 - The new `html` module has `html.escape` and `html.safe_url`, on the
-  html-escape crate.
+  html-escape crate, and the new `base64` module has `base64.encode` and
+  `base64.decode`.
 
 ## 0.6.0 (2026-10-25)
 

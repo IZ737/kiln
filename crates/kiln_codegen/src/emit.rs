@@ -1602,6 +1602,14 @@ impl<'a> Gen<'a> {
                 let call = format!("k_rt_html_{name}({})", arg(0));
                 (self.store(&call, ty), false)
             }
+            ("base64", "encode") => {
+                let call = format!("k_rt_base64_encode({})", arg(0));
+                (self.store(&call, ty), false)
+            }
+            ("base64", "decode") => {
+                let call = format!("k_base64_decode({})", arg(0));
+                (self.store(&call, ty), true)
+            }
             ("json", "encode") => {
                 let d = self.desc(&tys[0]);
                 (

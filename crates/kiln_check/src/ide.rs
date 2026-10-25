@@ -84,7 +84,7 @@ pub struct Analysis {
 pub fn analyze_app(modules: &[&Module], glazes: &[(&str, &Glaze)], target: Target) -> Analysis {
     let mut checker = match target {
         Target::Module(i) => module_checker(modules, glazes, i, true),
-        Target::Glaze(i) => glaze_checker(modules, glazes, i, true),
+        Target::Glaze(i) => glaze_checker(modules, glazes, i, true, &Default::default()),
     };
     checker.zonk_recorded();
     let completion = checker.completion.take().map(|c| match c {

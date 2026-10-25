@@ -2430,6 +2430,8 @@ impl Fx<'_, '_, '_> {
             }
             ("html", "escape") => (self.call_rt("k_rt_html_escape", a), false),
             ("html", "safe_url") => (self.call_rt("k_rt_html_safe_url", a), false),
+            ("base64", "encode") => (self.call_rt("k_rt_base64_encode", a), false),
+            ("base64", "decode") => (self.call_rt("k_base64_decode", a), true),
             ("json", "encode") => {
                 let d = self.g.desc(&tys[0]);
                 let addr = self.data_addr(d);

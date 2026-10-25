@@ -1,0 +1,10 @@
+import base64
+
+fn main() {
+    print(base64.encode("Kiln fires clay"))
+    print(base64.encode(""))
+    let back = base64.decode("S2lsbiBmaXJlcyBjbGF5") catch err { "?" }
+    print(back)
+    let bad = base64.decode("not base64!") catch err { "error: ${err.message}" }
+    print(bad)
+}

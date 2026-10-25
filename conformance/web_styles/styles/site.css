@@ -1,0 +1,5 @@
+@import "reset.css";
+
+body {
+    background: url("img/dot.svg") repeat;
+}

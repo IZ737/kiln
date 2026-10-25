@@ -118,22 +118,43 @@ pub struct AppDiagnostics {
 /// props of the glazes. Glazes are given with their file names, such as
 /// `"index.glaze"`. Call it only on files without parse errors.
 pub fn check_app(modules: &[&Module], glazes: &[(&str, &Glaze)]) -> AppDiagnostics {
+    check_app_with_css(modules, glazes, &CssModules::new())
+}
+
+/// The class names of the CSS Modules glazes import, by glaze file name and
+/// then by the name each import gives them (`styles` in
+/// `{% css module styles from "card.module.css" %}`). Names are as Kiln
+/// fields: `card-title` is `card_title`.
+pub type CssModules = HashMap<String, HashMap<String, Vec<String>>>;
+
+/// [`check_app`], with the classes of the CSS Modules the glazes import,
+/// so that `styles.card` is checked. A module missing from `css` has no
+/// known classes, and any name in it is accepted.
+pub fn check_app_with_css(
+    modules: &[&Module],
+    glazes: &[(&str, &Glaze)],
+    css: &CssModules,
+) -> AppDiagnostics {
     AppDiagnostics {
         modules: (0..modules.len())
             .map(|i| sorted(module_checker(modules, glazes, i, false).diags))
             .collect(),
-        ..check_glazes(modules, glazes)
+        ..check_glazes(modules, glazes, css)
     }
 }
 
-fn check_glazes(modules: &[&Module], glazes: &[(&str, &Glaze)]) -> AppDiagnostics {
+fn check_glazes(
+    modules: &[&Module],
+    glazes: &[(&str, &Glaze)],
+    css: &CssModules,
+) -> AppDiagnostics {
     let mut out = AppDiagnostics {
         modules: Vec::new(),
         glazes: Vec::new(),
         glaze_values: Vec::new(),
     };
     for i in 0..glazes.len() {
-        let checker = glaze_checker(modules, glazes, i, false);
+        let checker = glaze_checker(modules, glazes, i, false, css);
         out.glazes.push(sorted(checker.diags));
         out.glaze_values.push(checker.glaze_values);
     }
@@ -210,9 +231,13 @@ fn glaze_checker(
     glazes: &[(&str, &Glaze)],
     i: usize,
     analyze: bool,
+    css: &CssModules,
 ) -> checker::Checker {
     let (file, glaze) = glazes[i];
     let mut checker = checker::Checker::new();
+    if let Some(m) = css.get(file) {
+        checker.css_modules.insert(file.to_string(), m.clone());
+    }
     checker.completing = analyze;
     for module in modules {
         checker.collect_module(module);

@@ -1,7 +1,7 @@
 //! Compiling glazes into Kiln: the generated code parses, checks and
 //! lowers, and errors in it point back into the glaze.
 
-use kiln_ir::glaze::{generate, GlazeInput};
+use kiln_ir::glaze::{generate, App, GlazeInput};
 use kiln_syntax::ast::Glaze;
 
 const APP: &str = "import web\n\nstruct Post {\n    id: Int\n    title: String\n}\n\nfn main() {\n    let res = web.render(\"page.glaze\", { post: Post(id: 1, title: \"Hi\") })\n    print(res.body)\n}\n";
@@ -28,9 +28,11 @@ fn compile(glazes: &[(&str, &str)]) -> (String, kiln_ir::glaze::GlazeSource) {
             src: glazes[i].1,
             glaze: &parsed[i],
             values: &checked.glaze_values[i],
+            scope: None,
+            modules: None,
         })
         .collect();
-    let source = generate(&inputs).expect("glazes");
+    let source = generate(&inputs, &App::default()).expect("glazes");
     let combined = format!("{APP}{}", source.text);
     let parsed_all = kiln_syntax::parse(&combined);
     assert!(
@@ -93,12 +95,17 @@ fn embers_are_not_compiled_yet() {
     let module = kiln_syntax::parse(APP).module;
     let glaze = kiln_syntax::glaze::parse_glaze(page).glaze;
     let checked = kiln_check::check_app(&[&module], &[("page.glaze", &glaze)]);
-    let source = generate(&[GlazeInput {
-        file: "page.glaze",
-        src: page,
-        glaze: &glaze,
-        values: &checked.glaze_values[0],
-    }])
+    let source = generate(
+        &[GlazeInput {
+            file: "page.glaze",
+            src: page,
+            glaze: &glaze,
+            values: &checked.glaze_values[0],
+            scope: None,
+            modules: None,
+        }],
+        &App::default(),
+    )
     .unwrap();
     let codes: Vec<&str> = source.diagnostics.iter().map(|(_, d)| d.code).collect();
     assert_eq!(codes, ["E0401"]);

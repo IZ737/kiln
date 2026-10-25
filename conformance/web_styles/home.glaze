@@ -1,0 +1,10 @@
+{% props title: String %}
+{% css module card from "styles/card.module.css" %}
+{% layout "layout.glaze" title: title %}
+<article class={card.card}>
+<h2 class="title {card.card_title}">A pot</h2>
+</article>
+<style>
+.title { color: #1F232B; }
+:global(.title) h2 { margin: 0; }
+</style>

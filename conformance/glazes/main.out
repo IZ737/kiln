@@ -4,32 +4,31 @@
   <head>
     <meta charset="utf-8">
     <title>Posts · Kiln</title>
-  </head>
+  <link rel="stylesheet" href="/_kiln/app-asic6h.css"></head>
   <body>
-    <h1>Posts</h1>
-<ul class="posts count-3">
-    <li id="post-1" data-tags="2">
-      <a href="/posts/1">Firing &lt;schedules&gt; &amp; &quot;glazes&quot; &#x27;n&#x27; things</a>
+    <h1 data-k-68tgpy>Posts</h1>
+<ul data-k-68tgpy class="posts count-3">
+    <li data-k-68tgpy id="post-1" data-tags="2">
+      <a data-k-68tgpy href="/posts/1">Firing &lt;schedules&gt; &amp; &quot;glazes&quot; &#x27;n&#x27; things</a>
       <span class="tag">#kiln</span><span class="tag">#clay</span>
     </li>
-    <li id="post-3" data-tags="0">
-      <a href="/posts/3">Üñíçødé ☕ 陶器</a>
-      <em>untagged</em>
+    <li data-k-68tgpy id="post-3" data-tags="0">
+      <a data-k-68tgpy href="/posts/3">Üñíçødé ☕ 陶器</a>
+      <em data-k-68tgpy>untagged</em>
     </li>
 </ul>
 <section class="card highlight">
   <h2>2 of 3 shown</h2>
-  <p>Inside the card: Posts</p>
+  <p data-k-68tgpy>Inside the card: Posts</p>
 </section>
-<p class="status">
+<p data-k-68tgpy class="status">
 popular: 1500 views
     </p>
 some
-<input type="checkbox" checked>
-<p>1.5 true -7 2s</p>
+<input data-k-68tgpy type="checkbox" checked>
+<p data-k-68tgpy>1.5 true -7 2s</p>
 <hr>
 <script>if (a < b && c) { go("{not a value}") }</script>
-<style>.posts { color: red; }</style>
   </body>
 </html>
 ---
@@ -39,25 +38,24 @@ some
   <head>
     <meta charset="utf-8">
     <title>Empty · Kiln</title>
-  </head>
+  <link rel="stylesheet" href="/_kiln/app-asic6h.css"></head>
   <body>
-    <h1>Empty</h1>
-<ul class="posts count-0">
-    <li>Nothing published yet.</li>
+    <h1 data-k-68tgpy>Empty</h1>
+<ul data-k-68tgpy class="posts count-0">
+    <li data-k-68tgpy>Nothing published yet.</li>
 </ul>
 <section class="card highlight">
   <h2>0 of 0 shown</h2>
-  <p>Inside the card: Empty</p>
+  <p data-k-68tgpy>Inside the card: Empty</p>
 </section>
-<p class="status">
+<p data-k-68tgpy class="status">
 draft
     </p>
 none
-<input type="checkbox">
-<p>1.5 true -7 2s</p>
+<input data-k-68tgpy type="checkbox">
+<p data-k-68tgpy>1.5 true -7 2s</p>
 <hr>
 <script>if (a < b && c) { go("{not a value}") }</script>
-<style>.posts { color: red; }</style>
   </body>
 </html>
 ---
