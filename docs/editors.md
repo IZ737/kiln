@@ -6,8 +6,12 @@ unsaved changes, and offers each error's suggested fix as a quick fix. A file
 is checked together with the other `.kiln` and `.glaze` files in its
 directory, so glazes see your types and pages see your glazes' props.
 
-Completion, hover, go to definition and rename arrive in phase 5, together
-with a VS Code extension that uses the icons in `assets/brand/`.
+Phase 2.5 will add completion, hover, go to definition and symbol navigation
+to the shared Rust LSP, alongside a dedicated VS Code extension with syntax
+highlighting, Kiln file icons and Check/Build/Run commands. Find references,
+rename and deeper Glaze semantics remain in phase 5; a debugger is not part
+of phase 2.5. See [the phase 2.5 plan](phase-2.5.md). These are planned
+capabilities, not features of the current LSP.
 
 Install the `kiln` binary first:
 
