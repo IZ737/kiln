@@ -67,3 +67,9 @@ test("the problem matcher reads kiln's errors", () => {
   const windows = " --> C:\\blog\\main.kiln:2:11".match(new RegExp(second.regexp));
   assert.strictEqual(windows[second.file], "C:\\blog\\main.kiln");
 });
+
+test("the extension's version is kiln's", () => {
+  const cargo = fs.readFileSync(path.join(root, "..", "..", "Cargo.toml"), "utf8");
+  const version = /^version = "(.*)"/m.exec(cargo)[1];
+  assert.strictEqual(manifest.version, version, "set the version in package.json to Cargo.toml's");
+});

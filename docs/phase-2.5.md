@@ -55,7 +55,7 @@ compiler/LSP, not from a second parser or type checker in the extension.
    binary path configuration and Run / Build / Check commands. Surface
    missing compiler and command failures clearly; don't run arbitrary
    project-defined scripts.
-4. **Polish and validation.** Document installation, settings, supported
+4. **Polish and validation (done).** Document installation, settings, supported
    commands and limitations. Add extension packaging checks and a VS Code
    integration smoke test; run relevant LSP tests on Linux and Windows.
    Ensure other LSP editors continue to work.

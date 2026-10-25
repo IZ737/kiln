@@ -25,6 +25,15 @@ jobs:
       - run: cargo clippy --all-targets -- -D warnings
       - run: cargo test
       - run: cargo run -p kiln_cli -- check examples
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: kiln lsp answers an editor, and the VS Code extension works in VS Code
+        working-directory: editors/vscode
+        run: |
+          npm ci
+          node test/lsp-smoke.js ../../target/debug/kiln
+          KILN_PATH=../../target/debug/kiln xvfb-run -a npm run test:integration
       - run: cargo run -p kiln_cli -- run examples/hello
       - name: Native builds need no tools, and their executables no libraries
         run: |
@@ -54,6 +63,11 @@ jobs:
           node-version: 22
       - run: npm ci
       - run: npm test
+      - run: npx vsce package
+      - uses: actions/upload-artifact@v4
+        with:
+          name: kiln-vscode
+          path: editors/vscode/*.vsix
 
   # The kiln that releases ship: built against musl, so it is static and
   # runs on any Linux x86-64 system, then checked in an empty container.
@@ -95,6 +109,8 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           name: kiln-windows
+      - name: kiln lsp answers an editor with Windows paths
+        run: node editors/vscode/test/lsp-smoke.js kiln.exe
       - name: Conformance programs with kiln.exe and no other tools
         shell: bash
         # Only Git's own tools (bash, diff) on the PATH: no C compiler.

@@ -38,15 +38,34 @@ install instructions or the setting; highlighting and icons still work.
 **Kiln: Restart Language Server** restarts `kiln lsp`, for example after
 upgrading Kiln, and **Kiln: Show Output** shows its log.
 
-## Install from source
+## Install
 
-The extension is not on the Marketplace yet. From this folder:
+The extension is not on the Marketplace yet. Each
+[Kiln release](https://github.com/IZ737/kiln/releases) has it as
+`kiln-vscode-<version>.vsix`; download it, then run
+
+```sh
+code --install-extension kiln-vscode-<version>.vsix
+```
+
+or use **Extensions: Install from VSIX...** in VS Code. Install `kiln`
+itself too (see the [install instructions](https://github.com/IZ737/kiln#install)).
+To build the extension from this folder instead:
 
 ```sh
 npm install
-npx @vscode/vsce package          # makes kiln-0.1.0.vsix
-code --install-extension kiln-0.1.0.vsix
+npm run package          # makes kiln-<version>.vsix
 ```
+
+## Limitations
+
+- No debugger yet: breakpoints and stepping are a later milestone.
+- Find references, rename, formatting and deeper navigation between glazes
+  and components come in phase 5.
+- Go to definition stops at the standard library, which has no source file
+  on disk; hover still shows its signatures and docs.
+- A program is one folder, so completion and navigation see the `.kiln`
+  and `.glaze` files next to the current one, not other folders.
 
 ## Develop
 
@@ -58,11 +77,16 @@ gets.
 
 ```sh
 npm install
-npm test        # grammar, manifest and kiln-finding tests
+npm test                                      # fast tests, no VS Code needed
+node test/lsp-smoke.js ../../target/debug/kiln        # kiln lsp as an editor sees it
+KILN_PATH=../../target/debug/kiln npm run test:integration   # in a real VS Code
 ```
 
-The tests tokenize code with the same TextMate engine VS Code uses, check
-the scopes of the constructs in `docs/syntax.md` and `docs/glazes.md`, and
-check that every program in `examples/` tokenizes with no rule left open.
-The icons in `icons/` are copies of `assets/brand`; a test fails if they
-drift apart.
+The integration test downloads VS Code the first time and needs a display
+(CI runs it under `xvfb-run`). The fast tests tokenize code with the same
+TextMate engine VS Code uses, check the scopes of the constructs in
+`docs/syntax.md` and `docs/glazes.md`, check that every program in
+`examples/` tokenizes with no rule left open, and activate the extension
+against a stand-in for VS Code. The icons in `icons/` are copies of
+`assets/brand`; a test fails if they drift apart. The extension's version
+is kiln's, and a test checks that too.
