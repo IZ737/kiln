@@ -25,9 +25,8 @@ fn main() ! {
 }
 ```
 
-> **Status: phases 0 and 1 are done, and phase 1.5 (self-contained compiler
-> and executables) is done for Linux x86-64 and Windows x86-64; phase 2
-> (HTTP) is in progress.**
+> **Status: phases 0, 1 and 2 are done, and phase 1.5 (self-contained
+> compiler and executables) is done for Linux x86-64 and Windows x86-64.**
 > `kiln check` reports syntax and type errors in `.kiln` files and glazes,
 > `kiln lsp` shows them in your editor, and `kiln run` compiles command-line
 > programs with the `time`, `fs`, `os` and `io` modules, and HTTP servers
@@ -35,9 +34,11 @@ fn main() ! {
 > machine code with Cranelift and makes Linux and Windows x86-64
 > executables itself (`--target linux` or `--target windows`, from either
 > system), so it needs no C compiler, linker or libraries; the C backend
-> (`--backend c`) remains for other platforms. JSON works in both
-> directions (`json`, `web.json`, `req.json<T>()`); templates, `sql` and
-> `auth` arrive in later phases. See the [roadmap](#roadmap) and
+> (`--backend c`) remains for other platforms. The server runs requests
+> on lightweight tasks with keep-alive, reads and writes JSON (`json`,
+> `web.json`, `req.json<T>()`), answers errors with statuses
+> (`web.error`) and logs each request; [examples/api](examples/api/main.kiln)
+> is a JSON API. Templates, `sql` and `auth` arrive in later phases. See the [roadmap](#roadmap) and
 > [what phase 1 leaves for later](docs/design.md#what-phase-1-leaves-for-later).
 
 ## Highlights
@@ -141,7 +142,7 @@ For errors and quick fixes in your editor, see [docs/editors.md](docs/editors.md
 | 1 | Core compiler, C backend, Boehm GC, basic LSP (`kiln lsp`: diagnostics and quick fixes), conformance tests | Native CLI programs compile and run correctly (done) |
 | 1.5 | Self-contained toolchain and executables: Cranelift native backend, integrated linking, statically bundled runtime and Boehm GC (Linux x86-64 first); keep the C backend | Download one `kiln` executable and compile supported CLI programs without installing a C compiler, linker or runtime libraries; run the resulting native executables on compatible clean systems without installing dependencies |
 | Windows target (post-1.5, non-blocking) | Windows x86-64 support: standalone `kiln.exe` compiler and native Windows `.exe` outputs, with a bundled linker, statically linked Kiln runtime and GC, and Windows CI conformance | Download `kiln.exe`, compile a supported CLI app and run its `.exe` on a clean compatible Windows system without installing a C compiler, linker, Rust or a separate GC/runtime package |
-| 2 | Core runtime, HTTP server, typed routing, JSON, error handling | A real HTTP API runs as a native binary |
+| 2 | Core runtime, HTTP server, typed routing, JSON, error handling | A real HTTP API runs as a native binary (done) |
 | 3 | Glazes, server-rendered components, layouts, CSS, scoped styling, design tokens | The Kiln documentation website is built in Kiln |
 | 4 | SQL (SQLite first, for local development with no database server, then Postgres and MySQL), ORM with schema import (`kiln db pull`), migrations, forms, validation, sessions and auth, generated admin UI | A database-backed application with authentication works |
 | 5 | Developer tooling: full LSP (completion, hover, go to definition, rename, glaze support), formatter, hot reload, testing, wares (package management), MCP server and agent guide | A complete application can be developed and tested comfortably |
