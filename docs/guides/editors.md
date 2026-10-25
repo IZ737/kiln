@@ -22,7 +22,7 @@ props, and the editor's unsaved text is used for every open file. It gives:
 
 Code that does not parse yet still gets answers: whatever the parser
 recovered is analyzed, so completing `post.` on an unfinished line works.
-Find references, rename and deeper Glaze semantics come in phase 5; a
+Find references, rename and deeper Glaze semantics come in phase 6; a
 debugger is not part of phase 2.5. See [the phase 2.5 plan](../plans/phase-2.5.md).
 
 Install the `kiln` binary first:

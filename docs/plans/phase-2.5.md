@@ -76,9 +76,9 @@ to other editors, with automated regression coverage.
   a separate later milestone.
 - Full find-references and rename refactoring, richer Glaze component/prop
   semantics and cross-language navigation, formatter, hot reload and
-  testing workflow integration remain in phase 5.
+  testing workflow integration remain in phase 6.
 - Wares/package tooling, MCP tooling and the coding-agent guide also
-  remain in phase 5.
+  remain in phase 6.
 - Phase 3 still owns implementing and serving Glazes as frontend
   components; phase 2.5 only improves editing support for their syntax.
 

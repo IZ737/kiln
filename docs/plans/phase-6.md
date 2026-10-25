@@ -1,6 +1,6 @@
 # Phase 6 — Projects, Wares, testing, tooling and agent integration
 
-**Status:** Planned specification. This is an implementation contract and reviewable proposal for API details; **none of the Phase 6 commands or syntax below is claimed to be implemented** unless later marked in the reference documentation.
+**Status:** Planned specification. This is an implementation contract and reviewable proposal for API details; **Phase 6 commands and syntax are not claimed to be implemented** unless later marked in reference documentation. The preceding [Phase 5 plan](phase-5.md) covers Embers and typed RPC.
 
 **Goal:** Take Kiln from a capable full-stack language to a coherent **day-to-day development and package ecosystem**: multi-folder application structure, optional project metadata, reproducible third-party Wares in a safe shared cache, a first useful official UI Ware, one integrated unit/integration/real-browser test command, polished editor/formatter/live-reload workflows, and an agent-friendly tooling interface.
 
@@ -33,7 +33,7 @@ This implements previously agreed direction in the [design overview](../design.m
 | --- | --- | --- |
 | **6.1 — Project foundation** | Local folder modules, visibility, optional `kiln.toml` and cross-module compiler/LSP | A multi-folder program builds/runs; one-file programs remain manifest-free |
 | **6.2 — Ware ecosystem** | Resolver, `kiln.lock`, global cache, local/Git/registry sources, publish/verify tooling, first official accessible UI Ware | Two apps resolve reproducibly, offline, from a trusted local registry with shared cached contents |
-| **6.3 — Integrated testing** | `kiln test` unit/integration/real-browser, fixtures, reporting and CI | Real browser submits a form to an isolated Kiln app and validates results and focus |
+| **6.3 — Integrated testing** | `kiln test` unit/integration/real-browser including Embers, fixtures, reporting and CI | Real browser submits a form, exercises an Ember and typed RPC, and validates results, focus and reactive state |
 | **6.4 — Developer workflow** | Formatter, live rebuild/restart, deeper LSP and editor integration | Safe format/watch/refactor cycle across Kiln, Glaze, CSS and imported Wares |
 | **6.5 — Agent experience and dogfooding** | Compiler MCP, machine-readable tool contracts, docs/agent guide, full project example | A human or agent can inspect/check/test a full multi-folder app without hidden deployment or shell behaviour |
 
@@ -469,7 +469,7 @@ CI must test native Linux/Windows and the C backend where supported, plus cross-
 
 ## 15. Explicit deferrals and non-goals
 
-- **Phase 5 prerequisite:** Embers/WasmGC, reactive hydration, generated RPC and state are already available; Phase 6 exposes them through its integrated testing and ecosystem workflows.
+- **Earlier Phase 5 foundation:** Embers/WasmGC, reactive hydration, generated RPC and state are established before Phase 6; this phase integrates them into the package and public testing workflows.
 - **Phase 7:** One-command deploy/release, static site export, broad stability/performance hardening, arbitrary code optimization or a mandatory new native backend.
 - **Later registry scaling:** Commercial hosting, public social discovery, web search/rankings, organization billing, cross-user global cache, complete security auditing/review infrastructure at industrial scale.
 - **Later tooling:** Full debugger/DAP and variable inspection, deep time-travel debugging, arbitrary live-patching of native code, self-hosting of all compiler internals.

@@ -86,7 +86,8 @@ glaze must be named in quotes, so the compiler knows which one it is.
   components outside `if`, `for` and `match` blocks, is E0310. Inside a
   block that ends, a component can render itself, as for a tree.
 - Embers are not compiled yet (E0401): building a glaze with
-  `{% state %}`, an `on:` handler or a `client:` hint needs phase 6.
+  `{% state %}`, an `on:` handler or a `client:` hint needs phase 5.
+  See the [Phase 5 Embers plan](../plans/phase-5.md).
 
 ## Tags
 

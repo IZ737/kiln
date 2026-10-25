@@ -23,12 +23,14 @@ Keep SSR/styling separate from later Embers/WasmGC and Wares work. Target
 syntax is not current syntax until implemented and tested; update the
 reference docs and tests as the feature becomes real.
 
-For all Phase 5 work, read [docs/plans/phase-5.md](docs/plans/phase-5.md), which divides modules/manifests, Wares, testing, editor workflows and MCP into five reviewable subphases. Preserve manifest-free programs and the global per-user Ware cache; syntax in plans is prospective until tested and documented.
+For Phase 5 Embers/WasmGC work, follow [docs/plans/phase-5.md](docs/plans/phase-5.md): keep SSR Glazes useful without client scripts, hydrate only interactive islands, type-check browser/server boundaries and secure every generated RPC endpoint. The Phase 5 compiler conformance and browser CI suites must cover those behaviours even without the final public test runner.
 
-For Phase 5 testing, read [docs/plans/testing.md](docs/plans/testing.md): the public
+For Phase 6 modules/Wares/testing/tooling/MCP work, follow [docs/plans/phase-6.md](docs/plans/phase-6.md), which divides the ecosystem into five reviewable subphases. Preserve manifest-free programs and the global per-user Ware cache. Syntax in plans is prospective until implemented, tested and documented.
+
+For Phase 6 testing, read [docs/plans/testing.md](docs/plans/testing.md): the public
 `kiln test` tool must support unit, integration **and real-browser E2E**
-tests in one CLI. The Phase 6 Ember tests extend the same runner; do not
-invent a separate JavaScript testing ecosystem or a custom browser.
+tests in one CLI, including Ember hydration and typed RPC from its first
+release. Do not invent a separate JavaScript testing ecosystem or a custom browser.
 
 ## Commands
 

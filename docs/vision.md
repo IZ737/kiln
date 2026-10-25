@@ -452,7 +452,8 @@ The goal is **less repetitive UI plumbing, not less control**:
 - **Progressive interactivity:** the first components that only need
   server-rendered markup/CSS can use Phase 3 facilities. Rich keyboard-
   interactive widgets and stateful behaviours can depend on **Embers**
-  now that Phase 5 supplies Embers; don't smuggle a proprietary JavaScript framework
+  once Phase 5 supplies Embers; don't smuggle a proprietary JavaScript
+  framework
   into the initial Ware. Form-model/auth integration can deepen after
   Phase 4 without making simple input components depend on a database.
 
