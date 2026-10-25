@@ -31,7 +31,7 @@
       "end": "^\\s*//\\s*#?endregion\\b"
     }
   },
-  "wordPattern": "-?\\d[\\d_]*(\\.\\d+)?([eE][+-]?\\d+)?(ms|s|m|h)?|[\\p{L}_][\\p{L}\\p{N}_]*",
+  "wordPattern": "-?\\d[\\d_]*(\\.\\d+)?([eE][+-]?\\d+)?(ms|s|m|h)?|[A-Za-z_\\u00AA-\\uFFFF][0-9A-Za-z_\\u00AA-\\uFFFF]*",
   "onEnterRules": [
     {
       "beforeText": "^\\s*/\\*\\*?(?!/)([^*]|\\*(?!/))*$",
