@@ -1,0 +1,21 @@
+[package]
+name = "kiln_native"
+description = "The native backend of the Kiln compiler: Cranelift code generation and a built-in linker"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+kiln_diagnostics.workspace = true
+kiln_check.workspace = true
+kiln_ir.workspace = true
+cranelift-codegen = "0.137"
+cranelift-frontend = "0.137"
+cranelift-module = "0.137"
+cranelift-object = "0.137"
+libwild = "=0.10.0"
+
+[dev-dependencies]
+kiln_syntax.workspace = true

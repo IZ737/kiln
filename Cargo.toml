@@ -7,7 +7,7 @@ version = "0.1.0"
 edition = "2021"
 license = "MIT"
 repository = "https://github.com/IZ737/kiln"
-rust-version = "1.82"
+rust-version = "1.97"
 
 [workspace.dependencies]
 kiln_diagnostics = { path = "crates/kiln_diagnostics" }
@@ -15,5 +15,6 @@ kiln_syntax = { path = "crates/kiln_syntax" }
 kiln_check = { path = "crates/kiln_check" }
 kiln_ir = { path = "crates/kiln_ir" }
 kiln_codegen = { path = "crates/kiln_codegen" }
+kiln_native = { path = "crates/kiln_native" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

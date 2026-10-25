@@ -1,4 +1,5 @@
-/* The Kiln runtime, prepended to every generated C file.
+/* The Kiln runtime. The C backend prepends it to every generated C file;
+ * the native backend compiles it once, into the runtime `kiln` carries.
  *
  * Values: Int is int64_t, Float is double, Bool is bool, Duration is int64_t
  * nanoseconds. Everything else is a pointer to memory owned by the Boehm
@@ -21,6 +22,13 @@
 #include <time.h>
 #include <unistd.h>
 
+/* Runtime functions and variables are `K_API`: `static` when the runtime is
+ * prepended to generated C, and visible to the linker when the native
+ * backend compiles it into an object of its own. */
+#ifndef K_API
+#define K_API static
+#endif
+
 typedef uint64_t kv;
 
 static inline kv k_f2kv(double f) { kv v; memcpy(&v, &f, sizeof v); return v; }
@@ -28,13 +36,13 @@ static inline double k_kv2f(kv v) { double f; memcpy(&f, &v, sizeof f); return f
 #define K_P2KV(p) ((kv)(uintptr_t)(p))
 #define K_KV2P(t, v) ((t)(uintptr_t)(v))
 
-static void *k_alloc(size_t n) {
+K_API void *k_alloc(size_t n) {
     void *p = GC_MALLOC(n);
     if (!p) { fputs("panic: out of memory\n", stderr); exit(101); }
     return p;
 }
 
-static void *k_alloc_atomic(size_t n) {
+K_API void *k_alloc_atomic(size_t n) {
     void *p = GC_MALLOC_ATOMIC(n);
     if (!p) { fputs("panic: out of memory\n", stderr); exit(101); }
     return p;
@@ -55,12 +63,12 @@ typedef struct kstr { int64_t len; char *data; } kstr;
 /* A string and its buffer in one block; `data` points at `bytes`. */
 typedef struct kstrbuf { kstr s; int64_t used, cap; char bytes[]; } kstrbuf;
 
-static kstrbuf *k_strbuf_of(kstr *s) {
+K_API kstrbuf *k_strbuf_of(kstr *s) {
     return (kstrbuf *)(void *)(s->data - offsetof(kstrbuf, bytes));
 }
 
 /* A new string of `n` bytes with room for `cap`; the caller fills it. */
-static kstr *k_str_alloc(int64_t n, int64_t cap) {
+K_API kstr *k_str_alloc(int64_t n, int64_t cap) {
     /* The block points only into itself, so the collector need not scan it. */
     kstrbuf *b = k_alloc_atomic(sizeof(kstrbuf) + (size_t)cap + 1);
     b->s.len = n;
@@ -71,20 +79,20 @@ static kstr *k_str_alloc(int64_t n, int64_t cap) {
     return &b->s;
 }
 
-static kstr *k_str_n(const char *s, int64_t n) {
+K_API kstr *k_str_n(const char *s, int64_t n) {
     kstr *r = k_str_alloc(n, n);
     memcpy(r->data, s, (size_t)n);
     return r;
 }
 
-static kstr *k_str(const char *s) { return k_str_n(s, (int64_t)strlen(s)); }
+K_API kstr *k_str(const char *s) { return k_str_n(s, (int64_t)strlen(s)); }
 
-static const char *k_cstr(kstr *s) {
+K_API const char *k_cstr(kstr *s) {
     if (s->data[s->len] == 0) return s->data;
     return k_str_n(s->data, s->len)->data;
 }
 
-static kstr *k_concat(kstr *a, kstr *b) {
+K_API kstr *k_concat(kstr *a, kstr *b) {
     if (b->len == 0) return a;
     if (a->len == 0) return b;
     int64_t n = a->len + b->len;
@@ -105,11 +113,11 @@ static kstr *k_concat(kstr *a, kstr *b) {
     return r;
 }
 
-static bool k_str_eq(kstr *a, kstr *b) {
+K_API bool k_str_eq(kstr *a, kstr *b) {
     return a->len == b->len && memcmp(a->data, b->data, (size_t)a->len) == 0;
 }
 
-static int k_str_cmp(kstr *a, kstr *b) {
+K_API int k_str_cmp(kstr *a, kstr *b) {
     int64_t n = a->len < b->len ? a->len : b->len;
     int c = memcmp(a->data, b->data, (size_t)n);
     if (c != 0) return c;
@@ -118,37 +126,37 @@ static int k_str_cmp(kstr *a, kstr *b) {
 
 /* ----- panics and errors ----- */
 
-static _Noreturn void k_panic(kstr *message) {
+K_API _Noreturn void k_panic(kstr *message) {
     fflush(stdout);
     fprintf(stderr, "panic: %s\n", k_cstr(message));
     exit(101);
 }
 
-static _Noreturn void k_panic_c(const char *message) { k_panic(k_str(message)); }
+K_API _Noreturn void k_panic_c(const char *message) { k_panic(k_str(message)); }
 
 /* A failing call sets `k_failed` and stores the error; the caller checks the
  * flag at `try` or `catch`. `k_error_show` renders the error if it reaches
  * the top of `main`. */
-static bool k_failed = false;
-static kv k_error = 0;
-static kstr *(*k_error_show)(kv) = NULL;
+K_API bool k_failed = false;
+K_API kv k_error = 0;
+K_API kstr *(*k_error_show)(kv) = NULL;
 
-static void k_fail(kv error, kstr *(*show)(kv)) {
+K_API void k_fail(kv error, kstr *(*show)(kv)) {
     k_failed = true;
     k_error = error;
     k_error_show = show;
 }
 
-static kv k_take_error(void) {
+K_API kv k_take_error(void) {
     k_failed = false;
     return k_error;
 }
 
 /* A standard library function that fails stores its message here and
  * returns; the generated code turns it into an `Error` and fails. */
-static kstr *k_lib_error = NULL;
+K_API kstr *k_lib_error = NULL;
 
-static void k_lib_fail(const char *what, kstr *path) {
+K_API void k_lib_fail(const char *what, kstr *path) {
     char buf[512];
     snprintf(buf, sizeof buf, "cannot %s %s: %s", what, k_cstr(path), strerror(errno));
     k_lib_error = k_str(buf);
@@ -156,41 +164,41 @@ static void k_lib_fail(const char *what, kstr *path) {
 
 /* ----- numbers ----- */
 
-static int64_t k_add(int64_t a, int64_t b) {
+K_API int64_t k_add(int64_t a, int64_t b) {
     int64_t r;
     if (__builtin_add_overflow(a, b, &r)) k_panic_c("integer overflow");
     return r;
 }
-static int64_t k_sub(int64_t a, int64_t b) {
+K_API int64_t k_sub(int64_t a, int64_t b) {
     int64_t r;
     if (__builtin_sub_overflow(a, b, &r)) k_panic_c("integer overflow");
     return r;
 }
-static int64_t k_mul(int64_t a, int64_t b) {
+K_API int64_t k_mul(int64_t a, int64_t b) {
     int64_t r;
     if (__builtin_mul_overflow(a, b, &r)) k_panic_c("integer overflow");
     return r;
 }
-static int64_t k_div(int64_t a, int64_t b) {
+K_API int64_t k_div(int64_t a, int64_t b) {
     if (b == 0) k_panic_c("division by zero");
     if (a == INT64_MIN && b == -1) k_panic_c("integer overflow");
     return a / b;
 }
-static int64_t k_rem(int64_t a, int64_t b) {
+K_API int64_t k_rem(int64_t a, int64_t b) {
     if (b == 0) k_panic_c("division by zero");
     if (b == -1) return 0;
     return a % b;
 }
-static int64_t k_neg(int64_t a) {
+K_API int64_t k_neg(int64_t a) {
     if (a == INT64_MIN) k_panic_c("integer overflow");
     return -a;
 }
 
-static int64_t k_abs(int64_t a) { return a < 0 ? k_neg(a) : a; }
-static int64_t k_min(int64_t a, int64_t b) { return a < b ? a : b; }
-static int64_t k_max(int64_t a, int64_t b) { return a > b ? a : b; }
+K_API int64_t k_abs(int64_t a) { return a < 0 ? k_neg(a) : a; }
+K_API int64_t k_min(int64_t a, int64_t b) { return a < b ? a : b; }
+K_API int64_t k_max(int64_t a, int64_t b) { return a > b ? a : b; }
 
-static int64_t k_pow(int64_t base, int64_t exp) {
+K_API int64_t k_pow(int64_t base, int64_t exp) {
     if (exp < 0) k_panic_c("a negative exponent");
     int64_t r = 1;
     while (exp > 0) {
@@ -201,18 +209,18 @@ static int64_t k_pow(int64_t base, int64_t exp) {
     return r;
 }
 
-static int64_t k_clamp(int64_t n, int64_t lo, int64_t hi) {
+K_API int64_t k_clamp(int64_t n, int64_t lo, int64_t hi) {
     if (lo > hi) k_panic_c("clamp: the low bound is above the high bound");
     return n < lo ? lo : n > hi ? hi : n;
 }
 
-static kstr *k_int_str(int64_t n) {
+K_API kstr *k_int_str(int64_t n) {
     char buf[32];
     int len = snprintf(buf, sizeof buf, "%" PRId64, n);
     return k_str_n(buf, len);
 }
 
-static kstr *k_float_str(double f) {
+K_API kstr *k_float_str(double f) {
     char buf[64];
     if (f == floor(f) && fabs(f) < 1e15) {
         int len = snprintf(buf, sizeof buf, "%.1f", f);
@@ -228,9 +236,9 @@ static kstr *k_float_str(double f) {
     return k_str_n(buf, len);
 }
 
-static kstr *k_bool_str(bool b) { return k_str(b ? "true" : "false"); }
+K_API kstr *k_bool_str(bool b) { return k_str(b ? "true" : "false"); }
 
-static kstr *k_float_fixed(double f, int64_t digits) {
+K_API kstr *k_float_fixed(double f, int64_t digits) {
     if (digits < 0 || digits > 20) k_panic_c("fixed: digits must be between 0 and 20");
     char buf[400];
     int len = snprintf(buf, sizeof buf, "%.*f", (int)digits, f);
@@ -238,7 +246,7 @@ static kstr *k_float_fixed(double f, int64_t digits) {
     return k_str_n(buf, len);
 }
 
-static kstr *k_duration_str(int64_t ns) {
+K_API kstr *k_duration_str(int64_t ns) {
     static const struct { int64_t unit; const char *name; } units[] = {
         {3600000000000LL, "h"}, {60000000000LL, "m"}, {1000000000LL, "s"},
         {1000000LL, "ms"}, {1000LL, "us"}, {1LL, "ns"},
@@ -253,7 +261,7 @@ static kstr *k_duration_str(int64_t ns) {
     return k_str("0s");
 }
 
-static int64_t k_float_to_int(double f) {
+K_API int64_t k_float_to_int(double f) {
     if (!(f >= -9.2233720368547758e18 && f < 9.2233720368547758e18)) k_panic_c("float is out of the Int range");
     return (int64_t)f;
 }
@@ -262,7 +270,7 @@ static int64_t k_float_to_int(double f) {
 
 typedef struct kbox { kv v; } kbox;
 
-static kbox *k_box(kv v) {
+K_API kbox *k_box(kv v) {
     kbox *b = k_alloc(sizeof(kbox));
     b->v = v;
     return b;
@@ -272,7 +280,7 @@ static kbox *k_box(kv v) {
 
 typedef struct kclosure { kv (*fn)(void *env, kv *args); void *env; } kclosure;
 
-static kclosure *k_closure(kv (*fn)(void *, kv *), void *env) {
+K_API kclosure *k_closure(kv (*fn)(void *, kv *), void *env) {
     kclosure *c = k_alloc(sizeof(kclosure));
     c->fn = fn;
     c->env = env;
@@ -285,7 +293,7 @@ static inline kv k_call1(kclosure *c, kv a) { kv args[1] = {a}; return c->fn(c->
 
 typedef struct kenum { int64_t tag; kv f[]; } kenum;
 
-static kenum *k_enum(int64_t tag, int n, const kv *fields) {
+K_API kenum *k_enum(int64_t tag, int n, const kv *fields) {
     kenum *e = k_alloc(sizeof(kenum) + sizeof(kv) * (size_t)n);
     e->tag = tag;
     for (int i = 0; i < n; i++) e->f[i] = fields[i];
@@ -294,7 +302,7 @@ static kenum *k_enum(int64_t tag, int n, const kv *fields) {
 
 /* ----- records: an array of slots, in the record type's field order ----- */
 
-static kv *k_record(int n, const kv *fields) {
+K_API kv *k_record(int n, const kv *fields) {
     kv *r = k_alloc(sizeof(kv) * (size_t)n);
     for (int i = 0; i < n; i++) r[i] = fields[i];
     return r;
@@ -304,7 +312,7 @@ static kv *k_record(int n, const kv *fields) {
 
 typedef struct klist { int64_t len, cap; kv *items; } klist;
 
-static klist *k_list(int64_t n, const kv *items) {
+K_API klist *k_list(int64_t n, const kv *items) {
     klist *l = k_alloc(sizeof(klist));
     l->len = n;
     l->cap = n < 4 ? 4 : n;
@@ -313,7 +321,7 @@ static klist *k_list(int64_t n, const kv *items) {
     return l;
 }
 
-static void k_list_push(klist *l, kv item) {
+K_API void k_list_push(klist *l, kv item) {
     if (l->len == l->cap) {
         int64_t cap = l->cap * 2;
         kv *items = k_alloc(sizeof(kv) * (size_t)cap);
@@ -324,7 +332,7 @@ static void k_list_push(klist *l, kv item) {
     l->items[l->len++] = item;
 }
 
-static kv k_list_at(klist *l, int64_t i) {
+K_API kv k_list_at(klist *l, int64_t i) {
     if (i < 0 || i >= l->len) {
         char buf[96];
         snprintf(buf, sizeof buf, "index %" PRId64 " is out of range for a list of length %" PRId64, i, l->len);
@@ -333,66 +341,66 @@ static kv k_list_at(klist *l, int64_t i) {
     return l->items[i];
 }
 
-static void k_list_set(klist *l, int64_t i, kv v) {
+K_API void k_list_set(klist *l, int64_t i, kv v) {
     k_list_at(l, i);
     l->items[i] = v;
 }
 
-static klist *k_range(int64_t lo, int64_t hi) {
+K_API klist *k_range(int64_t lo, int64_t hi) {
     klist *l = k_list(0, NULL);
     for (int64_t i = lo; i < hi; i++) k_list_push(l, (kv)i);
     return l;
 }
 
-static kbox *k_list_get(klist *l, int64_t i) { return i >= 0 && i < l->len ? k_box(l->items[i]) : NULL; }
-static kbox *k_list_first(klist *l) { return k_list_get(l, 0); }
-static kbox *k_list_last(klist *l) { return k_list_get(l, l->len - 1); }
+K_API kbox *k_list_get(klist *l, int64_t i) { return i >= 0 && i < l->len ? k_box(l->items[i]) : NULL; }
+K_API kbox *k_list_first(klist *l) { return k_list_get(l, 0); }
+K_API kbox *k_list_last(klist *l) { return k_list_get(l, l->len - 1); }
 
-static klist *k_list_filter(klist *l, kclosure *keep) {
+K_API klist *k_list_filter(klist *l, kclosure *keep) {
     klist *r = k_list(0, NULL);
     for (int64_t i = 0; i < l->len; i++)
         if ((bool)k_call1(keep, l->items[i])) k_list_push(r, l->items[i]);
     return r;
 }
 
-static klist *k_list_map(klist *l, kclosure *f) {
+K_API klist *k_list_map(klist *l, kclosure *f) {
     klist *r = k_list(0, NULL);
     for (int64_t i = 0; i < l->len; i++) k_list_push(r, k_call1(f, l->items[i]));
     return r;
 }
 
-static kbox *k_list_find(klist *l, kclosure *f) {
+K_API kbox *k_list_find(klist *l, kclosure *f) {
     for (int64_t i = 0; i < l->len; i++)
         if ((bool)k_call1(f, l->items[i])) return k_box(l->items[i]);
     return NULL;
 }
 
-static bool k_list_any(klist *l, kclosure *f) {
+K_API bool k_list_any(klist *l, kclosure *f) {
     for (int64_t i = 0; i < l->len; i++)
         if ((bool)k_call1(f, l->items[i])) return true;
     return false;
 }
 
-static bool k_list_all(klist *l, kclosure *f) {
+K_API bool k_list_all(klist *l, kclosure *f) {
     for (int64_t i = 0; i < l->len; i++)
         if (!(bool)k_call1(f, l->items[i])) return false;
     return true;
 }
 
-static bool k_list_contains(klist *l, kv item, bool (*eq)(kv, kv)) {
+K_API bool k_list_contains(klist *l, kv item, bool (*eq)(kv, kv)) {
     for (int64_t i = 0; i < l->len; i++)
         if (eq(l->items[i], item)) return true;
     return false;
 }
 
-static klist *k_list_reverse(klist *l) {
+K_API klist *k_list_reverse(klist *l) {
     klist *r = k_list(0, NULL);
     for (int64_t i = l->len - 1; i >= 0; i--) k_list_push(r, l->items[i]);
     return r;
 }
 
 /* A stable merge sort by precomputed keys. */
-static klist *k_list_sort_by(klist *l, kclosure *key, int (*cmp)(kv, kv)) {
+K_API klist *k_list_sort_by(klist *l, kclosure *key, int (*cmp)(kv, kv)) {
     int64_t n = l->len;
     kv *keys = k_alloc(sizeof(kv) * (size_t)(n ? n : 1));
     kv *vals = k_alloc(sizeof(kv) * (size_t)(n ? n : 1));
@@ -416,7 +424,7 @@ static klist *k_list_sort_by(klist *l, kclosure *key, int (*cmp)(kv, kv)) {
     return k_list(n, vals);
 }
 
-static kstr *k_list_join(klist *l, kstr *sep, kstr *(*show)(kv)) {
+K_API kstr *k_list_join(klist *l, kstr *sep, kstr *(*show)(kv)) {
     kstr *r = k_str("");
     for (int64_t i = 0; i < l->len; i++) {
         if (i > 0) r = k_concat(r, sep);
@@ -426,16 +434,16 @@ static kstr *k_list_join(klist *l, kstr *sep, kstr *(*show)(kv)) {
 }
 
 /* `[a, b]`, with each item shown by `show`. */
-static kstr *k_list_show(klist *l, kstr *(*show)(kv)) {
+K_API kstr *k_list_show(klist *l, kstr *(*show)(kv)) {
     kstr *r = k_concat(k_str("["), k_list_join(l, k_str(", "), show));
     return k_concat(r, k_str("]"));
 }
 
 static inline kv k_call2(kclosure *c, kv a, kv b) { kv args[2] = {a, b}; return c->fn(c->env, args); }
 
-static kbox *k_list_pop(klist *l) { return l->len > 0 ? k_box(l->items[--l->len]) : NULL; }
+K_API kbox *k_list_pop(klist *l) { return l->len > 0 ? k_box(l->items[--l->len]) : NULL; }
 
-static void k_list_insert(klist *l, int64_t i, kv item) {
+K_API void k_list_insert(klist *l, int64_t i, kv item) {
     if (i < 0 || i > l->len) {
         char buf[96];
         snprintf(buf, sizeof buf, "index %" PRId64 " is out of range for inserting into a list of length %" PRId64, i, l->len);
@@ -446,45 +454,45 @@ static void k_list_insert(klist *l, int64_t i, kv item) {
     l->items[i] = item;
 }
 
-static kv k_list_remove_at(klist *l, int64_t i) {
+K_API kv k_list_remove_at(klist *l, int64_t i) {
     kv v = k_list_at(l, i);
     memmove(l->items + i, l->items + i + 1, sizeof(kv) * (size_t)(l->len - 1 - i));
     l->len--;
     return v;
 }
 
-static kbox *k_list_index_of(klist *l, kv item, bool (*eq)(kv, kv)) {
+K_API kbox *k_list_index_of(klist *l, kv item, bool (*eq)(kv, kv)) {
     for (int64_t i = 0; i < l->len; i++)
         if (eq(l->items[i], item)) return k_box((kv)i);
     return NULL;
 }
 
 /* Items from `start` up to `end`, both clamped to the list. */
-static klist *k_list_slice(klist *l, int64_t start, int64_t end) {
+K_API klist *k_list_slice(klist *l, int64_t start, int64_t end) {
     if (start < 0) start = 0;
     if (end > l->len) end = l->len;
     if (end < start) end = start;
     return k_list(end - start, l->items + start);
 }
 
-static klist *k_list_take(klist *l, int64_t n) { return k_list_slice(l, 0, n); }
-static klist *k_list_skip(klist *l, int64_t n) { return k_list_slice(l, n, l->len); }
+K_API klist *k_list_take(klist *l, int64_t n) { return k_list_slice(l, 0, n); }
+K_API klist *k_list_skip(klist *l, int64_t n) { return k_list_slice(l, n, l->len); }
 
-static klist *k_list_concat(klist *a, klist *b) {
+K_API klist *k_list_concat(klist *a, klist *b) {
     klist *r = k_list(a->len, a->items);
     for (int64_t i = 0; i < b->len; i++) k_list_push(r, b->items[i]);
     return r;
 }
 
-static kv k_identity(void *env, kv *args) { (void)env; return args[0]; }
+K_API kv k_identity(void *env, kv *args) { (void)env; return args[0]; }
 
-static klist *k_list_sort(klist *l, int (*cmp)(kv, kv)) {
+K_API klist *k_list_sort(klist *l, int (*cmp)(kv, kv)) {
     kclosure id = {k_identity, NULL};
     return k_list_sort_by(l, &id, cmp);
 }
 
 /* The smallest item, or with `sign` -1 the largest; the first one on a tie. */
-static kbox *k_list_extreme(klist *l, int (*cmp)(kv, kv), int sign) {
+K_API kbox *k_list_extreme(klist *l, int (*cmp)(kv, kv), int sign) {
     if (l->len == 0) return NULL;
     kv best = l->items[0];
     for (int64_t i = 1; i < l->len; i++)
@@ -492,19 +500,19 @@ static kbox *k_list_extreme(klist *l, int (*cmp)(kv, kv), int sign) {
     return k_box(best);
 }
 
-static int64_t k_list_count(klist *l, kclosure *f) {
+K_API int64_t k_list_count(klist *l, kclosure *f) {
     int64_t n = 0;
     for (int64_t i = 0; i < l->len; i++)
         if ((bool)k_call1(f, l->items[i])) n++;
     return n;
 }
 
-static kv k_list_fold(klist *l, kv acc, kclosure *f) {
+K_API kv k_list_fold(klist *l, kv acc, kclosure *f) {
     for (int64_t i = 0; i < l->len; i++) acc = k_call2(f, acc, l->items[i]);
     return acc;
 }
 
-static klist *k_list_flat_map(klist *l, kclosure *f) {
+K_API klist *k_list_flat_map(klist *l, kclosure *f) {
     klist *r = k_list(0, NULL);
     for (int64_t i = 0; i < l->len; i++) {
         klist *part = K_KV2P(klist *, k_call1(f, l->items[i]));
@@ -532,7 +540,7 @@ typedef struct kmap {
     k_eq_fn eq;
 } kmap;
 
-static uint64_t k_hash_int(kv v) {
+K_API uint64_t k_hash_int(kv v) {
     uint64_t x = v;
     x ^= x >> 33; x *= 0xff51afd7ed558ccdULL;
     x ^= x >> 33; x *= 0xc4ceb9fe1a85ec53ULL;
@@ -540,24 +548,24 @@ static uint64_t k_hash_int(kv v) {
 }
 
 /* Mixes the hash of one more part into `h`; the order of parts matters. */
-static uint64_t k_hash_combine(uint64_t h, uint64_t x) {
+K_API uint64_t k_hash_combine(uint64_t h, uint64_t x) {
     return k_hash_int(h ^ (x + 0x9e3779b97f4a7c15ULL + (h << 6) + (h >> 2)));
 }
 
-static uint64_t k_hash_float(kv v) {
+K_API uint64_t k_hash_float(kv v) {
     double f = k_kv2f(v);
     if (f == 0) f = 0; /* -0.0 and 0.0 are equal, so they hash the same */
     return k_hash_int(k_f2kv(f));
 }
 
-static uint64_t k_hash_str(kv v) {
+K_API uint64_t k_hash_str(kv v) {
     kstr *s = K_KV2P(kstr *, v);
     uint64_t h = 1469598103934665603ULL;
     for (int64_t i = 0; i < s->len; i++) { h ^= (unsigned char)s->data[i]; h *= 1099511628211ULL; }
     return h;
 }
 
-static kmap *k_map_new(k_hash_fn hash, k_eq_fn eq) {
+K_API kmap *k_map_new(k_hash_fn hash, k_eq_fn eq) {
     kmap *m = k_alloc(sizeof(kmap));
     m->cap = 8;
     m->keys = k_alloc(sizeof(kv) * 8);
@@ -572,7 +580,7 @@ static kmap *k_map_new(k_hash_fn hash, k_eq_fn eq) {
 }
 
 /* The index slot holding `key`, or the empty slot where it would go. */
-static int64_t k_map_slot(kmap *m, kv key) {
+K_API int64_t k_map_slot(kmap *m, kv key) {
     uint64_t mask = (uint64_t)m->slots - 1;
     uint64_t i = m->hash(key) & mask;
     int64_t tomb = -1;
@@ -587,7 +595,7 @@ static int64_t k_map_slot(kmap *m, kv key) {
 
 /* Rebuilds the entry arrays without deleted entries, and the index with
  * room for `cap` entries. */
-static void k_map_rebuild(kmap *m, int64_t cap) {
+K_API void k_map_rebuild(kmap *m, int64_t cap) {
     kv *keys = k_alloc(sizeof(kv) * (size_t)cap);
     kv *vals = k_alloc(sizeof(kv) * (size_t)cap);
     bool *live = k_alloc_atomic((size_t)cap);
@@ -605,7 +613,7 @@ static void k_map_rebuild(kmap *m, int64_t cap) {
     for (int64_t i = 0; i < n; i++) m->index[k_map_slot(m, keys[i])] = i;
 }
 
-static void k_map_set(kmap *m, kv key, kv val) {
+K_API void k_map_set(kmap *m, kv key, kv val) {
     int64_t s = k_map_slot(m, key);
     int64_t e = m->index[s];
     if (e >= 0) { m->vals[e] = val; return; }
@@ -619,20 +627,20 @@ static void k_map_set(kmap *m, kv key, kv val) {
     m->len++;
 }
 
-static kbox *k_map_get(kmap *m, kv key) {
+K_API kbox *k_map_get(kmap *m, kv key) {
     int64_t e = m->index[k_map_slot(m, key)];
     return e >= 0 ? k_box(m->vals[e]) : NULL;
 }
 
-static kv k_map_at(kmap *m, kv key) {
+K_API kv k_map_at(kmap *m, kv key) {
     kbox *b = k_map_get(m, key);
     if (!b) k_panic_c("the key is not in the map");
     return b->v;
 }
 
-static bool k_map_contains(kmap *m, kv key) { return m->index[k_map_slot(m, key)] >= 0; }
+K_API bool k_map_contains(kmap *m, kv key) { return m->index[k_map_slot(m, key)] >= 0; }
 
-static kbox *k_map_remove(kmap *m, kv key) {
+K_API kbox *k_map_remove(kmap *m, kv key) {
     int64_t s = k_map_slot(m, key);
     int64_t e = m->index[s];
     if (e < 0) return NULL;
@@ -643,20 +651,20 @@ static kbox *k_map_remove(kmap *m, kv key) {
     return old;
 }
 
-static klist *k_map_keys(kmap *m) {
+K_API klist *k_map_keys(kmap *m) {
     klist *l = k_list(0, NULL);
     for (int64_t i = 0; i < m->used; i++) if (m->live[i]) k_list_push(l, m->keys[i]);
     return l;
 }
 
-static klist *k_map_values(kmap *m) {
+K_API klist *k_map_values(kmap *m) {
     klist *l = k_list(0, NULL);
     for (int64_t i = 0; i < m->used; i++) if (m->live[i]) k_list_push(l, m->vals[i]);
     return l;
 }
 
 /* `{ key, value }` records, in insertion order. */
-static klist *k_map_entries(kmap *m) {
+K_API klist *k_map_entries(kmap *m) {
     klist *l = k_list(0, NULL);
     for (int64_t i = 0; i < m->used; i++) {
         if (!m->live[i]) continue;
@@ -668,11 +676,11 @@ static klist *k_map_entries(kmap *m) {
     return l;
 }
 
-static void k_set_add(kmap *m, kv item) { k_map_set(m, item, 0); }
-static bool k_set_remove(kmap *m, kv item) { return k_map_remove(m, item) != NULL; }
+K_API void k_set_add(kmap *m, kv item) { k_map_set(m, item, 0); }
+K_API bool k_set_remove(kmap *m, kv item) { return k_map_remove(m, item) != NULL; }
 
 /* `{"a": 1, "b": 2}`, or `{1, 2}` for a set when `show_val` is NULL. */
-static kstr *k_map_show(kmap *m, kstr *(*show_key)(kv), kstr *(*show_val)(kv)) {
+K_API kstr *k_map_show(kmap *m, kstr *(*show_key)(kv), kstr *(*show_val)(kv)) {
     kstr *r = k_str("{");
     bool first = true;
     for (int64_t i = 0; i < m->used; i++) {
@@ -687,7 +695,7 @@ static kstr *k_map_show(kmap *m, kstr *(*show_key)(kv), kstr *(*show_val)(kv)) {
 
 /* Maps are equal when they hold the same keys with equal values, in any
  * order; sets when they hold the same items. */
-static bool k_map_eq(kmap *a, kmap *b, k_eq_fn val_eq) {
+K_API bool k_map_eq(kmap *a, kmap *b, k_eq_fn val_eq) {
     if (a->len != b->len) return false;
     for (int64_t i = 0; i < a->used; i++) {
         if (!a->live[i]) continue;
@@ -700,54 +708,54 @@ static bool k_map_eq(kmap *a, kmap *b, k_eq_fn val_eq) {
 
 /* ----- string methods ----- */
 
-static int64_t k_str_len(kstr *s) {
+K_API int64_t k_str_len(kstr *s) {
     int64_t n = 0;
     for (int64_t i = 0; i < s->len; i++)
         if ((s->data[i] & 0xC0) != 0x80) n++;
     return n;
 }
 
-static kstr *k_str_upper(kstr *s) {
+K_API kstr *k_str_upper(kstr *s) {
     kstr *r = k_str_n(s->data, s->len);
     for (int64_t i = 0; i < r->len; i++)
         if (r->data[i] >= 'a' && r->data[i] <= 'z') r->data[i] -= 32;
     return r;
 }
 
-static kstr *k_str_lower(kstr *s) {
+K_API kstr *k_str_lower(kstr *s) {
     kstr *r = k_str_n(s->data, s->len);
     for (int64_t i = 0; i < r->len; i++)
         if (r->data[i] >= 'A' && r->data[i] <= 'Z') r->data[i] += 32;
     return r;
 }
 
-static bool k_is_space(char c) { return c == ' ' || c == '\t' || c == '\n' || c == '\r'; }
+K_API bool k_is_space(char c) { return c == ' ' || c == '\t' || c == '\n' || c == '\r'; }
 
-static kstr *k_str_trim(kstr *s) {
+K_API kstr *k_str_trim(kstr *s) {
     int64_t a = 0, b = s->len;
     while (a < b && k_is_space(s->data[a])) a++;
     while (b > a && k_is_space(s->data[b - 1])) b--;
     return k_str_n(s->data + a, b - a);
 }
 
-static int64_t k_str_find(kstr *s, kstr *part, int64_t from) {
+K_API int64_t k_str_find(kstr *s, kstr *part, int64_t from) {
     if (part->len == 0) return from;
     for (int64_t i = from; i + part->len <= s->len; i++)
         if (memcmp(s->data + i, part->data, (size_t)part->len) == 0) return i;
     return -1;
 }
 
-static bool k_str_contains(kstr *s, kstr *part) { return k_str_find(s, part, 0) >= 0; }
+K_API bool k_str_contains(kstr *s, kstr *part) { return k_str_find(s, part, 0) >= 0; }
 
-static bool k_str_starts_with(kstr *s, kstr *p) {
+K_API bool k_str_starts_with(kstr *s, kstr *p) {
     return p->len <= s->len && memcmp(s->data, p->data, (size_t)p->len) == 0;
 }
 
-static bool k_str_ends_with(kstr *s, kstr *p) {
+K_API bool k_str_ends_with(kstr *s, kstr *p) {
     return p->len <= s->len && memcmp(s->data + s->len - p->len, p->data, (size_t)p->len) == 0;
 }
 
-static kstr *k_str_replace(kstr *s, kstr *from, kstr *to) {
+K_API kstr *k_str_replace(kstr *s, kstr *from, kstr *to) {
     if (from->len == 0) return s;
     kstr *r = k_str("");
     int64_t i = 0, j;
@@ -759,7 +767,7 @@ static kstr *k_str_replace(kstr *s, kstr *from, kstr *to) {
     return k_concat(r, k_str_n(s->data + i, s->len - i));
 }
 
-static klist *k_str_split(kstr *s, kstr *sep) {
+K_API klist *k_str_split(kstr *s, kstr *sep) {
     klist *r = k_list(0, NULL);
     if (sep->len == 0) {
         for (int64_t i = 0; i < s->len; i++) k_list_push(r, K_P2KV(k_str_n(s->data + i, 1)));
@@ -774,7 +782,7 @@ static klist *k_str_split(kstr *s, kstr *sep) {
     return r;
 }
 
-static kbox *k_str_to_int(kstr *s) {
+K_API kbox *k_str_to_int(kstr *s) {
     if (s->len == 0) return NULL;
     char *end;
     errno = 0;
@@ -784,7 +792,7 @@ static kbox *k_str_to_int(kstr *s) {
     return k_box((kv)(int64_t)n);
 }
 
-static kbox *k_str_to_float(kstr *s) {
+K_API kbox *k_str_to_float(kstr *s) {
     if (s->len == 0 || k_is_space(s->data[0])) return NULL;
     char *end;
     errno = 0;
@@ -795,7 +803,7 @@ static kbox *k_str_to_float(kstr *s) {
 }
 
 /* The byte offset of character `i`, clamped to the string. */
-static int64_t k_str_offset(kstr *s, int64_t i) {
+K_API int64_t k_str_offset(kstr *s, int64_t i) {
     if (i <= 0) return 0;
     int64_t n = 0;
     for (int64_t b = 0; b < s->len; b++)
@@ -804,25 +812,25 @@ static int64_t k_str_offset(kstr *s, int64_t i) {
 }
 
 /* The number of characters in the first `b` bytes. */
-static int64_t k_str_chars_before(kstr *s, int64_t b) {
+K_API int64_t k_str_chars_before(kstr *s, int64_t b) {
     int64_t n = 0;
     for (int64_t i = 0; i < b; i++)
         if ((s->data[i] & 0xC0) != 0x80) n++;
     return n;
 }
 
-static kbox *k_str_index_of(kstr *s, kstr *part) {
+K_API kbox *k_str_index_of(kstr *s, kstr *part) {
     int64_t b = k_str_find(s, part, 0);
     return b < 0 ? NULL : k_box((kv)k_str_chars_before(s, b));
 }
 
 /* Characters from `start` up to `end`, both clamped to the string. */
-static kstr *k_str_slice(kstr *s, int64_t start, int64_t end) {
+K_API kstr *k_str_slice(kstr *s, int64_t start, int64_t end) {
     int64_t a = k_str_offset(s, start), b = k_str_offset(s, end);
     return b > a ? k_str_n(s->data + a, b - a) : k_str("");
 }
 
-static klist *k_str_chars(kstr *s) {
+K_API klist *k_str_chars(kstr *s) {
     klist *r = k_list(0, NULL);
     for (int64_t i = 0; i < s->len;) {
         int64_t j = i + 1;
@@ -834,7 +842,7 @@ static klist *k_str_chars(kstr *s) {
 }
 
 /* Lines split on "\n" or "\r\n"; a final line break does not start an empty line. */
-static klist *k_str_lines(kstr *s) {
+K_API klist *k_str_lines(kstr *s) {
     klist *r = k_list(0, NULL);
     int64_t i = 0;
     while (i < s->len) {
@@ -847,7 +855,7 @@ static klist *k_str_lines(kstr *s) {
     return r;
 }
 
-static kstr *k_str_repeat(kstr *s, int64_t n) {
+K_API kstr *k_str_repeat(kstr *s, int64_t n) {
     if (n < 0) k_panic_c("repeat: the count is negative");
     int64_t total = k_mul(s->len, n);
     kstr *r = k_str_alloc(total, total);
@@ -856,30 +864,30 @@ static kstr *k_str_repeat(kstr *s, int64_t n) {
 }
 
 /* `fill` repeated before (or after) `s` until it is `width` characters long. */
-static kstr *k_str_pad(kstr *s, int64_t width, kstr *fill, bool start) {
+K_API kstr *k_str_pad(kstr *s, int64_t width, kstr *fill, bool start) {
     int64_t have = k_str_len(s), step = k_str_len(fill);
     if (have >= width || step == 0) return s;
     kstr *pad = k_str_slice(k_str_repeat(fill, (width - have + step - 1) / step), 0, width - have);
     return start ? k_concat(pad, s) : k_concat(s, pad);
 }
 
-static kstr *k_str_pad_start(kstr *s, int64_t w, kstr *fill) { return k_str_pad(s, w, fill, true); }
-static kstr *k_str_pad_end(kstr *s, int64_t w, kstr *fill) { return k_str_pad(s, w, fill, false); }
+K_API kstr *k_str_pad_start(kstr *s, int64_t w, kstr *fill) { return k_str_pad(s, w, fill, true); }
+K_API kstr *k_str_pad_end(kstr *s, int64_t w, kstr *fill) { return k_str_pad(s, w, fill, false); }
 
-static kstr *k_str_trim_start(kstr *s) {
+K_API kstr *k_str_trim_start(kstr *s) {
     int64_t a = 0;
     while (a < s->len && k_is_space(s->data[a])) a++;
     return k_str_n(s->data + a, s->len - a);
 }
 
-static kstr *k_str_trim_end(kstr *s) {
+K_API kstr *k_str_trim_end(kstr *s) {
     int64_t b = s->len;
     while (b > 0 && k_is_space(s->data[b - 1])) b--;
     return k_str_n(s->data, b);
 }
 
 /* `"text"` with quotes and escapes, for strings inside lists and structs. */
-static kstr *k_str_quote(kstr *s) {
+K_API kstr *k_str_quote(kstr *s) {
     kstr *r = k_str("\"");
     for (int64_t i = 0; i < s->len; i++) {
         char c = s->data[i];
@@ -891,17 +899,17 @@ static kstr *k_str_quote(kstr *s) {
 
 /* ----- built-in functions ----- */
 
-static void k_print(kstr *s) {
+K_API void k_print(kstr *s) {
     fwrite(s->data, 1, (size_t)s->len, stdout);
     fputc('\n', stdout);
 }
 
-static kstr *k_env(kstr *name) {
+K_API kstr *k_env(kstr *name) {
     const char *v = getenv(k_cstr(name));
     return k_str(v ? v : "");
 }
 
-static void k_log(const char *level, kstr *message, int n, kstr **data) {
+K_API void k_log(const char *level, kstr *message, int n, kstr **data) {
     fflush(stdout);
     fprintf(stderr, "%s %s", level, k_cstr(message));
     for (int i = 0; i < n; i++) fprintf(stderr, " %s", k_cstr(data[i]));
@@ -913,15 +921,15 @@ static void k_log(const char *level, kstr *message, int n, kstr **data) {
 #define K_NS_PER_SEC INT64_C(1000000000)
 #define K_NS_PER_DAY (INT64_C(86400) * K_NS_PER_SEC)
 
-static int64_t k_floor_div(int64_t a, int64_t b) { return a / b - (a % b != 0 && (a < 0) != (b < 0)); }
+K_API int64_t k_floor_div(int64_t a, int64_t b) { return a / b - (a % b != 0 && (a < 0) != (b < 0)); }
 
-static int64_t k_time_now(void) {
+K_API int64_t k_time_now(void) {
     struct timespec ts;
     clock_gettime(CLOCK_REALTIME, &ts);
     return (int64_t)ts.tv_sec * K_NS_PER_SEC + ts.tv_nsec;
 }
 
-static void k_time_sleep(int64_t ns) {
+K_API void k_time_sleep(int64_t ns) {
     if (ns <= 0) return;
     struct timespec ts = {(time_t)(ns / K_NS_PER_SEC), (long)(ns % K_NS_PER_SEC)};
     while (nanosleep(&ts, &ts) != 0 && errno == EINTR) {}
@@ -929,7 +937,7 @@ static void k_time_sleep(int64_t ns) {
 
 /* Days since 1970-01-01 to a civil date and back (Howard Hinnant's
  * algorithms, valid for every day an int64_t can hold here). */
-static void k_civil(int64_t days, int64_t *y, int64_t *m, int64_t *d) {
+K_API void k_civil(int64_t days, int64_t *y, int64_t *m, int64_t *d) {
     days += 719468;
     int64_t era = k_floor_div(days, 146097);
     int64_t doe = days - era * 146097;
@@ -941,7 +949,7 @@ static void k_civil(int64_t days, int64_t *y, int64_t *m, int64_t *d) {
     *y = yoe + era * 400 + (*m <= 2);
 }
 
-static int64_t k_days_from_civil(int64_t y, int64_t m, int64_t d) {
+K_API int64_t k_days_from_civil(int64_t y, int64_t m, int64_t d) {
     y -= m <= 2;
     int64_t era = k_floor_div(y, 400);
     int64_t yoe = y - era * 400;
@@ -954,7 +962,7 @@ static int64_t k_days_from_civil(int64_t y, int64_t m, int64_t d) {
  * nanosecond and weekday (0 is Sunday). */
 typedef struct ktm { int64_t year, month, day, hour, minute, second, nano, weekday; } ktm;
 
-static ktm k_time_parts(int64_t ns) {
+K_API ktm k_time_parts(int64_t ns) {
     ktm t;
     int64_t days = k_floor_div(ns, K_NS_PER_DAY);
     int64_t rest = ns - days * K_NS_PER_DAY;
@@ -967,12 +975,12 @@ static ktm k_time_parts(int64_t ns) {
     return t;
 }
 
-static int64_t k_time_year(int64_t ns) { return k_time_parts(ns).year; }
-static int64_t k_time_month(int64_t ns) { return k_time_parts(ns).month; }
-static int64_t k_time_day(int64_t ns) { return k_time_parts(ns).day; }
-static int64_t k_time_unix(int64_t ns) { return k_floor_div(ns, K_NS_PER_SEC); }
+K_API int64_t k_time_year(int64_t ns) { return k_time_parts(ns).year; }
+K_API int64_t k_time_month(int64_t ns) { return k_time_parts(ns).month; }
+K_API int64_t k_time_day(int64_t ns) { return k_time_parts(ns).day; }
+K_API int64_t k_time_unix(int64_t ns) { return k_floor_div(ns, K_NS_PER_SEC); }
 
-static kstr *k_time_iso(int64_t ns) {
+K_API kstr *k_time_iso(int64_t ns) {
     ktm t = k_time_parts(ns);
     char buf[64];
     int len = snprintf(buf, sizeof buf, "%04" PRId64 "-%02" PRId64 "-%02" PRId64 "T%02" PRId64 ":%02" PRId64 ":%02" PRId64,
@@ -987,13 +995,13 @@ static kstr *k_time_iso(int64_t ns) {
     return k_str_n(buf, len);
 }
 
-static const char *k_month_names[] = {"January", "February", "March", "April", "May", "June", "July",
+K_API const char *k_month_names[] = {"January", "February", "March", "April", "May", "June", "July",
                                       "August", "September", "October", "November", "December"};
-static const char *k_day_names[] = {"Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"};
+K_API const char *k_day_names[] = {"Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"};
 
 /* Formats with a date pattern such as "MMM d, yyyy". A run of one letter
  * is one field; text in single quotes is copied, and '' is a quote. */
-static kstr *k_time_format(int64_t ns, kstr *pattern) {
+K_API kstr *k_time_format(int64_t ns, kstr *pattern) {
     ktm t = k_time_parts(ns);
     size_t cap = 64, len = 0;
     char *out = k_alloc_atomic(cap);
@@ -1060,7 +1068,7 @@ static kstr *k_time_format(int64_t ns, kstr *pattern) {
     return k_str_n(out, (int64_t)len);
 }
 
-static bool k_digits(const char **p, const char *end, int n, int64_t *out) {
+K_API bool k_digits(const char **p, const char *end, int n, int64_t *out) {
     int64_t v = 0;
     for (int i = 0; i < n; i++) {
         if (*p >= end || **p < '0' || **p > '9') return false;
@@ -1072,7 +1080,7 @@ static bool k_digits(const char **p, const char *end, int n, int64_t *out) {
 }
 
 /* Reads an RFC 3339 time, or a date alone as midnight UTC. */
-static int64_t k_time_parse(kstr *text) {
+K_API int64_t k_time_parse(kstr *text) {
     const char *p = text->data, *end = p + text->len;
     int64_t y, mo, d, h = 0, mi = 0, s = 0, nano = 0, offset = 0;
     bool ok = k_digits(&p, end, 4, &y) && p < end && *p++ == '-' && k_digits(&p, end, 2, &mo) && p < end &&
@@ -1114,7 +1122,7 @@ static int64_t k_time_parse(kstr *text) {
 
 /* ----- fs ----- */
 
-static kstr *k_fs_read(kstr *path) {
+K_API kstr *k_fs_read(kstr *path) {
     FILE *f = fopen(k_cstr(path), "rb");
     if (!f) { k_lib_fail("read", path); return k_str(""); }
     size_t cap = 4096, len = 0;
@@ -1135,7 +1143,7 @@ static kstr *k_fs_read(kstr *path) {
     return k_str_n(buf, (int64_t)len);
 }
 
-static klist *k_fs_read_lines(kstr *path) {
+K_API klist *k_fs_read_lines(kstr *path) {
     kstr *text = k_fs_read(path);
     klist *lines = k_list(0, NULL);
     if (k_lib_error) return lines;
@@ -1151,31 +1159,31 @@ static klist *k_fs_read_lines(kstr *path) {
     return lines;
 }
 
-static void k_fs_put(kstr *path, kstr *text, const char *mode) {
+K_API void k_fs_put(kstr *path, kstr *text, const char *mode) {
     FILE *f = fopen(k_cstr(path), mode);
     if (!f) { k_lib_fail("write", path); return; }
     size_t n = fwrite(text->data, 1, (size_t)text->len, f);
     if (fclose(f) != 0 || n != (size_t)text->len) k_lib_fail("write", path);
 }
 
-static void k_fs_write(kstr *path, kstr *text) { k_fs_put(path, text, "wb"); }
-static void k_fs_append(kstr *path, kstr *text) { k_fs_put(path, text, "ab"); }
+K_API void k_fs_write(kstr *path, kstr *text) { k_fs_put(path, text, "wb"); }
+K_API void k_fs_append(kstr *path, kstr *text) { k_fs_put(path, text, "ab"); }
 
-static bool k_fs_exists(kstr *path) {
+K_API bool k_fs_exists(kstr *path) {
     struct stat st;
     return stat(k_cstr(path), &st) == 0;
 }
 
-static bool k_fs_is_dir(kstr *path) {
+K_API bool k_fs_is_dir(kstr *path) {
     struct stat st;
     return stat(k_cstr(path), &st) == 0 && S_ISDIR(st.st_mode);
 }
 
-static int k_str_ptr_cmp(const void *a, const void *b) {
+K_API int k_str_ptr_cmp(const void *a, const void *b) {
     return k_str_cmp(K_KV2P(kstr *, *(const kv *)a), K_KV2P(kstr *, *(const kv *)b));
 }
 
-static klist *k_fs_list(kstr *path) {
+K_API klist *k_fs_list(kstr *path) {
     klist *names = k_list(0, NULL);
     DIR *dir = opendir(k_cstr(path));
     if (!dir) { k_lib_fail("list", path); return names; }
@@ -1189,7 +1197,7 @@ static klist *k_fs_list(kstr *path) {
     return names;
 }
 
-static void k_fs_mkdir(kstr *path) {
+K_API void k_fs_mkdir(kstr *path) {
     kstr *p = k_str_n(path->data, path->len);
     for (int64_t i = 1; i <= p->len; i++) {
         if (i < p->len && p->data[i] != '/') continue;
@@ -1204,36 +1212,36 @@ static void k_fs_mkdir(kstr *path) {
     }
 }
 
-static void k_fs_remove(kstr *path) {
+K_API void k_fs_remove(kstr *path) {
     if (remove(k_cstr(path)) != 0) k_lib_fail("remove", path);
 }
 
-static void k_fs_rename(kstr *from, kstr *to) {
+K_API void k_fs_rename(kstr *from, kstr *to) {
     if (rename(k_cstr(from), k_cstr(to)) != 0) k_lib_fail("rename", from);
 }
 
 /* ----- os ----- */
 
-static int k_argc = 0;
-static char **k_argv = NULL;
+K_API int k_argc = 0;
+K_API char **k_argv = NULL;
 
-static klist *k_os_args(void) {
+K_API klist *k_os_args(void) {
     klist *l = k_list(0, NULL);
     for (int i = 1; i < k_argc; i++) k_list_push(l, K_P2KV(k_str(k_argv[i])));
     return l;
 }
 
-static kbox *k_os_env(kstr *name) {
+K_API kbox *k_os_env(kstr *name) {
     const char *v = getenv(k_cstr(name));
     return v ? k_box(K_P2KV(k_str(v))) : NULL;
 }
 
-static _Noreturn void k_os_exit(int64_t code) {
+K_API _Noreturn void k_os_exit(int64_t code) {
     fflush(stdout);
     exit((int)code);
 }
 
-static kstr *k_os_cwd(void) {
+K_API kstr *k_os_cwd(void) {
     size_t cap = 256;
     for (;;) {
         char *buf = k_alloc_atomic(cap);
@@ -1243,7 +1251,7 @@ static kstr *k_os_cwd(void) {
     }
 }
 
-static kstr *k_os_temp_dir(void) {
+K_API kstr *k_os_temp_dir(void) {
     const char *v = getenv("TMPDIR");
     if (!v || !*v) return k_str("/tmp");
     size_t n = strlen(v);
@@ -1251,9 +1259,9 @@ static kstr *k_os_temp_dir(void) {
     return k_str_n(v, (int64_t)n);
 }
 
-static int64_t k_os_pid(void) { return (int64_t)getpid(); }
+K_API int64_t k_os_pid(void) { return (int64_t)getpid(); }
 
-static kstr *k_os_platform(void) {
+K_API kstr *k_os_platform(void) {
 #if defined(__linux__)
     return k_str("linux");
 #elif defined(__APPLE__)
@@ -1267,7 +1275,7 @@ static kstr *k_os_platform(void) {
 
 /* ----- io ----- */
 
-static kbox *k_io_read_line(void) {
+K_API kbox *k_io_read_line(void) {
     size_t cap = 128, len = 0;
     char *buf = k_alloc_atomic(cap);
     int c;
@@ -1285,7 +1293,7 @@ static kbox *k_io_read_line(void) {
     return k_box(K_P2KV(k_str_n(buf, (int64_t)len)));
 }
 
-static kstr *k_io_read_all(void) {
+K_API kstr *k_io_read_all(void) {
     size_t cap = 4096, len = 0, n;
     char *buf = k_alloc_atomic(cap);
     while ((n = fread(buf + len, 1, cap - len, stdin)) > 0) {
@@ -1300,16 +1308,16 @@ static kstr *k_io_read_all(void) {
     return k_str_n(buf, (int64_t)len);
 }
 
-static klist *k_io_read_lines(void) {
+K_API klist *k_io_read_lines(void) {
     klist *lines = k_list(0, NULL);
     kbox *line;
     while ((line = k_io_read_line()) != NULL) k_list_push(lines, line->v);
     return lines;
 }
 
-static void k_io_write(kstr *s) { fwrite(s->data, 1, (size_t)s->len, stdout); }
+K_API void k_io_write(kstr *s) { fwrite(s->data, 1, (size_t)s->len, stdout); }
 
-static void k_io_print_err(kstr *s) {
+K_API void k_io_print_err(kstr *s) {
     fflush(stdout);
     fwrite(s->data, 1, (size_t)s->len, stderr);
     fputc('\n', stderr);
