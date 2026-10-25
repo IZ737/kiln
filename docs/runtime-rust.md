@@ -1,10 +1,10 @@
 # Plan: less C in the runtime
 
-**Status: accepted; step 0 done.** Jake chose option A (hyper on Kiln's own
-tasks; see [The decision](#the-decision-hyper-and-kilns-tasks)) on
-2026-10-25. The work follows the [migration order](#migration-order):
-`crates/kiln_rt` exists and is linked into every program, with one
-function in it so far.
+**Status: accepted; steps 0 and 1 done.** Jake chose option A (hyper on
+Kiln's own tasks; see [The decision](#the-decision-hyper-and-kilns-tasks))
+on 2026-10-25. The work follows the [migration order](#migration-order):
+`crates/kiln_rt` is linked into every program, and JSON runs on
+serde_json. HTTP is next.
 
 ## The problem
 
@@ -263,8 +263,18 @@ replaces deleted in the same PR.
    found advisories in the `zip` crate `kiln upgrade` used, now updated)
    and Dependabot. `k_web_reason` moved, through clean-check and wine.
    Sizes are measured above.
-1. **JSON on serde_json.** No I/O and no scheduler involvement, so it
-   proves the GC rules on their own. Add nesting-depth and size tests.
+1. **JSON on serde_json (done).** No I/O and no scheduler involvement, so
+   it proves the GC rules on their own. `kiln_rt/src/json.rs` encodes with
+   a `Serialize` over a value and its `kdesc` (with a formatter that
+   writes floats as before) and decodes with a `DeserializeSeed` that
+   builds Kiln values through the C runtime's constructors, which are
+   `K_EXPORT` in `kiln.c` so the C backend links them too. Errors keep
+   their wording, with paths, and serde_json's syntax errors are put in
+   the same words; `conformance/json_untrusted` covers malformed, deep and
+   out-of-range input. What changed: text must be UTF-8 and escapes well
+   formed, a trailing comma is reported as such, and typed values nest at
+   most 128 deep (skipped members have no limit, and skipping does not
+   recurse).
 2. **HTTP on hyper.** The adapter from option A, request data (percent
    decoding, query strings and cookies on the `percent-encoding`,
    `form_urlencoded` and `cookie` crates), and the limits and timeouts

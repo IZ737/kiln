@@ -97,7 +97,7 @@ Run `cargo fmt --all`, `cargo clippy --all-targets -- -D warnings` and
   compound values through `k_desc_*` in `native.c`, which read a
   description of the type; the C backend writes the same descriptions
   (`desc` in `emit.rs`) for runtime code that works on any type, such as
-  JSON in `kiln.c`. The two backends must behave the same: the
+  JSON in `kiln_rt`. The two backends must behave the same: the
   conformance tests run every program with both.
 - `crates/kiln_cli`: the `kiln` binary (`check`, `build`, `run`, `lsp`,
   `parse`, `explain`, `upgrade`). `lsp/mod.rs` is the language server; it
