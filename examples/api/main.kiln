@@ -1,0 +1,83 @@
+// A JSON API for notes, kept in a file: `kiln run examples/api`, then
+//
+//     curl localhost:8080/notes
+//     curl -d '{"text": "Load the kiln"}' localhost:8080/notes
+//     curl localhost:8080/notes/1
+//     curl -X DELETE localhost:8080/notes/1
+//
+// Each request reads and writes the file instead of sharing a variable
+// between handlers, which Kiln does not promise is safe.
+import web, json, fs, os
+
+struct Note {
+    id: Int
+    text: String
+}
+
+struct NewNote {
+    text: String
+}
+
+fn store() -> String {
+    return os.env("NOTES_FILE") ?? "notes.json"
+}
+
+fn load() -> List<Note> ! {
+    if not fs.exists(store()) {
+        return []
+    }
+    return try json.decode<List<Note>>(try fs.read(store()))
+}
+
+fn save(notes: List<Note>) ! {
+    try fs.write(store(), json.encode(notes))
+}
+
+fn find(id: Int) -> Note ! {
+    let notes = try load()
+    let note = notes.find(fn(n) { n.id == id }) ?? throw web.error(404, "there is no note ${id}")
+    return note
+}
+
+fn main() ! {
+    let app = web.app(max_body: 65_536)
+
+    app.get("/notes", fn(req) {
+        return web.json(try load())
+    })
+
+    app.get("/notes/{id: Int}", fn(req, id) {
+        return web.json(try find(id))
+    })
+
+    app.post("/notes", fn(req) {
+        let new = try req.json<NewNote>()
+        if new.text.trim().len() == 0 {
+            throw web.error(422, "a note needs some text")
+        }
+        let notes = try load()
+        var id = 1
+        for n in notes {
+            id = id.max(n.id + 1)
+        }
+        let note = Note(id: id, text: new.text)
+        notes.push(note)
+        try save(notes)
+        return web.json(note, status: 201)
+    })
+
+    app.delete("/notes/{id: Int}", fn(req, id) {
+        try find(id)
+        let notes = try load()
+        try save(notes.filter(fn(n) { n.id != id }))
+        return web.Response(status: 204, headers: Map(), body: "")
+    })
+
+    // Every error is JSON, whatever the client asked for.
+    app.on_error(fn(req, status, message) {
+        return web.json({ error: message }, status: status)
+    })
+
+    let port = os.env("PORT") ?? "8080"
+    try app.listen(":${port}")
+}

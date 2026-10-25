@@ -2,8 +2,21 @@
 
 ## Unreleased
 
+The end of phase 2: Kiln programs are HTTP APIs that run as native
+binaries. [examples/api](examples/api/main.kiln) is a small JSON API.
+
+- **Errors and settings for real deployments:** `throw web.error(404,
+  "no post 7")` answers with that status and message, and other errors
+  get 500 without their message; error responses are JSON for clients
+  that speak JSON, and `app.on_error` can make them instead, such as an
+  HTML error page. `web.app(max_body:, max_header:, timeout:, keep_alive:,
+  access_log:)` has defaults for production, and the server logs a line
+  per request (`info GET /posts/7 200 1.2ms`).
+
+## 0.2.0 (2026-10-25)
+
 Phase 1.5 for Linux and Windows x86-64: a self-contained compiler and
-executables, and the start of phase 2: HTTP servers.
+executables, and most of phase 2: HTTP servers.
 
 - **HTTP server:** `web.app()`, routes with typed parameters
   (`app.get("/posts/{id: Int}", fn(req, id) { ... })`), `web.text`,
@@ -20,13 +33,6 @@ executables, and the start of phase 2: HTTP servers.
   lightweight task, so a slow handler or client holds up only its own
   request, and keeps connections alive between requests. Tasks share one
   core and switch where they wait for the network or `time.sleep`.
-- **Errors and settings for real deployments:** `throw web.error(404,
-  "no post 7")` answers with that status and message, and other errors
-  get 500 without their message; error responses are JSON for clients
-  that speak JSON, and `app.on_error` can make them instead, such as an
-  HTML error page. `web.app(max_body:, max_header:, timeout:, keep_alive:,
-  access_log:)` has defaults for production, and the server logs a line
-  per request (`info GET /posts/7 200 1.2ms`).
 - **Default arguments of standard library functions** are filled in when
   they are left out, as in `web.text("hi")`.
 

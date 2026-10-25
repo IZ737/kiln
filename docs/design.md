@@ -217,8 +217,10 @@ deliberate:
 
 ### Phase 2: the HTTP server
 
-Phase 2 is done when a real HTTP API runs as a native binary. It is built
-in steps, each on both backends and both targets:
+Phase 2 is done when a real HTTP API runs as a native binary, and it is
+done: [examples/api](../examples/api/main.kiln) is one, and the `web_*`
+conformance programs run as servers on Linux and Windows with both
+backends. It was built in steps, each on both backends and both targets:
 
 1. **The server and routing (done).** `web.app()`, routes with typed
    parameters (`/posts/{id: Int}`), `text`, `html`, `redirect` and
