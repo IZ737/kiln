@@ -326,18 +326,17 @@ for later optimized releases.
 
 The proposed roles are:
 
-| Proposed command | Responsibility |
-| --- | --- |
-| `kiln fire` | Produce an optimized release artifact |
-| `kiln deploy <target>` | Deliver and activate an artifact on configured infrastructure |
-| `kiln release <target>` | Run checks/tests, build, prepare, confirm, deploy and verify |
-| `kiln deploy <target> --dry-run` | Explain intended changes without applying them |
-| `kiln upgrade` | Update the installed compiler via a safe, tested self-update mechanism |
+| Command | Responsibility | Status |
+| --- | --- | --- |
+| `kiln upgrade` | Update the installed compiler through checksum-verified releases | Implemented; see the [README install instructions](../README.md#install) |
+| `kiln fire` | Produce an optimized release artifact | Planned |
+| `kiln deploy <target>` | Deliver and activate an artifact on configured infrastructure | Proposed |
+| `kiln release <target>` | Run checks/tests, build, prepare, confirm, deploy and verify | Proposed |
+| `kiln deploy <target> --dry-run` | Explain intended changes without applying them | Proposed |
 
-The upgrade workflow has been developed separately from Phase 2.5;
-implementation status belongs in the CLI docs, not in assumptions made by
-this vision document. Command shapes above are a direction; the
-[roadmap](../README.md#roadmap) remains authoritative for scheduling.
+The update/install workflow was developed ahead of Phase 2.5. The
+future commands and spellings are illustrative until implemented;
+the [roadmap](../README.md#roadmap) remains authoritative for scheduling.
 
 ### Application deployment, not another Terraform
 
