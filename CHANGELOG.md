@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.5.2 (2026-10-25)
+
+- `kiln lsp` no longer lists a declaration whose name is not typed yet,
+  such as `fn ` on its own. VS Code rejected the file's whole outline
+  ("name must not be falsy") while one was there.
+
 ## 0.5.1 (2026-10-25)
 
 - The VS Code extension is bundled: its code and the libraries it uses are

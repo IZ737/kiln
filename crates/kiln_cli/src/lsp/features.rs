@@ -624,7 +624,7 @@ fn symbols(path: &Path, text: &str) -> Vec<Symbol> {
         let props = props.map(|p| symbol(&p.name.name, SYM_FIELD, p.span, p.name.span));
         let states = glaze.states.iter();
         let states = states.map(|s| symbol(&s.name.name, SYM_VARIABLE, s.span, s.name.span));
-        return props.chain(states).collect();
+        return named(props.chain(states).collect());
     }
     let module = kiln_syntax::parse(text).module;
     let mut out = Vec::new();
@@ -664,7 +664,22 @@ fn symbols(path: &Path, text: &str) -> Vec<Symbol> {
             Item::Import(_) => {}
         }
     }
-    out
+    named(out)
+}
+
+/// Leaves out declarations whose name is not written yet, which editors
+/// reject, and stretches each one to hold its name, as they also require.
+fn named(symbols: Vec<Symbol>) -> Vec<Symbol> {
+    symbols
+        .into_iter()
+        .filter(|s| !s.name.trim().is_empty() && s.name.trim() != "impl")
+        .map(|mut s| {
+            s.span.start = s.span.start.min(s.name_span.start);
+            s.span.end = s.span.end.max(s.name_span.end);
+            s.children = named(s.children);
+            s
+        })
+        .collect()
 }
 
 fn document_symbol(text: &str, s: &Symbol) -> Value {

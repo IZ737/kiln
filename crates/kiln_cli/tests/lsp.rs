@@ -485,3 +485,80 @@ fn survives_every_unfinished_prefix() {
     }
     client.finish();
 }
+
+/// Checks a symbol as VS Code does: it has a name, and its name lies in it.
+fn check_symbol(symbol: &Value, text: &str) {
+    let name = symbol["name"].as_str().unwrap();
+    assert!(!name.trim().is_empty(), "a symbol with no name in {text:?}");
+    let pos = |p: &Value| {
+        (
+            p["line"].as_u64().unwrap(),
+            p["character"].as_u64().unwrap(),
+        )
+    };
+    let (range, selection) = (&symbol["range"], &symbol["selectionRange"]);
+    assert!(
+        pos(&range["start"]) <= pos(&selection["start"])
+            && pos(&selection["end"]) <= pos(&range["end"]),
+        "{name}'s name is outside it in {text:?}"
+    );
+    for child in symbol["children"].as_array().into_iter().flatten() {
+        check_symbol(child, text);
+    }
+}
+
+#[test]
+fn symbols_of_unfinished_code_have_names() {
+    let dir = program_dir("unfinished-symbols");
+    let mut client = Client::start();
+    client.request("initialize", json!({}));
+    let kiln = file_uri(&dir.join("main.kiln"));
+    let glaze = file_uri(&dir.join("post.glaze"));
+    client.open(&kiln, "");
+    client.open(&glaze, "");
+    let mut texts: Vec<(&str, String)> = [
+        "fn ",
+        "fn (",
+        "fn main() {}\nfn ",
+        "struct ",
+        "struct P {\n    : Int\n}",
+        "enum E {\n    ,\n}",
+        "enum ",
+        "impl ",
+        "impl P {\n    fn \n}",
+        "const ",
+        "const = 1",
+    ]
+    .iter()
+    .map(|t| (kiln.as_str(), t.to_string()))
+    .collect();
+    texts.extend(
+        [
+            "{% props %}",
+            "{% props : Int %}",
+            "{% state = 1 %}",
+            "{% props post: %}",
+        ]
+        .iter()
+        .map(|t| (glaze.as_str(), t.to_string())),
+    );
+    for (uri, source) in [
+        (&kiln, include_str!("../../../examples/blog/main.kiln")),
+        (&glaze, include_str!("../../../examples/blog/post.glaze")),
+    ] {
+        for (end, _) in source.char_indices().step_by(3) {
+            texts.push((uri.as_str(), source[..end].to_string()));
+        }
+    }
+    for (uri, text) in texts {
+        client.change(uri, &text);
+        let symbols = client.request(
+            "textDocument/documentSymbol",
+            json!({"textDocument": {"uri": uri}}),
+        );
+        for symbol in symbols.as_array().unwrap() {
+            check_symbol(symbol, &text);
+        }
+    }
+    client.finish();
+}
