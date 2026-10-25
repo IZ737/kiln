@@ -308,6 +308,22 @@ install hooks. Deployment stays separate in `kiln-deploy.toml`.
 See [the Phase 5 manifest/module design](design.md#phase-5-project-manifests-and-ware-dependencies)
 for an example manifest and acceptance criteria.
 
+**Shared Ware storage, without project-local dependency trees.** Phase 5
+should cache downloaded Wares once in a machine-local **per-user global
+store**, keyed by verified immutable contents, rather than creating
+`ware_modules/` or similar dependency directories in each project.
+Each project's `kiln.lock` independently selects exact versions/hashes,
+allowing multiple versions to coexist while identical package content
+is shared between apps. Cache compiled artifacts separately with keys
+covering compiler/runtime version, build target and options. Offline
+builds should work when the locked dependencies are already cached.
+Provide inspect/verify/prune tooling, safe parallel downloads and a
+configurable cache location; a cache shared *between different OS
+accounts* is only an optional future extension because of the
+security/permission implications. Native application binaries still
+include their dependencies and do not need this cache at runtime.
+See [global Ware storage and caching](design.md#phase-5-global-ware-storage-and-caching).
+
 - The compiler/toolchain handles package compilation; avoid npm-style
   arbitrary `postinstall` scripts and surprising code execution merely
   from fetching a dependency.
