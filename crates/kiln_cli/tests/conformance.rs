@@ -1,6 +1,8 @@
 //! Runs every program in `conformance/` (one folder each) with `kiln run`,
 //! once with each backend (the native one when this kiln has its runtime),
-//! and compares its output with the expected files in the folder:
+//! and compares its output with the expected files in the folder. When
+//! `KILN_WINE` names a Wine, each program is also built for Windows and run
+//! with it. The expected files:
 //!
 //! - `main.out`: the expected standard output.
 //! - `main.err`: the expected standard error, if the program fails. The
@@ -31,8 +33,13 @@ fn conformance_programs_produce_expected_output() {
         root.display()
     );
     let mut backends = vec!["c"];
-    if kiln_native::unavailable().is_none() {
+    if kiln_native::unavailable(kiln_native::Target::host()).is_none() {
         backends.push("native");
+    }
+    if std::env::var_os("KILN_WINE").is_some()
+        && kiln_native::unavailable(kiln_native::Target::Windows).is_none()
+    {
+        backends.push("windows");
     }
     let mut failures = Vec::new();
     for backend in backends {
@@ -48,11 +55,38 @@ fn conformance_programs_produce_expected_output() {
 fn run_program(program: &Path, backend: &str, failures: &mut Vec<String>) {
     let read = |ext: &str| std::fs::read_to_string(program.join("main").with_extension(ext)).ok();
     let args = read("args").unwrap_or_default();
-    let mut child = Command::new(env!("CARGO_BIN_EXE_kiln"))
-        .arg("run")
-        .arg("--backend")
-        .arg(backend)
-        .arg(program)
+    let mut built_exe = None;
+    let mut command = if backend == "windows" {
+        // Built with `kiln build --target windows`, then run with Wine.
+        let exe = std::env::temp_dir().join(format!(
+            "kiln-conformance-{}-{}.exe",
+            std::process::id(),
+            program.file_name().unwrap().to_string_lossy()
+        ));
+        let built = Command::new(env!("CARGO_BIN_EXE_kiln"))
+            .args(["build", "--target", "windows", "-o"])
+            .arg(&exe)
+            .arg(program)
+            .output()
+            .unwrap();
+        if !built.status.success() {
+            failures.push(format!(
+                "{} (windows): does not build:\n{}",
+                program.display(),
+                String::from_utf8_lossy(&built.stderr)
+            ));
+            return;
+        }
+        let mut c = Command::new(std::env::var_os("KILN_WINE").unwrap());
+        c.arg(&exe).env("WINEDEBUG", "-all");
+        built_exe = Some(exe);
+        c
+    } else {
+        let mut c = Command::new(env!("CARGO_BIN_EXE_kiln"));
+        c.arg("run").arg("--backend").arg(backend).arg(program);
+        c
+    };
+    let mut child = command
         .args(args.lines())
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -66,6 +100,9 @@ fn run_program(program: &Path, backend: &str, failures: &mut Vec<String>) {
     });
     let out = child.wait_with_output().unwrap();
     writer.join().unwrap();
+    if let Some(exe) = built_exe {
+        let _ = std::fs::remove_file(exe);
+    }
     let expected_out = read("out").unwrap_or_default();
     let expected_err = read("err");
     let expected_code = match &expected_err {

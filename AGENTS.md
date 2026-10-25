@@ -19,10 +19,14 @@ cargo run -p kiln_cli -- run --backend c conformance/basics   # through C instea
 `scripts/clean-check.sh path/to/kiln` runs the conformance programs with a
 `kiln` binary inside an empty Docker container, as CI does for the static
 release build (`cargo build --release --target x86_64-unknown-linux-musl
--p kiln_cli`).
+-p kiln_cli`). `scripts/windows-check.sh path/to/kiln.exe` does the same
+for `kiln.exe` (`cargo build --release --target x86_64-pc-windows-gnu -p
+kiln_cli`), on Windows or through Wine. With `KILN_WINE=wine`, `cargo test`
+also runs every conformance program built with `--target windows`.
 
-Building needs `musl-tools` (for the native backend's runtime) and, for the
-C backend and its tests, a C compiler and `libgc-dev`.
+Building needs `musl-tools` and `gcc-mingw-w64-x86-64` (for the native
+backend's Linux and Windows runtimes) and, for the C backend and its tests,
+a C compiler and `libgc-dev`.
 
 Run `cargo fmt --all`, `cargo clippy --all-targets -- -D warnings` and
 `cargo test` before every commit.
@@ -52,13 +56,16 @@ Run `cargo fmt --all`, `cargo clippy --all-targets -- -D warnings` and
 - `crates/kiln_codegen`: the C backend. `emit.rs` turns an IR program into
   C with `emit_c(&ir)`; `runtime/kiln.c` is prepended to it. Building needs
   a C compiler and the Boehm GC (`libgc-dev`).
-- `crates/kiln_native`: the native backend, the default on Linux x86-64.
-  `gen.rs` turns an IR program into an object file with Cranelift
-  (`compile(&ir)`), and `link.rs` links it with the built-in wild linker
-  (`link(&object, out)`). `build.rs` compiles the runtime it links with:
-  `runtime/native.c` (which includes the shared `kiln.c`), the Boehm GC
-  vendored in `vendor/bdwgc`, and musl's C library, all carried inside
-  `kiln`. `runtime.rs` lists the C signatures of the runtime functions the
+- `crates/kiln_native`: the native backend, the default where `kiln`
+  carries the target's runtime. `gen.rs` turns an IR program into an object
+  file with Cranelift (`compile(&ir, target)`, ELF for Linux and COFF for
+  Windows), and `link(&object, target, out)` makes the executable: for
+  Linux `link.rs` links it with the built-in wild linker, and for Windows
+  `pe.rs` adds it to the prelinked runtime executable as new sections.
+  `build.rs` compiles both runtimes: `runtime/native.c` (which includes the
+  shared `kiln.c`) and the Boehm GC vendored in `vendor/bdwgc`, with musl's
+  C library for Linux and mingw-w64 for Windows, all carried inside `kiln`.
+  Code in `kiln.c` that differs on Windows goes under `#ifdef _WIN32`. `runtime.rs` lists the C signatures of the runtime functions the
   generated code calls. Generated code shows, compares, hashes and orders
   compound values through `k_desc_*` in `native.c`, which read a
   description of the type. The two backends must behave the same: the

@@ -1,14 +1,12 @@
-//! Links a generated object with the runtime into a static executable,
-//! using the wild linker inside `kiln` rather than a system linker.
+//! Links a generated object with the Linux runtime into a static
+//! executable, using the wild linker inside `kiln` rather than a system
+//! linker.
 
 use std::path::Path;
 
 /// Links the object that [`crate::compile`] made into an executable at
 /// `out`.
-pub fn link(object: &[u8], out: &Path) -> Result<(), String> {
-    if let Some(why) = crate::unavailable() {
-        return Err(format!("the native backend is not available: {why}"));
-    }
+pub(crate) fn link(object: &[u8], out: &Path) -> Result<(), String> {
     // The linker reads files, so the runtime is written out next to the
     // object for the length of the link.
     let dir = scratch_dir()?;
@@ -37,7 +35,7 @@ fn link_in(dir: &Path, object: &[u8], out: &Path) -> Result<(), String> {
     .map(|s| s.to_string())
     .collect();
     args.push(out.display().to_string());
-    for &(name, bytes) in crate::runtime::FILES {
+    for &(name, bytes) in crate::runtime::LINUX_FILES {
         args.push(write(name, bytes)?);
         if name == "crti.o" {
             args.push(write("program.o", object)?);

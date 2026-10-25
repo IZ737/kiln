@@ -2,7 +2,8 @@
 
 ## Unreleased
 
-Phase 1.5 for Linux x86-64: a self-contained compiler and executables.
+Phase 1.5 for Linux and Windows x86-64: a self-contained compiler and
+executables.
 
 - **Native backend:** `kiln build` and `kiln run` compile to machine code
   with Cranelift and link with a linker built into `kiln`, against the Kiln
@@ -13,6 +14,13 @@ Phase 1.5 for Linux x86-64: a self-contained compiler and executables.
 - **Standalone `kiln`:** releases ship one static `kiln` executable for
   Linux x86-64, checked by running every conformance program in an empty
   container.
+- **Windows:** `kiln build --target windows` makes Windows x86-64 `.exe`
+  files with no linker: `kiln` adds the program to a Windows runtime it
+  carries. They need only DLLs that come with Windows, and file names,
+  arguments and console output are UTF-8. Releases also ship `kiln.exe`,
+  which builds for Windows and Linux; CI runs the conformance programs with
+  it on Windows. `fs.remove` removes empty directories there too, and
+  `fs.rename` replaces an existing file as on Linux.
 
 ## 0.1.0 (2026-10-24)
 

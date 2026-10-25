@@ -4,6 +4,7 @@ mod lsp;
 
 use clap::{Parser, Subcommand};
 use kiln_diagnostics::{codes, Diagnostic, SourceFile};
+use kiln_native::Target;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
@@ -18,17 +19,18 @@ struct Cli {
 /// The code generators `build` and `run` can use.
 #[derive(Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
 enum Backend {
-    /// Machine code from Cranelift, linked into a static executable by the
-    /// linker built into kiln.
+    /// Machine code from Cranelift, made into an executable by kiln
+    /// itself.
     Native,
     /// C, compiled by the system's C compiler.
     C,
 }
 
 impl Backend {
-    /// The native backend where this kiln carries its runtime, otherwise C.
-    fn or_default(backend: Option<Backend>) -> Backend {
-        backend.unwrap_or(if kiln_native::unavailable().is_none() {
+    /// The native backend where this kiln carries the target's runtime,
+    /// otherwise C.
+    fn or_default(backend: Option<Backend>, target: Target) -> Backend {
+        backend.unwrap_or(if kiln_native::unavailable(target).is_none() {
             Backend::Native
         } else {
             Backend::C
@@ -66,6 +68,11 @@ enum Command {
         /// this kiln supports it.
         #[arg(long, value_enum)]
         backend: Option<Backend>,
+        /// The system to build for: `linux` or `windows` (x86-64). Defaults
+        /// to the one kiln runs on. Only the native backend builds for
+        /// other systems.
+        #[arg(long, value_parser = parse_target)]
+        target: Option<Target>,
     },
     /// Compile a program and run it.
     Run {
@@ -98,13 +105,16 @@ fn main() -> ExitCode {
             emit_c,
             emit_ir,
             backend,
+            target,
         } => {
-            let out = output.unwrap_or_else(|| default_output(&file));
+            let target = target.unwrap_or_else(Target::host);
+            let out = output.unwrap_or_else(|| default_output(&file, target));
             let emit = Emit {
                 c: emit_c.as_deref(),
                 ir: emit_ir.as_deref(),
             };
-            match build(&file, &out, emit, Backend::or_default(backend)) {
+            let backend = Backend::or_default(backend, target);
+            match build(&file, &out, emit, backend, target) {
                 Ok(()) => ExitCode::SUCCESS,
                 Err(code) => code,
             }
@@ -113,7 +123,7 @@ fn main() -> ExitCode {
             file,
             backend,
             args,
-        } => run(&file, &args, Backend::or_default(backend)),
+        } => run(&file, &args, Backend::or_default(backend, Target::host())),
         Command::Lsp => ExitCode::from(lsp::run() as u8),
         Command::Parse { file } => parse(&file),
         Command::Explain { code } => explain(&code),
@@ -312,7 +322,16 @@ fn app_files(path: &Path) -> std::io::Result<(PathBuf, Vec<PathBuf>)> {
 
 /// Where `kiln build` writes the executable by default: the program's
 /// folder name, in the current directory.
-fn default_output(path: &Path) -> PathBuf {
+fn parse_target(name: &str) -> Result<Target, String> {
+    Target::from_name(name).ok_or_else(|| {
+        let names: Vec<&str> = Target::ALL.iter().map(|t| t.name()).collect();
+        format!("expected one of: {}", names.join(", "))
+    })
+}
+
+/// The executable `kiln build` writes when no `--output` is given: the
+/// program folder's name, with `.exe` for Windows.
+fn default_output(path: &Path, target: Target) -> PathBuf {
     let dir = if path.is_dir() {
         path.to_path_buf()
     } else {
@@ -322,8 +341,9 @@ fn default_output(path: &Path) -> PathBuf {
         .canonicalize()
         .ok()
         .and_then(|d| d.file_name().map(|n| n.to_owned()))
+        .map(|n| n.to_string_lossy().into_owned())
         .unwrap_or_else(|| "program".into());
-    PathBuf::from(name)
+    PathBuf::from(target.executable(&name))
 }
 
 /// Where `build` also writes the intermediate forms of a program.
@@ -334,7 +354,21 @@ struct Emit<'a> {
 }
 
 /// Checks and compiles the program in a folder into an executable at `out`.
-fn build(path: &Path, out: &Path, emit: Emit, backend: Backend) -> Result<(), ExitCode> {
+fn build(
+    path: &Path,
+    out: &Path,
+    emit: Emit,
+    backend: Backend,
+    target: Target,
+) -> Result<(), ExitCode> {
+    if backend == Backend::C && target != Target::host() {
+        eprintln!(
+            "error: the C backend builds only for the system kiln runs on ({}); use `--backend native` for {}",
+            Target::host().name(),
+            target.name()
+        );
+        return Err(ExitCode::from(2));
+    }
     let (dir, files) = app_files(path).map_err(|err| {
         eprintln!("error: cannot read {}: {err}", path.display());
         ExitCode::from(2)
@@ -424,8 +458,8 @@ fn build(path: &Path, out: &Path, emit: Emit, backend: Backend) -> Result<(), Ex
     let linked = match (backend, c) {
         (Backend::C, Some(c)) => kiln_codegen::compile_c(&c, out),
         _ => {
-            let object = kiln_native::compile(&ir).map_err(report)?;
-            kiln_native::link(&object, out)
+            let object = kiln_native::compile(&ir, target).map_err(report)?;
+            kiln_native::link(&object, target, out)
         }
     };
     linked.map_err(|err| {
@@ -442,8 +476,8 @@ fn run(path: &Path, args: &[String], backend: Backend) -> ExitCode {
             return ExitCode::from(2);
         }
     };
-    let exe = dir.join("program");
-    if let Err(code) = build(path, &exe, Emit::default(), backend) {
+    let exe = dir.join(Target::host().executable("program"));
+    if let Err(code) = build(path, &exe, Emit::default(), backend, Target::host()) {
         let _ = std::fs::remove_dir_all(&dir);
         return code;
     }

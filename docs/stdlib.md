@@ -131,5 +131,9 @@ fn main() {
    `crates/kiln_codegen/src/emit.rs` for C, and `lib_call` in
    `crates/kiln_native/src/gen.rs` for native code, with the function's C
    signature in `crates/kiln_native/src/runtime.rs`. A runtime function that
-   fails sets `k_lib_error` to its message.
+   fails sets `k_lib_error` to its message. The runtime is also built for
+   Windows with mingw-w64: put code that differs there under
+   `#ifdef _WIN32`. Generated code that calls a C library function directly
+   (such as `round`) needs it listed in `kiln_keep_*` in
+   `crates/kiln_native/runtime/native.c`, so the Windows runtime has it.
 3. Add a conformance program.

@@ -26,14 +26,15 @@ fn main() ! {
 ```
 
 > **Status: phases 0 and 1 are done, and phase 1.5 (self-contained compiler
-> and executables) is done for Linux x86-64; its Windows target and phase 2
-> (HTTP) are next.**
+> and executables) is done for Linux x86-64 and Windows x86-64; phase 2
+> (HTTP) is next.**
 > `kiln check` reports syntax and type errors in `.kiln` files and glazes,
 > `kiln lsp` shows them in your editor, and `kiln run` compiles command-line
-> programs with the `time`, `fs`, `os` and `io` modules. On Linux x86-64,
-> `kiln` compiles to machine code with Cranelift and links static
-> executables itself, so it needs no C compiler, linker or libraries; the C
-> backend (`--backend c`) remains for other platforms. The
+> programs with the `time`, `fs`, `os` and `io` modules. `kiln` compiles to
+> machine code with Cranelift and makes Linux and Windows x86-64
+> executables itself (`--target linux` or `--target windows`, from either
+> system), so it needs no C compiler, linker or libraries; the C backend
+> (`--backend c`) remains for other platforms. The
 > web standard library (`web`, `sql`, `json`, `auth`) arrives in later
 > phases. See the [roadmap](#roadmap) and
 > [what phase 1 leaves for later](docs/design.md#what-phase-1-leaves-for-later).
@@ -77,21 +78,26 @@ fn main() ! {
 ## Try it
 
 To build the compiler from source you need a recent stable Rust toolchain
-and, on Linux x86-64, `musl-gcc` (`musl-tools` on Debian and Ubuntu,
-`musl-gcc` on Fedora), which builds the runtime that `kiln` carries inside
-it. The `kiln` you get then compiles programs with no other tools: its
-executables are static and run on any Linux x86-64 system. Elsewhere, or
-with `--backend c`, `kiln` compiles through C and needs a C compiler and the
-Boehm garbage collector (`libgc-dev` on Debian and Ubuntu, `gc-devel` on
-Fedora, `bdw-gc` on Homebrew).
+and the C compilers that build the runtimes `kiln` carries inside it:
+`musl-gcc` for Linux executables (`musl-tools` on Debian and Ubuntu,
+`musl-gcc` on Fedora) and mingw-w64 for Windows ones
+(`gcc-mingw-w64-x86-64` on Debian and Ubuntu, `mingw64-gcc` on Fedora). The
+`kiln` you get then compiles programs with no other tools: its Linux
+executables are static and run on any Linux x86-64 system, and its Windows
+`.exe` files use only DLLs that come with Windows. Without either compiler,
+or with `--backend c`, `kiln` compiles through C and needs a C compiler and
+the Boehm garbage collector (`libgc-dev` on Debian and Ubuntu, `gc-devel`
+on Fedora, `bdw-gc` on Homebrew).
 
-Releases after 0.1.0 also ship a prebuilt `kiln` for Linux x86-64 on the
-[releases page](https://github.com/IZ737/kiln/releases): one static
-executable that needs nothing else installed.
+Releases after 0.1.0 also ship a prebuilt `kiln` for Linux x86-64 and a
+`kiln.exe` for Windows x86-64 on the
+[releases page](https://github.com/IZ737/kiln/releases): one executable
+that needs nothing else installed.
 
 ```sh
 tar xzf kiln-v*-x86_64-linux.tar.gz
 ./kiln-v*-x86_64-linux/kiln run examples/hello
+./kiln-v*-x86_64-linux/kiln build examples/hello --target windows   # hello.exe
 ```
 
 ```sh
@@ -114,7 +120,7 @@ For errors and quick fixes in your editor, see [docs/editors.md](docs/editors.md
 | `crates/kiln_check` | Type checker, and standard library signatures in `std/` |
 | `crates/kiln_ir` | The typed IR between the checker and the backends |
 | `crates/kiln_codegen` | The C backend, and the runtime in `runtime/kiln.c` |
-| `crates/kiln_native` | The native backend: Cranelift code generation, the built-in linker, and the bundled runtime, Boehm GC (`vendor/bdwgc`) and musl |
+| `crates/kiln_native` | The native backend: Cranelift code generation, built-in linking for Linux and Windows, and the bundled runtime, Boehm GC (`vendor/bdwgc`) and C libraries |
 | `crates/kiln_cli` | The `kiln` command |
 | `examples/` | Example programs and glazes; every one is checked in CI |
 | `conformance/` | Programs with their expected output; every one is compiled and run in CI |
