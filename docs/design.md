@@ -101,22 +101,22 @@ A folder is one program, as in Go. All of its `.kiln` files share one
 namespace, so splitting a file in two never needs an import, and the
 folder's glazes see the same types and functions. Imports stay per file.
 
-**Phase 5 plan:** [projects, Wares, testing, tooling and agent integration](plans/phase-5.md) covers the full five-subphase implementation sequence and acceptance gates. Examples in that plan are proposed APIs, not current executable syntax.
+**Phase 6 plan:** [projects, Wares, testing, tooling and agent integration](plans/phase-6.md) covers the full five-subphase implementation sequence and acceptance gates. Examples in that plan are proposed APIs, not current executable syntax.
 
-**Phase 5 explicitly adds multi-folder projects and local modules.** A
+**Phase 6 explicitly adds multi-folder projects and local modules.** A
 subfolder is a module, imported by its name, with `pub` items defining its
 interface. Compiler resolution, type checking, builds, Glaze/component
 references, diagnostics and LSP navigation must work across module folders.
 Local imports work **without publishing, installing or configuring a Ware
 registry**. Wares will reuse compatible module-resolution concepts for
 external versioned packages, but are not a prerequisite for organizing
-one app into multiple folders. Phase 5 is complete on this dimension when
+one app into multiple folders. Phase 6 is complete on this dimension when
 a multi-folder app builds and runs, access control through `pub` is checked,
 and cross-folder editing/navigation works.
 
-### Phase 5: project manifests and Ware dependencies
+### Phase 6: project manifests and Ware dependencies
 
-Phase 5 adds an **optional `kiln.toml`** in the project root. It is a
+Phase 6 adds an **optional `kiln.toml`** in the project root. It is a
 declarative TOML manifest for project identity, module/application
 entrypoint, build defaults, optional test settings and local/external
 dependencies. Its purpose is to give `kiln run`, `kiln build`,
@@ -172,7 +172,7 @@ lockfile or write their own dependency scripts.
 
 Support an optional later `[workspace]` model for multiple packages
 in a monorepo, using shared resolution where appropriate, but **do
-not block Phase 5's ordinary multi-folder projects on full workspace
+not block Phase 6's ordinary multi-folder projects on full workspace
 publishing semantics**.
 
 Keep `kiln-deploy.toml` **separate**: it configures deploy targets,
@@ -181,13 +181,13 @@ project/dependencies/build and test defaults, while `kiln.lock`
 pins dependencies. None is a procedural `Kilnfile` or an executable
 configuration DSL.
 
-Acceptance for this part of Phase 5: manifest-free `kiln run hello.kiln`
+Acceptance for this part of Phase 6: manifest-free `kiln run hello.kiln`
 continues to work; a multi-folder project builds with optional
 `kiln.toml`; local imports work offline without a Ware registry;
 an app depending on Wares produces/obeys a reproducible `kiln.lock`;
 and manifest plus dependency diagnostics are usable from CLI/LSP.
 
-### Phase 5: global Ware storage and caching
+### Phase 6: global Ware storage and caching
 
 **Decision:** Wares are stored in **one shared, machine-local cache per
 operating-system user** by default, **not** copied to a per-project
@@ -240,7 +240,7 @@ dependency graph.
   executables must not need access to the developer's cache, Wares
   registry or network to load their compiled Ware code at runtime.
 
-**Phase 5 acceptance:** Two unrelated projects locked to the same Ware
+**Phase 6 acceptance:** Two unrelated projects locked to the same Ware
 version/hash download it **once** and share verified cached contents;
 one project can pin a different version without affecting the other;
 offline rebuild works after cache priming; integrity corruption is
@@ -273,7 +273,7 @@ to a typed mid-level IR, which feeds a backend:
 | --- | --- | --- |
 | C (via clang, gcc or `zig cc`) | First backend; free cross-compilation | 1 |
 | Cranelift | Self-contained native compilation; fast debug builds | 1.5 |
-| WasmGC | Browser code (embers) | 6 |
+| WasmGC | Browser code (embers) | 5 |
 | LLVM | Optimized release builds | 7 |
 
 The IR (`crates/kiln_ir`) is a typed tree: names are resolved, closures and
@@ -323,7 +323,7 @@ end users**, not eliminating libraries from Kiln's implementation:
   without requiring a separately installed C compiler, linker, Rust toolchain
   or garbage collector. Building the compiler itself from source may still
   use Rust, Cargo and third-party libraries.
-- Bring the Cranelift backend forward from phase 5 to generate native code
+- Bring the Cranelift backend forward from a later phase to generate native code
   directly from Kiln's typed IR. Provide an integrated or bundled linking
   path rather than invoking a system-installed linker. Retain the C backend
   as a supported alternative and correctness reference.
@@ -450,7 +450,7 @@ Kiln's language or moving Glaze rendering ahead of phase 3.
   shared-directory programs, incomplete source and Linux/Windows behavior.
 - Defer debugging (including DAP), rename and find references, advanced
   Glaze semantics, formatting, hot reload and broader tooling to separate
-  future milestones (with the existing phase 5 scope retained).
+  future milestones (with the existing phase 6 scope retained).
 
 **Done when:** A developer can install the extension and comfortably
 write, navigate, check, build and run Kiln programs from VS Code without
@@ -518,8 +518,9 @@ app.mount("/admin", admin.site(db, models: [Post, User, Comment]))
 Glazes (`.glaze`) are templates compiled to typed functions, with
 context-aware escaping, typed props, layouts, components and reverse routing.
 Phase 3 implements server-side Glaze rendering without a browser runtime.
-Phase 6 adds Embers compiled to WebAssembly (WasmGC) that hydrate selected
-components; `server fn` and generated typed RPC belong to that later phase.
+Phase 5 adds Embers compiled to WebAssembly (WasmGC) that hydrate selected
+components; `server fn` and generated typed RPC belong to that phase.
+See the [Phase 5 implementation plan](plans/phase-5.md).
 
 ### Phase 3: native styling, Finishes and themes
 
@@ -576,7 +577,7 @@ background sync come with it.
 ## Ecosystem and application delivery
 
 Planned Wares are versioned source packages using the optional
-[`kiln.toml` project manifest](#phase-5-project-manifests-and-ware-dependencies)
+[`kiln.toml` project manifest](#phase-6-project-manifests-and-ware-dependencies)
 and generated `kiln.lock`; fetching them should not run arbitrary package
 install scripts. Official Wares are intended to be especially auditable and
 self-contained. Project templates remain a separate mechanism. A future
@@ -601,11 +602,11 @@ their suggested fixes as quick fixes; [editors.md](guides/editors.md) shows how 
 set it up. Phase 2.5 added completion, hover types and signatures, go to
 definition and symbol navigation, plus a VS Code extension with
 Kiln/Glaze highlighting, icons and Check/Run/Build commands. These language features stay in the Rust
-LSP and benefit other LSP clients. Phase 5 expands refactoring (find
+LSP and benefit other LSP clients. Phase 6 expands refactoring (find
 references and rename), deep Glaze prop/component navigation and the rest
 of the developer workflow. Debugging remains a separate later milestone.
 
-## Integrated testing (Phase 5 and Phase 6)
+## Integrated testing (Phase 6)
 
 Kiln's planned `kiln test` command will run **unit**, **integration** and
 **real-browser frontend/end-to-end** test suites through one native tooling
@@ -615,9 +616,10 @@ results, screenshots and CI output. Browser automation should reuse
 an established browser/protocol implementation rather than inventing
 another browser or requiring a separate Node testing project.
 
-Phase 5 must be able to exercise Glaze pages, forms, navigation and
-API/database interactions in a headless browser; Phase 6 extends the
-same tests to Ember hydration, browser events and reactive state.
+Phase 5 adds real-browser CI smoke and conformance tests for Embers,
+including hydration, browser events, reactive state and typed RPC.
+Phase 6 delivers the public `kiln test` runner for unit, integration and
+real-browser tests, including Ember behaviour from the outset.
 Browser binaries may need downloading/caching and are not bundled into
 Kiln server executables. Detailed scope and acceptance criteria:
 [testing.md](plans/testing.md).
@@ -650,4 +652,4 @@ runtime.
 - Should a `.glaze` page with inline code be able to serve a route directly
   (PHP style), or should every route go through a handler?
 - Whether the exact WasmGC browser support matches the plan should be
-  confirmed before phase 6.
+  confirmed before phase 5.

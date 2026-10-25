@@ -6,11 +6,11 @@ frontend/end-to-end tests**. This is distinct from Kiln's existing compiler
 conformance tests and CI checks: application developers should not need to
 assemble a separate test framework and browser automation stack.
 
-**Roadmap:** Implement the core workflow in **Phase 5**, after Glazes (3)
-and database/auth (4) provide a meaningful full-stack test target. Extend
-the same browser runner to cover **Ember/WasmGC hydration, events, reactive
-state and typed server RPC in Phase 6**. Do not change Phase 3's acceptance
-criteria to depend on the finished public test runner.
+**Roadmap:** Phase 5 delivers Embers with compiler conformance and real-
+browser CI smoke tests. **Phase 6** delivers the public `kiln test` runner
+after Glazes (3), database/auth (4) and Embers (5); its initial browser
+mode must support Ember hydration, events, reactive state and typed RPC.
+Do not change earlier phases' acceptance gates to depend on this public CLI.
 
 ## What one runner means
 
@@ -65,8 +65,8 @@ different developer-facing JavaScript test project.
   screenshot-based *visual regression* as an optional later mode with
   managed baselines and platform/rendering variance controls, not a
   mandatory brittle screenshot assertion in every test.
-- After Phase 6, the *same* test syntax should cover Ember component
-  behaviour, hydration and browser/server RPC without rewriting suites.
+- From Phase 6's first release, the same test syntax covers Ember
+  behaviour, hydration and browser/server RPC alongside SSR Glazes.
 - Keep it possible to test an existing externally hosted site when
   explicitly configured, but never accidentally run destructive tests
   against production by default.
@@ -100,7 +100,7 @@ Kiln application or claiming no browser download is ever required.
 
 ## Delivery checkpoints
 
-**Phase 5 acceptance**
+**Phase 6 acceptance**
 
 - [ ] A `kiln test` invocation discovers and executes Kiln-written
       unit tests, reports useful failures and gives a nonzero exit code.
@@ -117,11 +117,11 @@ Kiln application or claiming no browser download is ever required.
 - [ ] The implementation reuses maintained browser engines/protocols
       and passes reproducible smoke suites on Linux and Windows.
 
-**Phase 6 extension**
+**Ember coverage within Phase 6 acceptance**
 
-- [ ] The existing browser suite can verify an Ember's hydration,
-      reactive updates, events and calls to typed server functions
-      using the same runner and assertions.
+- [ ] The browser suite verifies an Ember's hydration, reactive updates,
+      events and calls to typed server functions using the same runner
+      and assertions as other application and Glaze tests.
 
 ## Boundaries
 

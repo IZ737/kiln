@@ -305,7 +305,7 @@ interchangeable. Keep these boundaries explicit and testable.
 
 ### JavaScript and npm for browser Embers
 
-The Phase 6 frontend plan includes JS interoperability so Kiln programs
+The Phase 5 frontend plan includes JS interoperability so Kiln programs
 can reuse the massive existing browser/npm ecosystem instead of
 reimplementing it. The preferred direction is:
 
@@ -328,14 +328,14 @@ if its integrated developer experience proves better.**
 
 ## 7. Wares, templates and a real ecosystem
 
-The [Phase 5 implementation specification](plans/phase-5.md) details the proposed module graph, manifest/lockfile, Ware registry and cache, official UI Ware, test runner, developer tooling and local MCP workflows. Its syntax examples are targets, not current APIs.
+The [Phase 6 implementation specification](plans/phase-6.md) details the proposed module graph, manifest/lockfile, Ware registry and cache, official UI Ware, test runner, developer tooling and local MCP workflows. Its syntax examples are targets, not current APIs.
 
 **Wares** are source packages, managed through an optional **`kiln.toml`
 project manifest** and generated **`kiln.lock`** and eventually an official
 registry. The initial implementation can support local/Git dependencies
 and reproducible immutable versions before a full registry exists.
 
-**Phase 5 project configuration** should be a declarative, familiar
+**Phase 6 project configuration** should be a declarative, familiar
 TOML file—not a procedural `Kilnfile` or a new configuration language.
 `kiln.toml` identifies the project, optional application entrypoint,
 version and Wares, with build/test defaults. `kiln.lock` records the
@@ -350,10 +350,10 @@ or individual package manifests; the same resolution foundation can
 later support Wares and optional multi-package workspaces. A project
 manifest must not contain secrets or execute arbitrary dependency
 install hooks. Deployment stays separate in `kiln-deploy.toml`.
-See [the Phase 5 manifest/module design](design.md#phase-5-project-manifests-and-ware-dependencies)
+See [the Phase 6 manifest/module design](design.md#phase-6-project-manifests-and-ware-dependencies)
 for an example manifest and acceptance criteria.
 
-**Shared Ware storage, without project-local dependency trees.** Phase 5
+**Shared Ware storage, without project-local dependency trees.** Phase 6
 should cache downloaded Wares once in a machine-local **per-user global
 store**, keyed by verified immutable contents, rather than creating
 `ware_modules/` or similar dependency directories in each project.
@@ -367,7 +367,7 @@ configurable cache location; a cache shared *between different OS
 accounts* is only an optional future extension because of the
 security/permission implications. Native application binaries still
 include their dependencies and do not need this cache at runtime.
-See [global Ware storage and caching](design.md#phase-5-global-ware-storage-and-caching).
+See [global Ware storage and caching](design.md#phase-6-global-ware-storage-and-caching).
 
 - The compiler/toolchain handles package compilation; avoid npm-style
   arbitrary `postinstall` scripts and surprising code execution merely
@@ -452,7 +452,7 @@ The goal is **less repetitive UI plumbing, not less control**:
 - **Progressive interactivity:** the first components that only need
   server-rendered markup/CSS can use Phase 3 facilities. Rich keyboard-
   interactive widgets and stateful behaviours can depend on **Embers**
-  once Phase 6 exists; don't smuggle a proprietary JavaScript framework
+  now that Phase 5 supplies Embers; don't smuggle a proprietary JavaScript framework
   into the initial Ware. Form-model/auth integration can deepen after
   Phase 4 without making simple input components depend on a database.
 
@@ -463,10 +463,10 @@ demonstrate Kiln's UI system by dogfooding it, not become a second UI
 system developers have to learn.
 
 **Scheduling:** Phase 3 lays the rendering/styling/Finishes groundwork;
-the component collection ships when **Wares** support it (Phase 5 on
-the current roadmap), with more advanced interactive components following
-Embers in Phase 6. This addition does **not** expand Phase 3's accepted
-scope or promise browser interactivity before WasmGC is ready.
+the component collection ships when **Wares** support it (Phase 6 on
+the current roadmap), after Embers in Phase 5. Its initial components
+may therefore use Kiln's own interactive system; this does **not** expand
+Phase 3's accepted scope.
 
 Possible optional official Wares include game development
 (`@kiln/game`), desktop apps and perhaps TUIs. CLI programming itself
@@ -553,7 +553,7 @@ debugging and deployment should feel like parts of one toolchain.
   VS Code extension, icons, syntax highlighting and enhanced compiler-backed
   completion/navigation; intelligence belongs in the shared LSP so other
   editors benefit.
-- **Built-in tests from logic to browser:** Phase 5 plans one `kiln test`
+- **Built-in tests from logic to browser:** Phase 6 plans one `kiln test`
   workflow covering Kiln unit tests, isolated integration tests for
   API/database/auth flows and **automated real-browser/frontend E2E
   tests** for Glazes, navigation, forms, keyboard/focus behaviour and
@@ -562,10 +562,10 @@ debugging and deployment should feel like parts of one toolchain.
   reuses a maintained browser automation engine underneath rather than
   reinventing Chromium or requiring users to maintain a Node-based test
   project. See the [integrated testing plan](plans/testing.md).
-- **Future interactive coverage:** Phase 6 extends that same browser
-  runner to Ember hydration, reactive state, events and typed RPC.
-  Formatter, hot reload and richer editor refactorings remain planned
-  for Phase 5.
+- **Ember coverage from day one:** Phase 5 adds browser CI coverage for
+  Ember hydration, reactive state, events and typed RPC; Phase 6's public
+  test runner includes them from its initial release. Formatter, hot reload
+  and richer editor refactoring are also Phase 6 work.
 - **Agent-friendly contracts:** structured JSON diagnostics, stable error
   codes, machine-applicable fixes, generated docs/examples and explicit
   tool schemas minimize guesswork for coding agents.

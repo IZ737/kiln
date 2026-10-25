@@ -319,7 +319,7 @@ app.mount("/admin", admin.site(db, models: [Post, User, Comment], authorize: pol
 2. **Field components:** override input/display widget with typed Glaze components and validation metadata.
 3. **Page overrides:** use app-owned Glazes at conventional paths such as `admin/post/edit.glaze`; checked props and source maps apply exactly as to ordinary Glazes.
 4. **Custom actions:** named, typed server functions with explicit permissions, CSRF, idempotence/destructive confirmation policies.
-5. **Theming:** Phase 3 CSS/Ui/Finishes; no mandatory third-party component Ware (the flagship `kiln/ui` Ware belongs to the Phase 5 ecosystem).
+5. **Theming:** Phase 3 CSS/Ui/Finishes; no mandatory third-party component Ware (the flagship `kiln/ui` Ware belongs to the Phase 6 ecosystem).
 
 ### Permission and safety rules
 
@@ -349,7 +349,7 @@ app.mount("/admin", admin.site(db, models: [Post, User, Comment], authorize: pol
 
 ## 13. PR-sized implementation steps and review gates
 
-Each step must include tests and docs, and must not expand into Phase 5 tooling or Phase 6 browser reactivity.
+Each step must include tests and docs, and must not expand into Phase 5 Ember browser reactivity or Phase 6 developer tooling.
 
 ### Step 1 — SQLite SQL foundation
 
@@ -415,7 +415,7 @@ Each step must include tests and docs, and must not expand into Phase 5 tooling 
 | Admin | CRUD, field/page overrides, filters, safe pagination | Inaccessible record, forged action, IDOR, readonly mutation, XSS via database values |
 | Cross-target | C/native, Linux/Windows app builds; all supported DB dialects | Driver missing, unsupported dialect option, no compiler/linker installed for native output |
 
-Use a mix of compiler/unit tests, source-level diagnostic fixtures and `conformance/` applications with expected outputs/HTTP responses. For SQL integration, create disposable databases with deterministic fixtures. Start real Postgres/MySQL test services in CI when their milestone lands; do not simulate parity with SQLite alone. Use real-browser checks for relevant CSRF/XSS/admin behaviour as supplemental CI, while the **public `kiln test --browser` command remains Phase 5**.
+Use a mix of compiler/unit tests, source-level diagnostic fixtures and `conformance/` applications with expected outputs/HTTP responses. For SQL integration, create disposable databases with deterministic fixtures. Start real Postgres/MySQL test services in CI when their milestone lands; do not simulate parity with SQLite alone. Use real-browser checks for relevant CSRF/XSS/admin behaviour as supplemental CI, while the **public `kiln test --browser` command remains Phase 6**.
 
 Never equate passing tests with a guarantee of no bugs; the suite is an increasingly strong regression contract.
 
@@ -436,8 +436,8 @@ Never equate passing tests with a guarantee of no bugs; the suite is an increasi
 
 ## 16. Explicitly deferred or optional
 
-- **Phase 5:** General multi-folder modules, `kiln.toml`/`kiln.lock`, Wares and registry, official `kiln/ui` component Ware, global cache, formatter/hot reload, public integrated `kiln test` runner and broader agent tooling.
-- **Phase 6:** Embers, WasmGC, reactive form validation/hydration, typed browser-to-server RPC and JS interoperability.
+- **Phase 5:** Embers, WasmGC, reactive form validation/hydration, typed browser-to-server RPC and JS interoperability.
+- **Phase 6:** General multi-folder modules, `kiln.toml`/`kiln.lock`, Wares and registry, official `kiln/ui` component Ware, global cache, formatter/hot reload, public integrated `kiln test` runner and broader agent tooling.
 - **Phase 7:** One-command deploy, advanced observability/optimization, SSG, stability commitments, broad cross-architecture compiler/runtime specialization.
 - **Separate opt-in extension work:** OIDC/OAuth 2 providers, JWT/API token issuance, WebAuthn/passkeys/MFA, distributed rate limiting, streaming cloud uploads, cross-region migrations and advanced enterprise DB features. Keep extension points; **do not claim any of these exists until tested and documented**.
 - **Non-goals:** Inventing an ORM-only SQL dialect; implicit database queries when reading a normal field; auto-generating production migrations at startup; storing passwords or sessions insecurely to simplify demos; forcing one canonical user schema; enforcing Wares adoption; inventing a second template language for admin.

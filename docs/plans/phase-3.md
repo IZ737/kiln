@@ -50,7 +50,7 @@ See the [roadmap](../../README.md#roadmap) for overall phase sequencing and
    compatibility. Reuse maintained Rust CSS tooling for CSS parsing and
    transformations.
 10. **Keep future phases separate.** Embers, reactive hydration and
-    typed RPC are Phase 6; full ORM/auth/forms are Phase 4; comprehensive
+    typed RPC are Phase 5; full ORM/auth/forms are Phase 4; comprehensive
     refactoring and hot reload are later milestones.
 
 ### Terminology
@@ -602,13 +602,14 @@ step and no expansion into Embers or the general module system.
 
 - **Phase 4:** SQL/ORM, database migrations, auth/sessions,
   generated admin UI and rich typed forms. Basic HTML forms are fine.
-- **Phase 5:** Wares, hot reload/formatter, advanced editor
-  refactoring and the integrated [`kiln test` runner](testing.md),
-  including **unit, integration and automated browser/Glaze tests**.
-  Phase 3 still needs compiler/HTML/CSS smoke and regression tests,
-  but does not depend on the finished public test command.
-- **Phase 6:** Embers/WasmGC, reactive UI and style updates,
-  hydration, generated server RPC and JS/npm interop.
+- **Phase 5:** Embers/WasmGC, reactive UI and style updates,
+  hydration, generated server RPC and JS/browser interop; see
+  [Phase 5 plan](phase-5.md).
+- **Phase 6:** Wares, hot reload/formatter, advanced editor refactoring
+  and the integrated [`kiln test` runner](testing.md), covering **unit,
+  integration and automated browser/Glaze/Ember tests**. Phase 3 still
+  needs compiler/HTML/CSS smoke and regression tests but does not depend
+  on the finished public test command.
 - **Phase 7:** Static site export, deployment automation,
   major runtime/compiler optimization and stability guarantees.
 - **Later:** automatic runtime theme switching, user theme
