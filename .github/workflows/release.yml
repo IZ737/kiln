@@ -91,4 +91,8 @@ jobs:
       - name: Publish
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "$GITHUB_REF_NAME" --verify-tag --generate-notes dist/*
+        # dist also holds the bare kiln.exe the Windows check used, which is
+        # already in the zip.
+        run: |
+          rm -f dist/kiln.exe
+          gh release create "$GITHUB_REF_NAME" --verify-tag --generate-notes dist/*

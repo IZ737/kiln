@@ -1,0 +1,95 @@
+### GET /posts/1 HTTP/1.1
+HTTP/1.1 200 OK
+content-type: text/plain; charset=utf-8
+content-length: 16
+connection: close
+
+Firing schedules
+### GET /posts/7 HTTP/1.1
+HTTP/1.1 404 Not Found
+content-type: text/html; charset=utf-8
+cache-control: no-store
+content-length: 39
+connection: close
+
+<h1>404</h1>
+<p>there is no post 7</p>
+### GET /drafts HTTP/1.1
+HTTP/1.1 404 Not Found
+content-type: text/html; charset=utf-8
+cache-control: no-store
+content-length: 30
+connection: close
+
+<h1>404</h1>
+<p>Not Found</p>
+### GET /nowhere HTTP/1.1
+HTTP/1.1 404 Not Found
+content-type: text/html; charset=utf-8
+cache-control: no-store
+content-length: 30
+connection: close
+
+<h1>404</h1>
+<p>Not Found</p>
+### DELETE /posts/1 HTTP/1.1
+HTTP/1.1 405 Method Not Allowed
+content-type: text/html; charset=utf-8
+cache-control: no-store
+allow: GET
+content-length: 39
+connection: close
+
+<h1>405</h1>
+<p>Method Not Allowed</p>
+### GET /maintenance HTTP/1.1
+HTTP/1.1 503 Service Unavailable
+content-type: text/html; charset=utf-8
+cache-control: no-store
+content-length: 41
+connection: close
+
+<h1>503</h1>
+<p>back in five minutes</p>
+### GET /odd HTTP/1.1
+HTTP/1.1 500 Internal Server Error
+content-type: text/html; charset=utf-8
+cache-control: no-store
+content-length: 42
+connection: close
+
+<h1>500</h1>
+<p>Internal Server Error</p>
+### GET /broken HTTP/1.1
+HTTP/1.1 500 Internal Server Error
+content-type: text/html; charset=utf-8
+cache-control: no-store
+content-length: 42
+connection: close
+
+<h1>500</h1>
+<p>Internal Server Error</p>
+### POST /notes HTTP/1.1
+HTTP/1.1 201 Created
+content-type: text/plain; charset=utf-8
+content-length: 19
+connection: close
+
+saved 10 characters
+### POST /notes HTTP/1.1
+HTTP/1.1 413 Content Too Large
+content-type: text/html; charset=utf-8
+cache-control: no-store
+content-length: 38
+connection: close
+
+<h1>413</h1>
+<p>Content Too Large</p>
+### GET /posts/1 HTTP/1.1
+HTTP/1.1 431 Request Header Fields Too Large
+content-type: text/plain; charset=utf-8
+content-length: 31
+connection: close
+
+Request Header Fields Too Large
+### GET /quit HTTP/1.1

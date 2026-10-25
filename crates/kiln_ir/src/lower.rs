@@ -821,21 +821,10 @@ impl<'a> Lowerer<'a> {
                 let digits: String = s.chars().filter(|c| *c != '_').collect();
                 ExprKind::Float(digits.parse().unwrap_or(0.0))
             }
-            E::Duration(s) => {
-                let split = s.find(|c: char| c.is_alphabetic()).unwrap_or(s.len());
-                let n: i64 = s[..split].replace('_', "").parse().unwrap_or(0);
-                let unit: i64 = match &s[split..] {
-                    "ms" => 1_000_000,
-                    "s" => 1_000_000_000,
-                    "m" => 60_000_000_000,
-                    "h" => 3_600_000_000_000,
-                    _ => 1,
-                };
-                match n.checked_mul(unit) {
-                    Some(ns) => ExprKind::Int(ns),
-                    None => return self.unsupported(span, "a duration this long"),
-                }
-            }
+            E::Duration(s) => match duration_ns(s) {
+                Some(ns) => ExprKind::Int(ns),
+                None => return self.unsupported(span, "a duration this long"),
+            },
             E::Str(pieces) => {
                 let string = Ty::Adt(self.prims.string, Vec::new());
                 let mut parts: Vec<Expr> = pieces
@@ -1799,6 +1788,7 @@ impl<'a> Lowerer<'a> {
             let kind = match &d.kind {
                 E::Int(text) => text.replace('_', "").parse().ok().map(ExprKind::Int),
                 E::Bool(b) => Some(ExprKind::Bool(*b)),
+                E::Duration(text) => duration_ns(text).map(ExprKind::Int),
                 E::None => Some(ExprKind::None),
                 E::Str(pieces) => match pieces.as_slice() {
                     [] => Some(ExprKind::Str(String::new())),
@@ -1962,6 +1952,21 @@ fn with_prelude(prelude: Vec<Stmt>, e: Expr) -> Expr {
 }
 
 /// The name of a plain named type, such as `App` in `impl App`.
+/// A duration literal such as `250ms` in nanoseconds, or `None` if it does
+/// not fit.
+fn duration_ns(s: &str) -> Option<i64> {
+    let split = s.find(|c: char| c.is_alphabetic()).unwrap_or(s.len());
+    let n: i64 = s[..split].replace('_', "").parse().unwrap_or(0);
+    let unit: i64 = match &s[split..] {
+        "ms" => 1_000_000,
+        "s" => 1_000_000_000,
+        "m" => 60_000_000_000,
+        "h" => 3_600_000_000_000,
+        _ => 1,
+    };
+    n.checked_mul(unit)
+}
+
 fn type_expr_name(t: &ast::TypeExpr) -> Option<&str> {
     match &t.kind {
         ast::TypeKind::Named { path, args } if path.len() == 1 && args.is_empty() => {

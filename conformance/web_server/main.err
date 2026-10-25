@@ -1,3 +1,29 @@
 info listening on http://127.0.0.1:PORT
+info GET / 200 TIME
+info GET /todos/2 200 TIME
+info GET /todos/9 404 TIME
+info GET /todos/two 404 TIME
+info GET /hello/J%C3%BCrgen%20K 200 TIME
+info GET /hello/Ada 200 TIME
+info GET /price/10/true 200 TIME
+info GET /price/10.5/false 200 TIME
+info GET /price/10/maybe 404 TIME
+info POST /echo 201 TIME
+info POST /echo 201 TIME
+info PUT /echo 200 TIME
+info DELETE /echo 405 TIME
+info HEAD /todos/1 200 TIME
+info GET /whoami 200 TIME
+info GET /whoami 200 TIME
+info GET /old 302 TIME
+info GET /custom 418 TIME
+info GET /empty 204 TIME
+info GET /visits 200 TIME
+info GET /visits 200 TIME
 error GET /fail failed: no luck with 0
+info GET /fail 500 TIME
 error GET /crash panicked: index 7 is out of range for a list of length 3
+info GET /crash 500 TIME
+info GET /todos/1 200 TIME
+info GET /nowhere 404 TIME
+info - - 400 TIME

@@ -1569,9 +1569,19 @@ impl<'a> Gen<'a> {
                 (self.store(&format!("k_io_{name}({})", arg(0)), ty), false)
             }
             ("os", "env" | "exit") => (self.store(&format!("k_os_{name}({})", arg(0)), ty), false),
-            ("web", "app" | "not_found") => {
-                (self.store(&format!("(void *)k_web_{name}()"), ty), false)
+            ("web", "not_found") => (self.store("(void *)k_web_not_found()", ty), false),
+            ("web", "app") => {
+                let call = format!("(void *)k_web_app({})", a.join(", "));
+                (self.store(&call, ty), false)
             }
+            ("web", "error") => {
+                let call = format!("(void *)k_web_error({}, {})", arg(0), arg(1));
+                (self.store(&call, ty), false)
+            }
+            ("web", "App.on_error") => (
+                self.store(&format!("k_web_on_error({}, {})", arg(0), arg(1)), ty),
+                false,
+            ),
             ("web", "text" | "html" | "redirect") => {
                 let call = format!("(void *)k_web_{name}({}, {})", arg(0), arg(1));
                 (self.store(&call, ty), false)

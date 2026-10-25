@@ -246,9 +246,15 @@ in steps, each on both backends and both targets:
    task API are meant to stay the same when it comes, which is why Kiln
    does not promise that tasks can share mutable values (see Memory and
    concurrency).
-4. Error handling and configuration for real deployments: error pages and
-   types that map to statuses, request limits and timeouts, and an access
-   log.
+4. **Errors and settings for real deployments (done).** `web.error(status,
+   message)` is a standard `Error` that the server answers with its status
+   and message; the runtime marks it with hidden slots after the `Error`'s
+   field, so it keeps its status through `try` and `catch`. Other errors
+   get 500 and keep their message out of the response. Error responses are
+   JSON for clients that speak JSON, or come from `app.on_error`.
+   `web.app` takes the limits, the timeout, the keep-alive time and
+   whether to keep an access log, each with a default that suits
+   production.
 
 ## Web standard library
 

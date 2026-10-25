@@ -21,8 +21,9 @@
 //!   chunked body gets `\r\n` line ends instead), and `connection: close`
 //!   unless the request has a `connection` header. The
 //!   last request should make the program exit. Its exit code must then be
-//!   0 (or `main.code`), and `main.err`, with the port written as `PORT`, is
-//!   what it logged on standard error.
+//!   0 (or `main.code`), and `main.err`, with the port written as `PORT`
+//!   and the time each request took as `TIME`, is what it logged on
+//!   standard error.
 //! - `main.responses`: the expected responses, each after a `### ` line
 //!   with its request line, without the `date` header.
 
@@ -147,6 +148,7 @@ fn run_program(program: &Path, backend: &str, failures: &mut Vec<String>) {
             };
             let stderr = String::from_utf8_lossy(&err_reader.join().unwrap())
                 .replace(&format!(":{port}"), ":PORT");
+            let stderr = untimed(&stderr);
             std::process::Output {
                 status,
                 stdout: out_reader.join().unwrap(),
@@ -196,6 +198,27 @@ fn run_program(program: &Path, backend: &str, failures: &mut Vec<String>) {
             out.status.code()
         ));
     }
+}
+
+/// The server's log with the time each request took, at the end of an
+/// access log line (`info GET / 200 1.2ms`), written as `TIME`.
+fn untimed(log: &str) -> String {
+    let mut out = String::new();
+    for line in log.split_inclusive('\n') {
+        let words: Vec<&str> = line.split_whitespace().collect();
+        let timed = words.len() == 5
+            && words[0] == "info"
+            && words[3].len() == 3
+            && words[3].bytes().all(|b| b.is_ascii_digit())
+            && words[4].starts_with(|c: char| c.is_ascii_digit())
+            && words[4].ends_with('s');
+        if timed {
+            out.push_str(&format!("{} TIME\n", words[..4].join(" ")));
+        } else {
+            out.push_str(line);
+        }
+    }
+    out
 }
 
 /// A port that no program is listening on.

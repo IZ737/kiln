@@ -1,0 +1,15 @@
+info listening on http://127.0.0.1:PORT
+info GET /posts/1 200 TIME
+info GET /posts/7 404 TIME
+info GET /drafts 404 TIME
+info GET /nowhere 404 TIME
+info DELETE /posts/1 405 TIME
+error GET /maintenance failed: back in five minutes
+info GET /maintenance 503 TIME
+error GET /odd failed with a web.error whose status is not 400 to 599: 200: not an error status
+info GET /odd 500 TIME
+error GET /broken failed: the database password is hunter2
+info GET /broken 500 TIME
+info POST /notes 201 TIME
+info POST /notes 413 TIME
+info - - 431 TIME

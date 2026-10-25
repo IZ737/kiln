@@ -20,6 +20,13 @@ executables, and the start of phase 2: HTTP servers.
   lightweight task, so a slow handler or client holds up only its own
   request, and keeps connections alive between requests. Tasks share one
   core and switch where they wait for the network or `time.sleep`.
+- **Errors and settings for real deployments:** `throw web.error(404,
+  "no post 7")` answers with that status and message, and other errors
+  get 500 without their message; error responses are JSON for clients
+  that speak JSON, and `app.on_error` can make them instead, such as an
+  HTML error page. `web.app(max_body:, max_header:, timeout:, keep_alive:,
+  access_log:)` has defaults for production, and the server logs a line
+  per request (`info GET /posts/7 200 1.2ms`).
 - **Default arguments of standard library functions** are filled in when
   they are left out, as in `web.text("hi")`.
 

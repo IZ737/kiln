@@ -54,4 +54,18 @@ content-length: 182
 connection: close
 
 [{"id":1,"title":"Hello","tags":["intro"],"published":true},{"id":2,"title":"Glazes","tags":["glaze","colour"],"published":false},{"id":3,"title":"Kilns","tags":[],"published":true}]
+### DELETE /posts/1 HTTP/1.1
+HTTP/1.1 409 Conflict
+content-type: application/json
+content-length: 31
+connection: close
+
+{"error":"post 1 is published"}
+### DELETE /posts/1 HTTP/1.1
+HTTP/1.1 409 Conflict
+content-type: text/plain; charset=utf-8
+content-length: 19
+connection: close
+
+post 1 is published
 ### GET /quit HTTP/1.1

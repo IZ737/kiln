@@ -99,7 +99,9 @@ check_conformance() {
             kill "$pid" 2> /dev/null
             wait "$pid"
             code=$?
-            sed "s/:$port/:PORT/g" "$work/err.raw" > "$work/err"
+            sed -E -e "s/:$port/:PORT/g" \
+                -e 's/^(info [^ ]+ [^ ]+ [0-9]{3}) [0-9][0-9.]*(us|ms|s)\r?$/\1 TIME/' \
+                "$work/err.raw" > "$work/err"
         else
             run_program "$name" "${args[@]}" < "$input" > "$work/out" 2> "$work/err"
             code=$?
