@@ -6,18 +6,25 @@ unsaved changes, and offers each error's suggested fix as a quick fix. A file
 is checked together with the other `.kiln` and `.glaze` files in its
 directory, so glazes see your types and pages see your glazes' props.
 
-Phase 2.5 will add completion, hover, go to definition and symbol navigation
+Phase 2.5 adds completion, hover, go to definition and symbol navigation
 to the shared Rust LSP, alongside a dedicated VS Code extension with syntax
 highlighting, Kiln file icons and Check/Build/Run commands. Find references,
 rename and deeper Glaze semantics remain in phase 5; a debugger is not part
-of phase 2.5. See [the phase 2.5 plan](phase-2.5.md). These are planned
-capabilities, not features of the current LSP.
+of phase 2.5. See [the phase 2.5 plan](phase-2.5.md). So far the extension
+has highlighting and icons; the LSP features are still to come.
 
 Install the `kiln` binary first:
 
 ```sh
 cargo install --path crates/kiln_cli
 ```
+
+## VS Code
+
+The extension in [editors/vscode](../editors/vscode) highlights `.kiln` and
+`.glaze` files and gives them Kiln's file icons; its README shows how to
+install it. Its TextMate grammars (`editors/vscode/syntaxes`) also work in
+other editors that read them, such as Sublime Text.
 
 ## Neovim (0.11 and later)
 

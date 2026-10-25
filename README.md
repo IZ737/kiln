@@ -186,6 +186,7 @@ For errors and quick fixes in your editor, see [docs/editors.md](docs/editors.md
 | `examples/` | Example programs and glazes; every one is checked in CI |
 | `conformance/` | Programs with their expected output; every one is compiled and run in CI |
 | `assets/brand/` | Logo, symbol and the vocabulary icons (`.kiln`, glaze, ware, ember, `kiln fire`), as SVG and PNG |
+| `editors/vscode` | The VS Code extension: Kiln and Glaze highlighting and file icons |
 | `docs/syntax.md` | The syntax the parser accepts |
 | `docs/glazes.md` | Glaze (template and component) syntax |
 | `docs/types.md` | The type rules the checker enforces |

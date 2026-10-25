@@ -42,7 +42,7 @@ compiler/LSP, not from a second parser or type checker in the extension.
 
 ## Implementation plan
 
-1. **Editor foundation.** Add a VS Code extension project, Kiln/Glaze
+1. **Editor foundation (done).** Add a VS Code extension project, Kiln/Glaze
    language registrations, basic syntax grammars, brand-based file icons
    and a local extension launch configuration. Smoke-test associations
    on both light and dark VS Code themes.

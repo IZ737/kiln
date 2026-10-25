@@ -1,0 +1,422 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "Kiln",
+  "scopeName": "source.kiln",
+  "fileTypes": [
+    "kiln"
+  ],
+  "patterns": [
+    {
+      "include": "#code"
+    }
+  ],
+  "repository": {
+    "code": {
+      "patterns": [
+        {
+          "include": "#comments"
+        },
+        {
+          "include": "#strings"
+        },
+        {
+          "include": "#numbers"
+        },
+        {
+          "include": "#declarations"
+        },
+        {
+          "include": "#keywords"
+        },
+        {
+          "include": "#constants"
+        },
+        {
+          "include": "#types"
+        },
+        {
+          "include": "#generics"
+        },
+        {
+          "include": "#calls"
+        },
+        {
+          "include": "#properties"
+        },
+        {
+          "include": "#operators"
+        },
+        {
+          "include": "#braces"
+        },
+        {
+          "include": "#punctuation"
+        }
+      ]
+    },
+    "comments": {
+      "patterns": [
+        {
+          "name": "comment.block.kiln",
+          "begin": "/\\*",
+          "end": "\\*/",
+          "beginCaptures": {
+            "0": {
+              "name": "punctuation.definition.comment.begin.kiln"
+            }
+          },
+          "endCaptures": {
+            "0": {
+              "name": "punctuation.definition.comment.end.kiln"
+            }
+          }
+        },
+        {
+          "name": "comment.line.double-slash.kiln",
+          "begin": "//",
+          "end": "$",
+          "beginCaptures": {
+            "0": {
+              "name": "punctuation.definition.comment.kiln"
+            }
+          }
+        }
+      ]
+    },
+    "strings": {
+      "name": "string.quoted.double.kiln",
+      "begin": "\"",
+      "end": "\"|$",
+      "beginCaptures": {
+        "0": {
+          "name": "punctuation.definition.string.begin.kiln"
+        }
+      },
+      "endCaptures": {
+        "0": {
+          "name": "punctuation.definition.string.end.kiln"
+        }
+      },
+      "patterns": [
+        {
+          "name": "constant.character.escape.kiln",
+          "match": "\\\\[ntr0\\\\\"$]"
+        },
+        {
+          "name": "invalid.illegal.escape.kiln",
+          "match": "\\\\."
+        },
+        {
+          "name": "meta.interpolation.kiln",
+          "begin": "\\$\\{",
+          "end": "\\}",
+          "beginCaptures": {
+            "0": {
+              "name": "punctuation.section.interpolation.begin.kiln"
+            }
+          },
+          "endCaptures": {
+            "0": {
+              "name": "punctuation.section.interpolation.end.kiln"
+            }
+          },
+          "contentName": "source.kiln",
+          "patterns": [
+            {
+              "include": "#code"
+            }
+          ]
+        }
+      ]
+    },
+    "numbers": {
+      "patterns": [
+        {
+          "name": "constant.numeric.duration.kiln",
+          "match": "\\b\\d(?:[\\d_]*\\d)?(?:ms|s|m|h)\\b"
+        },
+        {
+          "name": "constant.numeric.float.kiln",
+          "match": "\\b\\d(?:[\\d_]*\\d)?(?:\\.\\d(?:[\\d_]*\\d)?(?:[eE][+-]?\\d+)?|[eE][+-]?\\d+)\\b"
+        },
+        {
+          "name": "constant.numeric.integer.kiln",
+          "match": "\\b\\d(?:[\\d_]*\\d)?\\b"
+        }
+      ]
+    },
+    "declarations": {
+      "patterns": [
+        {
+          "match": "\\b(import)\\b",
+          "captures": {
+            "1": {
+              "name": "keyword.control.import.kiln"
+            }
+          }
+        },
+        {
+          "match": "\\b(pub)\\b",
+          "captures": {
+            "1": {
+              "name": "storage.modifier.kiln"
+            }
+          }
+        },
+        {
+          "match": "\\b(server)\\s+(?=fn\\b)",
+          "captures": {
+            "1": {
+              "name": "storage.modifier.kiln"
+            }
+          }
+        },
+        {
+          "match": "\\b(fn)\\s+([\\p{L}_][\\p{L}\\p{N}_]*)",
+          "captures": {
+            "1": {
+              "name": "storage.type.function.kiln"
+            },
+            "2": {
+              "name": "entity.name.function.kiln"
+            }
+          }
+        },
+        {
+          "match": "\\b(fn)\\b",
+          "captures": {
+            "1": {
+              "name": "storage.type.function.kiln"
+            }
+          }
+        },
+        {
+          "match": "\\b(struct|enum)\\s+([\\p{L}_][\\p{L}\\p{N}_]*)",
+          "captures": {
+            "1": {
+              "name": "storage.type.$1.kiln"
+            },
+            "2": {
+              "name": "entity.name.type.kiln"
+            }
+          }
+        },
+        {
+          "match": "\\b(impl)\\s+([\\p{L}_][\\p{L}\\p{N}_]*)",
+          "captures": {
+            "1": {
+              "name": "storage.type.impl.kiln"
+            },
+            "2": {
+              "name": "entity.name.type.kiln"
+            }
+          }
+        },
+        {
+          "match": "\\b(const)\\s+([\\p{L}_][\\p{L}\\p{N}_]*)",
+          "captures": {
+            "1": {
+              "name": "storage.type.const.kiln"
+            },
+            "2": {
+              "name": "variable.other.constant.kiln"
+            }
+          }
+        },
+        {
+          "match": "\\b(let|var)\\b",
+          "captures": {
+            "1": {
+              "name": "storage.type.$1.kiln"
+            }
+          }
+        }
+      ]
+    },
+    "keywords": {
+      "patterns": [
+        {
+          "name": "keyword.control.kiln",
+          "match": "\\b(if|else|for|in|where|while|break|continue|return|match|try|throw|catch)\\b"
+        },
+        {
+          "name": "keyword.operator.word.kiln",
+          "match": "\\b(and|or|not|is)\\b"
+        }
+      ]
+    },
+    "constants": {
+      "patterns": [
+        {
+          "name": "constant.language.boolean.kiln",
+          "match": "\\b(true|false)\\b"
+        },
+        {
+          "name": "constant.language.none.kiln",
+          "match": "\\bnone\\b"
+        },
+        {
+          "name": "variable.language.self.kiln",
+          "match": "\\bself\\b"
+        },
+        {
+          "name": "variable.other.constant.kiln",
+          "match": "\\b\\p{Lu}[\\p{Lu}\\p{N}_]+\\b"
+        }
+      ]
+    },
+    "types": {
+      "patterns": [
+        {
+          "name": "support.type.primitive.kiln",
+          "match": "\\b(Int|Float|Bool|String|Duration|List|Map)\\b"
+        },
+        {
+          "name": "entity.name.type.kiln",
+          "match": "\\b\\p{Lu}[\\p{L}\\p{N}_]*\\b"
+        }
+      ]
+    },
+    "calls": {
+      "patterns": [
+        {
+          "match": "(\\.)\\s*([\\p{Ll}_][\\p{L}\\p{N}_]*)\\s*(?=\\(|<[\\p{L}\\p{N}_<>,.?\\s]*>\\s*\\()",
+          "captures": {
+            "1": {
+              "name": "punctuation.accessor.kiln"
+            },
+            "2": {
+              "name": "entity.name.function.kiln"
+            }
+          }
+        },
+        {
+          "match": "\\b([\\p{Ll}_][\\p{L}\\p{N}_]*)\\s*(?=\\(|<[\\p{L}\\p{N}_<>,.?\\s]*>\\s*\\()",
+          "captures": {
+            "1": {
+              "name": "entity.name.function.kiln"
+            }
+          }
+        }
+      ]
+    },
+    "properties": {
+      "match": "(\\.)\\s*([\\p{Ll}_][\\p{L}\\p{N}_]*)\\b",
+      "captures": {
+        "1": {
+          "name": "punctuation.accessor.kiln"
+        },
+        "2": {
+          "name": "variable.other.property.kiln"
+        }
+      }
+    },
+    "operators": {
+      "patterns": [
+        {
+          "name": "keyword.operator.arrow.kiln",
+          "match": "->|=>"
+        },
+        {
+          "name": "keyword.operator.coalesce.kiln",
+          "match": "\\?\\?"
+        },
+        {
+          "name": "keyword.operator.range.kiln",
+          "match": "\\.\\."
+        },
+        {
+          "name": "keyword.operator.comparison.kiln",
+          "match": "==|!=|<=|>="
+        },
+        {
+          "name": "keyword.operator.assignment.compound.kiln",
+          "match": "[+\\-*/%]="
+        },
+        {
+          "name": "keyword.operator.assignment.kiln",
+          "match": "="
+        },
+        {
+          "name": "keyword.operator.arithmetic.kiln",
+          "match": "[+\\-*/%]"
+        },
+        {
+          "name": "keyword.operator.comparison.kiln",
+          "match": "<|>"
+        },
+        {
+          "name": "keyword.operator.error.kiln",
+          "match": "!"
+        },
+        {
+          "name": "keyword.operator.optional.kiln",
+          "match": "\\?"
+        }
+      ]
+    },
+    "braces": {
+      "begin": "\\{",
+      "end": "\\}",
+      "beginCaptures": {
+        "0": {
+          "name": "punctuation.section.braces.begin.kiln"
+        }
+      },
+      "endCaptures": {
+        "0": {
+          "name": "punctuation.section.braces.end.kiln"
+        }
+      },
+      "patterns": [
+        {
+          "include": "#code"
+        }
+      ]
+    },
+    "punctuation": {
+      "patterns": [
+        {
+          "name": "punctuation.separator.comma.kiln",
+          "match": ","
+        },
+        {
+          "name": "punctuation.separator.colon.kiln",
+          "match": ":"
+        },
+        {
+          "name": "punctuation.accessor.kiln",
+          "match": "\\."
+        }
+      ]
+    },
+    "generics": {
+      "begin": "(?<=[\\p{L}\\p{N}_])(<)(?=[\\p{L}\\p{N}_<>,.?\\s]*>)",
+      "end": ">",
+      "beginCaptures": {
+        "1": {
+          "name": "punctuation.definition.generic.begin.kiln"
+        }
+      },
+      "endCaptures": {
+        "0": {
+          "name": "punctuation.definition.generic.end.kiln"
+        }
+      },
+      "patterns": [
+        {
+          "include": "#generics"
+        },
+        {
+          "include": "#types"
+        },
+        {
+          "include": "#punctuation"
+        },
+        {
+          "include": "#operators"
+        }
+      ]
+    }
+  }
+}
