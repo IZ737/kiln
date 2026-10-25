@@ -39,6 +39,12 @@ fn main() ! {
         return web.json(post, status: 201)
     })
 
+    // Without `app.on_error`, an error response is JSON when the client
+    // speaks JSON.
+    app.delete("/posts/{id: Int}", fn(req, id) {
+        throw web.error(409, "post ${id} is published")
+    })
+
     app.get("/quit", fn(req) {
         os.exit(0)
     })

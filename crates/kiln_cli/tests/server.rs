@@ -1,9 +1,10 @@
-//! The web server serves connections at the same time: runs
-//! `conformance/web_tasks` with each backend (and, when `KILN_WINE` names a
-//! Wine, built for Windows) and checks that a sleeping handler and a client
-//! that sends slowly do not hold up other requests, that the collector
-//! keeps a waiting task's values alive, and that connections stay open for
-//! more requests, sent one after another or all at once.
+//! The web server's behaviour over time, which `main.requests` files cannot
+//! show. Runs server programs in `conformance/` with each backend (and,
+//! when `KILN_WINE` names a Wine, built for Windows) and checks that a
+//! sleeping handler and a client that sends slowly do not hold up other
+//! requests, that the collector keeps a waiting task's values alive, that
+//! connections stay open for more requests, sent one after another or all
+//! at once, and that the timeout and keep-alive settings hold.
 
 use std::io::{Read, Write};
 use std::net::TcpStream;
@@ -13,7 +14,51 @@ use std::time::{Duration, Instant};
 
 #[test]
 fn slow_requests_do_not_hold_up_others() {
-    let program = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../conformance/web_tasks");
+    for backend in backends() {
+        let server = Server::start(&program("web_tasks"), backend);
+        check(&server, backend);
+        server.stop();
+    }
+}
+
+/// `conformance/web_errors` sets a 1 second timeout and turns keep-alive
+/// off.
+#[test]
+fn timeouts_and_keep_alive_follow_the_settings() {
+    for backend in backends() {
+        let server = Server::start(&program("web_errors"), backend);
+        // A client that sends part of a request's head and stops gets 408
+        // when the timeout ends, and other requests go on meanwhile.
+        let start = Instant::now();
+        let mut stalled = server.connect();
+        stalled
+            .write_all(b"GET /posts/1 HTTP/1.1\r\nhost: x")
+            .unwrap();
+        let mut c = server.connect();
+        c.write_all(b"GET /posts/1 HTTP/1.1\r\n\r\n").unwrap();
+        let (status, headers, _) = read_response(&mut c);
+        assert_eq!(status, "HTTP/1.1 200 OK", "{backend}");
+        // Keep-alive is off, so the server closes even an HTTP/1.1
+        // connection that did not ask it to.
+        assert!(headers.contains("connection: close"), "{backend}");
+        let (status, _, _) = read_response(&mut stalled);
+        assert_eq!(status, "HTTP/1.1 408 Request Timeout", "{backend}");
+        let took = start.elapsed();
+        assert!(
+            took >= Duration::from_millis(900) && took < Duration::from_secs(5),
+            "{backend}: the stalled client got its answer after {took:?}"
+        );
+        server.stop();
+    }
+}
+
+fn program(name: &str) -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../conformance")
+        .join(name)
+}
+
+fn backends() -> Vec<&'static str> {
     let mut backends = vec!["c"];
     if kiln_native::unavailable(kiln_native::Target::host()).is_none() {
         backends.push("native");
@@ -23,11 +68,7 @@ fn slow_requests_do_not_hold_up_others() {
     {
         backends.push("windows");
     }
-    for backend in backends {
-        let server = Server::start(&program, backend);
-        check(&server, backend);
-        server.stop();
-    }
+    backends
 }
 
 fn check(server: &Server, backend: &str) {
@@ -132,7 +173,11 @@ impl Server {
             .port();
         let mut exe = None;
         let mut command = if backend == "windows" {
-            let path = std::env::temp_dir().join(format!("kiln-server-{}.exe", std::process::id()));
+            let path = std::env::temp_dir().join(format!(
+                "kiln-server-{}-{}.exe",
+                std::process::id(),
+                program.file_name().unwrap().to_string_lossy()
+            ));
             let built = Command::new(env!("CARGO_BIN_EXE_kiln"))
                 .args(["build", "--target", "windows", "-o"])
                 .arg(&path)

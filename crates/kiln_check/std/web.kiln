@@ -24,7 +24,24 @@ struct Response {
     body: String
 }
 
-fn app() -> App {}
+// The settings have defaults, so `web.app()` is a production server:
+// requests up to 16 MiB of body and 64 KiB of headers, 10 seconds for a
+// client to send a request's head (and to keep sending its body and
+// reading the response), kept-alive connections closed after 5 idle
+// seconds (0s turns keep-alive off), and a line on standard error per
+// request.
+fn app(
+    max_body: Int = 16_777_216,
+    max_header: Int = 65_536,
+    timeout: Duration = 10s,
+    keep_alive: Duration = 5s,
+    access_log: Bool = true,
+) -> App {}
+
+// An error the server answers with `status` (400 to 599) and `message`,
+// which, unlike other errors' messages, is shown to the client:
+// `throw web.error(404, "no post ${id}")`.
+fn error(status: Int, message: String) -> Error {}
 fn render(template: String, data: Any = {}) -> Response {}
 fn json(value: Any, status: Int = 200) -> Response {}
 fn text(body: String, status: Int = 200) -> Response {}
@@ -40,6 +57,12 @@ impl App {
     fn put(self, path: String, handler: fn(Request, Rest) -> Response !) {}
     fn patch(self, path: String, handler: fn(Request, Rest) -> Response !) {}
     fn delete(self, path: String, handler: fn(Request, Rest) -> Response !) {}
+    // Makes the server's error responses: 404 and 405 when no route
+    // matches, `web.not_found()`, errors handlers fail with, and requests
+    // the server cannot read. It gets the request, the status and a
+    // message: a `web.error`'s message, or else the status's reason, such
+    // as "Not Found".
+    fn on_error(self, handler: fn(Request, Int, String) -> Response) {}
     fn listen(self, address: String) ! {}
 }
 

@@ -1,0 +1,61 @@
+// Errors and settings for real deployments: `web.error` statuses, an error
+// page from `app.on_error`, and the limits `web.app` takes. The test in
+// crates/kiln_cli/tests/server.rs also checks the timeout and keep-alive.
+import web, os
+
+struct Post {
+    id: Int
+    title: String
+}
+
+fn find(id: Int) -> Post ! {
+    if id != 1 {
+        throw web.error(404, "there is no post ${id}")
+    }
+    return Post(id: 1, title: "Firing schedules")
+}
+
+fn main() ! {
+    let app = web.app(max_body: 16, max_header: 2048, timeout: 1s, keep_alive: 0s)
+
+    // An error from a function the handler calls passes through `try`.
+    app.get("/posts/{id: Int}", fn(req, id) {
+        let post = try find(id)
+        return web.text(post.title)
+    })
+
+    app.get("/drafts", fn(req) {
+        return web.not_found()
+    })
+
+    app.post("/notes", fn(req) {
+        return web.text("saved ${req.body.len()} characters", status: 201)
+    })
+
+    // A server error's message is logged, but the client sees it too,
+    // since `web.error` messages are for the client.
+    app.get("/maintenance", fn(req) {
+        throw web.error(503, "back in five minutes")
+    })
+
+    app.get("/odd", fn(req) {
+        throw web.error(200, "not an error status")
+    })
+
+    app.get("/broken", fn(req) {
+        throw "the database password is hunter2"
+    })
+
+    app.on_error(fn(req, status, message) {
+        var res = web.html("<h1>${status}</h1>\n<p>${message}</p>\n", status: status)
+        res.headers["cache-control"] = "no-store"
+        return res
+    })
+
+    app.get("/quit", fn(req) {
+        print("bye")
+        os.exit(0)
+    })
+
+    try app.listen("127.0.0.1:${env("PORT")}")
+}

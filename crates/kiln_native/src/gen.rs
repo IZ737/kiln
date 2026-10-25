@@ -2454,6 +2454,8 @@ impl Fx<'_, '_, '_> {
                 let f: &'static str = match name {
                     "app" => "k_web_app",
                     "not_found" => "k_web_not_found",
+                    "error" => "k_web_error",
+                    "App.on_error" => "k_web_on_error",
                     "text" => "k_web_text",
                     "html" => "k_web_html",
                     "redirect" => "k_web_redirect",

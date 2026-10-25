@@ -1,1 +1,11 @@
 info listening on http://127.0.0.1:PORT
+info GET /posts 200 TIME
+info POST /posts 201 TIME
+info POST /posts 201 TIME
+info GET /posts/2 200 TIME
+info GET /posts/9 404 TIME
+info POST /posts 400 TIME
+info POST /posts 400 TIME
+info GET /posts 200 TIME
+info DELETE /posts/1 409 TIME
+info DELETE /posts/1 409 TIME

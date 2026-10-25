@@ -79,7 +79,8 @@ pub(crate) fn signature(name: &str) -> Option<(&'static [C], Option<C>)> {
     let sig: (&'static [C], Option<C>) = match name {
         "k_take_error" | "k_time_now" | "k_os_args" | "k_os_cwd" | "k_os_temp_dir" | "k_os_pid"
         | "k_os_platform" | "k_io_read_line" | "k_io_read_all" | "k_io_read_lines"
-        | "k_web_app" | "k_web_not_found" => (&[], Some(I64)),
+        | "k_web_not_found" => (&[], Some(I64)),
+        "k_web_app" => (&[I64, I64, I64, I64, Bool], Some(I64)),
         "k_alloc" | "k_neg" | "k_abs" | "k_int_str" | "k_duration_str" | "k_box"
         | "k_list_first" | "k_list_last" | "k_list_reverse" | "k_list_pop" | "k_hash_int"
         | "k_hash_float" | "k_hash_str" | "k_map_keys" | "k_map_values" | "k_map_entries"
@@ -97,9 +98,9 @@ pub(crate) fn signature(name: &str) -> Option<(&'static [C], Option<C>)> {
         | "k_map_new" | "k_map_get" | "k_map_at" | "k_map_remove" | "k_str_split"
         | "k_str_index_of" | "k_str_repeat" | "k_time_format" | "k_desc_hash" | "k_web_text"
         | "k_web_html" | "k_web_redirect" | "k_web_query" | "k_web_header" | "k_web_cookie"
-        | "k_json_encode" | "k_json_decode" | "k_web_req_json" => (P2, Some(I64)),
+        | "k_json_encode" | "k_json_decode" | "k_web_req_json" | "k_web_error" => (P2, Some(I64)),
         "k_fail" | "k_list_push" | "k_set_add" | "k_fs_write" | "k_fs_append" | "k_fs_rename"
-        | "k_web_listen" => (P2, None),
+        | "k_web_listen" | "k_web_on_error" => (P2, None),
         "k_str_eq" | "k_list_any" | "k_list_all" | "k_map_contains" | "k_set_remove"
         | "k_str_contains" | "k_str_starts_with" | "k_str_ends_with" => (P2, Some(Bool)),
         "k_str_cmp" => (P2, Some(I32)),

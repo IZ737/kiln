@@ -181,15 +181,50 @@ or made directly with `web.Response(status: 204, headers: Map(), body: "")`.
 | `web.text(body, status: 200)` | `text/plain; charset=utf-8` |
 | `web.html(body, status: 200)` | `text/html; charset=utf-8` |
 | `web.redirect(to, status: 302)` | Sends the client to `to` |
-| `web.not_found()` | 404 with `Not Found` |
+| `web.not_found()` | 404, made like the server's own (see Errors) |
 
 The server adds `content-length` and `date`, and `connection: close` when it
 will close the connection.
 
 **Errors.** When a handler fails, the server logs the error on standard
-error (`error GET /posts/7 failed: ...`) and answers 500; a panic is logged
-the same way (`... panicked: ...`). The server goes on with the next
-request either way.
+error (`error GET /posts/7 failed: ...`) and answers 500 with `Internal
+Server Error`, since an error's message can hold details the client should
+not see; a panic is logged the same way (`... panicked: ...`). The server
+goes on with the next request either way.
+
+To answer with another status, fail with `web.error(status, message)`, an
+`Error` whose status (400 to 599) and message are for the client. It can
+come from any function the handler calls with `try`:
+
+```kiln
+fn find(id: Int) -> Post ! {
+    if id != 1 {
+        throw web.error(404, "there is no post ${id}")
+    }
+    return Post(id: 1, title: "Firing schedules")
+}
+
+app.get("/posts/{id: Int}", fn(req, id) {
+    let post = try find(id)
+    return web.json(post)
+})
+```
+
+Errors of 500 and over are also logged. Error responses (from `web.error`,
+`web.not_found()`, 404 and 405 when no route matches, failed handlers, and
+requests the server cannot read) are `{"error": "message"}` when the
+request's `accept` or `content-type` mentions JSON, and the message as text
+otherwise. `app.on_error` makes them yourself, such as an HTML error page:
+
+```kiln
+app.on_error(fn(req, status, message) {
+    return web.html("<h1>${status}</h1><p>${message}</p>", status: status)
+})
+```
+
+Its handler gets the request, the status, and the message: a `web.error`'s
+message, or else the status's reason, such as `Not Found`. If it panics,
+the server makes the response itself.
 
 **Listening.** `app.listen(address)` serves until the program ends. The
 address is `host:port`: `:8080` is every IPv4 address, `localhost:8080`
@@ -197,14 +232,31 @@ only this machine, `[::1]:8080` an IPv6 address, and port 0 any free port.
 It logs `info listening on http://localhost:8080` when it starts, and fails
 if it cannot listen, such as when the port is in use.
 
+**Access log.** The server logs a line on standard error for each
+request it answers, with the method, the path without the query string,
+the status and the time it took: `info GET /posts/7 200 1.2ms`.
+
 **Connections.** Each connection is served on a task of its own (see
 [tasks](#tasks)), so a handler that sleeps or a client that sends slowly
 holds up only its own request. Connections stay open for more requests
 (HTTP/1.1 keep-alive) until the client sends `connection: close`, and a
-handler can close one by setting that header on its response. Requests
-are limited to 64 KiB of headers and 16 MiB of body, and a client that
-sends or reads nothing for 10 seconds is dropped. `req.form` and
-`web.render` come later.
+handler can close one by setting that header on its response.
+`req.form` and `web.render` come later.
+
+**Settings.** `web.app()` works as it is in production, and takes
+settings for when the defaults do not fit:
+
+| Setting | Default | |
+| --- | --- | --- |
+| `max_body` | `16_777_216` | Bytes of body; a larger request gets 413 |
+| `max_header` | `65_536` | Bytes of request line and headers; more gets 431 |
+| `timeout` | `10s` | How long a client has to send a request's head (408 after that), and how long it may stall while sending the body or reading the response |
+| `keep_alive` | `5s` | How long an idle connection stays open; `0s` closes each after one response |
+| `access_log` | `true` | Whether to log each request |
+
+```kiln
+let app = web.app(max_body: 1_048_576, timeout: 30s)
+```
 
 ### Tasks
 

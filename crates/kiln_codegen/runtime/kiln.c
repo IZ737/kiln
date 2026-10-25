@@ -1856,10 +1856,10 @@ K_API void k_io_print_err(kstr *s) {
 /* ----- web: an HTTP/1.1 server -----
  *
  * `web.app()` makes a `kapp`, and each route adds a `kroute` to it. `listen`
- * binds the address and serves one connection at a time: it reads one
- * request, calls the handler of the route that matches, writes the response
- * and closes the connection. A handler that fails or panics gets a 500
- * response, and the server goes on.
+ * binds the address and serves each connection on a task: it reads a
+ * request, calls the handler of the route that matches and writes the
+ * response, until the connection closes. A handler that fails or panics
+ * gets an error response, and the server goes on.
  *
  * Requests and responses are the `Request` and `Response` structs of
  * `std/web.kiln`. Every field there is 8 bytes wide, so both backends lay
@@ -1869,9 +1869,30 @@ K_API void k_io_print_err(kstr *s) {
 enum { K_REQ_METHOD, K_REQ_PATH, K_REQ_QUERY, K_REQ_HEADERS, K_REQ_BODY, K_REQ_FIELDS };
 enum { K_RES_STATUS, K_RES_HEADERS, K_RES_BODY, K_RES_FIELDS };
 
-#define K_WEB_MAX_HEAD (64 * 1024)
-#define K_WEB_MAX_BODY (16 * 1024 * 1024)
-#define K_WEB_TIMEOUT_SECS 10
+/* Appends to a growing buffer of bytes. */
+typedef struct kbuf { char *data; int64_t len, cap; } kbuf;
+
+K_API void k_buf_add(kbuf *b, const char *s, int64_t n) {
+    if (b->len + n > b->cap) {
+        int64_t cap = b->cap ? b->cap : 256;
+        while (cap < b->len + n) cap *= 2;
+        char *data = k_alloc_atomic((size_t)cap);
+        if (b->len) memcpy(data, b->data, (size_t)b->len);
+        b->data = data;
+        b->cap = cap;
+    }
+    memcpy(b->data + b->len, s, (size_t)n);
+    b->len += n;
+}
+
+K_API void k_buf_str(kbuf *b, const char *s) { k_buf_add(b, s, (int64_t)strlen(s)); }
+
+/* Removes the first `n` bytes. */
+K_API void k_buf_drop(kbuf *b, int64_t n) {
+    if (n <= 0) return;
+    memmove(b->data, b->data + n, (size_t)(b->len - n));
+    b->len -= n;
+}
 
 /* A route: its method (an index into `k_web_methods`), and its pattern's
  * segments. A literal segment has kind 0 and its text in `parts`; a
@@ -1884,7 +1905,15 @@ typedef struct kroute {
     kclosure *handler;
 } kroute;
 
-typedef struct kapp { int64_t n, cap; kroute **routes; } kapp;
+/* An app: its routes, `app.on_error`'s handler or NULL, and the settings
+ * `web.app` takes, with times in nanoseconds. */
+typedef struct kapp {
+    int64_t n, cap;
+    kroute **routes;
+    kclosure *on_error;
+    int64_t max_body, max_header, timeout, keep_alive;
+    bool access_log;
+} kapp;
 
 static const char *const k_web_methods[] = {"GET", "POST", "PUT", "PATCH", "DELETE"};
 
@@ -1899,12 +1928,19 @@ K_API kstr *k_web_lower(const char *s, int64_t n) {
     return r;
 }
 
-K_API void *k_web_app(void) {
+K_API void *k_web_app(int64_t max_body, int64_t max_header, int64_t timeout, int64_t keep_alive, bool access_log) {
     kapp *a = k_alloc(sizeof(kapp));
     a->cap = 8;
     a->routes = k_alloc(sizeof(kroute *) * 8);
+    a->max_body = max_body < 0 ? 0 : max_body;
+    a->max_header = max_header < 1024 ? 1024 : max_header;
+    a->timeout = timeout <= 0 ? 10 * K_NS_PER_SEC : timeout;
+    a->keep_alive = keep_alive;
+    a->access_log = access_log;
     return a;
 }
+
+K_API void k_web_on_error(void *app, kclosure *handler) { ((kapp *)app)->on_error = handler; }
 
 /* The segments of a path after its leading `/`: `/a/b` has `a` and `b`,
  * and `/` has one empty segment. */
@@ -1972,7 +2008,17 @@ K_API kv *k_web_redirect(kstr *to, int64_t status) {
     return r;
 }
 
-K_API kv *k_web_not_found(void) { return k_web_text(k_str("Not Found"), 404); }
+K_API int64_t k_web_mark;
+
+/* `web.not_found()`: a 404 response with a mark in a slot after its fields,
+ * so that the server makes it with `app.on_error`'s handler when there is
+ * one. */
+K_API kv *k_web_not_found(void) {
+    kv *r = k_alloc(sizeof(kv) * (K_RES_FIELDS + 1));
+    memcpy(r, k_web_text(k_str("Not Found"), 404), sizeof(kv) * K_RES_FIELDS);
+    r[K_RES_FIELDS] = K_P2KV(&k_web_mark);
+    return r;
+}
 
 /* ----- request data ----- */
 
@@ -2104,32 +2150,119 @@ K_API void k_web_log(const char *level, kv *req, const char *what, kstr *message
             k_cstr(K_KV2P(kstr *, req[K_REQ_PATH])), what, k_cstr(message));
 }
 
-K_API kv *k_web_bad_json(kstr *message);
+K_API const char *k_web_reason(int64_t status);
+K_API void k_json_string(kbuf *b, const char *s, int64_t n);
 
-/* Calls a handler, turning an error or a panic into a 500 response. The
- * call is in a function of its own because `__builtin_setjmp` must not
- * return to a frame whose locals changed after it. */
-K_API kv *k_web_call(kroute *r, kv *req, kv *args) {
+/* Whether the client speaks JSON: it accepts JSON or sent some. */
+K_API bool k_web_wants_json(kv *req) {
+    kmap *h = K_KV2P(kmap *, req[K_REQ_HEADERS]);
+    const char *names[] = {"accept", "content-type"};
+    for (int i = 0; i < 2; i++) {
+        kbox *v = k_map_get(h, K_P2KV(k_str(names[i])));
+        if (v && k_str_find(k_web_lower(K_KV2P(kstr *, v->v)->data, K_KV2P(kstr *, v->v)->len), k_str("json"), 0) >= 0)
+            return true;
+    }
+    return false;
+}
+
+/* Calls `app.on_error`'s handler; NULL if it panics. In a function of its
+ * own for `__builtin_setjmp`, as `k_web_call` is. */
+K_API kv *k_web_call_on_error(kapp *a, kv *req, int64_t status, kstr *message) {
+    if (__builtin_setjmp(k_panic_jmp) != 0) {
+        k_failed = false;
+        k_web_log("error", req, "error page panicked", k_panic_message);
+        return NULL;
+    }
+    kv *args = k_alloc(sizeof(kv) * 3);
+    args[0] = K_P2KV(req);
+    args[1] = (kv)status;
+    args[2] = K_P2KV(message);
+    k_panic_trap = true;
+    kv res = a->on_error->fn(a->on_error->env, args);
+    k_panic_trap = false;
+    return K_KV2P(kv *, res);
+}
+
+/* An error response: what `app.on_error`'s handler makes, if there is one
+ * and the server could read the request; otherwise `{"error": message}`
+ * when the client speaks JSON (or `json` is set), or the message as text. */
+K_API kv *k_web_error_response(kapp *a, kv *req, int64_t status, kstr *message, bool json) {
+    if (a->on_error && req) {
+        kv *res = k_web_call_on_error(a, req, status, message);
+        if (res) return res;
+    }
+    if (json || (req && k_web_wants_json(req))) {
+        kbuf b = {0};
+        k_buf_str(&b, "{\"error\":");
+        k_json_string(&b, message->data, message->len);
+        k_buf_str(&b, "}");
+        return k_web_response(status, k_str_n(b.data, b.len), "application/json");
+    }
+    return k_web_text(message, status);
+}
+
+/* `web.error(status, message)` makes a standard `Error`, whose one field
+ * is its message, with two more slots: a mark, and the status. Its
+ * message is for the client. */
+
+K_API void *k_web_error(int64_t status, kstr *message) {
+    kv *e = k_alloc(sizeof(kv) * 3);
+    e[0] = K_P2KV(message);
+    e[1] = K_P2KV(&k_web_mark);
+    e[2] = (kv)status;
+    return e;
+}
+
+/* Whether `p` is a value the runtime marked after its `fields` slots. */
+K_API bool k_web_marked(kv p, int64_t fields) {
+    kv *v = K_KV2P(kv *, p);
+    return v && GC_base(v) == (void *)v && GC_size(v) >= sizeof(kv) * (size_t)(fields + 1) &&
+           v[fields] == K_P2KV(&k_web_mark);
+}
+
+/* Calls a handler. A failure or panic becomes an error response: the
+ * status and message of a `web.error`, 400 for a body `req.json` could not
+ * read, and otherwise 500, with the error logged. In a function of its
+ * own because `__builtin_setjmp` must not return to a frame whose locals
+ * changed after it. Returns the response, or NULL with the error in
+ * `*status`, `*message` and `*json`. */
+K_API kv *k_web_call(kroute *r, kv *req, kv *args, int64_t *status, kstr **message, bool *json) {
     if (__builtin_setjmp(k_panic_jmp) != 0) {
         k_failed = false;
         k_web_log("error", req, "panicked", k_panic_message);
-        return k_web_text(k_str("Internal Server Error"), 500);
+        *status = 500;
+        *message = k_str("Internal Server Error");
+        return NULL;
     }
     k_panic_trap = true;
     kv res = r->handler->fn(r->handler->env, args);
     k_panic_trap = false;
-    if (k_failed) {
-        kv err = k_take_error();
-        kstr *message = k_error_show(err);
-        /* A body that `req.json` could not read is the client's mistake. */
-        if (k_web_client_error && message == k_web_client_error) {
-            k_web_client_error = NULL;
-            return k_web_bad_json(message);
+    if (!k_failed) return K_KV2P(kv *, res);
+    kv err = k_take_error();
+    kstr *shown = k_error_show(err);
+    if (k_web_client_error && shown == k_web_client_error) {
+        k_web_client_error = NULL;
+        *status = 400;
+        *message = shown;
+        *json = true;
+    } else if (k_web_marked(err, 1)) {
+        int64_t s = (int64_t)K_KV2P(kv *, err)[2];
+        if (s < 400 || s > 599) {
+            k_web_log("error", req, "failed with a web.error whose status is not 400 to 599",
+                      k_concat(k_concat(k_int_str(s), k_str(": ")), shown));
+            s = 500;
+            shown = k_str("Internal Server Error");
+        } else if (s >= 500) {
+            k_web_log("error", req, "failed", shown);
         }
-        k_web_log("error", req, "failed", message);
-        return k_web_text(k_str("Internal Server Error"), 500);
+        *status = s;
+        *message = shown;
+    } else {
+        k_web_log("error", req, "failed", shown);
+        *status = 500;
+        *message = k_str("Internal Server Error");
     }
-    return K_KV2P(kv *, res);
+    return NULL;
 }
 
 /* The response to a request: the first route whose method and pattern
@@ -2151,13 +2284,26 @@ K_API kv *k_web_dispatch(kapp *a, kv *req) {
         args[0] = K_P2KV(req);
         if (!k_web_match(r, segs, args)) continue;
         const char *m = k_web_methods[r->method];
-        if (k_str_eq(method, k_str(m)) || (head && r->method == 0)) return k_web_call(r, req, args);
-        kstr *name = k_str(m);
-        if (!allow) allow = name;
-        else if (k_str_find(allow, name, 0) < 0) allow = k_concat(k_concat(allow, k_str(", ")), name);
+        if (!k_str_eq(method, k_str(m)) && !(head && r->method == 0)) {
+            kstr *name = k_str(m);
+            if (!allow) allow = name;
+            else if (k_str_find(allow, name, 0) < 0) allow = k_concat(k_concat(allow, k_str(", ")), name);
+            continue;
+        }
+        int64_t status = 0;
+        kstr *message = NULL;
+        bool json = false;
+        kv *res = k_web_call(r, req, args, &status, &message, &json);
+        if (res && k_web_marked(K_P2KV(res), K_RES_FIELDS)) {
+            /* `web.not_found()` */
+            status = 404;
+            message = k_str("Not Found");
+            res = NULL;
+        }
+        return res ? res : k_web_error_response(a, req, status, message, json);
     }
-    if (!allow) return k_web_not_found();
-    kv *res = k_web_text(k_str("Method Not Allowed"), 405);
+    if (!allow) return k_web_error_response(a, req, 404, k_str("Not Found"), false);
+    kv *res = k_web_error_response(a, req, 405, k_str("Method Not Allowed"), false);
     k_map_set(K_KV2P(kmap *, res[K_RES_HEADERS]), K_P2KV(k_str("allow")), K_P2KV(allow));
     return res;
 }
@@ -2182,6 +2328,7 @@ K_API const char *k_web_reason(int64_t status) {
     case 403: return "Forbidden";
     case 404: return "Not Found";
     case 405: return "Method Not Allowed";
+    case 408: return "Request Timeout";
     case 409: return "Conflict";
     case 410: return "Gone";
     case 411: return "Length Required";
@@ -2210,48 +2357,33 @@ K_API bool k_sock_would_block(void) { return errno == EAGAIN || errno == EWOULDB
 K_API void k_sock_nonblock(ksock fd) { fcntl(fd, F_SETFL, fcntl(fd, F_GETFL) | O_NONBLOCK); }
 #endif
 
+/* A connection, served on a task of its own: the app, the socket, the
+ * bytes read but not used yet, and the request being answered. */
+typedef struct kconn {
+    kapp *app;
+    ksock fd;
+    kbuf in;
+    kv *req;
+    int64_t start; /* when the request's head arrived, for the access log */
+} kconn;
+
 /* Sockets do not block: when one is not ready, its task waits and the
- * other tasks run. A client that stops reading or sending for
- * `K_WEB_TIMEOUT_SECS` loses its connection. */
-K_API bool k_web_send(ksock fd, const char *p, int64_t n) {
+ * other tasks run. A client that stops reading for the app's timeout
+ * loses its connection. */
+K_API bool k_web_send(kconn *c, const char *p, int64_t n) {
     while (n > 0) {
         int chunk = n > (1 << 30) ? (1 << 30) : (int)n;
-        int sent = (int)send(fd, p, chunk, K_SEND_FLAGS);
+        int sent = (int)send(c->fd, p, chunk, K_SEND_FLAGS);
         if (sent > 0) {
             p += sent;
             n -= sent;
         } else if (sent < 0 && k_sock_would_block()) {
-            if (!k_task_wait(fd, true, k_task_deadline(K_WEB_TIMEOUT_SECS * K_NS_PER_SEC))) return false;
+            if (!k_task_wait(c->fd, true, k_task_deadline(c->app->timeout))) return false;
         } else {
             return false;
         }
     }
     return true;
-}
-
-/* Appends to a growing buffer of bytes. */
-typedef struct kbuf { char *data; int64_t len, cap; } kbuf;
-
-K_API void k_buf_add(kbuf *b, const char *s, int64_t n) {
-    if (b->len + n > b->cap) {
-        int64_t cap = b->cap ? b->cap : 256;
-        while (cap < b->len + n) cap *= 2;
-        char *data = k_alloc_atomic((size_t)cap);
-        if (b->len) memcpy(data, b->data, (size_t)b->len);
-        b->data = data;
-        b->cap = cap;
-    }
-    memcpy(b->data + b->len, s, (size_t)n);
-    b->len += n;
-}
-
-K_API void k_buf_str(kbuf *b, const char *s) { k_buf_add(b, s, (int64_t)strlen(s)); }
-
-/* Removes the first `n` bytes. */
-K_API void k_buf_drop(kbuf *b, int64_t n) {
-    if (n <= 0) return;
-    memmove(b->data, b->data + n, (size_t)(b->len - n));
-    b->len -= n;
 }
 
 /* Adds header text, leaving out line breaks so that a value cannot start a
@@ -2261,9 +2393,31 @@ K_API void k_buf_header_text(kbuf *b, kstr *s) {
         if (s->data[i] != '\r' && s->data[i] != '\n') k_buf_add(b, s->data + i, 1);
 }
 
+/* How long a request took, for the access log: `850us`, `12.3ms` or
+ * `1.25s`. */
+K_API void k_web_took(char *buf, size_t size, int64_t ns) {
+    if (ns < 1000000) snprintf(buf, size, "%" PRId64 "us", ns / 1000);
+    else if (ns < K_NS_PER_SEC) snprintf(buf, size, "%.1fms", (double)ns / 1e6);
+    else snprintf(buf, size, "%.2fs", (double)ns / 1e9);
+}
+
+/* Logs a line per answered request: `info GET /posts/7 200 1.2ms`. The
+ * path leaves out the query string, which can hold secrets. */
+K_API void k_web_access_log(kconn *c, int64_t status) {
+    if (!c->app->access_log) return;
+    char took[32];
+    k_web_took(took, sizeof took, k_mono_now() - c->start);
+    fflush(stdout);
+    if (c->req)
+        fprintf(stderr, "info %s %s %" PRId64 " %s\n", k_cstr(K_KV2P(kstr *, c->req[K_REQ_METHOD])),
+                k_cstr(K_KV2P(kstr *, c->req[K_REQ_PATH])), status, took);
+    else
+        fprintf(stderr, "info - - %" PRId64 " %s\n", status, took);
+}
+
 /* Sends the response. `keep` says whether the connection stays open for
  * another request; the result says whether it still can. */
-K_API bool k_web_respond(ksock fd, kv *res, bool head, bool keep, bool http10) {
+K_API bool k_web_respond(kconn *c, kv *res, bool head, bool keep, bool http10) {
     int64_t status = (int64_t)res[K_RES_STATUS];
     kmap *headers = K_KV2P(kmap *, res[K_RES_HEADERS]);
     kstr *body = K_KV2P(kstr *, res[K_RES_BODY]);
@@ -2305,37 +2459,41 @@ K_API bool k_web_respond(ksock fd, kv *res, bool head, bool keep, bool http10) {
              k_day_names[t.weekday], (int)t.day, k_month_names[t.month - 1], (int)t.year,
              (int)t.hour, (int)t.minute, (int)t.second);
     k_buf_str(&b, line);
+    if (c->app->keep_alive <= 0) keep = false;
     if (!keep) k_buf_str(&b, "connection: close\r\n");
     else if (http10) k_buf_str(&b, "connection: keep-alive\r\n");
     k_buf_str(&b, "\r\n");
     if (!head && !no_body) k_buf_add(&b, body->data, body->len);
-    return k_web_send(fd, b.data, b.len) && keep;
+    bool sent = k_web_send(c, b.data, b.len);
+    k_web_access_log(c, status);
+    return sent && keep;
 }
 
 /* Answers a request the server cannot read, and ends the connection. */
-K_API bool k_web_fail(ksock fd, int64_t status) {
-    k_web_respond(fd, k_web_text(k_str(k_web_reason(status)), status), false, false, false);
+K_API bool k_web_fail(kconn *c, int64_t status) {
+    k_web_respond(c, k_web_error_response(c->app, c->req, status, k_str(k_web_reason(status)), false), false, false, false);
     return false;
 }
 
-/* Reads more of the request into `b`; false at the end or on a timeout. */
-K_API bool k_web_read(ksock fd, kbuf *b) {
+/* Reads more of the request; false at the end, or if nothing came before
+ * `deadline` (0 for the app's timeout from now). */
+K_API bool k_web_read(kconn *c, int64_t deadline) {
     char chunk[16384];
     for (;;) {
-        int n = (int)recv(fd, chunk, sizeof chunk, 0);
+        int n = (int)recv(c->fd, chunk, sizeof chunk, 0);
         if (n > 0) {
-            k_buf_add(b, chunk, n);
+            k_buf_add(&c->in, chunk, n);
             return true;
         }
         if (n == 0 || !k_sock_would_block()) return false;
-        if (!k_task_wait(fd, false, k_task_deadline(K_WEB_TIMEOUT_SECS * K_NS_PER_SEC))) return false;
+        if (!k_task_wait(c->fd, false, deadline ? deadline : k_task_deadline(c->app->timeout))) return false;
     }
 }
 
 /* Reads `n` body bytes starting at `start`; false if the connection ends. */
-K_API bool k_web_need(ksock fd, kbuf *b, int64_t start, int64_t n) {
-    while (b->len - start < n)
-        if (!k_web_read(fd, b)) return false;
+K_API bool k_web_need(kconn *c, int64_t start, int64_t n) {
+    while (c->in.len - start < n)
+        if (!k_web_read(c, 0)) return false;
     return true;
 }
 
@@ -2348,26 +2506,30 @@ K_API int64_t k_web_find(const char *p, int64_t n, const char *what) {
 
 /* Decodes a chunked body that starts at `at`, setting `*end` to where it
  * ends. Returns the status to fail with, or 0. */
-K_API int64_t k_web_chunked(ksock fd, kbuf *b, int64_t at, kbuf *body, int64_t *end) {
+K_API int64_t k_web_chunked(kconn *c, int64_t at, kbuf *body, int64_t *end) {
+    kbuf *b = &c->in;
+    int64_t max = c->app->max_body;
     for (;;) {
         int64_t eol;
-        while ((eol = k_web_find(b->data + at, b->len - at, "\r\n")) < 0)
-            if (!k_web_read(fd, b)) return 400;
+        while ((eol = k_web_find(b->data + at, b->len - at, "\r\n")) < 0) {
+            if (b->len - at > c->app->max_header) return 400;
+            if (!k_web_read(c, 0)) return 400;
+        }
         int64_t size = 0;
         int64_t i = 0;
         for (; i < eol && k_hex(b->data[at + i]) >= 0; i++) {
             size = size * 16 + k_hex(b->data[at + i]);
-            if (size > K_WEB_MAX_BODY) return 413;
+            if (size > max) return 413;
         }
         if (i == 0) return 400;
         at += eol + 2;
-        if (body->len + size > K_WEB_MAX_BODY) return 413;
+        if (body->len + size > max) return 413;
         if (size == 0) {
             /* Trailer lines, which are ignored, up to an empty line. */
             for (;;) {
                 while ((eol = k_web_find(b->data + at, b->len - at, "\r\n")) < 0) {
-                    if (b->len - at > K_WEB_MAX_HEAD) return 431;
-                    if (!k_web_read(fd, b)) return 400;
+                    if (b->len - at > c->app->max_header) return 431;
+                    if (!k_web_read(c, 0)) return 400;
                 }
                 at += eol + 2;
                 if (eol == 0) break;
@@ -2375,28 +2537,37 @@ K_API int64_t k_web_chunked(ksock fd, kbuf *b, int64_t at, kbuf *body, int64_t *
             *end = at;
             return 0;
         }
-        if (!k_web_need(fd, b, at, size + 2)) return 400;
+        if (!k_web_need(c, at, size + 2)) return 400;
         k_buf_add(body, b->data + at, size);
         at += size + 2;
     }
 }
 
-/* Reads one request from the connection's bytes in `b` and answers it,
- * leaving in `b` what the client sent after it. Returns whether the
- * connection stays open for another request. */
-K_API bool k_web_serve(kapp *a, ksock fd, kbuf *b) {
+/* Reads one request from the connection and answers it, leaving in
+ * `c->in` what the client sent after it. Returns whether the connection
+ * stays open for another request. The head of a request must arrive
+ * within the app's timeout; a kept-alive connection may first wait for
+ * the app's `keep_alive` time. */
+K_API bool k_web_serve(kconn *c, bool first) {
+    kapp *a = c->app;
+    kbuf *b = &c->in;
+    c->req = NULL;
     int64_t end;
+    int64_t deadline = k_task_deadline(first ? a->timeout : a->keep_alive);
     /* Empty lines before a request are allowed. */
     for (;;) {
         while (b->len >= 2 && b->data[0] == '\r' && b->data[1] == '\n') k_buf_drop(b, 2);
         if (b->len >= 2 || (b->len == 1 && b->data[0] != '\r')) break;
-        if (!k_web_read(fd, b)) return false;
+        if (!k_web_read(c, deadline)) return false;
     }
+    if (!first) deadline = k_task_deadline(a->timeout);
+    c->start = k_mono_now();
     while ((end = k_web_find(b->data, b->len, "\r\n\r\n")) < 0) {
-        if (b->len > K_WEB_MAX_HEAD) return k_web_fail(fd, 431);
-        if (!k_web_read(fd, b)) return b->len > 0 ? k_web_fail(fd, 400) : false;
+        if (b->len > a->max_header) return k_web_fail(c, 431);
+        if (!k_web_read(c, deadline)) return b->len > 0 ? k_web_fail(c, k_mono_now() >= deadline ? 408 : 400) : false;
     }
-    if (end > K_WEB_MAX_HEAD) return k_web_fail(fd, 431);
+    c->start = k_mono_now();
+    if (end > a->max_header) return k_web_fail(c, 431);
     /* The request line: method, target and version. */
     const char *p = b->data, *head_end = b->data + end;
     const char *eol = p + k_web_find(p, head_end - p + 2, "\r\n");
@@ -2404,7 +2575,7 @@ K_API bool k_web_serve(kapp *a, ksock fd, kbuf *b) {
     const char *sp2 = sp1 ? memchr(sp1 + 1, ' ', (size_t)(eol - sp1 - 1)) : NULL;
     if (!sp1 || !sp2 || sp1 == p || sp2 == sp1 + 1 || sp1[1] != '/' ||
         (eol - sp2 - 1 != 8) || memcmp(sp2 + 1, "HTTP/1.", 7) != 0)
-        return k_web_fail(fd, 400);
+        return k_web_fail(c, 400);
     bool http10 = sp2[8] == '0';
     kv *req = k_alloc(sizeof(kv) * K_REQ_FIELDS);
     req[K_REQ_METHOD] = K_P2KV(k_str_n(p, sp1 - p));
@@ -2415,10 +2586,12 @@ K_API bool k_web_serve(kapp *a, ksock fd, kbuf *b) {
      * with ", ". */
     kmap *headers = k_web_headers();
     req[K_REQ_HEADERS] = K_P2KV(headers);
+    req[K_REQ_BODY] = K_P2KV(k_str(""));
+    c->req = req;
     for (p = eol + 2; p < head_end; ) {
         const char *line_end = p + k_web_find(p, head_end - p + 2, "\r\n");
         const char *colon = memchr(p, ':', (size_t)(line_end - p));
-        if (!colon || colon == p || *p == ' ' || *p == '\t') return k_web_fail(fd, 400);
+        if (!colon || colon == p || *p == ' ' || *p == '\t') return k_web_fail(c, 400);
         const char *v = colon + 1, *v_end = line_end;
         while (v < v_end && (*v == ' ' || *v == '\t')) v++;
         while (v_end > v && (v_end[-1] == ' ' || v_end[-1] == '\t')) v_end--;
@@ -2444,26 +2617,28 @@ K_API bool k_web_serve(kapp *a, ksock fd, kbuf *b) {
     kbox *expect = k_map_get(headers, K_P2KV(k_str("expect")));
     kbox *te = k_map_get(headers, K_P2KV(k_str("transfer-encoding")));
     kbox *cl = k_map_get(headers, K_P2KV(k_str("content-length")));
+    int64_t n = 0;
+    if (cl && !te) {
+        kstr *t = K_KV2P(kstr *, cl->v);
+        if (t->len == 0) return k_web_fail(c, 400);
+        for (int64_t i = 0; i < t->len; i++) {
+            if (t->data[i] < '0' || t->data[i] > '9') return k_web_fail(c, 400);
+            n = n * 10 + (t->data[i] - '0');
+            if (n > a->max_body) return k_web_fail(c, 413);
+        }
+    }
     if ((te || cl) && expect && k_str_eq(k_web_lower(K_KV2P(kstr *, expect->v)->data, K_KV2P(kstr *, expect->v)->len), k_str("100-continue")))
-        if (!k_web_send(fd, "HTTP/1.1 100 Continue\r\n\r\n", 25)) return false;
+        if (!k_web_send(c, "HTTP/1.1 100 Continue\r\n\r\n", 25)) return false;
     kstr *body = k_str("");
     if (te) {
         kstr *t = K_KV2P(kstr *, te->v);
-        if (!k_str_ends_with(k_web_lower(t->data, t->len), k_str("chunked"))) return k_web_fail(fd, 501);
+        if (!k_str_ends_with(k_web_lower(t->data, t->len), k_str("chunked"))) return k_web_fail(c, 501);
         kbuf chunks = {0};
-        int64_t status = k_web_chunked(fd, b, at, &chunks, &at);
-        if (status) return k_web_fail(fd, status);
+        int64_t status = k_web_chunked(c, at, &chunks, &at);
+        if (status) return k_web_fail(c, status);
         body = k_str_n(chunks.data ? chunks.data : "", chunks.len);
     } else if (cl) {
-        kstr *t = K_KV2P(kstr *, cl->v);
-        int64_t n = 0;
-        if (t->len == 0) return k_web_fail(fd, 400);
-        for (int64_t i = 0; i < t->len; i++) {
-            if (t->data[i] < '0' || t->data[i] > '9') return k_web_fail(fd, 400);
-            n = n * 10 + (t->data[i] - '0');
-            if (n > K_WEB_MAX_BODY) return k_web_fail(fd, 413);
-        }
-        if (!k_web_need(fd, b, at, n)) return k_web_fail(fd, 400);
+        if (!k_web_need(c, at, n)) return k_web_fail(c, 400);
         body = k_str_n(b->data + at, n);
         at += n;
     }
@@ -2472,7 +2647,7 @@ K_API bool k_web_serve(kapp *a, ksock fd, kbuf *b) {
     k_web_client_error = NULL;
     kv *res = k_web_dispatch(a, req);
     fflush(stdout);
-    return k_web_respond(fd, res, k_str_eq(K_KV2P(kstr *, req[K_REQ_METHOD]), k_str("HEAD")), keep, http10);
+    return k_web_respond(c, res, k_str_eq(K_KV2P(kstr *, req[K_REQ_METHOD]), k_str("HEAD")), keep, http10);
 }
 
 #ifdef _WIN32
@@ -2509,13 +2684,9 @@ K_API void k_web_close(ksock c) {
     k_sock_close(c);
 }
 
-/* A connection, served on a task of its own. */
-typedef struct kconn { kapp *app; ksock fd; } kconn;
-
 K_API void k_web_conn(void *p) {
     kconn *c = p;
-    kbuf b = {0};
-    while (k_web_serve(c->app, c->fd, &b)) {}
+    for (bool first = true; k_web_serve(c, first); first = false) {}
     k_web_close(c->fd);
 }
 
@@ -2603,6 +2774,7 @@ K_API void k_web_listen(void *app, kstr *address) {
         kconn *conn = k_alloc(sizeof *conn);
         conn->app = (kapp *)app;
         conn->fd = c;
+        conn->start = k_mono_now();
         k_task_spawn(k_web_conn, conn);
         k_task_yield();
     }
@@ -3223,16 +3395,6 @@ K_API kv k_json_decode(const kdesc *d, kstr *text) {
     }
     k_lib_error = j.error ? j.error : k_str("invalid JSON");
     return 0;
-}
-
-/* The 400 response to a JSON body that `req.json` could not read:
- * `{"error": "..."}`, since the client speaks JSON. */
-K_API kv *k_web_bad_json(kstr *message) {
-    kbuf b = {0};
-    k_buf_str(&b, "{\"error\":");
-    k_json_string(&b, message->data, message->len);
-    k_buf_str(&b, "}");
-    return k_web_response(400, k_str_n(b.data, b.len), "application/json");
 }
 
 K_API void *k_web_json(const kdesc *d, kv v, int64_t status) {
