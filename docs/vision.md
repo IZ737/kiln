@@ -285,10 +285,28 @@ if its integrated developer experience proves better.**
 
 ## 7. Wares, templates and a real ecosystem
 
-**Wares** are source packages, managed through a coherent manifest/lockfile
-and eventually an official registry. The initial implementation can support
-local/Git dependencies and reproducible immutable versions before a
-full registry exists.
+**Wares** are source packages, managed through an optional **`kiln.toml`
+project manifest** and generated **`kiln.lock`** and eventually an official
+registry. The initial implementation can support local/Git dependencies
+and reproducible immutable versions before a full registry exists.
+
+**Phase 5 project configuration** should be a declarative, familiar
+TOML file—not a procedural `Kilnfile` or a new configuration language.
+`kiln.toml` identifies the project, optional application entrypoint,
+version and Wares, with build/test defaults. `kiln.lock` records the
+fully resolved, hash-verified dependency graph for reproducible local/CI
+builds. Tooling should manage both automatically when adding/removing
+dependencies. Command names for updating Wares are still to be designed;
+the existing `kiln upgrade` command specifically updates the compiler.
+
+**No manifest should be required to run one `.kiln` file or a simple
+single-folder project.** Local multi-folder modules need no registry
+or individual package manifests; the same resolution foundation can
+later support Wares and optional multi-package workspaces. A project
+manifest must not contain secrets or execute arbitrary dependency
+install hooks. Deployment stays separate in `kiln-deploy.toml`.
+See [the Phase 5 manifest/module design](design.md#phase-5-project-manifests-and-ware-dependencies)
+for an example manifest and acceptance criteria.
 
 - The compiler/toolchain handles package compilation; avoid npm-style
   arbitrary `postinstall` scripts and surprising code execution merely
