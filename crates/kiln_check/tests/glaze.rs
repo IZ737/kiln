@@ -218,3 +218,42 @@ fn embers_run_in_the_browser() {
     let server_only = format!("{ember}\n{{% let n = sql.open(\"x\") catch {{ return }} %}}");
     assert!(page_errors(&server_only).contains(&codes::SERVER_ONLY));
 }
+
+#[test]
+fn values_cannot_go_where_browsers_run_code() {
+    assert_eq!(
+        page_errors(&format!(
+            "{PROPS}<p style=\"color: {{title}}\" onclick=\"go({{post.id}})\">x</p><iframe srcdoc={{title}}></iframe>"
+        )),
+        [
+            codes::UNSAFE_ATTRIBUTE,
+            codes::UNSAFE_ATTRIBUTE,
+            codes::UNSAFE_ATTRIBUTE
+        ]
+    );
+    // Numbers cannot change CSS, and written-out attributes are the author's.
+    page_ok(&format!(
+        "{PROPS}<p style=\"width: {{post.likes}}%\" onclick=\"go()\" class=\"{{title}}\">x</p>"
+    ));
+}
+
+#[test]
+fn the_compiler_learns_what_values_are() {
+    let module = kiln_syntax::parse(APP).module;
+    let page = kiln_syntax::glaze::parse_glaze(&format!(
+        "{PROPS}<p hidden={{post.likes > 1}}>{{post.title}} {{post.likes}} {{2s}}</p>"
+    ));
+    let layout = kiln_syntax::glaze::parse_glaze(LAYOUT).glaze;
+    let card = kiln_syntax::glaze::parse_glaze(CARD).glaze;
+    let glazes = [
+        ("base.glaze", &layout),
+        ("post_card.glaze", &card),
+        ("page.glaze", &page.glaze),
+    ];
+    let result = kiln_check::check_app(&[&module], &glazes);
+    let mut kinds: Vec<_> = result.glaze_values[2].iter().collect();
+    kinds.sort_by_key(|(span, _)| span.start);
+    let kinds: Vec<_> = kinds.into_iter().map(|(_, k)| *k).collect();
+    use kiln_check::ValueKind::*;
+    assert_eq!(kinds, [Bool, String, Number, Other]);
+}

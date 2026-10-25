@@ -198,8 +198,11 @@ impl GlazeParser<'_> {
             self.pos = end;
         } else if self.starts_with("{#") {
             self.skip_comment();
+            self.glaze.tags.push(Span::new(start, self.pos));
         } else if self.starts_with("{%") {
-            match self.parse_tag() {
+            let tag = self.parse_tag();
+            self.glaze.tags.push(Span::new(start, self.pos));
+            match tag {
                 Tag::Ending(end) => return self.ending(end),
                 tag => self.place_tag(tag, start, nodes),
             }

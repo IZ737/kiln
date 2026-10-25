@@ -91,7 +91,7 @@ pub(crate) fn signature(name: &str) -> Option<(&'static [C], Option<C>)> {
         | "k_str_trim_end" | "k_str_to_int" | "k_str_to_float" | "k_str_chars" | "k_str_lines"
         | "k_env" | "k_time_year" | "k_time_month" | "k_time_day" | "k_time_unix"
         | "k_time_iso" | "k_time_parse" | "k_fs_read" | "k_fs_read_lines" | "k_fs_list"
-        | "k_os_env" => (P1, Some(I64)),
+        | "k_os_env" | "k_rt_html_escape" | "k_rt_html_safe_url" => (P1, Some(I64)),
         "k_panic" | "k_panic_c" | "k_print" | "k_time_sleep" | "k_fs_mkdir" | "k_fs_remove"
         | "k_os_exit" | "k_io_write" | "k_io_print_err" => (P1, None),
         "k_str_n" | "k_concat" | "k_add" | "k_sub" | "k_mul" | "k_div" | "k_rem" | "k_min"

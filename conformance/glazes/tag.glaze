@@ -1,0 +1,2 @@
+{% props name: String %}
+<span class="tag">#{name}</span>

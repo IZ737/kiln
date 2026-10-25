@@ -11,6 +11,8 @@ mod glaze;
 pub mod ide;
 pub mod types;
 
+pub use glaze::ValueKind;
+
 use kiln_diagnostics::{Diagnostic, Span};
 use kiln_syntax::ast::{Glaze, Module};
 use std::collections::HashMap;
@@ -59,8 +61,22 @@ pub struct Program {
 
 /// Type-checks a whole program for compiling.
 pub fn check_program(module: &Module) -> Program {
+    check_program_with_glazes(module, &[])
+}
+
+/// Type-checks a whole program for compiling, with the glazes that its
+/// `web.render` calls name, so that their data is checked against the
+/// glazes' props. The glazes' own code is checked by [`check_app`].
+pub fn check_program_with_glazes(module: &Module, glazes: &[(&str, &Glaze)]) -> Program {
     let mut checker = checker::Checker::new();
-    checker.check_module(module);
+    checker.collect_module(module);
+    if !glazes.is_empty() {
+        checker.glazes = Some(Default::default());
+        for (file, glaze) in glazes {
+            checker.register_glaze(file, glaze);
+        }
+    }
+    checker.check_bodies(module);
     checker.zonk_recorded();
     let imports = checker
         .imports
@@ -90,6 +106,9 @@ pub fn check_program(module: &Module) -> Program {
 pub struct AppDiagnostics {
     pub modules: Vec<Vec<Diagnostic>>,
     pub glazes: Vec<Vec<Diagnostic>>,
+    /// For each glaze, what each value it outputs is, by the span of the
+    /// value's expression: what the compiler needs to render it.
+    pub glaze_values: Vec<HashMap<Span, ValueKind>>,
 }
 
 /// Type-checks the `.kiln` files and glazes of one directory together. The
@@ -103,10 +122,22 @@ pub fn check_app(modules: &[&Module], glazes: &[(&str, &Glaze)]) -> AppDiagnosti
         modules: (0..modules.len())
             .map(|i| sorted(module_checker(modules, glazes, i, false).diags))
             .collect(),
-        glazes: (0..glazes.len())
-            .map(|i| sorted(glaze_checker(modules, glazes, i, false).diags))
-            .collect(),
+        ..check_glazes(modules, glazes)
     }
+}
+
+fn check_glazes(modules: &[&Module], glazes: &[(&str, &Glaze)]) -> AppDiagnostics {
+    let mut out = AppDiagnostics {
+        modules: Vec::new(),
+        glazes: Vec::new(),
+        glaze_values: Vec::new(),
+    };
+    for i in 0..glazes.len() {
+        let checker = glaze_checker(modules, glazes, i, false);
+        out.glazes.push(sorted(checker.diags));
+        out.glaze_values.push(checker.glaze_values);
+    }
+    out
 }
 
 /// Checks the `i`th module of an app, with only that file's errors left in

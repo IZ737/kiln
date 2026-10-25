@@ -1,0 +1,39 @@
+// Glazes compiled into the program: `web.render` runs them and makes an
+// HTML response. Values are escaped, URLs in links are checked, and
+// components, layouts, loops, conditions and matches render.
+import web
+
+struct Post {
+    id: Int
+    title: String
+    tags: List<String>
+    published: Bool
+}
+
+enum Status {
+    Draft
+    Live(views: Int)
+}
+
+fn show(res: web.Response) {
+    print("${res.status} ${res.headers["content-type"] ?? "?"}")
+    print(res.body)
+    print("---")
+}
+
+fn main() {
+    let posts = [
+        Post(id: 1, title: "Firing <schedules> & \"glazes\" 'n' things", tags: ["kiln", "clay"], published: true),
+        Post(id: 2, title: "Unpublished", tags: [], published: false),
+        Post(id: 3, title: "Üñíçødé ☕ 陶器", tags: [], published: true),
+    ]
+    show(web.render("index.glaze", { posts, status: Status.Live(views: 1500) }))
+    show(web.render("index.glaze", { posts: [], status: Status.Draft, title: "Empty" }))
+
+    // Untrusted values cannot break out of text or attributes, and cannot
+    // make links that run code.
+    for value in ["<script>alert(1)</script>", "\" onmouseover=\"alert(1)", "javascript:alert(1)", " JaVa\tScRiPt:alert(1)", "https://example.com/?a=1&b=2", "/relative/path"] {
+        show(web.render("untrusted.glaze", { value }))
+    }
+    show(web.render("plain.glaze"))
+}

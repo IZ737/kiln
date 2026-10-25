@@ -1,0 +1,3 @@
+{% props value: String %}
+<p title="{value}" data-x={value}>{value}</p>
+<a href={value}>link</a> <a href="{value}">link</a> <a href="/search?q={value}">search</a> <img src="https://img.example/{value}">

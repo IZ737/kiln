@@ -67,6 +67,8 @@ struct kbox;
 struct kstr *k_rt_path_decode(struct kstr *s);
 struct kbox *k_rt_query(struct kstr *query, struct kstr *name);
 struct kbox *k_rt_cookie(struct kstr *header, struct kstr *name);
+struct kstr *k_rt_html_escape(struct kstr *s);
+struct kstr *k_rt_html_safe_url(struct kstr *s);
 
 static inline kv k_f2kv(double f) { kv v; memcpy(&v, &f, sizeof v); return v; }
 static inline double k_kv2f(kv v) { double f; memcpy(&f, &v, sizeof f); return f; }

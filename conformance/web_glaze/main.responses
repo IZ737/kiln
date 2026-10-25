@@ -1,0 +1,80 @@
+### GET / HTTP/1.1
+HTTP/1.1 200 OK
+content-type: text/html; charset=utf-8
+content-length: 138
+connection: close
+
+<!doctype html>
+<title>Pots</title>
+<main>
+  <ul>
+  <li><a href="/pots/1">Bowl</a></li>
+  <li><a href="/pots/2">Jug</a></li>
+</ul>
+</main>
+### GET /?q=%3Cscript%3Ealert(1)%3C/script%3E HTTP/1.1
+HTTP/1.1 200 OK
+content-type: text/html; charset=utf-8
+content-length: 216
+connection: close
+
+<!doctype html>
+<title>Pots</title>
+<main>
+  <p>Results for <b>&lt;script&gt;alert(1)&lt;/script&gt;</b> (<a href="?q=&lt;script&gt;alert(1)&lt;/script&gt;">again</a>)</p>
+<ul>
+  <li>No pots match.</li>
+</ul>
+</main>
+### GET /?q=ju HTTP/1.1
+HTTP/1.1 200 OK
+content-type: text/html; charset=utf-8
+content-length: 157
+connection: close
+
+<!doctype html>
+<title>Pots</title>
+<main>
+  <p>Results for <b>ju</b> (<a href="?q=ju">again</a>)</p>
+<ul>
+  <li><a href="/pots/2">Jug</a></li>
+</ul>
+</main>
+### GET /pots/2 HTTP/1.1
+HTTP/1.1 200 OK
+content-type: text/html; charset=utf-8
+cache-control: no-store
+content-length: 90
+connection: close
+
+<!doctype html>
+<title>Jug</title>
+<main>
+  <h1>Jug</h1>
+<p>Glazed in tenmoku.</p>
+</main>
+### GET /pots/7 HTTP/1.1
+HTTP/1.1 404 Not Found
+content-type: text/html; charset=utf-8
+content-length: 95
+connection: close
+
+<!doctype html>
+<title>Error 404</title>
+<main>
+  <h1>404</h1>
+<p>there is no pot 7</p>
+</main>
+### GET /missing/%3Cb%3E HTTP/1.1
+HTTP/1.1 404 Not Found
+content-type: text/html; charset=utf-8
+content-length: 87
+connection: close
+
+<!doctype html>
+<title>Error 404</title>
+<main>
+  <h1>404</h1>
+<p>Not Found</p>
+</main>
+### GET /quit HTTP/1.1

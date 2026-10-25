@@ -1,0 +1,5 @@
+{% props title: String, highlight: Bool = false %}
+<section class={if highlight { "card highlight" } else { "card" }}>
+  <h2>{title}</h2>
+  {% slot %}
+</section>

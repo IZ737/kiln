@@ -1,0 +1,6 @@
+{% props title: String %}
+<!doctype html>
+<title>{title}</title>
+<main>
+  {% slot %}
+</main>

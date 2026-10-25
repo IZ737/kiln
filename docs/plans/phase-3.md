@@ -1,8 +1,8 @@
 # Phase 3 — Glazes, native styling, Finishes and themes
 
-**Status:** Planned. Phase 2.5 is complete. The independent
-[Rust runtime migration](runtime-rust.md) should finish before Phase 3 changes
-the web rendering pipeline.
+**Status:** In progress. Step 1 (compiled Glaze rendering) is done; see
+[Rendering](../reference/glazes.md#rendering) for what works today. The
+[Rust runtime migration](runtime-rust.md) it waited for is complete.
 
 **Goal:** Build Kiln's multi-page documentation website **in Kiln**, using
 compiled server-rendered Glazes, scoped and imported CSS, typed `ui` style

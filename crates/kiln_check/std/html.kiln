@@ -1,0 +1,11 @@
+// Making HTML safely. Rendered glazes use these for every value they
+// output, so templates need them only for HTML built by hand.
+
+// The text with `&`, `<`, `>`, `"` and `'` escaped as entities, so that it
+// shows as written in HTML text and in quoted attribute values.
+fn escape(text: String) -> String {}
+
+// The URL when it is relative or its scheme is `http`, `https`, `mailto` or
+// `tel`, and otherwise `about:invalid#kiln-unsafe-url`, so that a value
+// such as `javascript:...` cannot run code from a link.
+fn safe_url(url: String) -> String {}

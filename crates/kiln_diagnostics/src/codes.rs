@@ -61,6 +61,7 @@ pub const MISPLACED_DECLARATION: &str = "E0305";
 pub const FOREIGN_ATTRIBUTE: &str = "E0306";
 pub const UNCLOSED_GLAZE_CODE: &str = "E0307";
 pub const STRAY_CLOSING_TAG: &str = "E0308";
+pub const UNSAFE_ATTRIBUTE: &str = "E0309";
 
 pub const NOT_COMPILED_YET: &str = "E0401";
 pub const NO_MAIN: &str = "E0402";
@@ -368,9 +369,16 @@ pub static ALL: &[ErrorCode] = &[
         right: "<p>Hi</p>",
     },
     ErrorCode {
+        code: UNSAFE_ATTRIBUTE,
+        title: "a value where HTML escaping is not enough",
+        explanation: "Escaping keeps a value from ending an attribute, but in some attributes the browser reads the text as code: JavaScript in `onclick` and the other `on...` attributes, CSS in `style`, and a whole HTML page in `srcdoc`. A value there could run code or change the page, so glazes accept only numbers in `style` and no values in the others. Use classes and a stylesheet to style, and event handlers (`on:click={...}`) in embers.",
+        wrong: "<p style=\"color: {user.colour}\">Hi</p>",
+        right: "<p class=\"{user.theme}\">Hi</p>",
+    },
+    ErrorCode {
         code: NOT_COMPILED_YET,
         title: "not supported by the compiler yet",
-        explanation: "The program is valid Kiln, but the compiler cannot build this part of it yet. `kiln check` accepts it; `kiln build` and `kiln run` do not. Forms (`req.form`), templates (`web.render`), `sql` and `auth` arrive in later phases. Map keys and set items can be `Int`, `Float`, `Bool`, `Duration` or `String` for now. Printing or comparing a value whose type is a generic parameter also needs a later phase.",
+        explanation: "The program is valid Kiln, but the compiler cannot build this part of it yet. `kiln check` accepts it; `kiln build` and `kiln run` do not. Forms (`req.form`), embers, `sql` and `auth` arrive in later phases. Map keys and set items can be `Int`, `Float`, `Bool`, `Duration` or `String` for now. Printing or comparing a value whose type is a generic parameter also needs a later phase.",
         wrong: "import sql\n\nfn main() ! {\n    let db = try sql.open(\"app.db\")\n}",
         right: "import fs\n\nfn main() ! {\n    let text = try fs.read(\"app.txt\")\n}",
     },

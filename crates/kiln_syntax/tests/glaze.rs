@@ -323,3 +323,23 @@ fn spans_point_into_the_file() {
     let at = diags[0].span.start as usize;
     assert_eq!(&src[at..at + 1], "}");
 }
+
+#[test]
+fn tags_and_comments_are_recorded() {
+    let src = "{% props a: Int %}\n{# note #}\n<p>{% if a > 1 %}x{% end %}</p>\n";
+    let glaze = ok(src);
+    let tags: Vec<&str> = glaze
+        .tags
+        .iter()
+        .map(|s| &src[s.start as usize..s.end as usize])
+        .collect();
+    assert_eq!(
+        tags,
+        [
+            "{% props a: Int %}",
+            "{# note #}",
+            "{% if a > 1 %}",
+            "{% end %}"
+        ]
+    );
+}
