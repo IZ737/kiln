@@ -367,11 +367,33 @@ app.mount("/admin", admin.site(db, models: [Post, User, Comment]))
 
 Glazes (`.glaze`) are templates compiled to typed functions, with
 context-aware escaping, typed props, layouts, components and reverse routing.
-Every component renders on the server. A component that declares `state` or
-handles events becomes an ember: it is compiled to WebAssembly (WasmGC) and
-hydrates the server-rendered HTML. `server fn` declarations are callable from
-embers as typed RPC; server-only modules such as `sql` cannot be referenced
-from browser code.
+Phase 3 implements server-side Glaze rendering without a browser runtime.
+Phase 6 adds Embers compiled to WebAssembly (WasmGC) that hydrate selected
+components; `server fn` and generated typed RPC belong to that later phase.
+
+### Phase 3: native styling, Finishes and themes
+
+See [the full Phase 3 plan](phase-3.md) for the ordered implementation steps,
+exact scope and acceptance tests:
+
+- Glazes may co-locate markup, logic, scoped `<style>` CSS and typed
+  `ui` expressions, or import ordinary CSS and CSS Modules.
+- Native style values use a built-in `Ui` type, with concise properties
+  such as `bg`, `fg`, `p`, `gap` and `rounded`. In Glazes use
+  `ui={{ bg: color.surface, p: space.lg }}`; in Kiln functions construct
+  the same type with `ui({ ... })`. Styles compile to standard CSS.
+- **Finishes** are ordinary functions that return `Ui` or records of
+  named `Ui` parts, accept typed parameters/enums and compose through
+  deterministic `ui.merge`. No special `finish` keyword or DSL.
+- **Themes** provide compatible Finish functions and typed CSS design
+  tokens. Switching the selected theme and rebuilding can transform
+  colours, typography and layout while keeping Glazes/content unchanged.
+- The compiler/LSP will understand style values, tokens, Finish functions,
+  CSS Modules and CSS imports. Kiln's docs site is the Phase 3 dogfood
+  acceptance target.
+
+These are Phase 3 *targets*, not currently implemented syntax. Embers,
+reactive style updates, SQL/auth, Wares and SSG remain later milestones.
 
 ### Static site generation
 
