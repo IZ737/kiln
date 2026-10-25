@@ -273,7 +273,7 @@ to a typed mid-level IR, which feeds a backend:
 | --- | --- | --- |
 | C (via clang, gcc or `zig cc`) | First backend; free cross-compilation | 1 |
 | Cranelift | Self-contained native compilation; fast debug builds | 1.5 |
-| WasmGC | Browser code (embers) | 5 |
+| WasmGC | Browser code (embers) | 4 |
 | LLVM | Optimized release builds | 7 |
 
 The IR (`crates/kiln_ir`) is a typed tree: names are resolved, closures and
@@ -381,7 +381,7 @@ Phase 1 is done when native CLI programs compile and run correctly; the
 programs in `conformance/` are the evidence. These gaps are known and
 deliberate:
 
-- The `sql` and `auth` modules type-check but report E0401 when built; they arrive in phases 2 to 4.
+- The `sql` and `auth` module stubs type-check but report E0401 when built; their implementation belongs to Phase 5, after Phase 4's browser codegen and RPC.
   Phase 2 has started with `web`'s server and routing; see below.
 - Built-in methods cannot have default arguments yet, so `pad_start` and
   `pad_end` take their fill text explicitly.
@@ -471,7 +471,7 @@ server, then Postgres and MySQL; migrations), `orm`, `admin`, `session`, `auth`
 
 ### ORM
 
-See the [Phase 4 implementation specification](plans/phase-4.md) for the
+See the [Phase 5 implementation specification](plans/phase-5.md) for the
 proposed typed query APIs, dialect handling, schema import, migrations,
 validation, security and acceptance gates. Examples in that plan are
 **target syntax**, not current executable features.
@@ -518,9 +518,12 @@ app.mount("/admin", admin.site(db, models: [Post, User, Comment]))
 Glazes (`.glaze`) are templates compiled to typed functions, with
 context-aware escaping, typed props, layouts, components and reverse routing.
 Phase 3 implements server-side Glaze rendering without a browser runtime.
-Phase 5 adds Embers compiled to WebAssembly (WasmGC) that hydrate selected
-components; `server fn` and generated typed RPC belong to that phase.
-See the [Phase 5 implementation plan](plans/phase-5.md).
+Phase 4 adds Embers compiled to WebAssembly (WasmGC) that hydrate selected
+components; `server fn` and generated typed RPC belong to that phase,
+**without relying on SQL, ORM, sessions or auth**.
+See the [Phase 4 implementation plan](plans/phase-4.md).
+Phase 5 adds database-backed and authenticated uses of those RPC contracts,
+sharing validation across SSR and reactive forms.
 
 ### Phase 3: native styling, Finishes and themes
 
@@ -616,8 +619,10 @@ results, screenshots and CI output. Browser automation should reuse
 an established browser/protocol implementation rather than inventing
 another browser or requiring a separate Node testing project.
 
-Phase 5 adds real-browser CI smoke and conformance tests for Embers,
+Phase 4 adds real-browser CI smoke and conformance tests for Embers,
 including hydration, browser events, reactive state and typed RPC.
+Phase 5 extends that coverage with authenticated database-backed RPC and
+shared client/server validation.
 Phase 6 delivers the public `kiln test` runner for unit, integration and
 real-browser tests, including Ember behaviour from the outset.
 Browser binaries may need downloading/caching and are not bundled into
@@ -652,4 +657,4 @@ runtime.
 - Should a `.glaze` page with inline code be able to serve a route directly
   (PHP style), or should every route go through a handler?
 - Whether the exact WasmGC browser support matches the plan should be
-  confirmed before phase 5.
+  confirmed before Phase 4's WasmGC implementation.

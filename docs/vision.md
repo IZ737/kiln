@@ -185,7 +185,9 @@ behaviour that is impossible to inspect or debug.
 
 The key promise is that **a Kiln server function and the UI calling it share
 one type contract**, without hand-authoring route wrappers, fetch boilerplate,
-duplicate DTOs or serialization code.
+duplicate DTOs or serialization code. Phase 4 implements this boundary using
+pure or ephemeral-state functions, with Phase 5 adding database-backed,
+authenticated server operations.
 
 ### Static and offline variants
 
@@ -305,7 +307,7 @@ interchangeable. Keep these boundaries explicit and testable.
 
 ### JavaScript and npm for browser Embers
 
-The Phase 5 frontend plan includes JS interoperability so Kiln programs
+The Phase 4 frontend plan includes JS interoperability so Kiln programs
 can reuse the massive existing browser/npm ecosystem instead of
 reimplementing it. The preferred direction is:
 
@@ -452,10 +454,9 @@ The goal is **less repetitive UI plumbing, not less control**:
 - **Progressive interactivity:** the first components that only need
   server-rendered markup/CSS can use Phase 3 facilities. Rich keyboard-
   interactive widgets and stateful behaviours can depend on **Embers**
-  once Phase 5 supplies Embers; don't smuggle a proprietary JavaScript
-  framework
-  into the initial Ware. Form-model/auth integration can deepen after
-  Phase 4 without making simple input components depend on a database.
+  once Phase 4 supplies Embers; don't smuggle a proprietary JavaScript
+  framework into the initial Ware. Phase 5 adds forms/auth integration
+  without making simple input components depend on a database.
 
 The desired developer experience is **bare HTML when you want it, a
 production-minded `<Input>` when you don't, and source you can understand
@@ -465,7 +466,7 @@ system developers have to learn.
 
 **Scheduling:** Phase 3 lays the rendering/styling/Finishes groundwork;
 the component collection ships when **Wares** support it (Phase 6 on
-the current roadmap), after Embers in Phase 5. Its initial components
+the current roadmap), after Embers in Phase 4 and data/auth in Phase 5. Its initial components
 may therefore use Kiln's own interactive system; this does **not** expand
 Phase 3's accepted scope.
 
@@ -563,8 +564,9 @@ debugging and deployment should feel like parts of one toolchain.
   reuses a maintained browser automation engine underneath rather than
   reinventing Chromium or requiring users to maintain a Node-based test
   project. See the [integrated testing plan](plans/testing.md).
-- **Ember coverage from day one:** Phase 5 adds browser CI coverage for
-  Ember hydration, reactive state, events and typed RPC; Phase 6's public
+- **Ember coverage from day one:** Phase 4 adds browser CI coverage for
+  Ember hydration, reactive state, events and typed RPC; Phase 5 adds
+  database/auth/form integration coverage; Phase 6's public
   test runner includes them from its initial release. Formatter, hot reload
   and richer editor refactoring are also Phase 6 work.
 - **Agent-friendly contracts:** structured JSON diagnostics, stable error

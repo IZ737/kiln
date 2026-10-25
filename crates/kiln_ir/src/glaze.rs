@@ -392,7 +392,7 @@ impl<'a> Gen<'a> {
             self.glaze,
             Diagnostic::error(
                 codes::NOT_COMPILED_YET,
-                "the compiler cannot build embers yet: `{% state %}` and `on:` handlers run in the browser, which comes in phase 5",
+                "the compiler cannot build embers yet: `{% state %}` and `on:` handlers run in the browser, which comes in phase 4",
                 span,
             )
             .with_help("render the glaze without its state and handlers for now"),
