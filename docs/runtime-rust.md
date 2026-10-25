@@ -1,7 +1,9 @@
 # Plan: less C in the runtime
 
-**Status: proposal, not started.** Nothing here is implemented. It needs a
-decision (see [The decision](#the-decision-hyper-and-kilns-tasks)) before any code moves.
+**Status: accepted, not started.** Jake chose option A (hyper on Kiln's own
+tasks; see [The decision](#the-decision-hyper-and-kilns-tasks)) on
+2026-10-25. Nothing here is implemented yet; the work follows the
+[migration order](#migration-order).
 
 ## The problem
 

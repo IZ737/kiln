@@ -442,12 +442,16 @@ of the developer workflow. Debugging remains a separate later milestone.
   projects, an MCP server (`kiln mcp`), task examples tested in CI, and an
   agent benchmark that gates releases.
 
+## Moving the runtime off C
+
+The network-facing parts of the runtime (HTTP, JSON, later TLS) are moving
+from hand-written C to maintained Rust libraries (hyper, serde_json,
+rustls), with hyper running on Kiln's own tasks. The plan, its rules and
+its order are in [runtime-rust.md](runtime-rust.md).
+
 ## Open questions
 
 - Should a `.glaze` page with inline code be able to serve a route directly
   (PHP style), or should every route go through a handler?
 - Whether the exact WasmGC browser support matches the plan should be
   confirmed before phase 6.
-- Should the network-facing parts of the runtime (HTTP, JSON, later TLS)
-  move from C to Rust libraries such as hyper and serde_json? See the
-  proposal in [runtime-rust.md](runtime-rust.md).
