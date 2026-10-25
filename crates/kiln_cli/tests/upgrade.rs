@@ -213,6 +213,63 @@ fn commands_in_a_terminal_say_a_newer_kiln_is_out() {
     assert!(!run("1").contains("is available"));
 }
 
+/// What happened with 0.5.3: `kiln upgrade` recorded a check, and a newer
+/// release came out an hour or two later. Commands in a terminal start a
+/// check in the background, and the command after it says so.
+#[test]
+fn a_release_after_an_upgrade_is_noticed() {
+    if Command::new("script").arg("--version").output().is_err() {
+        return;
+    }
+    let exe = kiln_copy("refresh");
+    let base = serve(false);
+    let home = exe.parent().unwrap().join("home");
+    std::fs::create_dir_all(&home).unwrap();
+    let cache = home.join("update-check");
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+    let current = env!("CARGO_PKG_VERSION");
+    std::fs::write(&cache, format!("{}\nv{current}\n", now - 2 * 60 * 60)).unwrap();
+    let run = || {
+        let out = Command::new("script")
+            .args([
+                "-qec",
+                &format!("{} explain E0101", exe.display()),
+                "/dev/null",
+            ])
+            .env("KILN_HOME", &home)
+            .env("KILN_RELEASES_URL", &base)
+            .env_remove("KILN_NO_UPDATE_CHECK")
+            .env_remove("CI")
+            .env_remove("HTTP_PROXY")
+            .env_remove("HTTPS_PROXY")
+            .env_remove("http_proxy")
+            .env_remove("https_proxy")
+            .env_remove("ALL_PROXY")
+            .env_remove("all_proxy")
+            .output()
+            .unwrap();
+        String::from_utf8_lossy(&out.stdout).into_owned()
+    };
+    assert!(!run().contains("is available"));
+    // The background check outlives the command and records v9.0.0.
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(20);
+    while !std::fs::read_to_string(&cache)
+        .unwrap_or_default()
+        .contains("v9.0.0")
+    {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "the background check did not record the new release"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(100));
+    }
+    let shown = run();
+    assert!(shown.contains("note: kiln 9.0.0 is available"), "{shown}");
+}
+
 #[test]
 fn upgrade_refuses_a_download_with_the_wrong_checksum() {
     let exe = kiln_copy("checksum");

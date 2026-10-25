@@ -828,7 +828,7 @@ dependencies = [
 
 [[package]]
 name = "kiln_check"
-version = "0.5.4"
+version = "0.5.5"
 dependencies = [
  "kiln_diagnostics",
  "kiln_syntax",
@@ -836,7 +836,7 @@ dependencies = [
 
 [[package]]
 name = "kiln_cli"
-version = "0.5.4"
+version = "0.5.5"
 dependencies = [
  "clap",
  "flate2",
@@ -857,7 +857,7 @@ dependencies = [
 
 [[package]]
 name = "kiln_codegen"
-version = "0.5.4"
+version = "0.5.5"
 dependencies = [
  "kiln_check",
  "kiln_diagnostics",
@@ -867,7 +867,7 @@ dependencies = [
 
 [[package]]
 name = "kiln_diagnostics"
-version = "0.5.4"
+version = "0.5.5"
 dependencies = [
  "serde",
  "serde_json",
@@ -875,7 +875,7 @@ dependencies = [
 
 [[package]]
 name = "kiln_ir"
-version = "0.5.4"
+version = "0.5.5"
 dependencies = [
  "kiln_check",
  "kiln_diagnostics",
@@ -884,7 +884,7 @@ dependencies = [
 
 [[package]]
 name = "kiln_native"
-version = "0.5.4"
+version = "0.5.5"
 dependencies = [
  "cranelift-codegen",
  "cranelift-frontend",
@@ -904,7 +904,7 @@ version = "0.5.4"
 
 [[package]]
 name = "kiln_syntax"
-version = "0.5.4"
+version = "0.5.5"
 dependencies = [
  "kiln_diagnostics",
 ]

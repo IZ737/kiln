@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.5.5 (2026-10-25)
+
+- The notice that a newer kiln is out now asks GitHub once an hour, not
+  once a day. `kiln upgrade` records a check, so a release that came out
+  soon after an upgrade went unnoticed until the next day.
+
 ## 0.5.4 (2026-10-25)
 
 - **Completion as you type in VS Code.** The extension told VS Code that

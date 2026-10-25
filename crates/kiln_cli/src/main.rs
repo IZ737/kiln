@@ -110,7 +110,7 @@ enum Command {
         force: bool,
     },
     /// Record the latest release for the notice that a newer kiln is out.
-    /// Other commands start it in the background once a day.
+    /// Other commands start it in the background once an hour.
     #[command(hide = true)]
     UpdateCheck,
 }
