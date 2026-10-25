@@ -8,6 +8,7 @@
 mod checker;
 mod collect;
 mod glaze;
+pub mod ide;
 pub mod types;
 
 use kiln_diagnostics::{Diagnostic, Span};
@@ -17,8 +18,9 @@ use std::collections::HashMap;
 /// Type-checks a parsed file on its own. Call it only on a file without
 /// parse errors. `web.render` calls are not checked, because the glazes
 /// they name are not known.
-/// The source of a standard library module, such as `web`. Its function
-/// bodies are placeholders, but the default values of parameters are real.
+/// The source of a standard library module, such as `web`, or of the
+/// `prelude`. Its function bodies are placeholders, but the default values
+/// of parameters are real.
 pub fn std_source(name: &str) -> Option<&'static str> {
     checker::std_source(name)
 }
@@ -97,81 +99,109 @@ pub struct AppDiagnostics {
 /// props of the glazes. Glazes are given with their file names, such as
 /// `"index.glaze"`. Call it only on files without parse errors.
 pub fn check_app(modules: &[&Module], glazes: &[(&str, &Glaze)]) -> AppDiagnostics {
-    let module_diags = (0..modules.len())
-        .map(|i| {
-            let mut checker = checker::Checker::new();
-            // Each file's errors are reported with that file only.
-            let mut own = Vec::new();
-            let mut keep = |checker: &mut checker::Checker, j: usize, before: usize| {
-                let new = checker.diags.split_off(before);
-                if i == j {
-                    own.extend(new);
-                }
-            };
-            let imports: Vec<_> = (0..modules.len())
-                .map(|j| {
-                    let before = checker.diags.len();
-                    let imports = checker.collect_imports(modules[j]);
-                    keep(&mut checker, j, before);
-                    imports
-                })
-                .collect();
-            for (j, module) in modules.iter().enumerate() {
-                checker.imports = imports[j].clone();
-                let before = checker.diags.len();
-                checker.declare_types(module, checker::Scope::Global);
-                keep(&mut checker, j, before);
-            }
-            for (j, module) in modules.iter().enumerate() {
-                checker.imports = imports[j].clone();
-                let before = checker.diags.len();
-                checker.define_items(module, checker::Scope::Global);
-                keep(&mut checker, j, before);
-            }
-            for (j, module) in modules.iter().enumerate() {
-                if j != i {
-                    checker.imports = imports[j].clone();
-                    let before = checker.diags.len();
-                    checker.check_consts(module);
-                    keep(&mut checker, j, before);
-                }
-            }
-            checker.imports = imports[i].clone();
-            checker.glazes = Some(Default::default());
-            for (file, glaze) in glazes {
-                checker.register_glaze(file, glaze);
-            }
-            // Errors in glaze props are reported with the glaze.
-            checker.diags = own;
-            checker.check_bodies(modules[i]);
-            sorted(checker.diags)
-        })
-        .collect();
-    let glaze_diags = glazes
-        .iter()
-        .map(|(file, glaze)| {
-            let mut checker = checker::Checker::new();
-            for module in modules {
-                checker.collect_module(module);
-            }
-            // Errors in the modules are reported with the modules.
-            checker.diags.clear();
-            checker.glazes = Some(Default::default());
-            for (other, other_glaze) in glazes {
-                let before = checker.diags.len();
-                checker.register_glaze(other, other_glaze);
-                if other != file {
-                    checker.diags.truncate(before);
-                }
-            }
-            checker.check_glaze(file, glaze);
-            sorted(checker.diags)
-        })
-        .collect();
     AppDiagnostics {
-        modules: module_diags,
-        glazes: glaze_diags,
+        modules: (0..modules.len())
+            .map(|i| sorted(module_checker(modules, glazes, i, false).diags))
+            .collect(),
+        glazes: (0..glazes.len())
+            .map(|i| sorted(glaze_checker(modules, glazes, i, false).diags))
+            .collect(),
     }
+}
+
+/// Checks the `i`th module of an app, with only that file's errors left in
+/// the checker. With `analyze`, it also records what that file's names refer
+/// to, and its types are the only ones recorded.
+fn module_checker(
+    modules: &[&Module],
+    glazes: &[(&str, &Glaze)],
+    i: usize,
+    analyze: bool,
+) -> checker::Checker {
+    let mut checker = checker::Checker::new();
+    checker.completing = analyze;
+    // Each file's errors are reported with that file only.
+    let mut own = Vec::new();
+    let mut keep = |checker: &mut checker::Checker, j: usize, before: usize| {
+        let new = checker.diags.split_off(before);
+        if i == j {
+            own.extend(new);
+        }
+    };
+    let imports: Vec<_> = (0..modules.len())
+        .map(|j| {
+            let before = checker.diags.len();
+            checker.recording = analyze && i == j;
+            let imports = checker.collect_imports(modules[j]);
+            keep(&mut checker, j, before);
+            imports
+        })
+        .collect();
+    for (j, module) in modules.iter().enumerate() {
+        checker.imports = imports[j].clone();
+        let before = checker.diags.len();
+        checker.declare_types(module, checker::Scope::Global);
+        keep(&mut checker, j, before);
+    }
+    for (j, module) in modules.iter().enumerate() {
+        checker.imports = imports[j].clone();
+        checker.recording = analyze && i == j;
+        let before = checker.diags.len();
+        checker.define_items(module, checker::Scope::Global);
+        keep(&mut checker, j, before);
+    }
+    checker.recording = false;
+    for (j, module) in modules.iter().enumerate() {
+        if j != i {
+            checker.imports = imports[j].clone();
+            let before = checker.diags.len();
+            checker.check_consts(module);
+            keep(&mut checker, j, before);
+        }
+    }
+    checker.imports = imports[i].clone();
+    checker.glazes = Some(Default::default());
+    for (file, glaze) in glazes {
+        checker.register_glaze(file, glaze);
+    }
+    // Errors in glaze props are reported with the glaze.
+    checker.diags = own;
+    checker.expr_types.clear();
+    checker.binding_types.clear();
+    checker.recording = analyze;
+    checker.check_bodies(modules[i]);
+    checker
+}
+
+/// Checks the `i`th glaze of an app, as `module_checker` does a module.
+fn glaze_checker(
+    modules: &[&Module],
+    glazes: &[(&str, &Glaze)],
+    i: usize,
+    analyze: bool,
+) -> checker::Checker {
+    let (file, glaze) = glazes[i];
+    let mut checker = checker::Checker::new();
+    checker.completing = analyze;
+    for module in modules {
+        checker.collect_module(module);
+    }
+    // Errors in the modules are reported with the modules.
+    checker.diags.clear();
+    checker.glazes = Some(Default::default());
+    for (other, other_glaze) in glazes {
+        let before = checker.diags.len();
+        checker.recording = analyze && *other == file;
+        checker.register_glaze(other, other_glaze);
+        if *other != file {
+            checker.diags.truncate(before);
+        }
+    }
+    checker.expr_types.clear();
+    checker.binding_types.clear();
+    checker.recording = analyze;
+    checker.check_glaze(file, glaze);
+    checker
 }
 
 fn sorted(mut diags: Vec<Diagnostic>) -> Vec<Diagnostic> {

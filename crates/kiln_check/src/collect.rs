@@ -2,6 +2,7 @@
 //! the standard library and for the file being checked.
 
 use crate::checker::{Checker, Scope};
+use crate::ide::{Completion, Ref};
 use crate::types::*;
 use kiln_diagnostics::{codes, Diagnostic, Span};
 use kiln_syntax::ast::{self, Item, Module, Throws, TypeExpr, TypeKind};
@@ -292,9 +293,28 @@ impl Checker {
                         _ => {}
                     }
                 }
+                if path.last().is_some_and(|n| self.is_marker(&n.name)) {
+                    let module = match &path[..] {
+                        [module, _] => self.imports.get(&module.name).copied(),
+                        _ => None,
+                    };
+                    self.complete(match module {
+                        Some(m) => Completion::ModuleTypes(m),
+                        None => Completion::Types,
+                    });
+                    return Ty::Unknown;
+                }
                 let Some(id) = self.resolve_type_path(path, t.span, scope) else {
                     return Ty::Unknown;
                 };
+                if let (Some(last), Scope::Global) = (path.last(), scope) {
+                    if path.len() == 2 {
+                        if let Some(&m) = self.imports.get(&path[0].name) {
+                            self.refer(path[0].span, Ref::Module(m));
+                        }
+                    }
+                    self.refer(last.span, Ref::Type(id));
+                }
                 let args: Vec<Ty> = args
                     .iter()
                     .map(|a| self.resolve_type(a, generics, scope))

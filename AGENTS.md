@@ -86,9 +86,13 @@ Run `cargo fmt --all`, `cargo clippy --all-targets -- -D warnings` and
   JSON in `kiln.c`. The two backends must behave the same: the
   conformance tests run every program with both.
 - `crates/kiln_cli`: the `kiln` binary (`check`, `build`, `run`, `lsp`,
-  `parse`, `explain`, `upgrade`). `lsp.rs` is the language server; it reuses
-  `check_sources` from `main.rs`, so editors and `kiln check` report the same
-  errors.
+  `parse`, `explain`, `upgrade`). `lsp/mod.rs` is the language server; it
+  reuses `check_sources` from `main.rs`, so editors and `kiln check` report
+  the same errors. `lsp/features.rs` answers hover, definition, completion
+  and symbol requests from `kiln_check::ide`, where the checker records what
+  each name refers to (`Ref`) and what fits at `COMPLETION_MARKER`, which the
+  server writes at the cursor. A checker change that resolves a new kind of
+  name calls `refer` there too; `tests/lsp.rs` drives the server.
 - `editors/vscode`: the VS Code extension. `syntaxes/` holds the TextMate
   grammars for Kiln (`source.kiln`) and Glaze (`text.html.glaze`), and
   `icons/` copies of the brand icons. It stays a thin client: anything

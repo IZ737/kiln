@@ -54,12 +54,12 @@ impl Checker {
                 if let Some(default) = &p.default {
                     self.check(default, &ty);
                 }
-                self.bind(&p.name.name, ty, false, None);
+                self.bind(&p.name.name, p.name.span, ty, false, None);
             }
         }
         for state in &glaze.states {
             let ty = self.local_value(state);
-            self.bind(&state.name.name, ty, true, None);
+            self.bind(&state.name.name, state.name.span, ty, true, None);
         }
         if let Some(layout) = &glaze.layout {
             self.check_layout(layout);
@@ -96,7 +96,7 @@ impl Checker {
                 }
                 Node::Let(decl) => {
                     let ty = self.local_value(decl);
-                    self.bind(&decl.name.name, ty, false, None);
+                    self.bind(&decl.name.name, decl.name.span, ty, false, None);
                 }
                 Node::Element(e) if e.is_component() => self.check_component(e),
                 Node::Element(e) => {
@@ -132,7 +132,7 @@ impl Checker {
                 } => {
                     let elem = self.element_type(iter);
                     self.push_scope();
-                    self.bind(&binding.name, elem, false, None);
+                    self.bind(&binding.name, binding.span, elem, false, None);
                     if let Some(f) = filter {
                         let bool_ty = self.prim("Bool");
                         self.check(f, &bool_ty);

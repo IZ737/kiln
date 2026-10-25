@@ -1,6 +1,7 @@
 //! The type checker: name resolution, inference by unification, and the
 //! rules for errors (`try`, `catch`, `throw`), patterns and routes.
 
+use crate::ide::{Completion, Ref, COMPLETION_MARKER};
 use crate::types::*;
 use kiln_diagnostics::{codes, Diagnostic, Span};
 use kiln_syntax::ast::*;
@@ -28,6 +29,8 @@ pub(crate) struct Local {
     pub(crate) mutable: bool,
     /// The `let` keyword, so an assignment error can suggest `var`.
     let_span: Option<Span>,
+    /// The name where it was bound.
+    def: Span,
 }
 
 pub(crate) struct FnCtx {
@@ -81,6 +84,13 @@ pub struct Checker {
     /// Types and functions with ids or names below these come from the
     /// standard library.
     pub(crate) std_adts: usize,
+    /// Whether to record what names refer to, for the language server.
+    pub(crate) recording: bool,
+    pub(crate) references: Vec<(Span, Ref)>,
+    /// Whether `COMPLETION_MARKER` marks where the editor wants completions,
+    /// and what is wanted there once it is found.
+    pub(crate) completing: bool,
+    pub(crate) completion: Option<Completion>,
 }
 
 /// What other files need to know about a glaze.
@@ -139,6 +149,10 @@ impl Checker {
             expr_types: HashMap::new(),
             binding_types: HashMap::new(),
             std_adts: 0,
+            recording: false,
+            references: Vec::new(),
+            completing: false,
+            completion: None,
         };
         let prelude = parse_std("prelude", PRELUDE);
         checker.declare_types(&prelude, Scope::Global);
@@ -197,6 +211,7 @@ impl Checker {
                     let span = path[0].span.to(path[path.len() - 1].span);
                     match self.modules.iter().position(|m| m.name == name) {
                         Some(id) => {
+                            self.refer(span, Ref::Module(id));
                             imports.insert(path[path.len() - 1].name.clone(), id);
                         }
                         None => {
@@ -240,6 +255,7 @@ impl Checker {
 
     /// Constants, function bodies and field defaults.
     pub(crate) fn check_bodies(&mut self, module: &Module) {
+        self.refer_declarations(module);
         self.check_consts(module);
         for item in &module.items {
             match item {
@@ -327,7 +343,7 @@ impl Checker {
     }
 
     /// Resolves inference variables everywhere inside a type.
-    fn zonk(&self, ty: &Ty) -> Ty {
+    pub(crate) fn zonk(&self, ty: &Ty) -> Ty {
         match self.resolve(ty) {
             Ty::Adt(id, args) => Ty::Adt(id, args.iter().map(|a| self.zonk(a)).collect()),
             Ty::Opt(inner) => Ty::Opt(Box::new(self.zonk(&inner))),
@@ -443,43 +459,7 @@ impl Checker {
     }
 
     pub(crate) fn show(&self, ty: &Ty) -> String {
-        match self.resolve(ty) {
-            Ty::Adt(id, args) => {
-                let name = &self.adts[id].name;
-                if args.is_empty() {
-                    name.clone()
-                } else {
-                    let args: Vec<String> = args.iter().map(|a| self.show(a)).collect();
-                    format!("{name}<{}>", args.join(", "))
-                }
-            }
-            Ty::Opt(inner) => format!("{}?", self.show(&inner)),
-            Ty::Fn(f) => {
-                let params: Vec<String> = f.params.iter().map(|p| self.show(p)).collect();
-                let mut s = format!("fn({})", params.join(", "));
-                if f.ret != Ty::Unit {
-                    s += &format!(" -> {}", self.show(&f.ret));
-                }
-                if f.throws.is_some() {
-                    s += " !";
-                }
-                s
-            }
-            Ty::Record(fields) => {
-                let fields: Vec<String> = fields
-                    .iter()
-                    .map(|(n, t)| format!("{n}: {}", self.show(t)))
-                    .collect();
-                format!("{{ {} }}", fields.join(", "))
-            }
-            Ty::Param(name) => name,
-            Ty::Var(_) => "_".into(),
-            Ty::Unit => "()".into(),
-            Ty::Never => "Never".into(),
-            Ty::Any => "Any".into(),
-            Ty::Rest => "...".into(),
-            Ty::Unknown => "{unknown}".into(),
-        }
+        show_type(&self.adts, &self.resolve(ty), &|t| self.resolve(t))
     }
 
     // ----- scopes -----
@@ -492,7 +472,16 @@ impl Checker {
         self.scopes.pop();
     }
 
-    pub(crate) fn bind(&mut self, name: &str, ty: Ty, mutable: bool, let_span: Option<Span>) {
+    /// Binds `name`, written at `def`, in the innermost scope.
+    pub(crate) fn bind(
+        &mut self,
+        name: &str,
+        def: Span,
+        ty: Ty,
+        mutable: bool,
+        let_span: Option<Span>,
+    ) {
+        self.record_binding(def, &ty);
         if name.is_empty() || name == "_" {
             return;
         }
@@ -502,8 +491,102 @@ impl Checker {
                 ty,
                 mutable,
                 let_span,
+                def,
             },
         );
+    }
+
+    // ----- the language server -----
+
+    /// Records that the name at `span` refers to `target`.
+    pub(crate) fn refer(&mut self, span: Span, target: Ref) {
+        if self.recording {
+            self.references.push((span, target));
+        }
+    }
+
+    /// Whether `name` is where the editor wants completions.
+    pub(crate) fn is_marker(&self, name: &str) -> bool {
+        self.completing && name == COMPLETION_MARKER
+    }
+
+    pub(crate) fn complete(&mut self, completion: Completion) {
+        if self.completion.is_none() {
+            self.completion = Some(completion);
+        }
+    }
+
+    /// The locals in scope, innermost first, each name once.
+    fn visible_locals(&self) -> Vec<(String, Ty)> {
+        let mut seen = HashSet::new();
+        let mut out = Vec::new();
+        for scope in self.scopes.iter().rev() {
+            let mut names: Vec<(&String, &Local)> = scope.iter().collect();
+            names.sort_by_key(|(_, l)| std::cmp::Reverse(l.def.start));
+            for (name, local) in names {
+                if seen.insert(name.clone()) {
+                    out.push((name.clone(), local.ty.clone()));
+                }
+            }
+        }
+        out
+    }
+
+    /// Completions after `base.`.
+    fn complete_member(&mut self, base: &Expr) {
+        if let Some(m) = self.module_named(base) {
+            self.refer(base.span, Ref::Module(m));
+            self.complete(Completion::Module(m));
+        } else if let Some(id) = self.type_named(base) {
+            self.refer(base.span, Ref::Type(id));
+            self.complete(Completion::TypeMembers(id));
+        } else {
+            let ty = self.infer(base, &Expect::Value(None));
+            self.complete(Completion::Members(ty));
+        }
+    }
+
+    /// Records what the names in a file's declarations are.
+    fn refer_declarations(&mut self, module: &Module) {
+        if !self.recording {
+            return;
+        }
+        for item in &module.items {
+            match item {
+                Item::Fn(f) => self.refer(f.name.span, Ref::Fn(f.name.name.clone())),
+                Item::Const(c) => self.refer(c.name.span, Ref::Const(c.name.name.clone())),
+                Item::Struct(s) => {
+                    let Some(&id) = self.global_types.get(&s.name.name) else {
+                        continue;
+                    };
+                    self.refer(s.name.span, Ref::Type(id));
+                    for f in &s.fields {
+                        self.refer(f.name.span, Ref::Field(id, f.name.name.clone()));
+                    }
+                }
+                Item::Enum(e) => {
+                    let Some(&id) = self.global_types.get(&e.name.name) else {
+                        continue;
+                    };
+                    self.refer(e.name.span, Ref::Type(id));
+                    for v in &e.variants {
+                        self.refer(v.name.span, Ref::Variant(id, v.name.name.clone()));
+                    }
+                }
+                Item::Impl(imp) => {
+                    let TypeKind::Named { path, .. } = &imp.target.kind else {
+                        continue;
+                    };
+                    let Some(&id) = path.last().and_then(|n| self.global_types.get(&n.name)) else {
+                        continue;
+                    };
+                    for m in &imp.methods {
+                        self.refer(m.name.span, Ref::Method(id, m.name.name.clone()));
+                    }
+                }
+                Item::Import(_) => {}
+            }
+        }
     }
 
     pub(crate) fn local(&self, name: &str) -> Option<&Local> {
@@ -570,8 +653,7 @@ impl Checker {
             if let Some(default) = &p.default {
                 self.check(default, &ty);
             }
-            self.record_binding(p.name.span, &ty);
-            self.bind(&p.name.name, ty, false, None);
+            self.bind(&p.name.name, p.name.span, ty, false, None);
         }
         let outer_params = std::mem::replace(&mut self.type_params, generics);
         self.check_body(&f.body, &ret);
@@ -653,8 +735,7 @@ impl Checker {
                     }
                 };
                 let keyword = Span::new(span.start as usize, span.start as usize + 3);
-                self.record_binding(name.span, &ty);
-                self.bind(&name.name, ty, *mutable, Some(keyword));
+                self.bind(&name.name, name.span, ty, *mutable, Some(keyword));
             }
             Stmt::Assign {
                 target, op, value, ..
@@ -734,8 +815,7 @@ impl Checker {
             } => {
                 let elem = self.element_type(iter);
                 self.push_scope();
-                self.record_binding(binding.span, &elem);
-                self.bind(&binding.name, elem, false, None);
+                self.bind(&binding.name, binding.span, elem, false, None);
                 if let Some(f) = filter {
                     let bool_ty = self.prim("Bool");
                     self.check(f, &bool_ty);
@@ -1008,8 +1088,7 @@ impl Checker {
                 };
                 self.push_scope();
                 if let Some(b) = binding {
-                    self.record_binding(b.span, &err);
-                    self.bind(&b.name, err, false, None);
+                    self.bind(&b.name, b.span, err, false, None);
                 }
                 let handled = self.check_block(handler, &Expect::Value(Some(ty.clone())));
                 self.pop_scope();
@@ -1246,10 +1325,18 @@ impl Checker {
     // ----- names, fields and calls -----
 
     pub(crate) fn infer_ident(&mut self, name: &str, span: Span) -> Ty {
+        if self.is_marker(name) {
+            let locals = self.visible_locals();
+            self.complete(Completion::Names(locals));
+            return Ty::Unknown;
+        }
         if let Some(local) = self.local(name) {
-            return local.ty.clone();
+            let (ty, def) = (local.ty.clone(), local.def);
+            self.refer(span, Ref::Local(def));
+            return ty;
         }
         if let Some(sig) = self.global_fns.get(name).cloned() {
+            self.refer(span, Ref::Fn(name.to_string()));
             let (params, ret, throws) = self.instantiate(&sig, &[], &[], span);
             return Ty::Fn(Rc::new(FnTy {
                 params: params.into_iter().map(|p| p.ty).collect(),
@@ -1257,10 +1344,12 @@ impl Checker {
                 throws,
             }));
         }
-        if let Some(ty) = self.consts.get(name) {
-            return ty.clone();
+        if let Some(ty) = self.consts.get(name).cloned() {
+            self.refer(span, Ref::Const(name.to_string()));
+            return ty;
         }
-        if self.global_types.contains_key(name) {
+        if let Some(&id) = self.global_types.get(name) {
+            self.refer(span, Ref::Type(id));
             self.error(
                 Diagnostic::error(
                     codes::NOT_CALLABLE,
@@ -1271,7 +1360,8 @@ impl Checker {
             );
             return Ty::Unknown;
         }
-        if self.imports.contains_key(name) {
+        if let Some(&m) = self.imports.get(name) {
+            self.refer(span, Ref::Module(m));
             self.error(
                 Diagnostic::error(
                     codes::NOT_CALLABLE,
@@ -1342,6 +1432,19 @@ impl Checker {
         }
     }
 
+    /// Records what the type name `Role` or `web.Response` refers to.
+    fn refer_type_name(&mut self, e: &Expr, id: AdtId) {
+        match &e.kind {
+            ExprKind::Field { expr, name } => {
+                if let Some(m) = self.module_named(expr) {
+                    self.refer(expr.span, Ref::Module(m));
+                }
+                self.refer(name.span, Ref::Type(id));
+            }
+            _ => self.refer(e.span, Ref::Type(id)),
+        }
+    }
+
     /// Reports a server-only module used in browser code.
     fn use_module(&mut self, m: ModId, span: Span) {
         let name = &self.modules[m].name;
@@ -1356,7 +1459,12 @@ impl Checker {
     }
 
     fn infer_field(&mut self, base: &Expr, name: &Ident, span: Span) -> Ty {
+        if self.is_marker(&name.name) {
+            self.complete_member(base);
+            return Ty::Unknown;
+        }
         if let Some(m) = self.module_named(base) {
+            self.refer(base.span, Ref::Module(m));
             self.use_module(m, base.span);
             let module = &self.modules[m];
             if module.fns.contains_key(&name.name) {
@@ -1374,6 +1482,7 @@ impl Checker {
             return Ty::Unknown;
         }
         if let Some(id) = self.type_named(base) {
+            self.refer_type_name(base, id);
             return self.variant_value(id, name, span);
         }
         let base_ty = self.infer(base, &Expect::Value(None));
@@ -1413,6 +1522,9 @@ impl Checker {
             ));
             return Ty::Unknown;
         };
+        if variants.iter().any(|v| v.name == name.name) {
+            self.refer(name.span, Ref::Variant(id, name.name.clone()));
+        }
         match variants.iter().find(|v| v.name == name.name) {
             Some(v) if v.fields.is_empty() => {
                 let args = adt.params.iter().map(|_| self.fresh()).collect();
@@ -1504,10 +1616,12 @@ impl Checker {
                     .collect();
                 if let AdtKind::Struct(fields) = &adt.kind {
                     if let Some(f) = fields.iter().find(|f| f.name == name.name) {
+                        self.refer(name.span, Ref::Field(id, name.name.clone()));
                         return substitute(&f.ty, &map);
                     }
                 }
                 if let Some(m) = adt.methods.iter().find(|m| m.name == name.name) {
+                    self.refer(name.span, Ref::Method(id, name.name.clone()));
                     if call_methods && m.params.is_empty() {
                         let (_, ret, _) = self.instantiate(m, &args, &[], span);
                         return ret;
@@ -1643,7 +1757,18 @@ impl Checker {
 
         // `module.function(...)` or `module.Type(...)`
         if let ExprKind::Field { expr: base, name } = &callee.kind {
+            if self.is_marker(&name.name) {
+                self.complete_member(base);
+                self.infer_args_loosely(args);
+                return (Ty::Unknown, None);
+            }
             if let Some(m) = self.module_named(base) {
+                self.refer(base.span, Ref::Module(m));
+                if self.modules[m].fns.contains_key(&name.name) {
+                    self.refer(name.span, Ref::ModuleFn(m, name.name.clone()));
+                } else if let Some(&id) = self.modules[m].types.get(&name.name) {
+                    self.refer(name.span, Ref::Type(id));
+                }
                 self.use_module(m, base.span);
                 if self.modules[m].name == "web" && name.name == "render" && self.glazes.is_some() {
                     let ret = self.modules[m].fns["render"].ret.clone();
@@ -1663,6 +1788,7 @@ impl Checker {
                 return (Ty::Unknown, None);
             }
             if let Some(id) = self.type_named(base) {
+                self.refer_type_name(base, id);
                 // `Type.function(...)`, for methods without `self`
                 let sig = self.adts[id]
                     .methods
@@ -1670,6 +1796,7 @@ impl Checker {
                     .find(|m| m.name == name.name && !m.has_self)
                     .cloned();
                 if let Some(sig) = sig {
+                    self.refer(name.span, Ref::Method(id, name.name.clone()));
                     let (params, ret, throws) = self.instantiate(&sig, &[], &explicit, e.span);
                     self.check_args(&params, args, e.span, &fn_name, None);
                     return (ret, throws);
@@ -1682,11 +1809,13 @@ impl Checker {
         if let ExprKind::Ident(name) = &callee.kind {
             if self.local(name).is_none() {
                 if let Some(sig) = self.global_fns.get(name).cloned() {
+                    self.refer(callee.span, Ref::Fn(name.clone()));
                     let (params, ret, throws) = self.instantiate(&sig, &[], &explicit, e.span);
                     self.check_args(&params, args, e.span, &fn_name, None);
                     return (ret, throws);
                 }
                 if let Some(id) = self.global_types.get(name).copied() {
+                    self.refer(callee.span, Ref::Type(id));
                     return (self.construct(id, &explicit, args, e.span), None);
                 }
             }
@@ -1698,6 +1827,7 @@ impl Checker {
             if let Ty::Adt(id, recv_args) = self.resolve(&base_ty) {
                 let adt = self.adts[id].clone();
                 if let Some(sig) = adt.methods.iter().find(|m| m.name == name.name) {
+                    self.refer(name.span, Ref::Method(id, name.name.clone()));
                     if !sig.has_self {
                         let call = format!("{}.{}", adt.name, sig.name);
                         self.error(
@@ -1809,6 +1939,15 @@ impl Checker {
                 has_default: f.has_default,
             })
             .collect();
+        for arg in args {
+            if let Some(n) = arg
+                .name
+                .as_ref()
+                .filter(|n| fields.iter().any(|f| f.name == n.name))
+            {
+                self.refer(n.span, Ref::Field(id, n.name.clone()));
+            }
+        }
         self.check_args(&params, args, span, &adt.name, None);
         Ty::Adt(id, type_args)
     }
@@ -1833,6 +1972,7 @@ impl Checker {
             self.infer_args_loosely(args);
             return Ty::Unknown;
         };
+        self.refer(name.span, Ref::Variant(id, name.name.clone()));
         let type_args: Vec<Ty> = adt.params.iter().map(|_| self.fresh()).collect();
         let map: HashMap<String, Ty> = adt
             .params
@@ -2112,8 +2252,7 @@ impl Checker {
         self.enter_fn(ret_ty.clone(), throws.clone(), None);
         self.fns.last_mut().unwrap().infer_throws = infer;
         for (p, ty) in params.iter().zip(&param_tys) {
-            self.record_binding(p.name.span, ty);
-            self.bind(&p.name.name, ty.clone(), false, None);
+            self.bind(&p.name.name, p.name.span, ty.clone(), false, None);
         }
         let resolved_ret = self.resolve(&ret_ty);
         if resolved_ret == Ty::Unit {
@@ -2205,10 +2344,7 @@ impl Checker {
     pub(crate) fn check_pattern(&mut self, p: &Pattern, ty: &Ty) {
         match &p.kind {
             PatternKind::Wildcard | PatternKind::Error => {}
-            PatternKind::Binding(name) => {
-                self.record_binding(p.span, ty);
-                self.bind(name, ty.clone(), false, None)
-            }
+            PatternKind::Binding(name) => self.bind(name, p.span, ty.clone(), false, None),
             PatternKind::Literal(e) => self.check(e, ty),
             PatternKind::None => match self.resolve(ty) {
                 Ty::Opt(_) | Ty::Unknown | Ty::Var(_) => {}
@@ -2274,6 +2410,10 @@ impl Checker {
                     self.no_variant(&adt, variants, last);
                     return;
                 };
+                if path.len() == 2 {
+                    self.refer(path[0].span, Ref::Type(id));
+                }
+                self.refer(last.span, Ref::Variant(id, last.name.clone()));
                 if !args.is_empty() && args.len() != variant.fields.len() {
                     self.error(Diagnostic::error(
                         codes::BAD_ARGUMENTS,
@@ -2373,7 +2513,52 @@ impl Checker {
     }
 }
 
+/// How a type is written, using `resolve` on each part first.
+pub(crate) fn show_type(adts: &[AdtDef], ty: &Ty, resolve: &dyn Fn(&Ty) -> Ty) -> String {
+    let show = |t: &Ty| show_type(adts, &resolve(t), resolve);
+    match ty {
+        Ty::Adt(id, args) => {
+            let name = &adts[*id].name;
+            if args.is_empty() {
+                name.clone()
+            } else {
+                let args: Vec<String> = args.iter().map(show).collect();
+                format!("{name}<{}>", args.join(", "))
+            }
+        }
+        Ty::Opt(inner) => format!("{}?", show(inner)),
+        Ty::Fn(f) => {
+            let params: Vec<String> = f.params.iter().map(show).collect();
+            let mut s = format!("fn({})", params.join(", "));
+            if f.ret != Ty::Unit {
+                s += &format!(" -> {}", show(&f.ret));
+            }
+            if f.throws.is_some() {
+                s += " !";
+            }
+            s
+        }
+        Ty::Record(fields) => {
+            let fields: Vec<String> = fields
+                .iter()
+                .map(|(n, t)| format!("{n}: {}", show(t)))
+                .collect();
+            format!("{{ {} }}", fields.join(", "))
+        }
+        Ty::Param(name) => name.clone(),
+        Ty::Var(_) => "_".into(),
+        Ty::Unit => "()".into(),
+        Ty::Never => "Never".into(),
+        Ty::Any => "Any".into(),
+        Ty::Rest => "...".into(),
+        Ty::Unknown => "{unknown}".into(),
+    }
+}
+
 pub(crate) fn std_source(name: &str) -> Option<&'static str> {
+    if name == "prelude" {
+        return Some(PRELUDE);
+    }
     STD_MODULES
         .iter()
         .find(|(n, _)| *n == name)
