@@ -143,8 +143,8 @@ kiln upgrade --version v0.3.0   # a particular release, older or newer
 ```
 
 When a newer release is out, kiln says so after a command. It asks GitHub
-once a day, in the background, so commands never wait for it. It only does this in a
-terminal, never in CI; set `KILN_NO_UPDATE_CHECK=1` to turn it off.
+once an hour, in the background, so commands never wait for it. It only
+does this in a terminal, never in CI; set `KILN_NO_UPDATE_CHECK=1` to turn it off.
 
 For VS Code, each release also has the extension as
 `kiln-vscode-<version>.vsix`: install it with `code --install-extension
