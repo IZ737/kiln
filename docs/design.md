@@ -469,6 +469,11 @@ server, then Postgres and MySQL; migrations), `orm`, `admin`, `session`, `auth`
 
 ### ORM
 
+See the [Phase 4 implementation specification](plans/phase-4.md) for the
+proposed typed query APIs, dialect handling, schema import, migrations,
+validation, security and acceptance gates. Examples in that plan are
+**target syntax**, not current executable features.
+
 The `orm` module ships with the standard library, so a database-backed site
 needs no third-party package.
 
