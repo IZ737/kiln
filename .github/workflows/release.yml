@@ -20,12 +20,15 @@ env:
 jobs:
   linux-x86_64:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: x86_64-unknown-linux-musl
-      - run: sudo apt-get update && sudo apt-get install -y musl-tools gcc-mingw-w64-x86-64
+      # A stuck package mirror fails the step instead of hanging.
+      - run: sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=30 update && sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=30 install -y musl-tools gcc-mingw-w64-x86-64
+        timeout-minutes: 5
       - run: cargo build --release --target x86_64-unknown-linux-musl -p kiln_cli
       - run: strip target/x86_64-unknown-linux-musl/release/kiln
       - name: The tag matches the version kiln reports
@@ -50,12 +53,15 @@ jobs:
 
   windows-x86_64-build:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: x86_64-pc-windows-gnu
-      - run: sudo apt-get update && sudo apt-get install -y musl-tools gcc-mingw-w64-x86-64
+      # A stuck package mirror fails the step instead of hanging.
+      - run: sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=30 update && sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=30 install -y musl-tools gcc-mingw-w64-x86-64
+        timeout-minutes: 5
       - run: cargo build --release --target x86_64-pc-windows-gnu -p kiln_cli
       - run: x86_64-w64-mingw32-strip target/x86_64-pc-windows-gnu/release/kiln.exe
       - uses: actions/upload-artifact@v4
@@ -66,6 +72,7 @@ jobs:
   windows-x86_64:
     needs: windows-x86_64-build
     runs-on: windows-latest
+    timeout-minutes: 30
     steps:
       - run: git config --global core.autocrlf false
       - uses: actions/checkout@v4
@@ -92,6 +99,7 @@ jobs:
   # `code --install-extension`.
   vscode:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     defaults:
       run:
         working-directory: editors/vscode
@@ -118,6 +126,7 @@ jobs:
   publish:
     needs: [linux-x86_64, windows-x86_64, vscode]
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
