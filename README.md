@@ -26,10 +26,13 @@ fn main() ! {
 ```
 
 > **Status: phase 1 (core compiler) is done; phase 1.5 (self-contained
-> compiler and executables) is next, before phase 2 (HTTP).** `kiln check`
-> reports syntax and type errors in `.kiln` files and glazes, `kiln lsp`
-> shows them in your editor, and `kiln run` compiles command-line programs to
-> native code through C, with the `time`, `fs`, `os` and `io` modules. The
+> compiler and executables) is in progress, before phase 2 (HTTP).**
+> `kiln check` reports syntax and type errors in `.kiln` files and glazes,
+> `kiln lsp` shows them in your editor, and `kiln run` compiles command-line
+> programs with the `time`, `fs`, `os` and `io` modules. On Linux x86-64,
+> `kiln` compiles to machine code with Cranelift and links static
+> executables itself, so it needs no C compiler, linker or libraries; the C
+> backend (`--backend c`) remains for other platforms. The
 > web standard library (`web`, `sql`, `json`, `auth`) arrives in later
 > phases. See the [roadmap](#roadmap) and
 > [what phase 1 leaves for later](docs/design.md#what-phase-1-leaves-for-later).
@@ -72,11 +75,15 @@ fn main() ! {
 
 ## Try it
 
-To build and use the current phase 1 compiler from source, you need a recent
-stable Rust toolchain, a C compiler, and the Boehm garbage collector
-(`libgc-dev` on Debian and Ubuntu, `gc-devel` on Fedora, `bdw-gc` on
-Homebrew). Phase 1.5 aims to remove these installation requirements for
-people downloading the prebuilt `kiln` compiler.
+To build the compiler from source you need a recent stable Rust toolchain
+and, on Linux x86-64, `musl-gcc` (`musl-tools` on Debian and Ubuntu,
+`musl-gcc` on Fedora), which builds the runtime that `kiln` carries inside
+it. The `kiln` you get then compiles programs with no other tools: its
+executables are static and run on any Linux x86-64 system. Elsewhere, or
+with `--backend c`, `kiln` compiles through C and needs a C compiler and the
+Boehm garbage collector (`libgc-dev` on Debian and Ubuntu, `gc-devel` on
+Fedora, `bdw-gc` on Homebrew). Prebuilt `kiln` downloads come later in
+phase 1.5.
 
 ```sh
 cargo run -p kiln_cli -- run examples/hello     # compile and run a program
@@ -98,6 +105,7 @@ For errors and quick fixes in your editor, see [docs/editors.md](docs/editors.md
 | `crates/kiln_check` | Type checker, and standard library signatures in `std/` |
 | `crates/kiln_ir` | The typed IR between the checker and the backends |
 | `crates/kiln_codegen` | The C backend, and the runtime in `runtime/kiln.c` |
+| `crates/kiln_native` | The native backend: Cranelift code generation, the built-in linker, and the bundled runtime, Boehm GC (`vendor/bdwgc`) and musl |
 | `crates/kiln_cli` | The `kiln` command |
 | `examples/` | Example programs and glazes; every one is checked in CI |
 | `conformance/` | Programs with their expected output; every one is compiled and run in CI |

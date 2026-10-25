@@ -13,7 +13,11 @@ cargo run -p kiln_cli -- check examples      # run the CLI on the examples
 cargo run -p kiln_cli -- run conformance/basics   # compile and run a program
 cargo run -p kiln_cli -- build conformance/basics --emit-c out.c  # see the C
 cargo run -p kiln_cli -- build conformance/basics --emit-ir out.ir  # see the IR
+cargo run -p kiln_cli -- run --backend c conformance/basics   # through C instead
 ```
+
+Building needs `musl-tools` (for the native backend's runtime) and, for the
+C backend and its tests, a C compiler and `libgc-dev`.
 
 Run `cargo fmt --all`, `cargo clippy --all-targets -- -D warnings` and
 `cargo test` before every commit.
@@ -43,6 +47,17 @@ Run `cargo fmt --all`, `cargo clippy --all-targets -- -D warnings` and
 - `crates/kiln_codegen`: the C backend. `emit.rs` turns an IR program into
   C with `emit_c(&ir)`; `runtime/kiln.c` is prepended to it. Building needs
   a C compiler and the Boehm GC (`libgc-dev`).
+- `crates/kiln_native`: the native backend, the default on Linux x86-64.
+  `gen.rs` turns an IR program into an object file with Cranelift
+  (`compile(&ir)`), and `link.rs` links it with the built-in wild linker
+  (`link(&object, out)`). `build.rs` compiles the runtime it links with:
+  `runtime/native.c` (which includes the shared `kiln.c`), the Boehm GC
+  vendored in `vendor/bdwgc`, and musl's C library, all carried inside
+  `kiln`. `runtime.rs` lists the C signatures of the runtime functions the
+  generated code calls. Generated code shows, compares, hashes and orders
+  compound values through `k_desc_*` in `native.c`, which read a
+  description of the type. The two backends must behave the same: the
+  conformance tests run every program with both.
 - `crates/kiln_cli`: the `kiln` binary (`check`, `build`, `run`, `lsp`,
   `parse`, `explain`). `lsp.rs` is the language server; it reuses
   `check_sources` from `main.rs`, so editors and `kiln check` report the same
@@ -81,7 +96,10 @@ Run `cargo fmt --all`, `cargo clippy --all-targets -- -D warnings` and
   module's functions, see the steps in `docs/stdlib.md`.
 - **The compiler never guesses.** A program that type-checks but uses
   something the backend cannot build yet gets E0401 at that spot, never
-  wrong C.
+  wrong code.
+- **Both backends learn every feature.** A change to what the compiler
+  builds goes in `kiln_codegen/src/emit.rs` and `kiln_native/src/gen.rs`;
+  runtime functions are `K_API` in `kiln.c`, so both can call them.
 - Keep error messages short, specific, and in plain words: say what was
   expected and what was found.
 

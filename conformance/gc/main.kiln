@@ -1,0 +1,49 @@
+// Values reachable only from constants, closures and captured vars survive
+// while the program allocates enough garbage for the collector to run.
+
+const NAMES = ["alpha", "beta", "gamma"].map(fn(s) { s.upper() + "!" })
+
+struct Node {
+    label: String
+    next: Node?
+}
+
+fn churn(n: Int) -> Int {
+    var total = 0
+    for i in 0..n {
+        let parts = ["x${i}", "y${i}", "z${i}"]
+        total += parts.join("-").len()
+    }
+    total
+}
+
+fn chain(n: Int) -> Node? {
+    var head: Node? = none
+    for i in 0..n {
+        head = Node(label: "n${i}", next: head)
+    }
+    head
+}
+
+fn length(node: Node?) -> Int {
+    var count = 0
+    var cur = node
+    while cur is some(n) {
+        count += 1
+        cur = n.next
+    }
+    count
+}
+
+fn main() {
+    let list = chain(1000)
+    print(churn(100000))
+    print(NAMES)
+    print(length(list))
+    var counter = 0
+    let adders = (0..1000).map(fn(i) { fn() { counter += i } })
+    print(churn(100000))
+    for add in adders { add() }
+    print(counter)
+    print(NAMES.join(" "))
+}

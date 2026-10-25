@@ -126,7 +126,10 @@ fn main() {
    new module in `STD_MODULES` in `crates/kiln_check/src/checker.rs`.
 2. For the compiler, add the module to `LIB_MODULES` in
    `crates/kiln_ir/src/lower.rs`; its calls become `ExprKind::Lib`. Build
-   each function in `lib_call` in `crates/kiln_codegen/src/emit.rs` and the
-   runtime (`runtime/kiln.c`). A runtime function that fails sets
-   `k_lib_error` to its message.
+   each function in the runtime (`crates/kiln_codegen/runtime/kiln.c`, as a
+   `K_API` function) and in both backends: `lib_call` in
+   `crates/kiln_codegen/src/emit.rs` for C, and `lib_call` in
+   `crates/kiln_native/src/gen.rs` for native code, with the function's C
+   signature in `crates/kiln_native/src/runtime.rs`. A runtime function that
+   fails sets `k_lib_error` to its message.
 3. Add a conformance program.

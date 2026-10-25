@@ -17,9 +17,18 @@ jobs:
         with:
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
-      - run: sudo apt-get update && sudo apt-get install -y libgc-dev
+      # libgc-dev is for the C backend; musl-tools builds the runtime that the
+      # native backend links into executables.
+      - run: sudo apt-get update && sudo apt-get install -y libgc-dev musl-tools
       - run: cargo fmt --all --check
       - run: cargo clippy --all-targets -- -D warnings
       - run: cargo test
       - run: cargo run -p kiln_cli -- check examples
       - run: cargo run -p kiln_cli -- run examples/hello
+      - name: Native builds need no tools, and their executables no libraries
+        run: |
+          mkdir -p /tmp/empty-root
+          # A PATH with nothing in it, so no C compiler or linker can be found.
+          env -i PATH=/nonexistent ./target/debug/kiln build examples/hello -o /tmp/empty-root/hello
+          # A root with nothing in it but the executable: no libc, no /proc.
+          sudo chroot /tmp/empty-root /hello

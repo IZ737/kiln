@@ -15,6 +15,27 @@ struct Cli {
     command: Command,
 }
 
+/// The code generators `build` and `run` can use.
+#[derive(Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
+enum Backend {
+    /// Machine code from Cranelift, linked into a static executable by the
+    /// linker built into kiln.
+    Native,
+    /// C, compiled by the system's C compiler.
+    C,
+}
+
+impl Backend {
+    /// The native backend where this kiln carries its runtime, otherwise C.
+    fn or_default(backend: Option<Backend>) -> Backend {
+        backend.unwrap_or(if kiln_native::unavailable().is_none() {
+            Backend::Native
+        } else {
+            Backend::C
+        })
+    }
+}
+
 #[derive(Subcommand)]
 enum Command {
     /// Check source files for errors without building.
@@ -40,11 +61,19 @@ enum Command {
         /// Also write the program's IR, in its readable form, to this path.
         #[arg(long)]
         emit_ir: Option<PathBuf>,
+        /// How to generate code. `native` needs no outside tools; `c`
+        /// needs a C compiler and the Boehm GC. Defaults to `native` where
+        /// this kiln supports it.
+        #[arg(long, value_enum)]
+        backend: Option<Backend>,
     },
     /// Compile a program and run it.
     Run {
         /// The program's folder, or any file in it.
         file: PathBuf,
+        /// How to generate code, as for `kiln build`.
+        #[arg(long, value_enum)]
+        backend: Option<Backend>,
         /// Arguments passed to the program.
         #[arg(trailing_var_arg = true)]
         args: Vec<String>,
@@ -68,18 +97,23 @@ fn main() -> ExitCode {
             output,
             emit_c,
             emit_ir,
+            backend,
         } => {
             let out = output.unwrap_or_else(|| default_output(&file));
             let emit = Emit {
                 c: emit_c.as_deref(),
                 ir: emit_ir.as_deref(),
             };
-            match build(&file, &out, emit) {
+            match build(&file, &out, emit, Backend::or_default(backend)) {
                 Ok(()) => ExitCode::SUCCESS,
                 Err(code) => code,
             }
         }
-        Command::Run { file, args } => run(&file, &args),
+        Command::Run {
+            file,
+            backend,
+            args,
+        } => run(&file, &args, Backend::or_default(backend)),
         Command::Lsp => ExitCode::from(lsp::run() as u8),
         Command::Parse { file } => parse(&file),
         Command::Explain { code } => explain(&code),
@@ -300,7 +334,7 @@ struct Emit<'a> {
 }
 
 /// Checks and compiles the program in a folder into an executable at `out`.
-fn build(path: &Path, out: &Path, emit: Emit) -> Result<(), ExitCode> {
+fn build(path: &Path, out: &Path, emit: Emit, backend: Backend) -> Result<(), ExitCode> {
     let (dir, files) = app_files(path).map_err(|err| {
         eprintln!("error: cannot read {}: {err}", path.display());
         ExitCode::from(2)
@@ -380,17 +414,27 @@ fn build(path: &Path, out: &Path, emit: Emit) -> Result<(), ExitCode> {
     if let Some(ir_path) = emit.ir {
         write(ir_path, &ir.to_string())?;
     }
-    let c = kiln_codegen::emit_c(&ir).map_err(report)?;
-    if let Some(c_path) = emit.c {
-        write(c_path, &c)?;
+    let c = match (backend, emit.c) {
+        (Backend::C, _) | (_, Some(_)) => Some(kiln_codegen::emit_c(&ir).map_err(report)?),
+        _ => None,
+    };
+    if let (Some(c_path), Some(c)) = (emit.c, &c) {
+        write(c_path, c)?;
     }
-    kiln_codegen::compile_c(&c, out).map_err(|err| {
+    let linked = match (backend, c) {
+        (Backend::C, Some(c)) => kiln_codegen::compile_c(&c, out),
+        _ => {
+            let object = kiln_native::compile(&ir).map_err(report)?;
+            kiln_native::link(&object, out)
+        }
+    };
+    linked.map_err(|err| {
         eprintln!("error: {err}");
         ExitCode::from(2)
     })
 }
 
-fn run(path: &Path, args: &[String]) -> ExitCode {
+fn run(path: &Path, args: &[String], backend: Backend) -> ExitCode {
     let dir = match kiln_codegen::scratch_dir() {
         Ok(dir) => dir,
         Err(err) => {
@@ -399,7 +443,7 @@ fn run(path: &Path, args: &[String]) -> ExitCode {
         }
     };
     let exe = dir.join("program");
-    if let Err(code) = build(path, &exe, Emit::default()) {
+    if let Err(code) = build(path, &exe, Emit::default(), backend) {
         let _ = std::fs::remove_dir_all(&dir);
         return code;
     }

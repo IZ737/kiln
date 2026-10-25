@@ -116,6 +116,17 @@ runtime's collection code is shared by every item type. A call that fails sets a
 thread-local flag that `try` and `catch` check. Parts of the language the
 backend does not support yet are reported as E0401.
 
+The native backend (`crates/kiln_native`, phase 1.5) generates machine code
+from the same IR with Cranelift and links it into a static executable with
+the wild linker, run inside `kiln`. Values are stored as in the C backend
+and both call the same runtime, which `kiln`'s build compiles once, with the
+Boehm collector and the musl C library, for `kiln` to carry. Struct fields
+are slots, so a struct is an array of them. Where the C backend writes a
+show, equality, hash or ordering function for each type, the native one
+writes a description of the type into the executable's data, and runtime
+functions read it. Both backends report the same E0401 errors, and the
+conformance programs run with both.
+
 ### Phase 1.5: self-contained toolchain and native executables
 
 Phase 1.5 comes after the working C backend and before phase 2's HTTP work.
@@ -158,6 +169,15 @@ run without separately installing development tools, Boehm GC or additional
 runtime redistributables. Validate with the same conformance programs in
 Windows CI. The C backend can remain available separately where its external
 toolchain dependencies are acceptable.
+
+**Progress.** The Cranelift backend, the built-in linker and the bundled
+runtime work on Linux x86-64 and are the default there: every conformance
+program gives the same output as with the C backend, a build runs with no
+`PATH`, and CI runs the executable in an empty root directory (no libc, no
+`/proc`). Still to do: a prebuilt `kiln` that itself runs on any Linux
+x86-64 system (built against musl), published with each release, and a CI
+job that downloads it into a clean container and runs the conformance
+programs there; then the Windows target.
 
 ### What phase 1 leaves for later
 
