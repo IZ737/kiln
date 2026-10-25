@@ -1,0 +1,85 @@
+{
+  "name": "kiln",
+  "displayName": "Kiln",
+  "description": "Kiln and Glaze language support: highlighting, file icons and the Kiln language server.",
+  "version": "0.1.0",
+  "publisher": "iz737",
+  "license": "MIT",
+  "icon": "icons/kiln.png",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/IZ737/kiln",
+    "directory": "editors/vscode"
+  },
+  "homepage": "https://github.com/IZ737/kiln/tree/main/editors/vscode",
+  "bugs": "https://github.com/IZ737/kiln/issues",
+  "engines": {
+    "vscode": "^1.75.0"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
+  "keywords": [
+    "kiln",
+    "glaze",
+    "web"
+  ],
+  "contributes": {
+    "languages": [
+      {
+        "id": "kiln",
+        "aliases": [
+          "Kiln",
+          "kiln"
+        ],
+        "extensions": [
+          ".kiln"
+        ],
+        "configuration": "./language-configuration.json",
+        "icon": {
+          "light": "./icons/kiln-source.svg",
+          "dark": "./icons/kiln-source-dark.svg"
+        }
+      },
+      {
+        "id": "glaze",
+        "aliases": [
+          "Glaze",
+          "glaze"
+        ],
+        "extensions": [
+          ".glaze"
+        ],
+        "configuration": "./glaze-language-configuration.json",
+        "icon": {
+          "light": "./icons/glaze-component.svg",
+          "dark": "./icons/glaze-component-dark.svg"
+        }
+      }
+    ],
+    "grammars": [
+      {
+        "language": "kiln",
+        "scopeName": "source.kiln",
+        "path": "./syntaxes/kiln.tmLanguage.json"
+      },
+      {
+        "language": "glaze",
+        "scopeName": "text.html.glaze",
+        "path": "./syntaxes/glaze.tmLanguage.json",
+        "embeddedLanguages": {
+          "source.kiln": "kiln",
+          "source.css": "css",
+          "source.js": "javascript"
+        }
+      }
+    ]
+  },
+  "scripts": {
+    "test": "node --test test/*.test.js"
+  },
+  "devDependencies": {
+    "vscode-oniguruma": "2.0.1",
+    "vscode-textmate": "9.3.2"
+  }
+}

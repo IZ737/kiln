@@ -41,6 +41,20 @@ jobs:
           curl -fsSL https://github.com/IZ737/kiln/releases/download/v0.3.0/kiln-v0.3.0-x86_64-linux.tar.gz | tar xz -C /tmp
           cmp /tmp/upgrade/kiln /tmp/kiln-v0.3.0-x86_64-linux/kiln
 
+  # The VS Code extension's grammars and manifest.
+  vscode:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: editors/vscode
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci
+      - run: npm test
+
   # The kiln that releases ship: built against musl, so it is static and
   # runs on any Linux x86-64 system, then checked in an empty container.
   standalone:

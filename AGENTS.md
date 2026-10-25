@@ -89,6 +89,12 @@ Run `cargo fmt --all`, `cargo clippy --all-targets -- -D warnings` and
   `parse`, `explain`, `upgrade`). `lsp.rs` is the language server; it reuses
   `check_sources` from `main.rs`, so editors and `kiln check` report the same
   errors.
+- `editors/vscode`: the VS Code extension. `syntaxes/` holds the TextMate
+  grammars for Kiln (`source.kiln`) and Glaze (`text.html.glaze`), and
+  `icons/` copies of the brand icons. It stays a thin client: anything
+  other editors could use belongs in `kiln lsp`. `npm test` there tokenizes
+  code with VS Code's TextMate engine; a syntax change updates the
+  grammars and their tests too.
 - `conformance/`: programs, one folder each, with expected output
   (`main.out`, and `main.err` when
   they fail). `crates/kiln_cli/tests/conformance.rs` runs each one; add one
@@ -130,7 +136,8 @@ Run `cargo fmt --all`, `cargo clippy --all-targets -- -D warnings` and
   the exact replacement text, so agents can apply it from `kiln check --json`.
 - **Syntax changes update three places:** the parser, a test in
   `crates/kiln_syntax/tests/parser.rs` (or `glaze.rs`), and `docs/syntax.md`
-  (or `docs/glazes.md`).
+  (or `docs/glazes.md`). New keywords and literals also go in the grammars
+  in `editors/vscode/syntaxes`.
 - **One mistake, one error.** After an error the checker uses `Ty::Unknown`,
   which is compatible with everything, so later uses are not reported again.
 - **Standard library changes** go in `crates/kiln_check/std/*.kiln`. New

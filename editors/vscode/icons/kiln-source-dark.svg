@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label=".kiln icon"><title>.kiln — Source file</title>
+ <path d="M16 7 H39 L50 18 V54 C50 56 48 58 46 58 H16 C14 58 12 56 12 54 V11 C12 9 14 7 16 7 Z" fill="none" stroke="#F4F1EB" stroke-width="3.4" stroke-linejoin="round"/>
+ <path d="M39 8 V19 H50" fill="none" stroke="#F4F1EB" stroke-width="3.4" stroke-linejoin="round"/>
+ <path d="M23 46 V37 L27 33 L29 31 V23 H35 V31 L37 33 L41 37 V46 H35 V40 C35 36 29 36 29 40 V46 Z" fill="#C65A34"/>
+ </svg>
