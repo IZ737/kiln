@@ -1,7 +1,12 @@
 # Kiln design overview
 
 This is a summary of the language design. Decisions here can still change
-until 1.0; open questions are listed at the end.
+until 1.0; open questions are listed at the end. The broader product
+philosophy, frontend/backend developer experience, performance escape
+hatches, interoperability and adoption strategy are in
+[Kiln's long-term vision](vision.md). The [README roadmap](../README.md#roadmap)
+controls phase sequencing; aspirational ideas in the vision are not
+automatically commitments for 1.0.
 
 ## Core principle
 
@@ -28,6 +33,31 @@ capabilities as possible.
 
 No application feature should unnecessarily require ownership of the entire
 technology stack.
+
+## Developer experience, performance and interoperability
+
+**Frontend development matters as much as backend development.** Kiln aims
+to unify typed forms and validation, accessible Glaze components, native
+CSS, Ember interactivity, server functions and data access so full-stack
+developers do not recreate the glue between separate frontend and backend
+frameworks. The compiler should share types and generate the routine
+communication, while leaving explicit low-level APIs available.
+
+**Optimize hotspots, not whole applications.** Ordinary Kiln stays
+garbage-collected. Future compiler optimization, optional arena/region
+allocation and more specialized numeric/data-layout operations should allow
+performance-sensitive code to stay in Kiln where practical, with compiler
+checks preventing memory-lifetime errors. These advanced mechanisms are
+later design explorations, not mandatory ownership rules.
+
+**Interoperability goes both ways.** Kiln should call existing libraries,
+and existing applications should be able to call Kiln modules. Proposed
+paths include C-compatible FFI, generated Python/Node bindings, portable
+Wasm components and browser JavaScript/npm integration through typed
+bindings. Mixed stacks must remain viable, and interop boundaries must
+handle memory, errors and ownership explicitly.
+
+The complete reasoning and future scope live in [vision.md](vision.md).
 
 ## Goals
 
@@ -370,6 +400,25 @@ them to the server and pulls other changes when the connection returns, with
 a conflict rule chosen per model (last write wins, merge fields, or a custom
 function). The same ORM models describe both sides. Push notifications and
 background sync come with it.
+
+## Ecosystem and application delivery
+
+Planned Wares are versioned source packages with a declarative manifest
+and lockfile; fetching them should not run arbitrary package install
+scripts. Official Wares are intended to be especially auditable and
+self-contained. Project templates remain a separate mechanism. A future
+Ware registry and Kiln's own documentation website are important
+dogfooding projects, not just showcase demos.
+
+The proposed `kiln deploy` and `kiln release` workflows should work with
+existing infrastructure defined in `kiln-deploy.toml` rather than attempt
+to replace Terraform. They should coordinate builds, migrations, process
+activation and health checks with an inspectable plan and explicit
+confirmation (with a flag for noninteractive CI); database rollback and
+destructive changes need separate safeguards. See
+[the full vision](vision.md#8-one-command-builds-releases-and-deployment)
+for the intended operating model. These commands are not promises of
+current implementation.
 
 ## Editor support
 
