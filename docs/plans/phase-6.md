@@ -1,12 +1,12 @@
 # Phase 6 — Projects, Wares, testing, tooling and agent integration
 
-**Status:** Planned specification. This is an implementation contract and reviewable proposal for API details; **Phase 6 commands and syntax are not claimed to be implemented** unless later marked in reference documentation. The preceding [Phase 5 plan](phase-5.md) covers Embers and typed RPC.
+**Status:** Planned specification. This is an implementation contract and reviewable proposal for API details; **Phase 6 commands and syntax are not claimed to be implemented** unless later marked in reference documentation. The preceding [Phase 4 plan](phase-4.md) covers Embers and typed RPC; [Phase 5](phase-5.md) covers data, forms, auth and admin.
 
 **Goal:** Take Kiln from a capable full-stack language to a coherent **day-to-day development and package ecosystem**: multi-folder application structure, optional project metadata, reproducible third-party Wares in a safe shared cache, a first useful official UI Ware, one integrated unit/integration/real-browser test command, polished editor/formatter/live-reload workflows, and an agent-friendly tooling interface.
 
 **End-to-end gate:** A developer can create a multi-folder Kiln app, import local modules, add a versioned UI Ware from a **locally hosted registry**, commit a reproducible lockfile, build without a network connection after cache priming, run Kiln-authored unit/database/real-browser tests, edit safely with formatter/LSP/live reload, and use a structured local MCP tool interface—**without writing Node scripts, per-project dependency installation directories or custom glue**. Its native release output remains self-contained.
 
-This implements previously agreed direction in the [design overview](../design.md#programs-and-folders), [vision](../vision.md#7-wares-templates-and-a-real-ecosystem) and [integrated testing plan](testing.md). Phase 4's [data/auth/admin plan](phase-4.md) makes the full-stack acceptance tests possible. Phase 5 already delivers Embers, WasmGC, hydration and typed browser/server RPC; Phase 6 builds the ecosystem around them.
+This implements previously agreed direction in the [design overview](../design.md#programs-and-folders), [vision](../vision.md#7-wares-templates-and-a-real-ecosystem) and [integrated testing plan](testing.md). Phase 4's [Embers/RPC plan](phase-4.md) and Phase 5's [data/auth/admin plan](phase-5.md) together make full-stack acceptance tests possible. Phase 6 builds the ecosystem around both.
 
 > **Design status:** The broad capabilities, separation from other phases, per-user global Ware storage, manifest-free scripts, and built-in real-browser testing are established. The exact file layouts, names, command flags, registry endpoints, security policy format and test API in this document are **proposals to validate during Phase 6**, not promises of current Kiln syntax.
 
@@ -20,7 +20,7 @@ This implements previously agreed direction in the [design overview](../design.m
 6. **Wares have no install-time execution hooks.** Fetching, resolving and checking a dependency does not run arbitrary package-provided shell commands.
 7. **Registry trust is layered, not magical.** Publisher verification, review status and hashes communicate different claims. A trusted-looking label is never a promise of sandboxed or vulnerability-free code.
 8. **Wares should feel like local modules.** One namespace/import model, no separate runtime package loader, no compulsory publish step for ordinary project structuring.
-9. **First official Ware is useful and inspectable.** A Kiln-maintained accessible UI component collection uses Glazes, CSS, typed Ui, Finishes, themes and Phase 4 forms; source-first editing/copy is supported.
+9. **First official Ware is useful and inspectable.** A Kiln-maintained accessible UI component collection uses Glazes, CSS, typed Ui, Finishes, themes and Phase 5 forms; source-first editing/copy is supported.
 10. **One test workflow from function to browser.** `kiln test` owns Kiln-written unit, integration and real-browser E2E tests and uses maintained browser tooling internally—not a separate developer-visible JavaScript project.
 11. **Tooling is incremental and ordinary.** A deterministic formatter, cross-module LSP/refactoring, watcher/rebuilder and editor tasks share the existing compiler. Do not invent a new language service.
 12. **MCP reuses CLI/compiler semantics.** Provide useful local agent tools with explicit side-effect boundaries; do not expose unguarded shell/credential/network access to arbitrary clients.
@@ -238,7 +238,7 @@ kiln cache prune
 
 ### Bootstrap strategy
 
-Start with a **locally hosted registry implementing the same protocol as the future public service**. Because Phase 4 supplies HTTP, SQL, auth and an admin, the initial registry itself can be built **in Kiln** and serve as a substantial dogfooding app. A static index/Git source can be a simpler transitional read-only transport. Do **not** require a globally hosted public service or community accounts to finish Phase 6.
+Start with a **locally hosted registry implementing the same protocol as the future public service**. Because Phase 5 supplies SQL, auth and an admin (on top of earlier HTTP), the initial registry itself can be built **in Kiln** and serve as a substantial dogfooding app. A static index/Git source can be a simpler transitional read-only transport. Do **not** require a globally hosted public service or community accounts to finish Phase 6.
 
 Separate three roles:
 
@@ -304,13 +304,13 @@ The flagship first Ware is a **source-first collection** of reusable Glaze/CSS/U
 
 - Initial SSR components: `Button`, `Input`, `Textarea`, `Select`, `Checkbox`, `Radio`, `FormField`, `Label`, `Card`, `Alert`, `Badge`, `Table`, `EmptyState`, `Tabs` where CSS/native HTML can provide the intended behavior. Start with a small reliable subset; defer difficult interactive widgets.
 - Correct HTML semantics, label/input association, consistent field descriptions/errors, keyboard focus, contrast, disabled states, reduced-motion preference and responsive default styles.
-- Typed props for common variants (e.g. tone, size, error, disabled) and passthrough of safe ordinary attributes; integrate Phase 4 form field errors without making plain Input dependent on a database.
+- Typed props for common variants (e.g. tone, size, error, disabled) and passthrough of safe ordinary attributes; integrate Phase 5 form field errors without making plain Input dependent on a database.
 - Use standard Phase 3 Glazes, CSS, Ui, Finishes and typed tokens. Users can override a theme, component style, selected field widget or authored Glaze. Avoid independent theme or runtime styling machinery.
 - Offer **dependency use** and a **source-copy** path, e.g. proposed `kiln ui add button`, so developers can own and modify individual component source without fork-heavy workflows. Copying must show provenance/license and should not overwrite local edits.
 - Publish docs/examples and compile conformance; tests need keyboard/focus/ARIA smoke plus manual accessibility review. **Do not claim automated checks prove accessible UX**.
-- Phase 5 supplies native browser interactivity through Embers, so the initial UI Ware may include tested interactive widgets rather than requiring an unrelated JavaScript framework.
+- Phase 4 supplies native browser interactivity through Embers, so the initial UI Ware may include tested interactive widgets rather than requiring an unrelated JavaScript framework.
 
-**UI gate:** a real Phase 4 form/admin page can use this Ware (or copied source), compile for native Linux/Windows, render a consistent accessible page with two different Phase 3 themes, and remain editable without dependency lock-in.
+**UI gate:** a real Phase 5 form/admin page can use this Ware (or copied source), compile for native Linux/Windows, render a consistent accessible page with two different Phase 3 themes, and remain editable without dependency lock-in.
 
 ## 10. Phase 6.3 — One `kiln test` runner
 
@@ -426,7 +426,7 @@ Proposed `kiln mcp` runs a local Model Context Protocol server giving an agent s
 
 ### Dogfooding criteria
 
-- Complete a genuine multi-folder Kiln site, ideally the docs site plus a **Kiln-authored local Ware registry** built on Phase 4 storage/auth and a separate small application consuming it.
+- Complete a genuine multi-folder Kiln site, ideally the docs site plus a **Kiln-authored local Ware registry** built on Phase 5 storage/auth and a separate small application consuming it.
 - Publish the initial UI Ware to the local registry, consume it from a separate project, switch themes, replace one component with local source and demonstrate locked offline builds.
 - Drive a full `kiln test` suite including real browser tests and deliberately failing tests; exercise LSP/formatter/dev watch while changing imports and Glazes.
 - Have an agent use `kiln mcp` to get project graph, check and run authorized tests. Inspect outputs, error reports and permissions.
@@ -469,7 +469,7 @@ CI must test native Linux/Windows and the C backend where supported, plus cross-
 
 ## 15. Explicit deferrals and non-goals
 
-- **Earlier Phase 5 foundation:** Embers/WasmGC, reactive hydration, generated RPC and state are established before Phase 6; this phase integrates them into the package and public testing workflows.
+- **Earlier foundations:** Phase 4 supplies Embers/WasmGC, reactive hydration, generated RPC and state; Phase 5 supplies persistence/auth/forms/admin. Phase 6 integrates and tests both.
 - **Phase 7:** One-command deploy/release, static site export, broad stability/performance hardening, arbitrary code optimization or a mandatory new native backend.
 - **Later registry scaling:** Commercial hosting, public social discovery, web search/rankings, organization billing, cross-user global cache, complete security auditing/review infrastructure at industrial scale.
 - **Later tooling:** Full debugger/DAP and variable inspection, deep time-travel debugging, arbitrary live-patching of native code, self-hosting of all compiler internals.

@@ -23,7 +23,9 @@ Keep SSR/styling separate from later Embers/WasmGC and Wares work. Target
 syntax is not current syntax until implemented and tested; update the
 reference docs and tests as the feature becomes real.
 
-For Phase 5 Embers/WasmGC work, follow [docs/plans/phase-5.md](docs/plans/phase-5.md): keep SSR Glazes useful without client scripts, hydrate only interactive islands, type-check browser/server boundaries and secure every generated RPC endpoint. The Phase 5 compiler conformance and browser CI suites must cover those behaviours even without the final public test runner.
+For Phase 4 Embers/WasmGC work, follow [docs/plans/phase-4.md](docs/plans/phase-4.md): keep SSR Glazes useful without client scripts, hydrate interactive islands selectively and secure RPC against untrusted inputs. **Do not depend on Phase 5 SQL/auth/admin**; use pure or ephemeral server functions and browser regression tests.
+
+For Phase 5 data/auth/admin work, follow [docs/plans/phase-5.md](docs/plans/phase-5.md), reusing Phase 4 RPC for authenticated ORM-backed calls and shared Ember/SSR validation. Keep SSR-only forms useful and enforce per-record authorization on the server.
 
 For Phase 6 modules/Wares/testing/tooling/MCP work, follow [docs/plans/phase-6.md](docs/plans/phase-6.md), which divides the ecosystem into five reviewable subphases. Preserve manifest-free programs and the global per-user Ware cache. Syntax in plans is prospective until implemented, tested and documented.
 

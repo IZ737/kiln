@@ -6,10 +6,11 @@ frontend/end-to-end tests**. This is distinct from Kiln's existing compiler
 conformance tests and CI checks: application developers should not need to
 assemble a separate test framework and browser automation stack.
 
-**Roadmap:** Phase 5 delivers Embers with compiler conformance and real-
-browser CI smoke tests. **Phase 6** delivers the public `kiln test` runner
-after Glazes (3), database/auth (4) and Embers (5); its initial browser
-mode must support Ember hydration, events, reactive state and typed RPC.
+**Roadmap:** Phase 4 delivers Embers with compiler conformance and real-
+browser CI smoke tests; Phase 5 adds SQL/auth and associated browser
+integration regressions. **Phase 6** delivers the public `kiln test` runner
+after Glazes (3), Embers (4) and database/auth (5); its initial browser
+mode must support hydration, events, reactive state and typed RPC.
 Do not change earlier phases' acceptance gates to depend on this public CLI.
 
 ## What one runner means
