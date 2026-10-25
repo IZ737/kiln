@@ -12,6 +12,10 @@ binaries. [examples/api](examples/api/main.kiln) is a small JSON API.
   HTML error page. `web.app(max_body:, max_header:, timeout:, keep_alive:,
   access_log:)` has defaults for production, and the server logs a line
   per request (`info GET /posts/7 200 1.2ms`).
+- **One-line installers:** `install.sh` for Linux and `install.ps1` for
+  Windows download the latest release (or `--version`), check its
+  checksum, install `kiln` to `~/.kiln/bin` and add it to PATH. See
+  [Install](README.md#install).
 
 ## 0.2.0 (2026-10-25)
 

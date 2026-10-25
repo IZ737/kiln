@@ -1,0 +1,93 @@
+name: Installers
+
+# Runs install.sh and install.ps1 from this checkout against the real
+# releases on GitHub: the latest one and a pinned older one.
+
+on:
+  push:
+    branches: [main]
+    paths: [install.sh, install.ps1, .github/workflows/installers.yml]
+  pull_request:
+    paths: [install.sh, install.ps1, .github/workflows/installers.yml]
+  # A new release, or a change on GitHub's side, can break them too.
+  schedule:
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+
+jobs:
+  linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Latest release through a pipe, as the README shows
+        run: cat install.sh | sh
+      - name: A login shell finds kiln on PATH
+        run: bash -lc 'command -v kiln && kiln --version && kiln run examples/hello'
+      - name: Pinned release, run again over the first, under dash
+        run: |
+          dash install.sh --version v0.2.0
+          # Running twice adds the PATH line once.
+          test "$(grep -c '.kiln/env' ~/.profile)" = 1
+          ~/.kiln/bin/kiln run examples/hello
+      - name: Clear errors for a missing release and an unsupported system
+        run: |
+          if sh install.sh --version v0.0.0-missing 2> err.txt; then exit 1; fi
+          grep 'could not download release' err.txt
+          mkdir fake && printf '#!/bin/sh\necho FreeBSD\n' > fake/uname && chmod +x fake/uname
+          if PATH="$PWD/fake:$PATH" sh install.sh 2> err.txt; then exit 1; fi
+          grep 'no prebuilt kiln for FreeBSD' err.txt
+
+  # BusyBox sh and wget, with no curl and no bash.
+  alpine:
+    runs-on: ubuntu-latest
+    container: alpine:3.20
+    steps:
+      - uses: actions/checkout@v4
+      - run: sh install.sh
+      - run: sh -lc 'kiln run examples/hello'
+
+  macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      # There is no macOS build yet: the installer must say so and fail.
+      - run: |
+          if sh install.sh 2> err.txt; then exit 1; fi
+          cat err.txt
+          grep 'no prebuilt kiln for macos' err.txt
+
+  windows:
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # Windows PowerShell 5.1, which `irm | iex` runs in by default, and 7.
+        shell: [powershell, pwsh]
+    defaults:
+      run:
+        shell: ${{ matrix.shell }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Latest release through iex, as the README shows
+        run: |
+          Get-Content -Raw install.ps1 | Invoke-Expression
+          kiln --version
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+      - name: The user PATH has kiln for new terminals
+        run: |
+          $bin = Join-Path $HOME '.kiln\bin'
+          $path = [Environment]::GetEnvironmentVariable('Path', 'User')
+          if (-not (($path -split ';') -contains $bin)) { throw "user PATH is $path" }
+      - name: Pinned release with arguments, over the first
+        run: |
+          & ([scriptblock]::Create((Get-Content -Raw install.ps1))) -Version v0.2.0
+          & "$HOME\.kiln\bin\kiln.exe" run examples/hello
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          # Running twice adds the folder to PATH once.
+          $path = [Environment]::GetEnvironmentVariable('Path', 'User')
+          if ((($path -split ';') -eq (Join-Path $HOME '.kiln\bin')).Count -ne 1) { throw "user PATH is $path" }
+      - name: A missing release fails the script
+        run: |
+          .\install.ps1 -Version v0.0.0-missing
+          if ($LASTEXITCODE -ne 1) { throw "exit code $LASTEXITCODE" }
+          $global:LASTEXITCODE = 0

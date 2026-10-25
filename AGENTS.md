@@ -89,6 +89,11 @@ Run `cargo fmt --all`, `cargo clippy --all-targets -- -D warnings` and
   `k_task_sleep` instead of blocking, and a global that belongs to one
   request is saved in `k_task_switch`. `tests/server.rs` checks that
   requests run at the same time.
+- `install.sh` and `install.ps1`: the one-line installers in the README.
+  They download a release by the asset names `release.yml` gives
+  (`kiln-<tag>-<arch>-<os>.tar.gz` or `.zip`, with a `.sha256`), so a
+  change to those names changes them too. `installers.yml` runs them
+  against the real releases.
 - `examples/`: Kiln programs. Tests in `crates/kiln_syntax/tests/examples.rs`
   and `crates/kiln_check/tests/examples.rs` parse and type-check every one of
   them, so they must stay valid.
