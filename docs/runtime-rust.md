@@ -1,9 +1,10 @@
 # Plan: less C in the runtime
 
-**Status: accepted, not started.** Jake chose option A (hyper on Kiln's own
+**Status: accepted; step 0 done.** Jake chose option A (hyper on Kiln's own
 tasks; see [The decision](#the-decision-hyper-and-kilns-tasks)) on
-2026-10-25. Nothing here is implemented yet; the work follows the
-[migration order](#migration-order).
+2026-10-25. The work follows the [migration order](#migration-order):
+`crates/kiln_rt` exists and is linked into every program, with one
+function in it so far.
 
 ## The problem
 
@@ -184,35 +185,45 @@ and programs are still single static executables. The phase 1.5 guarantee
 (no C compiler, linker, Rust or GC to install) holds, and `clean-check.sh`
 and `windows-check.sh` keep proving it.
 
-**Building `kiln` from source** gains a step. `kiln_native/build.rs`
-already compiles the C runtime per target; it would also run
-`cargo build -p kiln_rt --release --target <t>` with a separate target
-directory (so the nested build does not wait on the outer build's lock):
+**Building `kiln` from source** gains a step (built in step 0).
+`crates/kiln_rt/staticlib.rs` runs `cargo build -p kiln_rt --profile
+runtime --target <t>` with a target directory of its own, so the nested
+build does not wait on the outer build's lock, and the build scripts that
+already compile the C runtime call it:
 
-- Linux: `x86_64-unknown-linux-musl`. The staticlib links with the existing
-  objects through wild. Rust's std for that target ships its own musl
-  `libc.a` and `libunwind.a`; we should link against Rust's copy rather
-  than the system one so versions match, which may also make `musl-tools`
-  needed only for compiling the C files.
-- Windows: `x86_64-pc-windows-gnu`. The staticlib joins `native.o` and
-  `gc.o` in the mingw link of `runtime.exe`. Rust's std adds imports of
-  `ntdll`, `bcrypt` and `userenv`, all system DLLs, which phase 1.5 allows.
-- The C backend: the host target, linked next to `-lgc`.
+- Linux (`kiln_native`): `x86_64-unknown-linux-musl`. Rust's std for musl
+  reads stack traces with the `libunwind.a` Rust ships for that target, so
+  that goes in too. The libc stays the system musl's `libc.a`.
+- Windows (`kiln_native`): `x86_64-pc-windows-gnu`. The library joins
+  `native.o` and `gc.o` in the mingw link of `runtime.exe`, with `ntdll`,
+  `userenv` and `dbghelp`, all part of Windows, which phase 1.5 allows.
+- The C backend (`kiln_codegen`): the target `kiln` is built for, with
+  glibc instead of musl, since that is what the system's C compiler makes
+  programs for. It is linked next to `-lgc`.
 
-`rust-toolchain.toml` lists the two targets, so rustup installs them
-automatically. CI already builds release binaries for both.
+`rust-toolchain.toml` and the CI workflows list the two extra targets.
 
-**Size.** A Rust staticlib contains all of std and is tens of megabytes
-before linking, which would bloat `kiln`, since it embeds the runtime for
-both targets. So build.rs links it once into a single relocatable object
-with only the `k_*` symbols exported and unused sections dropped (`ld -r`
-plus `--gc-sections`, or the same through wild), and embeds that. Windows
-already embeds a linked executable, so only used code is there.
+**Size.** The `runtime` profile (in the workspace's Cargo.toml) builds with
+`panic = "abort"` and fat LTO, so the library's Rust code is one object
+holding only what the `k_*` functions reach. The library also holds all of
+Rust's compiler builtins and std's debug information, about 7.5 MB, so the
+build scripts link it with `cc -r` into one object of the members it needs,
+without debug information, and `kiln` carries that: 850 KB for Linux and
+650 KB for the C backend. Windows embeds its linked `runtime.exe`, which
+holds only what was linked in. mingw's linker cannot make one object of a
+library that uses thread-local storage, so `kiln.exe` carries the C
+backend's library stripped of debug information instead (1.5 MB). The
+stripped release `kiln` grew from 22.0 MB to 23.4 MB, and `kiln.exe` from
+25.9 MB to 28.3 MB.
 
-Rough estimates for what each program grows by, to be measured in step 0:
-std's used parts and hyper's HTTP/1 server, a few hundred KB; serde_json,
-around 100 KB; rustls with the `ring` provider, 1 to 2 MB when TLS
-arrives. `kiln` grows by about twice the per-program cost.
+Measured in step 0, with only `k_web_reason` in Rust: a program grows by
+about 400 KB on Linux (130 KB to 530 KB for `conformance/basics`) and
+230 KB on Windows (230 KB to 460 KB). That is Rust's standard library's
+floor: panics, formatting and the stack-trace reader its panic message
+can use. It does not grow again with more Rust code, which costs what it
+uses. Estimates for what is still to come: hyper's HTTP/1 server, a few
+hundred KB; serde_json, around 100 KB; rustls with the `ring` provider,
+1 to 2 MB when TLS arrives.
 
 For TLS the `ring` provider is preferred over `aws-lc-rs`, which needs
 CMake and is harder to cross-compile for musl and mingw. HTTPS clients use
@@ -224,7 +235,7 @@ store.
 - **Cranelift**: none beyond `runtime.rs` listing any new or changed
   signatures. Calls stay C ABI.
 - **C backend**: still prepends the C part of the runtime, and now also
-  links `libkiln_rt.a` for the host. It remains the reference backend, and
+  links `kiln_rt` for the system it runs on. It remains the reference backend, and
   conformance still runs every program through both.
 - **Behaviour**: error responses, limits and the access log must not
   change. The `web_*` conformance programs and `tests/server.rs` are the
@@ -247,10 +258,11 @@ Depending on libraries is only safer if they are kept up to date:
 Each step is one PR, on both backends and both targets, with the C code it
 replaces deleted in the same PR.
 
-0. **Groundwork.** `crates/kiln_rt`, the nested build, prelinking, the
-   header for the C backend, `cargo-deny` and Dependabot. Move one trivial
-   function (`k_web_reason`) to prove the path through clean-check and
-   wine. Measure sizes.
+0. **Groundwork (done).** `crates/kiln_rt`, the nested build, prelinking,
+   the declarations in `kiln.c`, `cargo-deny` (`deny.toml`, which at once
+   found advisories in the `zip` crate `kiln upgrade` used, now updated)
+   and Dependabot. `k_web_reason` moved, through clean-check and wine.
+   Sizes are measured above.
 1. **JSON on serde_json.** No I/O and no scheduler involvement, so it
    proves the GC rules on their own. Add nesting-depth and size tests.
 2. **HTTP on hyper.** The adapter from option A, request data (percent

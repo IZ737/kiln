@@ -50,6 +50,10 @@
 
 typedef uint64_t kv;
 
+/* Functions of the runtime's Rust part, `kiln_rt` (crates/kiln_rt), which is
+ * linked into every program. */
+const char *k_web_reason(int64_t status);
+
 static inline kv k_f2kv(double f) { kv v; memcpy(&v, &f, sizeof v); return v; }
 static inline double k_kv2f(kv v) { double f; memcpy(&f, &v, sizeof f); return f; }
 #define K_P2KV(p) ((kv)(uintptr_t)(p))
@@ -2150,7 +2154,6 @@ K_API void k_web_log(const char *level, kv *req, const char *what, kstr *message
             k_cstr(K_KV2P(kstr *, req[K_REQ_PATH])), what, k_cstr(message));
 }
 
-K_API const char *k_web_reason(int64_t status);
 K_API void k_json_string(kbuf *b, const char *s, int64_t n);
 
 /* Whether the client speaks JSON: it accepts JSON or sent some. */
@@ -2309,42 +2312,6 @@ K_API kv *k_web_dispatch(kapp *a, kv *req) {
 }
 
 /* ----- the connection ----- */
-
-K_API const char *k_web_reason(int64_t status) {
-    switch (status) {
-    case 100: return "Continue";
-    case 200: return "OK";
-    case 201: return "Created";
-    case 202: return "Accepted";
-    case 204: return "No Content";
-    case 301: return "Moved Permanently";
-    case 302: return "Found";
-    case 303: return "See Other";
-    case 304: return "Not Modified";
-    case 307: return "Temporary Redirect";
-    case 308: return "Permanent Redirect";
-    case 400: return "Bad Request";
-    case 401: return "Unauthorized";
-    case 403: return "Forbidden";
-    case 404: return "Not Found";
-    case 405: return "Method Not Allowed";
-    case 408: return "Request Timeout";
-    case 409: return "Conflict";
-    case 410: return "Gone";
-    case 411: return "Length Required";
-    case 413: return "Content Too Large";
-    case 415: return "Unsupported Media Type";
-    case 418: return "I'm a Teapot";
-    case 422: return "Unprocessable Content";
-    case 429: return "Too Many Requests";
-    case 431: return "Request Header Fields Too Large";
-    case 500: return "Internal Server Error";
-    case 501: return "Not Implemented";
-    case 502: return "Bad Gateway";
-    case 503: return "Service Unavailable";
-    }
-    return "";
-}
 
 #ifdef _WIN32
 K_API bool k_sock_would_block(void) { return WSAGetLastError() == WSAEWOULDBLOCK; }

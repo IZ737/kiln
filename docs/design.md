@@ -449,6 +449,11 @@ from hand-written C to maintained Rust libraries (hyper, serde_json,
 rustls), with hyper running on Kiln's own tasks. The plan, its rules and
 its order are in [runtime-rust.md](runtime-rust.md).
 
+The runtime's Rust part is `crates/kiln_rt`, a static library that every
+program links next to the C runtime, for both backends and both targets.
+It exports C functions, so the backends call it like the rest of the
+runtime.
+
 ## Open questions
 
 - Should a `.glaze` page with inline code be able to serve a route directly

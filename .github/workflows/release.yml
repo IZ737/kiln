@@ -24,7 +24,8 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
         with:
-          targets: x86_64-unknown-linux-musl
+          # kiln carries the runtime's Rust part built for both.
+          targets: x86_64-unknown-linux-musl, x86_64-pc-windows-gnu
       - run: sudo apt-get update && sudo apt-get install -y musl-tools gcc-mingw-w64-x86-64
       - run: cargo build --release --target x86_64-unknown-linux-musl -p kiln_cli
       - run: strip target/x86_64-unknown-linux-musl/release/kiln
@@ -54,7 +55,8 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
         with:
-          targets: x86_64-pc-windows-gnu
+          # kiln carries the runtime's Rust part built for both.
+          targets: x86_64-unknown-linux-musl, x86_64-pc-windows-gnu
       - run: sudo apt-get update && sudo apt-get install -y musl-tools gcc-mingw-w64-x86-64
       - run: cargo build --release --target x86_64-pc-windows-gnu -p kiln_cli
       - run: x86_64-w64-mingw32-strip target/x86_64-pc-windows-gnu/release/kiln.exe

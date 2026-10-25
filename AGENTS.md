@@ -38,8 +38,12 @@ kiln_cli`), on Windows or through Wine. With `KILN_WINE=wine`, `cargo test`
 also runs every conformance program built with `--target windows`.
 
 Building needs `musl-tools` and `gcc-mingw-w64-x86-64` (for the native
-backend's Linux and Windows runtimes) and, for the C backend and its tests,
-a C compiler and `libgc-dev`.
+backend's Linux and Windows runtimes), Rust's standard library for
+`x86_64-unknown-linux-musl` and `x86_64-pc-windows-gnu` (for the runtime's
+Rust part; `rust-toolchain.toml` lists them, or `rustup target add` them)
+and, for the C backend and its tests, a C compiler and `libgc-dev`.
+`cargo deny check` (CI runs it) checks the dependencies for advisories and
+licences.
 
 Run `cargo fmt --all`, `cargo clippy --all-targets -- -D warnings` and
 `cargo test` before every commit.
@@ -67,8 +71,17 @@ Run `cargo fmt --all`, `cargo clippy --all-targets -- -D warnings` and
   the syntax tree. Lowering reports E0401 for language features with no IR
   form yet; the backend reports it for library calls it cannot build.
 - `crates/kiln_codegen`: the C backend. `emit.rs` turns an IR program into
-  C with `emit_c(&ir)`; `runtime/kiln.c` is prepended to it. Building needs
+  C with `emit_c(&ir)`; `runtime/kiln.c` is prepended to it, and `kiln_rt`
+  (built for the system by `build.rs`) is linked with it. Building needs
   a C compiler and the Boehm GC (`libgc-dev`).
+- `crates/kiln_rt`: the runtime's Rust part, a static library linked into
+  every program, which exports `k_*` functions with the C ABI. The
+  network-facing parts of the runtime move here, onto maintained libraries
+  (the plan and its rules are in `docs/runtime-rust.md`); new runtime code
+  goes here rather than in `kiln.c`. `staticlib.rs` builds it for a target
+  with a nested cargo and the `runtime` profile; the build scripts of
+  `kiln_native` and `kiln_codegen` use it. A function here is declared at
+  the top of `kiln.c` so the C runtime can call it.
 - `crates/kiln_native`: the native backend, the default where `kiln`
   carries the target's runtime. `gen.rs` turns an IR program into an object
   file with Cranelift (`compile(&ir, target)`, ELF for Linux and COFF for
@@ -76,8 +89,9 @@ Run `cargo fmt --all`, `cargo clippy --all-targets -- -D warnings` and
   Linux `link.rs` links it with the built-in wild linker, and for Windows
   `pe.rs` adds it to the prelinked runtime executable as new sections.
   `build.rs` compiles both runtimes: `runtime/native.c` (which includes the
-  shared `kiln.c`) and the Boehm GC vendored in `vendor/bdwgc`, with musl's
-  C library for Linux and mingw-w64 for Windows, all carried inside `kiln`.
+  shared `kiln.c`), `kiln_rt` and the Boehm GC vendored in `vendor/bdwgc`,
+  with musl's C library for Linux and mingw-w64 for Windows, all carried
+  inside `kiln`.
   Code in `kiln.c` that differs on Windows goes under `#ifdef _WIN32`. `runtime.rs` lists the C signatures of the runtime functions the
   generated code calls. Generated code shows, compares, hashes and orders
   compound values through `k_desc_*` in `native.c`, which read a
@@ -154,7 +168,8 @@ Run `cargo fmt --all`, `cargo clippy --all-targets -- -D warnings` and
   wrong code.
 - **Both backends learn every feature.** A change to what the compiler
   builds goes in `kiln_codegen/src/emit.rs` and `kiln_native/src/gen.rs`;
-  runtime functions are `K_API` in `kiln.c`, so both can call them.
+  runtime functions are `K_API` in `kiln.c` or `#[no_mangle] extern "C"`
+  in `kiln_rt`, so both can call them.
 - Keep error messages short, specific, and in plain words: say what was
   expected and what was found.
 
