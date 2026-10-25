@@ -258,6 +258,33 @@ backends. It was built in steps, each on both backends and both targets:
    whether to keep an access log, each with a default that suits
    production.
 
+### Phase 2.5: VS Code developer experience
+
+Phase 2.5 follows the completed HTTP milestone and precedes phase 3's
+frontend work. It improves the editing and feedback loop without changing
+Kiln's language or moving Glaze rendering ahead of phase 3.
+
+- Build a dedicated VS Code extension with `.kiln` and `.glaze` language
+  registration, highlighting and brand-aligned file icons.
+- Use `kiln lsp` as the single source of language intelligence: existing
+  diagnostics and quick fixes, plus completion, hover types and signatures,
+  go to definition and symbol navigation for Kiln programs.
+- Provide VS Code commands for checking, building and running Kiln projects,
+  with a configurable compiler path and clear error/output reporting.
+- Preserve the LSP's usefulness for other editors. Test unsaved files,
+  shared-directory programs, incomplete source and Linux/Windows behavior.
+- Defer debugging (including DAP), rename and find references, advanced
+  Glaze semantics, formatting, hot reload and broader tooling to separate
+  future milestones (with the existing phase 5 scope retained).
+
+**Done when:** A developer can install the extension and comfortably
+write, navigate, check, build and run Kiln programs from VS Code without
+setting up the LSP manually, while other LSP editors benefit from the
+same compiler-backed language features.
+
+For the feature boundaries, implementation stages and validation plan, see
+[the phase 2.5 plan](phase-2.5.md).
+
 ## Web standard library
 
 `web` (server, router, static files), `template` (glazes), `json`, `form`,
@@ -349,9 +376,12 @@ background sync come with it.
 `kiln lsp` is a language server (LSP) for any editor. The first version, in
 phase 1, reports the same diagnostics as `kiln check` as you type and offers
 their suggested fixes as quick fixes; [editors.md](editors.md) shows how to
-set it up. Phase 5 adds completion, hover types,
-go to definition, find references, rename, and the same support inside
-glazes, including props and component attributes.
+set it up. Phase 2.5 adds completion, hover types and signatures, go to
+definition and symbol navigation, plus a VS Code extension with Kiln/Glaze
+highlighting, icons and commands. These language features stay in the Rust
+LSP and benefit other LSP clients. Phase 5 expands refactoring (find
+references and rename), deep Glaze prop/component navigation and the rest
+of the developer workflow. Debugging remains a separate later milestone.
 
 ## Built for coding agents
 
