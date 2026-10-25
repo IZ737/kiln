@@ -1,0 +1,5 @@
+{% props page: DocPage, current: String %}
+{% layout "layout.glaze" title: page.title, current: current %}
+<article class="prose">
+{raw page.html}
+</article>

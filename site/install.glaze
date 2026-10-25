@@ -1,0 +1,17 @@
+{% layout "layout.glaze" title: "Install", current: "/install" %}
+<article class="prose">
+<h1>Install Kiln</h1>
+<p>Kiln is one executable that needs nothing else installed. The installers download the latest release, check its SHA-256 checksum and put <code>kiln</code> in <code>~/.kiln/bin</code>, on your PATH.</p>
+<h2 id="linux">Linux</h2>
+<pre><code>curl --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/IZ737/kiln/main/install.sh | sh</code></pre>
+<h2 id="windows">Windows</h2>
+<p>In PowerShell:</p>
+<pre><code>irm https://raw.githubusercontent.com/IZ737/kiln/main/install.ps1 | iex</code></pre>
+<h2 id="upgrading">Upgrading</h2>
+<p>You run the installer once. After that, <code>kiln upgrade</code> replaces kiln with the latest release:</p>
+<pre><code>kiln upgrade            # the latest release
+kiln upgrade --check    # only say whether there is a newer one</code></pre>
+<h2 id="editors">Editors</h2>
+<p>Each release has a VS Code extension, and other editors use <code>kiln lsp</code>: see <a href="/docs/guides/editors">editor setup</a>.</p>
+<p>Next: <a href="/start">write your first program</a>.</p>
+</article>

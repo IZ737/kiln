@@ -70,6 +70,7 @@ struct kbox *k_rt_cookie(struct kstr *header, struct kstr *name);
 struct kstr *k_rt_html_escape(struct kstr *s);
 struct kstr *k_rt_html_safe_url(struct kstr *s);
 struct kstr *k_rt_base64_encode(struct kstr *s);
+struct kstr *k_rt_markdown_to_html(struct kstr *s);
 struct kstr *k_rt_ui_merge(struct kstr *a, struct kstr *b);
 struct kstr *k_rt_base64_decode(struct kstr *s, struct kstr **error);
 

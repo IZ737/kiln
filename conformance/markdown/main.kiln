@@ -1,0 +1,9 @@
+import markdown
+
+fn main() {
+    print(markdown.to_html("# Getting started\n\nKiln is *compiled* and `fast`.\n"))
+    print(markdown.to_html("| key | sets |\n| --- | --- |\n| `p` | padding |\n\n- [x] fired\n- [ ] glazed\n"))
+    // HTML in the text stays text, and unsafe links go nowhere.
+    print(markdown.to_html("<script>alert(1)</script>\n\n[home](/) and [x](javascript:alert(1))\n"))
+    print(markdown.to_html(""))
+}

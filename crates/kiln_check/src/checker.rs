@@ -142,6 +142,7 @@ const STD_MODULES: &[(&str, &str)] = &[
     ("io", include_str!("../std/io.kiln")),
     ("html", include_str!("../std/html.kiln")),
     ("base64", include_str!("../std/base64.kiln")),
+    ("markdown", include_str!("../std/markdown.kiln")),
 ];
 const PRELUDE: &str = include_str!("../std/prelude.kiln");
 

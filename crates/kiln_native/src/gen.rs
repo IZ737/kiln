@@ -2432,6 +2432,7 @@ impl Fx<'_, '_, '_> {
             ("html", "safe_url") => (self.call_rt("k_rt_html_safe_url", a), false),
             ("ui", "merge") => (self.call_rt("k_rt_ui_merge", a), false),
             ("base64", "encode") => (self.call_rt("k_rt_base64_encode", a), false),
+            ("markdown", "to_html") => (self.call_rt("k_rt_markdown_to_html", a), false),
             ("base64", "decode") => (self.call_rt("k_base64_decode", a), true),
             ("json", "encode") => {
                 let d = self.g.desc(&tys[0]);

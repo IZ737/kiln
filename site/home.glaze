@@ -1,0 +1,33 @@
+{% layout "layout.glaze" title: "A compiled language for the web", current: "/" %}
+{% let theme = active_theme() %}
+{% let hero = theme.hero() %}
+<section ui={hero.root}>
+<h1 ui={hero.title}>Web servers and sites, without the glue.</h1>
+<p ui={hero.lead}>Kiln is a compiled, garbage-collected language with the web built in: routing, templates, styles and a fast server, checked together and built into one executable.</p>
+<div ui={hero.actions}>
+<a href="/install" ui={theme.button(Tone.Primary)}>Install Kiln</a>
+<a href="/start" ui={theme.button(Tone.Quiet)}>Getting started</a>
+</div>
+</section>
+<div class="features">
+<Feature title="One executable" featured={true}>
+<p>A program and everything it serves, its CSS, images and pages, become one native binary for Linux or Windows. No runtime to install.</p>
+</Feature>
+<Feature title="Glazes">
+<p>Templates and components that the compiler checks against your types, escape by default and render to HTML on the server.</p>
+</Feature>
+<Feature title="Typed styles">
+<p>Write styles as checked records, with design tokens from your CSS, and keep plain CSS and CSS Modules when you want them.</p>
+</Feature>
+<Feature title="Finishes and themes">
+<p>Styles are ordinary functions, and a theme is a typed set of them. This site has two; changing one line switches between them.</p>
+</Feature>
+</div>
+<style>
+.features {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+    gap: 1rem;
+    margin-top: 2rem;
+}
+</style>

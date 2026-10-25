@@ -1,0 +1,7 @@
+// Markdown: CommonMark, with GitHub's tables, strikethrough and task lists.
+
+// The HTML for `text`. HTML written in the Markdown is shown as text, links
+// and images keep only URLs `html.safe_url` keeps, and headings get ids
+// from their words (`## Getting started` is `id="getting-started"`), so
+// the result can be placed in a page with `{raw ...}`.
+fn to_html(text: String) -> String {}

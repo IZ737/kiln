@@ -1606,6 +1606,10 @@ impl<'a> Gen<'a> {
                 let call = format!("k_rt_ui_merge({}, {})", arg(0), arg(1));
                 (self.store(&call, ty), false)
             }
+            ("markdown", "to_html") => {
+                let call = format!("k_rt_markdown_to_html({})", arg(0));
+                (self.store(&call, ty), false)
+            }
             ("base64", "encode") => {
                 let call = format!("k_rt_base64_encode({})", arg(0));
                 (self.store(&call, ty), false)

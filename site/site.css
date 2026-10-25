@@ -1,0 +1,164 @@
+/* The site's design tokens, its two themes and the styles of the
+   documentation's Markdown. Kiln reads the custom properties as tokens:
+   `--space-md` is `space.md` in a style. */
+
+:root {
+    --breakpoint-wide: 900px;
+    --size-page: 60rem;
+    --size-prose: 46rem;
+    --space-xs: 0.25rem;
+    --space-sm: 0.5rem;
+    --space-md: 1rem;
+    --space-lg: 1.5rem;
+    --space-xl: 3rem;
+    --text-sm: 0.875rem;
+    --text-lg: 1.25rem;
+    --text-hero: clamp(2.25rem, 6vw, 3.5rem);
+    --leading-body: 1.6;
+    --leading-tight: 1.1;
+    --motion-quick: opacity 120ms ease, background-color 120ms ease;
+}
+
+/* Forge: the brand's charcoal, terracotta and off-white. */
+.theme-forge {
+    --color-page: #1f232b;
+    --color-chrome: #181b21;
+    --color-raised: #2a2f39;
+    --color-line: #3a404c;
+    --color-text: #f7f3ec;
+    --color-muted: #b9b3a9;
+    --color-accent: #e07a52;
+    --color-on-accent: #1f232b;
+    --color-code: #14171c;
+    --font-body: system-ui, -apple-system, "Segoe UI", sans-serif;
+    --font-display: system-ui, -apple-system, "Segoe UI", sans-serif;
+    --font-code: ui-monospace, "Cascadia Code", Menlo, monospace;
+    --radius-card: 0.75rem;
+    --radius-control: 0.5rem;
+}
+
+/* Paper: ink on off-white, set like a book. */
+.theme-paper {
+    --color-page: #f7f3ec;
+    --color-chrome: #efe8dc;
+    --color-raised: #ffffff;
+    --color-line: #d9cfbf;
+    --color-text: #1f232b;
+    --color-muted: #5d5850;
+    --color-accent: #a8431f;
+    --color-on-accent: #ffffff;
+    --color-code: #efe8dc;
+    --font-body: Charter, "Iowan Old Style", Georgia, serif;
+    --font-display: "Iowan Old Style", Georgia, serif;
+    --font-code: ui-monospace, Menlo, Consolas, monospace;
+    --radius-card: 0;
+    --radius-control: 0;
+}
+
+*, *::before, *::after {
+    box-sizing: border-box;
+}
+
+body {
+    margin: 0;
+}
+
+a {
+    color: inherit;
+    text-decoration: none;
+}
+
+img {
+    max-width: 100%;
+}
+
+:focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 2px;
+}
+
+/* The link to skip the navigation, for keyboards and screen readers. */
+.skip {
+    position: absolute;
+    left: -100vw;
+}
+
+.skip:focus {
+    left: 1rem;
+    top: 1rem;
+    padding: 0.5rem 1rem;
+    background: var(--color-accent);
+    color: var(--color-on-accent);
+}
+
+/* On narrow screens the page comes before the navigation, which the
+   header's Menu link jumps to. */
+@media (max-width: 899.98px) {
+    .site-nav {
+        order: 1;
+    }
+}
+
+@media (min-width: 900px) {
+    .menu-link {
+        display: none;
+    }
+}
+
+/* The documentation's Markdown, which has no classes of its own. */
+.prose a {
+    color: var(--color-accent);
+    text-decoration: underline;
+}
+
+.prose h1, .prose h2, .prose h3 {
+    font-family: var(--font-display);
+    line-height: 1.2;
+    margin: 2em 0 0.5em;
+}
+
+.prose h1 {
+    margin-top: 0;
+    font-size: 2.25rem;
+}
+
+.prose code {
+    font-family: var(--font-code);
+    font-size: 0.9em;
+    background: var(--color-code);
+    padding: 0.1em 0.3em;
+    border-radius: 0.25rem;
+}
+
+.prose pre {
+    background: var(--color-code);
+    padding: var(--space-md);
+    overflow-x: auto;
+    border-radius: var(--radius-control);
+    border: 1px solid var(--color-line);
+}
+
+.prose pre code {
+    background: none;
+    padding: 0;
+}
+
+.prose table {
+    border-collapse: collapse;
+    display: block;
+    overflow-x: auto;
+}
+
+.prose th, .prose td {
+    border: 1px solid var(--color-line);
+    padding: var(--space-xs) var(--space-sm);
+    text-align: left;
+    vertical-align: top;
+}
+
+.prose blockquote {
+    margin: 0;
+    padding-left: var(--space-md);
+    border-left: 3px solid var(--color-accent);
+    color: var(--color-muted);
+}

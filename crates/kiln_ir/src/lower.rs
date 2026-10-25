@@ -2014,7 +2014,9 @@ impl Lowerer<'_> {
 
 /// Modules whose functions become [`ExprKind::Lib`] calls, for the
 /// backend to build.
-const LIB_MODULES: &[&str] = &["time", "fs", "os", "io", "web", "json", "html", "base64"];
+const LIB_MODULES: &[&str] = &[
+    "time", "fs", "os", "io", "web", "json", "html", "base64", "markdown",
+];
 
 /// Types of those modules whose methods are [`ExprKind::Lib`] calls too,
 /// named `Type.method`, with the receiver as the first argument.

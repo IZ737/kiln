@@ -27,6 +27,8 @@ httpdate = "1"
 hyper = { version = "1", features = ["http1", "server"] }
 percent-encoding = "2"
 serde = "1"
+# The `markdown` module.
+pulldown-cmark = { version = "0.13", default-features = false, features = ["html"] }
 # Escaping values in rendered glazes (`src/html.rs`).
 html-escape = "0.3"
 # `float_roundtrip` reads every float exactly, as `strtod` does.

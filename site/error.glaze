@@ -1,0 +1,6 @@
+{% props status: Int, message: String %}
+{% layout "layout.glaze" title: if status == 404 { "Not found" } else { "Error" } %}
+{% let theme = active_theme() %}
+<h1>{if status == 404 { "This page is not here" } else { "Something went wrong" }}</h1>
+<p>{message}</p>
+<p><a href="/docs/" ui={theme.button(Tone.Primary)}>Go to the documentation</a></p>

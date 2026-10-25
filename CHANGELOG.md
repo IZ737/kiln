@@ -39,6 +39,15 @@
   tokens, keywords and themes in `ui` records and CSS Module class names,
   hovers keys and tokens with their CSS, and goes to the stylesheet that
   declares a token or theme.
+- **The documentation site is a Kiln program.** `site/` serves the
+  landing, install and getting started pages and every page of `docs/`,
+  with glazes, layouts, typed styles, Finishes, a CSS Module and two
+  themes; changing `active_theme()` switches between them, layout
+  included. `kiln run site/tools/content` regenerates its pages from
+  `docs/`, and a test crawls every page and file it serves.
+- The new `markdown` module has `markdown.to_html`, on the pulldown-cmark
+  crate: HTML in the Markdown stays text, unsafe links are dropped and
+  headings get ids.
 - The new `html` module has `html.escape` and `html.safe_url`, on the
   html-escape crate, and the new `base64` module has `base64.encode` and
   `base64.decode`.
