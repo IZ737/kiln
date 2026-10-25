@@ -174,10 +174,12 @@ toolchain dependencies are acceptable.
 runtime work on Linux x86-64 and are the default there: every conformance
 program gives the same output as with the C backend, a build runs with no
 `PATH`, and CI runs the executable in an empty root directory (no libc, no
-`/proc`). Still to do: a prebuilt `kiln` that itself runs on any Linux
-x86-64 system (built against musl), published with each release, and a CI
-job that downloads it into a clean container and runs the conformance
-programs there; then the Windows target.
+`/proc`). `kiln` itself is built against musl into one static executable
+(about 18 MB) that runs on any Linux x86-64 system. CI and every release
+run all the conformance programs with it inside an empty `FROM scratch`
+container (`scripts/clean-check.sh`), and pushing a `v*` tag publishes it
+as a GitHub release. That meets the phase 1.5 goal for Linux x86-64; the
+Windows target is next.
 
 ### What phase 1 leaves for later
 

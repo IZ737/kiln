@@ -16,6 +16,11 @@ cargo run -p kiln_cli -- build conformance/basics --emit-ir out.ir  # see the IR
 cargo run -p kiln_cli -- run --backend c conformance/basics   # through C instead
 ```
 
+`scripts/clean-check.sh path/to/kiln` runs the conformance programs with a
+`kiln` binary inside an empty Docker container, as CI does for the static
+release build (`cargo build --release --target x86_64-unknown-linux-musl
+-p kiln_cli`).
+
 Building needs `musl-tools` (for the native backend's runtime) and, for the
 C backend and its tests, a C compiler and `libgc-dev`.
 

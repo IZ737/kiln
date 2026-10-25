@@ -1,0 +1,42 @@
+name: Release
+
+# Pushing a tag such as `v0.2.0` builds the standalone kiln for Linux
+# x86-64, checks it in an empty container, and publishes it as a GitHub
+# release.
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  linux-x86_64:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-unknown-linux-musl
+      - run: sudo apt-get update && sudo apt-get install -y musl-tools
+      - run: cargo build --release --target x86_64-unknown-linux-musl -p kiln_cli
+      - run: strip target/x86_64-unknown-linux-musl/release/kiln
+      - run: scripts/clean-check.sh target/x86_64-unknown-linux-musl/release/kiln
+      - name: Package
+        run: |
+          name="kiln-${GITHUB_REF_NAME}-x86_64-linux"
+          mkdir "$name"
+          cp target/x86_64-unknown-linux-musl/release/kiln LICENSE README.md "$name/"
+          tar czf "$name.tar.gz" "$name"
+          sha256sum "$name.tar.gz" > "$name.tar.gz.sha256"
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" --verify-tag --generate-notes \
+            "kiln-${GITHUB_REF_NAME}-x86_64-linux.tar.gz" \
+            "kiln-${GITHUB_REF_NAME}-x86_64-linux.tar.gz.sha256"

@@ -1,5 +1,19 @@
 # Changelog
 
+## Unreleased
+
+Phase 1.5 for Linux x86-64: a self-contained compiler and executables.
+
+- **Native backend:** `kiln build` and `kiln run` compile to machine code
+  with Cranelift and link with a linker built into `kiln`, against the Kiln
+  runtime, the Boehm garbage collector and musl's C library, which `kiln`
+  carries. Building needs no C compiler, linker or libraries, and the
+  executables are static. It is the default on Linux x86-64; `--backend c`
+  compiles through C as before.
+- **Standalone `kiln`:** releases ship one static `kiln` executable for
+  Linux x86-64, checked by running every conformance program in an empty
+  container.
+
 ## 0.1.0 (2026-10-24)
 
 The first tagged release: phases 0 and 1 of the [roadmap](README.md#roadmap).
