@@ -657,4 +657,4 @@ runtime.
 - Should a `.glaze` page with inline code be able to serve a route directly
   (PHP style), or should every route go through a handler?
 - Whether the exact WasmGC browser support matches the plan should be
-  confirmed before phase 5.
+  confirmed before Phase 4's WasmGC implementation.
