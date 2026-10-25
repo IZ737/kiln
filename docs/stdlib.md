@@ -43,7 +43,7 @@ nanoseconds since 1970-01-01.
 | `time.now() -> Instant` | The current time |
 | `time.unix(seconds: Int) -> Instant` | The instant `seconds` after 1970 |
 | `time.since(start: Instant) -> Duration` | Time passed since `start` |
-| `time.sleep(duration: Duration)` | Pauses the program |
+| `time.sleep(duration: Duration)` | Pauses the program, or in a server only the request's task |
 | `time.today() -> Date` | Today's date |
 | `time.parse(text: String) -> Instant !` | Reads RFC 3339 (`2026-10-24T21:30:00Z`, `...+02:00`) or a date alone |
 
@@ -183,7 +183,8 @@ or made directly with `web.Response(status: 204, headers: Map(), body: "")`.
 | `web.redirect(to, status: 302)` | Sends the client to `to` |
 | `web.not_found()` | 404 with `Not Found` |
 
-The server adds `content-length`, `date` and `connection: close`.
+The server adds `content-length` and `date`, and `connection: close` when it
+will close the connection.
 
 **Errors.** When a handler fails, the server logs the error on standard
 error (`error GET /posts/7 failed: ...`) and answers 500; a panic is logged
@@ -196,10 +197,28 @@ only this machine, `[::1]:8080` an IPv6 address, and port 0 any free port.
 It logs `info listening on http://localhost:8080` when it starts, and fails
 if it cannot listen, such as when the port is in use.
 
-For now the server handles one connection at a time and closes it after
-each response; requests are limited to 64 KiB of
-headers and 16 MiB of body, and a client that sends nothing for 10 seconds
-is dropped. `req.form` and `web.render` come later.
+**Connections.** Each connection is served on a task of its own (see
+[tasks](#tasks)), so a handler that sleeps or a client that sends slowly
+holds up only its own request. Connections stay open for more requests
+(HTTP/1.1 keep-alive) until the client sends `connection: close`, and a
+handler can close one by setting that header on its response. Requests
+are limited to 64 KiB of headers and 16 MiB of body, and a client that
+sends or reads nothing for 10 seconds is dropped. `req.form` and
+`web.render` come later.
+
+### Tasks
+
+The server runs on lightweight tasks, which share one core: a task runs
+until it waits for the network or for `time.sleep`, and then another
+runs. Waiting never stops the others, but a handler that computes for a
+long time without waiting holds up every request until it is done.
+
+Tasks are not yet something programs create themselves. Handlers may share
+values, but Kiln does not promise that changing a shared value from
+several handlers is safe: today's single-core scheduler only switches
+tasks where they wait, and a later one will run tasks on several cores.
+Keep shared values immutable; `Mutex`, `Atomic` and channels will come for
+the rest.
 
 ## `json`
 

@@ -82,6 +82,12 @@ interface; that arrives with wares.
 - An M:N scheduler of lightweight tasks; blocking I/O parks the task. Tasks
   spawned in a request are cancelled when it ends. Values shared between tasks
   must be immutable or wrapped in `Mutex`, `Atomic` or a channel.
+- Phase 2 runs tasks on one core, cooperatively: a task gives way only
+  where it waits. Programs must not rely on that. Changing a shared
+  mutable value from several tasks (such as a `var` captured by two
+  handlers) works today but is not a guarantee, and the compiler may later
+  reject it, so that tasks can move to several cores without changing
+  what programs mean.
 
 ## Compilation
 
@@ -200,7 +206,7 @@ Phase 1 is done when native CLI programs compile and run correctly; the
 programs in `conformance/` are the evidence. These gaps are known and
 deliberate:
 
-- The `sql` and `auth` modules type-check but report E0401 when built; they arrive in phases 2 to 4. So do tasks and the scheduler.
+- The `sql` and `auth` modules type-check but report E0401 when built; they arrive in phases 2 to 4.
   Phase 2 has started with `web`'s server and routing; see below.
 - Built-in methods cannot have default arguments yet, so `pad_start` and
   `pad_end` take their fill text explicitly.
@@ -218,8 +224,8 @@ in steps, each on both backends and both targets:
    parameters (`/posts/{id: Int}`), `text`, `html`, `redirect` and
    `not_found` responses, request headers, query parameters, cookies and
    bodies, and `listen`. The server is HTTP/1.1, written in the shared
-   runtime (`kiln.c`) over the system's sockets (Winsock on Windows). It
-   serves one connection at a time and closes it after the response. A
+   runtime (`kiln.c`) over the system's sockets (Winsock on Windows). At
+   first it served one connection at a time; step 3 changed that. A
    handler that fails or panics gets a 500 response and the error is
    logged; the server keeps running. Requests with no matching route get
    404, and a path that matches with another method gets 405 with `allow`.
@@ -229,8 +235,17 @@ in steps, each on both backends and both targets:
    comparing, now also written by the C backend), and one encoder and
    decoder in the runtime walk it, so both backends behave the same. A
    body that `req.json` cannot read gets 400 with the reason as JSON.
-3. Concurrency: requests on lightweight tasks, so a slow request does not
-   hold up the others, and keep-alive connections.
+3. **Concurrency (done).** Each connection runs on a lightweight task, so
+   a slow request does not hold up the others, and connections are kept
+   alive. Tasks are cooperative and share one core: the scheduler in
+   `kiln.c` switches stacks where a task waits for a socket or for
+   `time.sleep`, and polls the sockets (`poll`, `WSAPoll` on Windows) when
+   no task is ready. Sockets never block. The collector scans the stacks
+   of waiting tasks. Running tasks on several cores is a later milestone;
+   the runtime's task functions (spawn, wait, sleep) and Kiln's future
+   task API are meant to stay the same when it comes, which is why Kiln
+   does not promise that tasks can share mutable values (see Memory and
+   concurrency).
 4. Error handling and configuration for real deployments: error pages and
    types that map to statuses, request limits and timeouts, and an access
    log.

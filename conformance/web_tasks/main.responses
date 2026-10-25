@@ -1,0 +1,29 @@
+### GET /fast HTTP/1.1
+HTTP/1.1 200 OK
+content-type: text/plain; charset=utf-8
+content-length: 4
+connection: close
+
+fast
+### GET /slow HTTP/1.1
+HTTP/1.1 200 OK
+content-type: text/plain; charset=utf-8
+content-length: 39
+connection: close
+
+slow: 5000 items, the last is item 4999
+### GET /churn HTTP/1.1
+HTTP/1.1 200 OK
+content-type: text/plain; charset=utf-8
+content-length: 14
+connection: close
+
+churned 588890
+### POST /echo HTTP/1.1
+HTTP/1.1 200 OK
+content-type: text/plain; charset=utf-8
+content-length: 5
+connection: close
+
+fired
+### GET /quit HTTP/1.1

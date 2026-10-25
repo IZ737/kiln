@@ -16,6 +16,10 @@ executables, and the start of phase 2: HTTP servers.
   `web.json(value)` responds with JSON and `req.json<T>()` reads a request
   body; a body that does not decode gets 400. See
   [docs/stdlib.md](docs/stdlib.md#json).
+- **Concurrent requests:** the server runs each connection on a
+  lightweight task, so a slow handler or client holds up only its own
+  request, and keeps connections alive between requests. Tasks share one
+  core and switch where they wait for the network or `time.sleep`.
 - **Default arguments of standard library functions** are filled in when
   they are left out, as in `web.text("hi")`.
 

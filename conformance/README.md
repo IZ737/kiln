@@ -18,7 +18,9 @@ namespace, and one of them has `fn main()`. `cargo test` runs it with
   connections the test sends each request in the file, separated by lines
   of `###`, on a connection of its own. A request's lines up to the first
   empty line are its head and the rest is its body; the test adds
-  `content-length` when there is a body. The last request should make the
+  `content-length` when there is a body, and `connection: close` unless
+  the request has a `connection` header, then reads to the end of the
+  connection. The last request should make the
   program exit (with `os.exit(0)`). `main.responses` holds the expected
   responses, each after a `### ` line with its request line and without
   the `date` header, and `main.err` what the server logged, with the port
