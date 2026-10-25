@@ -2,7 +2,7 @@
 //! linked into every Kiln program next to the C runtime (`kiln.c`), and it
 //! exports `k_*` functions with the C ABI, so generated code and the C
 //! runtime call them as they call any other runtime function. The plan for
-//! what moves here, and why, is `docs/runtime-rust.md`.
+//! what moves here, and why, is `docs/plans/runtime-rust.md`.
 //!
 //! Code here follows three rules:
 //!

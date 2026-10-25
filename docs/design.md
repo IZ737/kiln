@@ -90,7 +90,7 @@ bindings).
 - No null. `T?` is optional and the missing value is `none`.
 - Errors are values: `fn f() -> T ! E`, propagated with `try`, handled with
   `catch`. A bare `!` uses the standard `Error` and accepts any error; `! E`
-  only passes on errors of type `E`. See [types.md](types.md). Panics are for bugs only, and the HTTP server recovers them per
+  only passes on errors of type `E`. See [types.md](reference/types.md). Panics are for bugs only, and the HTTP server recovers them per
   request.
 - JSON, form and SQL encoding are derived at compile time, with no runtime
   reflection.
@@ -456,7 +456,7 @@ setting up the LSP manually, while other LSP editors benefit from the
 same compiler-backed language features.
 
 For the feature boundaries, implementation stages and validation plan, see
-[the phase 2.5 plan](phase-2.5.md).
+[the phase 2.5 plan](plans/phase-2.5.md).
 
 ## Web standard library
 
@@ -516,7 +516,7 @@ components; `server fn` and generated typed RPC belong to that later phase.
 
 ### Phase 3: native styling, Finishes and themes
 
-See [the full Phase 3 plan](phase-3.md) for the ordered implementation steps,
+See [the full Phase 3 plan](plans/phase-3.md) for the ordered implementation steps,
 exact scope and acceptance tests:
 
 - Glazes may co-locate markup, logic, scoped `<style>` CSS and typed
@@ -590,7 +590,7 @@ current implementation.
 
 `kiln lsp` is a language server (LSP) for any editor. The first version, in
 phase 1, reports the same diagnostics as `kiln check` as you type and offers
-their suggested fixes as quick fixes; [editors.md](editors.md) shows how to
+their suggested fixes as quick fixes; [editors.md](guides/editors.md) shows how to
 set it up. Phase 2.5 added completion, hover types and signatures, go to
 definition and symbol navigation, plus a VS Code extension with
 Kiln/Glaze highlighting, icons and Check/Run/Build commands. These language features stay in the Rust
@@ -613,7 +613,7 @@ API/database interactions in a headless browser; Phase 6 extends the
 same tests to Ember hydration, browser events and reactive state.
 Browser binaries may need downloading/caching and are not bundled into
 Kiln server executables. Detailed scope and acceptance criteria:
-[testing.md](testing.md).
+[testing.md](plans/testing.md).
 
 ## Built for coding agents
 
@@ -631,7 +631,7 @@ The network-facing parts of the runtime (HTTP, JSON, later TLS) are moving
 from hand-written C to maintained Rust libraries (hyper, serde_json,
 rustls), with hyper running on Kiln's own tasks. JSON and the HTTP server
 have moved. The plan, its rules and
-its order are in [runtime-rust.md](runtime-rust.md).
+its order are in [runtime-rust.md](plans/runtime-rust.md).
 
 The runtime's Rust part is `crates/kiln_rt`, a static library that every
 program links next to the C runtime, for both backends and both targets.

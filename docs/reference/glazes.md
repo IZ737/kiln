@@ -9,7 +9,7 @@ ordinary Kiln, as in [syntax.md](syntax.md).
 directory: see [types.md](types.md#glazes) for the rules.
 
 **Phase 3 plan:** [compiled Glazes, native typed `ui`, Finishes, local CSS,
-CSS Modules, design tokens and themes](phase-3.md). That plan contains
+CSS Modules, design tokens and themes](../plans/phase-3.md). That plan contains
 *target syntax* and implementation steps not yet part of this syntax
 reference. This page documents the currently recognized forms.
 

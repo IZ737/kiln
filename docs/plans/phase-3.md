@@ -12,10 +12,10 @@ without rewriting its content or Glazes.
 
 This is the **agreed Phase 3 scope and acceptance plan**, not a statement
 that these facilities already work. New code examples are **target syntax**.
-Existing [Glaze syntax](glazes.md), [type rules](types.md) and
-[design decisions](design.md) remain authoritative for implemented features.
-See the [roadmap](../README.md#roadmap) for overall phase sequencing and
-[vision](vision.md) for the wider aims.
+Existing [Glaze syntax](../reference/glazes.md), [type rules](../reference/types.md) and
+[design decisions](../design.md) remain authoritative for implemented features.
+See the [roadmap](../../README.md#roadmap) for overall phase sequencing and
+[vision](../vision.md) for the wider aims.
 
 ## 1. Design decisions
 
@@ -141,7 +141,7 @@ and CSS generator, not parallel styling systems.
   branches and exhaustive matches.
 - Compile component calls with typed props, and layout nesting with
   named/default slots. Reuse current component resolution rules from
-  `docs/glazes.md` instead of inventing a new layout language.
+  `docs/reference/glazes.md` instead of inventing a new layout language.
 - Implement `web.render` to execute the compiled template and return an
   HTML response with `text/html; charset=utf-8`. Route failures through
   existing web error handling; a JSON or text route should still work

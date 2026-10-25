@@ -18,7 +18,7 @@ This document describes the **destination and design principles**, not a
 claim that every capability exists today. For implementation status and
 milestones see the [README roadmap](../README.md#roadmap); for detailed type,
 compiler and API decisions see [design.md](design.md). The concrete Phase 2.5
-editor milestone has its [own plan](phase-2.5.md). Syntax and commands labeled
+editor milestone has its [own plan](plans/phase-2.5.md). Syntax and commands labeled
 *proposed* below are not guaranteed to work yet. Decisions remain changeable
 before 1.0.
 
@@ -144,7 +144,7 @@ Tailwind-inspired keys (`bg`, `fg`, `p`, etc.), co-located `<style>`,
 ordinary CSS/CSS Modules and **Finishes**: ordinary functions returning
 reusable styling values or multi-part records. Compatible theme contracts
 can radically restyle the same content and Glazes, including layout.
-See the [Phase 3 implementation plan](phase-3.md) for the agreed scope,
+See the [Phase 3 implementation plan](plans/phase-3.md) for the agreed scope,
 API sketches and acceptance gates.
 
 - **CSS-first:** full native CSS must always work. Provide helpful design
@@ -516,7 +516,7 @@ debugging and deployment should feel like parts of one toolchain.
   application startup, reporting, screenshots and CI integration; it
   reuses a maintained browser automation engine underneath rather than
   reinventing Chromium or requiring users to maintain a Node-based test
-  project. See the [integrated testing plan](testing.md).
+  project. See the [integrated testing plan](plans/testing.md).
 - **Future interactive coverage:** Phase 6 extends that same browser
   runner to Ember hydration, reactive state, events and typed RPC.
   Formatter, hot reload and richer editor refactorings remain planned
@@ -594,7 +594,7 @@ RPC, broad npm interop, full Wares/registry, `kiln fire` release workflow,
 `kiln deploy`/`kiln release`, optimized LLVM builds, and much of the planned
 developer tooling. Existing parser/type-checker support for a construct is
 not the same as a working native runtime implementation; consult current
-[stdlib status](stdlib.md) and tests.
+[stdlib status](reference/stdlib.md) and tests.
 
 ### Later explorations, not fixed promises
 

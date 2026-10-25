@@ -87,7 +87,7 @@ KILN_PATH=../../target/debug/kiln npm run test:integration   # in a real VS Code
 The integration test downloads VS Code the first time and needs a display
 (CI runs it under `xvfb-run`). The fast tests tokenize code with the same
 TextMate engine VS Code uses, check the scopes of the constructs in
-`docs/syntax.md` and `docs/glazes.md`, check that every program in
+`docs/reference/syntax.md` and `docs/reference/glazes.md`, check that every program in
 `examples/` tokenizes with no rule left open, and activate the extension
 against a stand-in for VS Code. They also check that the bundle loads with
 nothing but VS Code around it, and that the package holds only what VS Code

@@ -15,7 +15,7 @@ For implementation choices, distinguish **implemented**, **roadmapped**, and
 the vision is not permission to implement future milestones early or treat
 proposed API spellings as current language syntax.
 
-For Phase 3 work, follow [docs/phase-3.md](docs/phase-3.md): `Ui` is a
+For Phase 3 work, follow [docs/plans/phase-3.md](docs/plans/phase-3.md): `Ui` is a
 compiler-typed styling value, `ui` is a structured Kiln expression,
 **Finishes are ordinary functions** returning style values/records,
 themes are checked contracts, and native CSS/CSS Modules remain supported.
@@ -23,7 +23,7 @@ Keep SSR/styling separate from later Embers/WasmGC and Wares work. Target
 syntax is not current syntax until implemented and tested; update the
 reference docs and tests as the feature becomes real.
 
-For Phase 5 testing, read [docs/testing.md](docs/testing.md): the public
+For Phase 5 testing, read [docs/plans/testing.md](docs/plans/testing.md): the public
 `kiln test` tool must support unit, integration **and real-browser E2E**
 tests in one CLI. The Phase 6 Ember tests extend the same runner; do not
 invent a separate JavaScript testing ecosystem or a custom browser.
@@ -90,7 +90,7 @@ Run `cargo fmt --all`, `cargo clippy --all-targets -- -D warnings` and
 - `crates/kiln_rt`: the runtime's Rust part, a static library linked into
   every program, which exports `k_*` functions with the C ABI. The
   network-facing parts of the runtime move here, onto maintained libraries
-  (the plan and its rules are in `docs/runtime-rust.md`); new runtime code
+  (the plan and its rules are in `docs/plans/runtime-rust.md`); new runtime code
   goes here rather than in `kiln.c`. `staticlib.rs` builds it for a target
   with a nested cargo and the `runtime` profile; the build scripts of
   `kiln_native` and `kiln_codegen` use it. A function here is declared at
@@ -154,7 +154,7 @@ Run `cargo fmt --all`, `cargo clippy --all-targets -- -D warnings` and
   them, so they must stay valid.
 - `assets/brand/`: the logo and vocabulary icons. Brand colours are terracotta
   `#C65A34`, charcoal `#1F232B` and off-white `#F7F3EC`.
-- `docs/syntax.md` and `docs/glazes.md` document what the parsers accept; `docs/stdlib.md` lists
+- `docs/reference/syntax.md` and `docs/reference/glazes.md` document what the parsers accept; `docs/reference/stdlib.md` lists
   the standard library modules the compiler builds; `docs/design.md` is the
   language design.
 
@@ -170,14 +170,14 @@ Run `cargo fmt --all`, `cargo clippy --all-targets -- -D warnings` and
 - **Give a fix when there is one.** Use `Diagnostic::with_suggestion` with
   the exact replacement text, so agents can apply it from `kiln check --json`.
 - **Syntax changes update three places:** the parser, a test in
-  `crates/kiln_syntax/tests/parser.rs` (or `glaze.rs`), and `docs/syntax.md`
-  (or `docs/glazes.md`). New keywords and literals also go in the grammars
+  `crates/kiln_syntax/tests/parser.rs` (or `glaze.rs`), and `docs/reference/syntax.md`
+  (or `docs/reference/glazes.md`). New keywords and literals also go in the grammars
   in `editors/vscode/syntaxes`.
 - **One mistake, one error.** After an error the checker uses `Ty::Unknown`,
   which is compatible with everything, so later uses are not reported again.
 - **Standard library changes** go in `crates/kiln_check/std/*.kiln`. New
   modules are also listed in `STD_MODULES` in `checker.rs`. To compile a
-  module's functions, see the steps in `docs/stdlib.md`.
+  module's functions, see the steps in `docs/reference/stdlib.md`.
 - **The compiler never guesses.** A program that type-checks but uses
   something the backend cannot build yet gets E0401 at that spot, never
   wrong code.

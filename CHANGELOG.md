@@ -3,7 +3,7 @@
 ## 0.6.0 (2026-10-25)
 
 The runtime's network-facing parts move from hand-written C to maintained
-Rust libraries ([docs/runtime-rust.md](docs/runtime-rust.md)).
+Rust libraries ([docs/plans/runtime-rust.md](docs/plans/runtime-rust.md)).
 
 - **The web server runs on hyper.** Reading requests, chunked bodies,
   `expect: 100-continue`, keep-alive and writing responses are hyper's,
@@ -85,7 +85,7 @@ the program, not just its errors.
 - **Symbols:** the outline of a file, and the program's functions and
   types by name (**Go to Symbol in Workspace**).
 - These work in any editor with an LSP client, on unsaved and unfinished
-  code; see [docs/editors.md](docs/editors.md).
+  code; see [docs/guides/editors.md](docs/guides/editors.md).
 
 ## 0.4.0 (2026-10-25)
 
@@ -127,12 +127,12 @@ executables, and most of phase 2: HTTP servers.
   `web.html`, `web.redirect` and `web.not_found`, request headers, query
   parameters, cookies and bodies, and `app.listen`. A handler that fails or
   panics gets a 500 response and the server keeps going. It works with both
-  backends, on Linux and Windows. See [docs/stdlib.md](docs/stdlib.md#web).
+  backends, on Linux and Windows. See [docs/reference/stdlib.md](docs/reference/stdlib.md#web).
 - **JSON:** `json.encode(value)` and `json.decode<T>(text)`, derived from
   types at compile time, with errors that say where a value went wrong.
   `web.json(value)` responds with JSON and `req.json<T>()` reads a request
   body; a body that does not decode gets 400. See
-  [docs/stdlib.md](docs/stdlib.md#json).
+  [docs/reference/stdlib.md](docs/reference/stdlib.md#json).
 - **Concurrent requests:** the server runs each connection on a
   lightweight task, so a slow handler or client holds up only its own
   request, and keeps connections alive between requests. Tasks share one
@@ -172,7 +172,7 @@ Kiln compiles command-line programs to native executables.
   Programs compile through C with the Boehm garbage collector.
 - **Standard library:** the prelude (`print`, and methods on `Int`, `Float`,
   `String`, `Duration`, `List`, `Map` and `Set`), `time`, `fs`, `os`, `io`
-  and `log`. See [docs/stdlib.md](docs/stdlib.md).
+  and `log`. See [docs/reference/stdlib.md](docs/reference/stdlib.md).
 - **Glazes:** `.glaze` templates parse and type-check; rendering them comes
   in phase 3.
 

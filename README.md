@@ -150,7 +150,7 @@ does this in a terminal, never in CI; set `KILN_NO_UPDATE_CHECK=1` to turn it of
 For VS Code, each release also has the extension as
 `kiln-vscode-<version>.vsix`: install it with `code --install-extension
 kiln-vscode-<version>.vsix` (see [editors/vscode](editors/vscode)). Other
-editors use `kiln lsp`; [docs/editors.md](docs/editors.md) shows how.
+editors use `kiln lsp`; [docs/guides/editors.md](docs/guides/editors.md) shows how.
 
 Then:
 
@@ -182,7 +182,7 @@ cargo run -p kiln_cli -- parse examples/hello/main.kiln
 cargo run -p kiln_cli -- explain E0106
 ```
 
-For errors and quick fixes in your editor, see [docs/editors.md](docs/editors.md).
+For errors and quick fixes in your editor, see [docs/guides/editors.md](docs/guides/editors.md).
 
 ## Repository layout
 
@@ -199,14 +199,10 @@ For errors and quick fixes in your editor, see [docs/editors.md](docs/editors.md
 | `conformance/` | Programs with their expected output; every one is compiled and run in CI |
 | `assets/brand/` | Logo, symbol and the vocabulary icons (`.kiln`, glaze, ware, ember, `kiln fire`), as SVG and PNG |
 | `editors/vscode` | The VS Code extension: Kiln and Glaze highlighting and file icons |
-| `docs/syntax.md` | The syntax the parser accepts |
-| `docs/glazes.md` | Glaze (template and component) syntax |
-| `docs/types.md` | The type rules the checker enforces |
-| `docs/stdlib.md` | The standard library modules the compiler builds |
-| `docs/editors.md` | Setting up `kiln lsp` in Neovim, Helix and other editors |
-| `docs/phase-2.5.md` | VS Code extension and enhanced LSP implementation stages and acceptance criteria |
-| `docs/phase-3.md` | Phase 3: compiled Glazes, typed `ui` styling, Finishes, themes, CSS and acceptance checks |
-| `docs/testing.md` | Planned `kiln test` runner: unit, integration and automated browser/E2E testing |
+| [Documentation index](docs/README.md) | Navigate language reference, editor guides and implementation plans |
+| [`docs/reference/`](docs/reference/) | Language reference: syntax, type rules, Glazes, standard library |
+| [`docs/guides/`](docs/guides/) | Editor installation and setup |
+| [`docs/plans/`](docs/plans/) | Implementation plans: runtime migration, Phase 2.5, Phase 3 and testing |
 | `docs/design.md` | Language design and technical decisions |
 | `docs/vision.md` | Full product vision: frontend DX, performance, interop, ecosystem and adoption |
 
@@ -221,10 +217,10 @@ For errors and quick fixes in your editor, see [docs/editors.md](docs/editors.md
 | ✅ 1.5 | Self-contained toolchain and executables: Cranelift native backend, integrated linking, statically bundled runtime and Boehm GC (Linux x86-64 first); keep the C backend | Download one `kiln` executable and compile supported CLI programs without installing a C compiler, linker or runtime libraries; run the resulting native executables on compatible clean systems without installing dependencies |
 | ✅ Windows target (post-1.5, non-blocking) | Windows x86-64 support: standalone `kiln.exe` compiler and native Windows `.exe` outputs, with a bundled linker, statically linked Kiln runtime and GC, and Windows CI conformance | Download `kiln.exe`, compile a supported CLI app and run its `.exe` on a clean compatible Windows system without installing a C compiler, linker, Rust or a separate GC/runtime package |
 | ✅ 2 | Core runtime, HTTP server, typed routing, JSON, error handling | A real HTTP API runs as a native binary |
-| ✅ 2.5 | VS Code developer experience: dedicated extension, Kiln/Glaze highlighting and file icons, compiler-backed completion, hover, definition and symbol navigation, diagnostics/quick fixes, Check/Run/Build actions; [implementation plan](docs/phase-2.5.md) | A developer can edit, navigate, check, build and run Kiln programs comfortably in VS Code with the Rust LSP providing intelligence to other editors |
-| 3 | Compiled Glazes/layouts, native typed `ui` styling, CSS/CSS Modules, design tokens, **Finishes**, typed themes and LSP support; [implementation plan](docs/phase-3.md) | A native Kiln docs site, restylable via two compatible themes without changing content/Glazes |
+| ✅ 2.5 | VS Code developer experience: dedicated extension, Kiln/Glaze highlighting and file icons, compiler-backed completion, hover, definition and symbol navigation, diagnostics/quick fixes, Check/Run/Build actions; [implementation plan](docs/plans/phase-2.5.md) | A developer can edit, navigate, check, build and run Kiln programs comfortably in VS Code with the Rust LSP providing intelligence to other editors |
+| 3 | Compiled Glazes/layouts, native typed `ui` styling, CSS/CSS Modules, design tokens, **Finishes**, typed themes and LSP support; [implementation plan](docs/plans/phase-3.md) | A native Kiln docs site, restylable via two compatible themes without changing content/Glazes |
 | 4 | SQL (SQLite first, for local development with no database server, then Postgres and MySQL), ORM with schema import (`kiln db pull`), migrations, forms, validation, sessions and auth, generated admin UI | A database-backed application with authentication works |
-| 5 | **Multi-folder projects/local modules** (`pub` visibility, cross-folder compiler/LSP support), optional **`kiln.toml` project manifest**, reproducible **`kiln.lock`**, **global per-user Ware cache** (shared across projects, no `ware_modules` folders), offline resolution and cache controls, Wares dependency management and workspace foundations; advanced tooling, formatter, hot reload, **built-in unit/integration/browser `kiln test`**, MCP server and agent guide. See [project/manifest design](docs/design.md#phase-5-project-manifests-and-ware-dependencies) and [testing plan](docs/testing.md). | Single-file programs still run without configuration; a multi-folder app resolves local modules independently of a registry; versioned Wares are locked reproducibly; developer and CI testing use one CLI. |
+| 5 | **Multi-folder projects/local modules** (`pub` visibility, cross-folder compiler/LSP support), optional **`kiln.toml` project manifest**, reproducible **`kiln.lock`**, **global per-user Ware cache** (shared across projects, no `ware_modules` folders), offline resolution and cache controls, Wares dependency management and workspace foundations; advanced tooling, formatter, hot reload, **built-in unit/integration/browser `kiln test`**, MCP server and agent guide. See [project/manifest design](docs/design.md#phase-5-project-manifests-and-ware-dependencies) and [testing plan](docs/plans/testing.md). | Single-file programs still run without configuration; a multi-folder app resolves local modules independently of a registry; versioned Wares are locked reproducibly; developer and CI testing use one CLI. |
 | 6 | Embers on WasmGC, reactive UI, server functions, generated RPC, JS interoperability; extend built-in browser testing to hydration, events, reactive state and typed RPC | A full-stack interactive Kiln application works end-to-end and its browser behaviour is covered by `kiln test` |
 | 7 | Production hardening, static site generation (`kiln fire --static`), deployment, performance (precise GC, LLVM release builds), stability | Kiln 1.0: stable and ready for personal production projects |
 | 8+ | Installable PWAs with local-first data that syncs with the server, advanced optimization, interoperability improvements, desktop apps, additional targets, request arenas, self-hosting | Independent milestones after 1.0 |

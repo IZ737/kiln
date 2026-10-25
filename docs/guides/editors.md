@@ -23,7 +23,7 @@ props, and the editor's unsaved text is used for every open file. It gives:
 Code that does not parse yet still gets answers: whatever the parser
 recovered is analyzed, so completing `post.` on an unfinished line works.
 Find references, rename and deeper Glaze semantics come in phase 5; a
-debugger is not part of phase 2.5. See [the phase 2.5 plan](phase-2.5.md).
+debugger is not part of phase 2.5. See [the phase 2.5 plan](../plans/phase-2.5.md).
 
 Install the `kiln` binary first:
 
@@ -33,7 +33,7 @@ cargo install --path crates/kiln_cli
 
 ## VS Code
 
-The extension in [editors/vscode](../editors/vscode) starts `kiln lsp` for
+The extension in [editors/vscode](../../editors/vscode) starts `kiln lsp` for
 you, highlights `.kiln` and `.glaze` files, gives them Kiln's file icons,
 and adds **Kiln: Check Program**, **Run Program** and **Build Program**
 commands and tasks. It finds `kiln` on your `PATH` or in `~/.kiln/bin`, or

@@ -1,7 +1,7 @@
 # Standard library
 
 The standard library's signatures are Kiln files in
-[`crates/kiln_check/std/`](../crates/kiln_check/std). The prelude is visible
+[`crates/kiln_check/std/`](../../crates/kiln_check/std). The prelude is visible
 everywhere; every other module is imported by name (`import fs`). This page
 lists the modules the compiler can build into native programs today. The
 others (`sql`, `auth`), and the parts of `web` not listed here,
@@ -12,7 +12,7 @@ phase arrives.
 
 `print`, `env` and `panic`, and the methods of `Int`, `Float`, `String`,
 `Duration`, `List`, `Map` and `Set`. The full list is in
-[`prelude.kiln`](../crates/kiln_check/std/prelude.kiln); the ones most
+[`prelude.kiln`](../../crates/kiln_check/std/prelude.kiln); the ones most
 programs reach for:
 
 | Type | Methods |
