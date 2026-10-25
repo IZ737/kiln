@@ -20,6 +20,7 @@ This plan refines the [vision for Embers](../vision.md#embers-interactivity-when
 8. **Use browser standards and existing tools.** Reuse maintained Wasm and JS interop libraries/bundlers, and permit ordinary HTML/CSS/JS integrations. The implementation is replaceable; Kiln developer-facing semantics are the durable contract.
 9. **No premature ecosystem scope.** General multi-folder modules, Wares, official UI Ware, `kiln.toml`, public `kiln test`, formatter and compiler MCP follow in Phase 6.
 10. **Testing now, polished runner later.** Extend compiler conformance and real-browser CI during Phase 4. Phase 6 supplies the unified public test runner, **including Ember hydration/RPC from its first release**.
+11. **WasmGC-only browser target for Phase 4.** Do not build or require a JavaScript code-generation fallback in this phase. When browser feature detection shows missing WasmGC support, preserve usable SSR HTML and native link/form navigation wherever possible; Ember-only functionality may be unavailable. A JavaScript fallback backend is a [long-term vision item](../vision.md#future-javascript-compiler-fallback), not a 1.0 gate. The minimal JavaScript bootstrap/interop bridge for WasmGC is not such a backend.
 
 ## 2. Target developer experience
 
@@ -81,7 +82,7 @@ An SSR page selectively hydrates a component:
 - Track forbidden browser imports/effects during checking and emit source-linked diagnostics. The browser must never gain direct access to server secrets, operating-system resources or native handles; Phase 5's SQL and session APIs must also be server-only.
 - Define compiler-level interop and type conversion for JS/DOM strings, numbers, arrays, records, handles, callbacks and promises, including lifetime/GC and exception propagation.
 - Generate content-addressed Wasm and minimal JS bridge/assets through Kiln's existing asset pipeline. Release output must not require a separate JavaScript project or Node runtime on the deployed server.
-- Document supported browsers/WasmGC capabilities and feature-detect unsupported platforms gracefully without destroying usable SSR content.
+- Document a tested WasmGC browser support matrix and feature-detect unsupported platforms before initializing an Ember. Preserve usable SSR content and native navigation/form behaviour when interactivity cannot run. Do not implement a separate JavaScript code-generation fallback in Phase 4; that is a longer-term compatibility goal.
 - Source maps/error traces and useful debug symbols should point back to Kiln/Glaze where feasible; don't leak secret-only server code into browser assets.
 
 **Gate:** a real browser runs generated WasmGC from a Kiln program with representative data structures, errors, generic code and closures; C/native and Wasm outputs have shared semantic regression cases.
@@ -174,6 +175,7 @@ Each step is a separately reviewable milestone with diagnostics, conformance/bro
 
 - [ ] WasmGC executes checked Kiln browser code with coherent semantics for supported types, generics, closures, errors and GC.
 - [ ] Server-rendered Glazes remain default; Embers selectively hydrate and don't force full-page JavaScript.
+- [ ] Unsupported WasmGC browsers retain usable SSR markup and native navigation/form behaviour where possible, without a second JavaScript compiler target.
 - [ ] State/handlers update DOM predictably with safe lifecycle, list identity and keyboard/focus handling.
 - [ ] `server fn` calls compile into typed serialized RPC with failure, cancellation and version checks, without handwritten frontend route wrappers.
 - [ ] The RPC transport implements explicit export control, input validation, origin/CORS/CSRF protection as appropriate, bounded resources and request context/policy hooks ready for Phase 5 authentication.
@@ -187,7 +189,7 @@ Each step is a separately reviewable milestone with diagnostics, conformance/bro
 - **Phase 5:** SQL/ORM, schema import/migrations, typed forms/validation, sessions/auth, generated admin and authenticated database-backed Ember/RPC applications.
 - **Phase 6:** Multi-folder modules, `kiln.toml`/`kiln.lock`, Wares/registry/global cache, official accessible UI Ware, public `kiln test` (with Ember tests **at launch**), formatter/live reload/refactoring and compiler MCP.
 - **Phase 7:** Deployment, static-site export, extensive optimization/hardening and long-term compatibility guarantees.
-- **Later:** PWA offline/sync, advanced desktop reuse, arbitrary npm/React/Node compatibility, freestanding targets and complete debugger.
+- **Later:** Optional JavaScript fallback code generation for browsers without WasmGC (from the same checked Kiln semantics, subject to feasibility and cross-backend conformance), PWA offline/sync, advanced desktop reuse, arbitrary npm/React/Node compatibility, freestanding targets and complete debugger.
 - **Non-goals:** Forced SPA routing, client-side access to server data stores/secrets, runtime template interpretation or a mandatory second JavaScript framework.
 
 **In one sentence:** **Phase 4 completes Kiln's browser-interactivity and typed server/client language capabilities; Phase 5 then connects that boundary to persistence, accounts and authorization.**

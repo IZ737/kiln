@@ -189,6 +189,28 @@ duplicate DTOs or serialization code. Phase 4 implements this boundary using
 pure or ephemeral-state functions, with Phase 5 adding database-backed,
 authenticated server operations.
 
+#### Future JavaScript compiler fallback
+
+**WasmGC is Kiln's only browser compilation target through Phase 4 and the
+initial 1.0 release.** If a browser does not support the required WasmGC
+features, Kiln should preserve useful server-rendered content and ordinary
+HTML link/form behaviour wherever possible. Ember-only interactivity may be
+unavailable in such browsers. The runtime should feature-detect support and
+avoid breaking otherwise usable pages.
+
+A **future optional JavaScript fallback compiler backend is part of the
+long-term vision**, not the Phase 4 implementation or a 1.0 delivery gate.
+It would compile the same checked Kiln/browser-reachable source to JavaScript
+rather than require developers to write a second implementation; equivalent
+observable semantics, safe server/client boundaries, compatible generated RPC,
+asset selection and cross-backend conformance tests are requirements before
+shipping it. Actual development timing is subject to browser support data,
+feasibility, generated bundle/performance costs and ongoing maintenance.
+
+This possible JavaScript **code-generation backend** is distinct from the
+minimal JavaScript bootstrap and browser interop used to execute WasmGC
+Embers today.
+
 ### Static and offline variants
 
 The same component system should support SSR, selective interactivity and,
@@ -650,9 +672,10 @@ Opt-in arenas and explicit allocation controls, SIMD/data-layout APIs,
 general bidirectional FFI/binding generation, Wasm Component Model/WIT,
 fully featured MCP application support, AI-assisted debugger snapshots,
 PWA offline synchronization, cross-target Glaze/Ember reuse in desktop,
-TUI and games, freestanding/bare-metal targets and an experimental small OS
-written in Kiln, and additional platforms. These require design,
-compatibility and maintenance trade-off reviews.
+TUI and games, a JavaScript fallback compiler backend for non-WasmGC browsers,
+freestanding/bare-metal targets and an experimental small OS written in Kiln,
+and additional platforms. These require design, compatibility and maintenance
+trade-off reviews.
 
 ### Deliberate non-goals
 
