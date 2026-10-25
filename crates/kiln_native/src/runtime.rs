@@ -15,14 +15,17 @@ macro_rules! runtime_file {
 }
 
 /// The Linux runtime's files, in link order: musl's start files, the Kiln
-/// runtime, the garbage collector and the C library. The generated object
-/// goes after `crti.o`.
+/// runtime's C part, the garbage collector, the runtime's Rust part
+/// (`kiln_rt`, with the parts of Rust's standard library it uses), and the
+/// C library. The generated
+/// object goes after `crti.o`.
 #[cfg(kiln_runtime_linux)]
 pub(crate) const LINUX_FILES: &[(&str, &[u8])] = &[
     runtime_file!("crt1.o"),
     runtime_file!("crti.o"),
     runtime_file!("native.o"),
     runtime_file!("gc.o"),
+    runtime_file!("kiln_rt.o"),
     runtime_file!("libc.a"),
     runtime_file!("crtn.o"),
 ];

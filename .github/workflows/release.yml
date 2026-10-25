@@ -25,7 +25,8 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
         with:
-          targets: x86_64-unknown-linux-musl
+          # kiln carries the runtime's Rust part built for both.
+          targets: x86_64-unknown-linux-musl, x86_64-pc-windows-gnu
       # A stuck package mirror fails the step instead of hanging.
       - run: sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=30 update && sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=30 install -y musl-tools gcc-mingw-w64-x86-64
         timeout-minutes: 5
@@ -58,7 +59,8 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
         with:
-          targets: x86_64-pc-windows-gnu
+          # kiln carries the runtime's Rust part built for both.
+          targets: x86_64-unknown-linux-musl, x86_64-pc-windows-gnu
       # A stuck package mirror fails the step instead of hanging.
       - run: sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=30 update && sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=30 install -y musl-tools gcc-mingw-w64-x86-64
         timeout-minutes: 5

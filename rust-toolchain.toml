@@ -1,3 +1,6 @@
 [toolchain]
 channel = "stable"
 components = ["rustfmt", "clippy"]
+# The runtime's Rust part (`crates/kiln_rt`) is built for every target
+# `kiln` makes programs for.
+targets = ["x86_64-unknown-linux-musl", "x86_64-pc-windows-gnu"]

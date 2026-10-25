@@ -18,3 +18,13 @@ kiln_codegen = { path = "crates/kiln_codegen" }
 kiln_native = { path = "crates/kiln_native" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+
+# The runtime library linked into every Kiln program (`crates/kiln_rt`).
+# Fat LTO keeps only what its exported functions reach, so the library that
+# `kiln` carries holds the parts of Rust's standard library it uses, not
+# all of it.
+[profile.runtime]
+inherits = "release"
+panic = "abort"
+lto = "fat"
+codegen-units = 1

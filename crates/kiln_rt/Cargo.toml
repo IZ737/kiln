@@ -1,0 +1,15 @@
+[package]
+name = "kiln_rt"
+description = "The part of the Kiln runtime written in Rust, linked into every Kiln program"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+# `kiln_native` and `kiln_codegen` build this as a static library for each
+# target they make programs for, with the `runtime` profile (see the
+# workspace's Cargo.toml), and carry the result. See `staticlib.rs`.
+[lib]
+crate-type = ["staticlib"]
+doctest = false

@@ -1,15 +1,17 @@
 //! Builds the runtimes that native executables are made from, one for each
-//! target: the Kiln runtime and the Boehm garbage collector (vendored in
-//! `vendor/bdwgc`) with a C library. The `kiln` binary carries the results,
+//! target: the Kiln runtime (the C part and `kiln_rt`, the Rust part) and the
+//! Boehm garbage collector (vendored in `vendor/bdwgc`) with a C library. The `kiln` binary carries the results,
 //! so the people who use it need no C compiler or libraries.
 //!
 //! - Linux x86-64 needs a musl C compiler: `musl-gcc` (the `musl-tools`
 //!   package on Debian and Ubuntu), or the one `KILN_MUSL_CC` names, and the
 //!   directory with musl's `libc.a` (found next to the usual install
-//!   locations, or named by `KILN_MUSL_LIB`). The runtime is a set of
+//!   locations, or named by `KILN_MUSL_LIB`), and Rust's standard library
+//!   for `x86_64-unknown-linux-musl`. The runtime is a set of
 //!   objects that the built-in linker links with each program.
 //! - Windows x86-64 needs mingw-w64: `x86_64-w64-mingw32-gcc` and its
-//!   `windres`, or the compiler `KILN_MINGW_CC` names. The runtime is an
+//!   `windres`, or the compiler `KILN_MINGW_CC` names, and Rust's standard
+//!   library for `x86_64-pc-windows-gnu`. The runtime is an
 //!   executable, linked here, that `kiln` adds each program to (see
 //!   `src/pe.rs`), with a list of where its symbols are.
 //!
@@ -18,6 +20,10 @@
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
+
+#[path = "../kiln_rt/staticlib.rs"]
+#[allow(dead_code)]
+mod kiln_rt;
 
 const MUSL_LIB_DIRS: &[&str] = &[
     "/usr/lib/x86_64-linux-musl",
@@ -28,7 +34,15 @@ const MUSL_LIB_DIRS: &[&str] = &[
 ];
 
 /// The files the Linux runtime is made of, in the order they are linked.
-const LINUX_FILES: &[&str] = &["crt1.o", "crti.o", "native.o", "gc.o", "libc.a", "crtn.o"];
+const LINUX_FILES: &[&str] = &[
+    "crt1.o",
+    "crti.o",
+    "native.o",
+    "gc.o",
+    "kiln_rt.o",
+    "libc.a",
+    "crtn.o",
+];
 
 struct Paths {
     manifest: PathBuf,
@@ -134,6 +148,11 @@ fn linux(p: &Paths) -> Result<(), String> {
             "-DALWAYS_SMALL_CLEAR_STACK",
         ],
     )?;
+    // Rust's standard library reads its own stack traces with libunwind,
+    // which Rust ships for musl targets.
+    let rt = kiln_rt::build("x86_64-unknown-linux-musl", &p.out)?;
+    let unwind = kiln_rt::sysroot_lib("x86_64-unknown-linux-musl", "self-contained/libunwind.a")?;
+    kiln_rt::prelink(&cc, "nm", &[rt, unwind], &p.out.join("kiln_rt.o"))?;
     for file in ["crt1.o", "crti.o", "crtn.o", "libc.a"] {
         std::fs::copy(lib.join(file), p.out.join(file))
             .map_err(|e| format!("cannot copy {}: {e}", lib.join(file).display()))?;
@@ -189,6 +208,7 @@ fn windows(p: &Paths) -> Result<(), String> {
         install,
         "compile runtime/windows.rc",
     )?;
+    let rt = kiln_rt::build("x86_64-pc-windows-gnu", &dir)?;
     // The program's code goes after the runtime's at addresses fixed when it
     // is added, so the image is never moved: no base relocations, no ASLR.
     let linked = dir.join("linked.exe");
@@ -204,7 +224,9 @@ fn windows(p: &Paths) -> Result<(), String> {
             .arg(dir.join("native.o"))
             .arg(dir.join("gc.o"))
             .arg(dir.join("manifest.o"))
-            .arg("-lws2_32")
+            .arg(&rt)
+            // What Rust's standard library needs: all part of Windows.
+            .args(["-lws2_32", "-lntdll", "-luserenv", "-ldbghelp"])
             .arg("-o")
             .arg(&linked),
         &cc,

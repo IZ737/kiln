@@ -1,0 +1,43 @@
+# `cargo deny check` (CI runs it): known vulnerabilities in the libraries
+# Kiln uses, and licences that fit an MIT project. The runtime's libraries
+# are linked into every Kiln program, so a security fix in one of them is a
+# fix Kiln has to ship.
+
+[advisories]
+# RustSec advisories: vulnerabilities, and crates that are unmaintained or
+# yanked, are errors.
+yanked = "deny"
+ignore = [
+    # Unmaintained, with no fix: `paste` and `unsafe-libyaml` (through
+    # `serde_yaml`) come from libwild, the built-in linker, which is held at
+    # 0.10 until Kiln's minimum Rust version allows 0.11. Neither is in the
+    # programs Kiln builds.
+    { id = "RUSTSEC-2024-0436", reason = "unmaintained, no fix; in libwild (kiln's linker), not in programs" },
+    { id = "RUSTSEC-2024-0449", reason = "unmaintained, no fix; in libwild (kiln's linker), not in programs" },
+]
+
+[licenses]
+allow = [
+    "MIT",
+    "MIT-0",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "BSL-1.0",
+    "ISC",
+    "Zlib",
+    "0BSD",
+    "CC0-1.0",
+    "Unicode-3.0",
+    "Unlicense",
+    "CDLA-Permissive-2.0",
+    "MPL-2.0",
+]
+
+[bans]
+multiple-versions = "allow"
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
