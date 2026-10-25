@@ -23,6 +23,8 @@ Keep SSR/styling separate from later Embers/WasmGC and Wares work. Target
 syntax is not current syntax until implemented and tested; update the
 reference docs and tests as the feature becomes real.
 
+For all Phase 5 work, read [docs/plans/phase-5.md](docs/plans/phase-5.md), which divides modules/manifests, Wares, testing, editor workflows and MCP into five reviewable subphases. Preserve manifest-free programs and the global per-user Ware cache; syntax in plans is prospective until tested and documented.
+
 For Phase 5 testing, read [docs/plans/testing.md](docs/plans/testing.md): the public
 `kiln test` tool must support unit, integration **and real-browser E2E**
 tests in one CLI. The Phase 6 Ember tests extend the same runner; do not

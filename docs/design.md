@@ -101,6 +101,8 @@ A folder is one program, as in Go. All of its `.kiln` files share one
 namespace, so splitting a file in two never needs an import, and the
 folder's glazes see the same types and functions. Imports stay per file.
 
+**Phase 5 plan:** [projects, Wares, testing, tooling and agent integration](plans/phase-5.md) covers the full five-subphase implementation sequence and acceptance gates. Examples in that plan are proposed APIs, not current executable syntax.
+
 **Phase 5 explicitly adds multi-folder projects and local modules.** A
 subfolder is a module, imported by its name, with `pub` items defining its
 interface. Compiler resolution, type checking, builds, Glaze/component

@@ -33,6 +33,7 @@ APIs. **Proposed syntax in a plan is not automatically implemented syntax.**
 - [Phase 2.5 — VS Code developer experience](plans/phase-2.5.md) (completed)
 - [Phase 3 — Glazes, native styling, Finishes and themes](plans/phase-3.md)
 - [Phase 4 — SQL, ORM, migrations, forms, authentication and admin](plans/phase-4.md)
+- [Phase 5 — projects, Wares, testing, tooling and agent integration](plans/phase-5.md)
 - [Moving the runtime to Rust](plans/runtime-rust.md)
 - [Integrated testing — unit, integration and browser](plans/testing.md)
 

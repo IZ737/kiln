@@ -328,6 +328,8 @@ if its integrated developer experience proves better.**
 
 ## 7. Wares, templates and a real ecosystem
 
+The [Phase 5 implementation specification](plans/phase-5.md) details the proposed module graph, manifest/lockfile, Ware registry and cache, official UI Ware, test runner, developer tooling and local MCP workflows. Its syntax examples are targets, not current APIs.
+
 **Wares** are source packages, managed through an optional **`kiln.toml`
 project manifest** and generated **`kiln.lock`** and eventually an official
 registry. The initial implementation can support local/Git dependencies
