@@ -15,6 +15,14 @@ For implementation choices, distinguish **implemented**, **roadmapped**, and
 the vision is not permission to implement future milestones early or treat
 proposed API spellings as current language syntax.
 
+For Phase 3 work, follow [docs/phase-3.md](docs/phase-3.md): `Ui` is a
+compiler-typed styling value, `ui` is a structured Kiln expression,
+**Finishes are ordinary functions** returning style values/records,
+themes are checked contracts, and native CSS/CSS Modules remain supported.
+Keep SSR/styling separate from later Embers/WasmGC and Wares work. Target
+syntax is not current syntax until implemented and tested; update the
+reference docs and tests as the feature becomes real.
+
 ## Commands
 
 ```sh
