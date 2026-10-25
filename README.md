@@ -7,11 +7,12 @@
 
 # Kiln
 
-Kiln is a compiled, garbage-collected language for building web servers and
-websites. Think PHP's "write a file, get a page" speed with Go's single-binary
-deployment and a stronger type system than either, plus a standard library
-that covers HTTP, routing, templates, JSON, SQL, sessions and auth out of the
-box.
+Kiln is a compiled, garbage-collected, web-first programming language.
+It already builds native CLI programs and HTTP APIs; its longer-term goal
+is the productivity of an integrated full-stack framework with fast,
+self-contained executables. Routing, templates, SQL, forms, authentication,
+frontend components and deployment are meant to work together instead of
+requiring developers to assemble their own stack.
 
 ```kiln
 import web
@@ -42,28 +43,42 @@ fn main() ! {
 > Templates, `sql` and `auth` arrive in later phases. See the [roadmap](#roadmap) and
 > [what phase 1 leaves for later](docs/design.md#what-phase-1-leaves-for-later).
 
+## Vision
+
+> **Write the business logic, not the glue.**
+
+Kiln's ambition is not to reinvent every existing library. It is to remove
+the boilerplate between them: **full-stack frontend and backend DX, native
+performance with opt-in hotspot optimizations, two-way interoperability with
+existing languages and npm, and progressive adoption without rewrites**.
+See the [full long-term vision](docs/vision.md) for the principles, eventual
+capabilities, adoption strategy, deliberate non-goals and the distinction
+between today's implementation and future ideas.
+
 ## Highlights
 
-- **Convention over configuration.** Routing, templates, the ORM, auth, the
-  admin, builds and deployment ship with the language and already fit
-  together, so a project needs no glue code. Any piece can still be
-  configured in depth, or replaced, where it is used.
+- **Convention over configuration.** The planned ORM, forms, auth, admin,
+  component system and deployment tooling are designed to fit together
+  without repetitive glue code. Each should remain deeply configurable
+  or replaceable where an application needs more control.
 - **Progressive integration.** The same experience whether Kiln runs one
   component, one layer or a whole full-stack app. Full-stack apps get the
   deepest automatic integration; external systems connect through typed
   contracts and adapters, so no feature needs you to own the entire stack.
-- **One binary deploys.** `kiln fire` will produce a static executable with
-  templates and assets embedded.
+- **One binary deploys.** Native Linux and Windows compilation already
+  produces self-contained executables on supported targets; the planned
+  `kiln fire` workflow will embed frontend assets and templates too.
 - **Errors at compile time.** Routes, templates, SQL results and JSON shapes
   are type-checked. No `null`: optionals are `T?`, missing is `none`.
 - **No async/await split.** Each request runs on a lightweight thread, as in Go.
-- **Database to admin in minutes.** A built-in ORM can read an existing
-  database's schema into typed models, and a generated, fully customizable
-  admin UI (like Django's) manages the data.
+- **Database to admin in minutes (planned).** A built-in ORM will be able
+  to read an existing database schema into typed models, with a generated,
+  customizable administration UI.
 - **Static when you want it.** The same app can be exported as a static site,
   or mix prerendered pages with dynamic ones.
-- **Server-rendered by default.** Components (glazes) render to HTML on the
-  server; only interactive ones (embers) compile to WebAssembly.
+- **Server-rendered by default (planned).** Glazes render to HTML on the
+  server; interactive Embers will target WebAssembly. Native CSS remains
+  fully supported.
 - **Built for coding agents.** Familiar syntax, one way to do things, error
   messages with machine-applicable fixes (`kiln check --json`), and an
   explanation for every error code (`kiln explain E0106`).
@@ -177,7 +192,8 @@ For errors and quick fixes in your editor, see [docs/editors.md](docs/editors.md
 | `docs/stdlib.md` | The standard library modules the compiler builds |
 | `docs/editors.md` | Setting up `kiln lsp` in Neovim, Helix and other editors |
 | `docs/phase-2.5.md` | Planned VS Code extension and enhanced LSP implementation stages and acceptance criteria |
-| `docs/design.md` | Language design overview and roadmap |
+| `docs/design.md` | Language design and technical decisions |
+| `docs/vision.md` | Full product vision: frontend DX, performance, interop, ecosystem and adoption |
 
 ## Roadmap
 
