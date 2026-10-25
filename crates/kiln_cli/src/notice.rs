@@ -1,6 +1,6 @@
 //! The notice that a newer kiln is out. Commands read what the last check
 //! found from `~/.kiln/update-check` (or `$KILN_HOME/update-check`), so
-//! they never wait for the network; when that is a day old, a `kiln
+//! they never wait for the network; when that is an hour old, a `kiln
 //! update-check` in the background asks GitHub again for the next command.
 //!
 //! The notice goes to standard error, and only when that is a terminal:
@@ -11,8 +11,11 @@ use std::path::PathBuf;
 use std::process::{Command, ExitCode, Stdio};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-/// How often to ask for the latest release, in seconds.
-const INTERVAL: u64 = 24 * 60 * 60;
+/// How often to ask for the latest release, in seconds. An hour, since
+/// releases can come out a few times a day, and `kiln upgrade` records a
+/// check too: with a day, a release soon after an upgrade went unnoticed
+/// until the next day.
+const INTERVAL: u64 = 60 * 60;
 
 /// What the last check found.
 #[derive(Debug, PartialEq, Eq)]
@@ -54,7 +57,7 @@ pub fn update_check() -> ExitCode {
         .ok()
         .and_then(|text| parse(&text));
     // When GitHub cannot be reached, keep what was found before, and try
-    // again in a day rather than on every command.
+    // again in an hour rather than on every command.
     let latest = crate::upgrade::latest_release()
         .ok()
         .or(old.and_then(|old| old.latest));
@@ -84,7 +87,7 @@ fn disabled(var: impl Fn(&str) -> Option<String>) -> bool {
     off || var("CI").is_some_and(|v| !v.is_empty())
 }
 
-/// Whether to ask again: never asked, asked a day ago, or the clock went
+/// Whether to ask again: never asked, asked an hour ago, or the clock went
 /// back.
 fn stale(cache: Option<&Cache>, now: u64) -> bool {
     cache.is_none_or(|cache| cache.checked > now || now - cache.checked >= INTERVAL)
@@ -210,7 +213,7 @@ mod tests {
     }
 
     #[test]
-    fn checks_again_after_a_day() {
+    fn checks_again_after_an_hour() {
         let cache = |checked| Cache {
             checked,
             latest: None,
@@ -219,6 +222,9 @@ mod tests {
         assert!(stale(None, now));
         assert!(!stale(Some(&cache(now - 60)), now));
         assert!(stale(Some(&cache(now - INTERVAL)), now));
+        // A release an hour or two after `kiln upgrade` recorded a check
+        // is noticed the same day.
+        assert!(stale(Some(&cache(now - 2 * 60 * 60)), now));
         assert!(stale(Some(&cache(now + 60)), now));
     }
 
