@@ -164,6 +164,11 @@ API sketches and acceptance gates.
   ordinary HTML, CSS and JavaScript; adopting a Glaze should not require
   converting the whole frontend.
 
+An optional [official component Ware](#first-official-ware-accessible-ui-components)
+will offer a polished starting point for semantic controls such as
+`<Input>` and `<Button>`, without making them mandatory or hiding the
+underlying HTML.
+
 ### Embers: interactivity when and where needed
 
 Interactive Glazes become **Embers**, eventually compiled to browser
@@ -299,6 +304,90 @@ full registry exists.
 - **Project templates are different from Wares:** `kiln new --template`
   could instantiate files/variables from trusted templates without executing
   arbitrary initialization code.
+
+### First official Ware: accessible UI components
+
+The **first official Kiln Ware** should be a **shadcn-inspired component
+collection** built with Kiln's own Glazes, typed `Ui` styling, Finishes
+and design tokens. A working description is "Kiln UI"; any actual Ware
+package name and install command should be chosen when Wares are
+implemented. This is an intended **flagship official Ware**, not a
+requirement to use a framework for every application.
+
+The experience should be straightforward: where a developer would write
+bare HTML such as `<input>` or `<button>`, they can optionally use
+capitalized Glaze components such as `<Input>`, `<Button>`, `<Select>`,
+`<Checkbox>` and `<FormField>`. These components provide well-considered
+defaults, cover common use cases through typed props, and remain fully
+customizable through `Ui` overrides, Finishes, tokens, CSS or direct
+component edits.
+
+```glaze
+{# Illustrative future API — not yet implemented #}
+<form method="post">
+    <Input
+        name="email"
+        type="email"
+        label="Email address"
+        required
+    />
+    <Button tone={.Primary} type="submit">
+        Save changes
+    </Button>
+</form>
+```
+
+The goal is **less repetitive UI plumbing, not less control**:
+
+- **Good defaults without magic:** usable visual styling, responsive
+  sizing, meaningful focus and disabled states, error/help text,
+  consistent token/Finish integration and sensible component variants
+  out of the box. Ordinary HTML remains valid and first-class.
+- **Accessibility as an engineering requirement:** semantic native
+  elements where possible, correct label/input association, keyboard
+  navigation and focus management, appropriate ARIA only when needed,
+  screen-reader-compatible validation/errors, contrast and reduced-motion
+  considerations. Complex widgets need interaction tests, not just
+  impressive screenshots; no component library guarantees accessibility
+  automatically in every application.
+- **Typed and overridable common cases:** component props for size,
+  tone, intent, state and validation presentation; compose with ordinary
+  Kiln logic. Developers can pass normal HTML attributes, choose a
+  different Finish or theme, supply local CSS, replace parts, or just
+  use the raw element when the abstraction is unhelpful.
+- **Source-first, shadcn-like ownership:** make component source,
+  Glazes and Finishes inspectable and editable. Ideally developers can
+  install the Ware for shared components **or add/copy selected component
+  sources into their project** for complete local ownership; avoid a
+  sealed, opaque runtime dependency or requiring all components at once.
+  Exact package/CLI commands are future Wares design decisions.
+- **Small, consistent foundation:** prioritize highly used primitives,
+  form controls, navigation, surfaces, dialogs and feedback components
+  with documentation and examples rather than shipping a huge collection
+  of brittle one-off widgets. Prefer native platform behaviour over
+  custom JavaScript.
+- **Build with Kiln, not alongside it:** reuse the same Glaze semantics,
+  scoped CSS, native style values, theme contracts and eventual typed
+  form bindings. Do not introduce a separate component DSL, styling
+  runtime, application router or incompatible theme mechanism.
+- **Progressive interactivity:** the first components that only need
+  server-rendered markup/CSS can use Phase 3 facilities. Rich keyboard-
+  interactive widgets and stateful behaviours can depend on **Embers**
+  once Phase 6 exists; don't smuggle a proprietary JavaScript framework
+  into the initial Ware. Form-model/auth integration can deepen after
+  Phase 4 without making simple input components depend on a database.
+
+The desired developer experience is **bare HTML when you want it, a
+production-minded `<Input>` when you don't, and source you can understand
+and modify whenever the defaults stop fitting**. The Ware should
+demonstrate Kiln's UI system by dogfooding it, not become a second UI
+system developers have to learn.
+
+**Scheduling:** Phase 3 lays the rendering/styling/Finishes groundwork;
+the component collection ships when **Wares** support it (Phase 5 on
+the current roadmap), with more advanced interactive components following
+Embers in Phase 6. This addition does **not** expand Phase 3's accepted
+scope or promise browser interactivity before WasmGC is ready.
 
 Possible optional official Wares include game development
 (`@kiln/game`), desktop apps and perhaps TUIs. CLI programming itself
