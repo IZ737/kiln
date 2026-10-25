@@ -23,6 +23,11 @@ Keep SSR/styling separate from later Embers/WasmGC and Wares work. Target
 syntax is not current syntax until implemented and tested; update the
 reference docs and tests as the feature becomes real.
 
+For Phase 5 testing, read [docs/testing.md](docs/testing.md): the public
+`kiln test` tool must support unit, integration **and real-browser E2E**
+tests in one CLI. The Phase 6 Ember tests extend the same runner; do not
+invent a separate JavaScript testing ecosystem or a custom browser.
+
 ## Commands
 
 ```sh
