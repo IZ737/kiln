@@ -25,8 +25,9 @@ fn main() ! {
 }
 ```
 
-> **Status: phase 1 (core compiler) is done; phase 1.5 (self-contained
-> compiler and executables) is in progress, before phase 2 (HTTP).**
+> **Status: phases 0 and 1 are done, and phase 1.5 (self-contained compiler
+> and executables) is done for Linux x86-64; its Windows target and phase 2
+> (HTTP) are next.**
 > `kiln check` reports syntax and type errors in `.kiln` files and glazes,
 > `kiln lsp` shows them in your editor, and `kiln run` compiles command-line
 > programs with the `time`, `fs`, `os` and `io` modules. On Linux x86-64,
@@ -82,8 +83,16 @@ it. The `kiln` you get then compiles programs with no other tools: its
 executables are static and run on any Linux x86-64 system. Elsewhere, or
 with `--backend c`, `kiln` compiles through C and needs a C compiler and the
 Boehm garbage collector (`libgc-dev` on Debian and Ubuntu, `gc-devel` on
-Fedora, `bdw-gc` on Homebrew). Prebuilt `kiln` downloads come later in
-phase 1.5.
+Fedora, `bdw-gc` on Homebrew).
+
+Releases after 0.1.0 also ship a prebuilt `kiln` for Linux x86-64 on the
+[releases page](https://github.com/IZ737/kiln/releases): one static
+executable that needs nothing else installed.
+
+```sh
+tar xzf kiln-v*-x86_64-linux.tar.gz
+./kiln-v*-x86_64-linux/kiln run examples/hello
+```
 
 ```sh
 cargo run -p kiln_cli -- run examples/hello     # compile and run a program

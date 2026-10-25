@@ -32,3 +32,17 @@ jobs:
           env -i PATH=/nonexistent ./target/debug/kiln build examples/hello -o /tmp/empty-root/hello
           # A root with nothing in it but the executable: no libc, no /proc.
           sudo chroot /tmp/empty-root /hello
+
+  # The kiln that releases ship: built against musl, so it is static and
+  # runs on any Linux x86-64 system, then checked in an empty container.
+  standalone:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-unknown-linux-musl
+      - uses: Swatinem/rust-cache@v2
+      - run: sudo apt-get update && sudo apt-get install -y musl-tools
+      - run: cargo build --release --target x86_64-unknown-linux-musl -p kiln_cli
+      - run: scripts/clean-check.sh target/x86_64-unknown-linux-musl/release/kiln
