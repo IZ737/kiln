@@ -35,6 +35,10 @@
   plus a `.theme-<name>` rule in a global stylesheet that sets the token
   values; `ui({ theme: .name })` applies it. Every theme must set the
   same tokens, and token values must suit their category (E0222).
+- **Editors know styles.** `kiln lsp` completes style keys, breakpoints,
+  tokens, keywords and themes in `ui` records and CSS Module class names,
+  hovers keys and tokens with their CSS, and goes to the stylesheet that
+  declares a token or theme.
 - The new `html` module has `html.escape` and `html.safe_url`, on the
   html-escape crate, and the new `base64` module has `base64.encode` and
   `base64.decode`.

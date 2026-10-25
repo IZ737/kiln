@@ -17,6 +17,13 @@ props, and the editor's unsaved text is used for every open file. It gives:
   declaration), including for the standard library.
 - **Go to definition**: for locals, functions, types, fields, methods and
   variants, across the files of the program.
+- **Styles**: in a `ui(...)` or `ui={{ ... }}` record, completion offers
+  the style keys (with the CSS properties each sets), breakpoints inside
+  `at`, the design tokens after `space.` or `color.`, the keywords after
+  `.` and the themes after `theme: .`; CSS Modules' class names complete
+  after the module's name. Hover shows what a key sets and a token's
+  custom property and value, and go to definition opens the stylesheet
+  where a token or theme is declared.
 - **Symbols**: the outline of a file (document symbols), and the
   declarations of every `.kiln` file in the workspace (workspace symbols).
 

@@ -562,3 +562,62 @@ fn symbols_of_unfinished_code_have_names() {
     }
     client.finish();
 }
+
+#[test]
+fn completes_and_explains_styles() {
+    let dir = program_dir("styles");
+    let css = ":root {\n    --space-md: 1rem;\n    --space-lg: 2rem;\n    --breakpoint-wide: 800px;\n}\n.theme-light { --color-accent: #c65a34; }\n.theme-dark { --color-accent: #ffb38a; }\n";
+    std::fs::write(dir.join("design.css"), css).unwrap();
+    let page = "{% css \"design.css\" %}\n<p ui={{ fg: color.accent }}>hi</p>\n";
+    std::fs::write(dir.join("page.glaze"), page).unwrap();
+    let main_text = "fn s() -> Ui {\n    return ui({ p: space.md, theme: .light })\n}\n";
+    std::fs::write(dir.join("main.kiln"), main_text).unwrap();
+    let main = file_uri(&dir.join("main.kiln"));
+    let glaze = file_uri(&dir.join("page.glaze"));
+    let mut client = Client::start();
+    client.request("initialize", json!({"rootUri": file_uri(&dir)}));
+    client.open(&main, main_text);
+    client.open(&glaze, page);
+    let in_style = |style: &str| format!("fn s() -> Ui {{\n    return ui({{ {style} }})\n}}\n");
+    let mut complete =
+        |style: &str| labels(&client.at("textDocument/completion", &main, &in_style(style)));
+    let keys = complete("p: space.md, |");
+    for key in ["p", "bg", "hover", "at", "theme"] {
+        assert!(keys.contains(&key.to_string()), "{key} in {keys:?}");
+    }
+    assert_eq!(complete("p: space.|"), ["lg", "md"]);
+    assert_eq!(complete("m: |"), [".auto", "space.lg", "space.md"]);
+    assert!(complete("weight: .b|").contains(&"bold".to_string()));
+    assert_eq!(complete("at: { | }"), ["wide"]);
+    assert_eq!(complete("theme: .|"), ["dark", "light"]);
+    // A state takes the keys but not another state.
+    let hover_keys = complete("hover: { | }");
+    assert!(hover_keys.contains(&"bg".to_string()) && !hover_keys.contains(&"focus".to_string()));
+    let marked = "{% css \"design.css\" %}\n<p ui={{ fg: color.| }}>hi</p>\n";
+    assert_eq!(
+        labels(&client.at("textDocument/completion", &glaze, marked)),
+        ["accent"]
+    );
+    // CSS Modules' classes are fields.
+    std::fs::write(dir.join("card.module.css"), ".card {}\n.card-title {}\n").unwrap();
+    let marked = "{% css \"design.css\" %}\n{% css module card from \"card.module.css\" %}\n<p class={card.|}>hi</p>\n";
+    assert_eq!(
+        labels(&client.at("textDocument/completion", &glaze, marked)),
+        ["card", "card_title"]
+    );
+    // Hover tells what a key and a token are in CSS.
+    let hover = |client: &mut Client, style: &str| {
+        hover_text(&client.at("textDocument/hover", &main, &in_style(style)))
+    };
+    assert!(hover(&mut client, "|p: space.md").contains("padding-top, padding-right"));
+    assert!(hover(&mut client, "p: space.m|d").contains("--space-md: 1rem;"));
+    // Tokens and themes go to their declarations.
+    let mut definition =
+        |style: &str| client.at("textDocument/definition", &main, &in_style(style));
+    let token = definition("p: space.m|d");
+    assert_eq!(token["uri"], file_uri(&dir.join("design.css")));
+    assert_eq!(token["range"]["start"], json!({"line": 1, "character": 4}));
+    let theme = definition("theme: .li|ght");
+    assert_eq!(theme["range"]["start"], json!({"line": 5, "character": 0}));
+    client.finish();
+}

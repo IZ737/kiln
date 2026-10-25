@@ -19,6 +19,7 @@
 //! `--color-on-accent` is `color.on_accent`.
 
 use crate::checker::Checker;
+use crate::ide::{Completion, Ref, StyleWord, StyleWordKind};
 use crate::types::{similar, Ty};
 use kiln_diagnostics::{codes, Diagnostic, Span};
 use kiln_syntax::ast::{Expr, ExprKind, RecordField, StrPiece, UnaryOp};
@@ -380,6 +381,16 @@ pub fn key_names() -> impl Iterator<Item = &'static str> {
         .chain(["at"])
 }
 
+/// What a key sets, in words.
+fn key_css(k: &(&str, &[&str], Kind)) -> String {
+    match k.2 {
+        Kind::Theme => "the class of a theme, which sets its tokens".into(),
+        Kind::Display(d) => format!("display: {d}"),
+        Kind::Border => "border-width (and border-style: solid)".into(),
+        _ => k.1.join(", "),
+    }
+}
+
 fn key(name: &str) -> Option<&'static (&'static str, &'static [&'static str], Kind)> {
     KEYS.iter().find(|k| k.0 == name)
 }
@@ -435,7 +446,12 @@ impl Kind {
 
     /// The CSS value of a keyword, such as `.bold`.
     fn keyword(self, name: &str) -> Option<&'static str> {
-        let words: &[(&str, &str)] = match self {
+        self.keywords().iter().find(|w| w.0 == name).map(|w| w.1)
+    }
+
+    /// The keywords it takes, with their CSS values.
+    fn keywords(self) -> &'static [(&'static str, &'static str)] {
+        match self {
             Kind::Color => &[
                 ("transparent", "transparent"),
                 ("current", "currentColor"),
@@ -510,8 +526,7 @@ impl Kind {
                 ("none", "none"),
             ],
             _ => &[],
-        };
-        words.iter().find(|w| w.0 == name).map(|w| w.1)
+        }
     }
 }
 
@@ -561,6 +576,11 @@ impl Checker {
         let mut display: Option<&str> = None;
         for f in fields {
             let name = f.name.name.as_str();
+            if self.is_marker(name) {
+                let words = self.style_keys(pos);
+                self.complete(Completion::Style(words));
+                continue;
+            }
             let Some(value) = &f.value else {
                 self.error(
                     Diagnostic::error(
@@ -597,6 +617,7 @@ impl Checker {
                         self.error(d);
                         continue;
                     }
+                    self.refer_token(f.name.span, "breakpoint", name);
                     StylePos::Group {
                         state: None,
                         at: Some(name.to_string()),
@@ -611,6 +632,13 @@ impl Checker {
                             );
                             continue;
                         }
+                        self.refer(
+                            f.name.span,
+                            Ref::StyleKey {
+                                name: name.to_string(),
+                                css: format!("the `{}` state", s.1),
+                            },
+                        );
                         StylePos::Group {
                             state: Some(s.1),
                             at: at.clone(),
@@ -623,8 +651,22 @@ impl Checker {
                             );
                             continue;
                         }
+                        self.refer(
+                            f.name.span,
+                            Ref::StyleKey {
+                                name: "at".into(),
+                                css: "`@media (min-width: ...)`, for each breakpoint".into(),
+                            },
+                        );
                         StylePos::At
                     } else if let Some(k) = key(name) {
+                        self.refer(
+                            f.name.span,
+                            Ref::StyleKey {
+                                name: name.to_string(),
+                                css: key_css(k),
+                            },
+                        );
                         if let Kind::Display(d) = k.2 {
                             if let Some(other) = display.replace(d) {
                                 self.style_error(
@@ -741,6 +783,11 @@ impl Checker {
             self.style_error(e.span, format!("expected {}", Kind::Theme.what()));
             return false;
         };
+        if self.is_marker(&name.name) {
+            let words = self.style_values(Kind::Theme, false);
+            self.complete(Completion::Style(words));
+            return false;
+        }
         let css_name = name.name.replace('_', "-");
         if !self.tokens.themes.iter().any(|t| t.name == css_name) {
             let names: Vec<String> = self
@@ -765,7 +812,115 @@ impl Checker {
         }
         self.styles
             .insert(e.span, StyleExpr::Classes(format!("theme-{css_name}")));
+        self.refer(name.span, Ref::Theme(format!("theme-{css_name}")));
         true
+    }
+
+    fn refer_token(&mut self, span: Span, category: &str, name: &str) {
+        if let Some(t) = self.tokens.get(category, name) {
+            let target = Ref::Token {
+                name: format!("{category}.{name}"),
+                property: t.property.clone(),
+                value: t.value.clone(),
+            };
+            self.refer(span, target);
+        }
+    }
+
+    /// The keys that fit in a style at `pos`, for completion.
+    fn style_keys(&self, pos: &StylePos) -> Vec<StyleWord> {
+        let word = |label: &str, detail: String, kind| StyleWord {
+            label: label.to_string(),
+            detail,
+            kind,
+        };
+        let (state, at) = match pos {
+            StylePos::At => return self.token_words("breakpoint", false),
+            StylePos::Group { state, at } => (state.is_some(), at.is_some()),
+            StylePos::Key { .. } => return Vec::new(),
+        };
+        let mut out: Vec<StyleWord> = KEYS
+            .iter()
+            .filter(|k| k.2 != Kind::Theme || !(state || at))
+            .map(|k| word(k.0, key_css(k), StyleWordKind::Key))
+            .collect();
+        if !state {
+            for s in STATES {
+                out.push(word(s.0, s.1.to_string(), StyleWordKind::Key));
+            }
+        }
+        if !state && !at {
+            out.push(word(
+                "at",
+                "@media, by breakpoint".into(),
+                StyleWordKind::Key,
+            ));
+        }
+        out
+    }
+
+    /// The tokens of a category: `md`, or `space.md` with `qualified`.
+    fn token_words(&self, category: &str, qualified: bool) -> Vec<StyleWord> {
+        self.tokens
+            .list
+            .iter()
+            .filter(|t| t.category == category)
+            .map(|t| StyleWord {
+                label: if qualified {
+                    format!("{category}.{}", t.name)
+                } else {
+                    t.name.clone()
+                },
+                detail: format!("{}: {}", t.property, t.value),
+                kind: StyleWordKind::Token,
+            })
+            .collect()
+    }
+
+    /// The values that fit a key: its tokens and keywords. Keywords are
+    /// written with their `.` unless the editor's text has it already.
+    fn style_values(&self, kind: Kind, whole: bool) -> Vec<StyleWord> {
+        let dot = if whole { "." } else { "" };
+        let mut out = Vec::new();
+        if kind == Kind::Theme {
+            for t in &self.tokens.themes {
+                out.push(StyleWord {
+                    label: format!("{dot}{}", t.name.replace('-', "_")),
+                    detail: format!(".theme-{}", t.name),
+                    kind: StyleWordKind::Theme,
+                });
+            }
+            return out;
+        }
+        if whole {
+            for category in kind.categories() {
+                out.extend(self.token_words(category, true));
+            }
+        } else if kind == Kind::TextSize {
+            out.extend(self.token_words("text", false));
+        }
+        for (word, css) in kind.keywords() {
+            out.push(StyleWord {
+                label: format!("{dot}{word}"),
+                detail: css.to_string(),
+                kind: StyleWordKind::Keyword,
+            });
+        }
+        if whole
+            && matches!(
+                kind,
+                Kind::Display(_) | Kind::Wrap | Kind::Underline | Kind::Border
+            )
+        {
+            for b in ["true", "false"] {
+                out.push(StyleWord {
+                    label: b.to_string(),
+                    detail: String::new(),
+                    kind: StyleWordKind::Keyword,
+                });
+            }
+        }
+        out
     }
 
     fn style_error(&mut self, span: Span, message: String) {
@@ -793,6 +948,13 @@ impl Checker {
                 .map(|p| (p.to_string(), value.to_string()))
                 .collect()
         };
+        if let ExprKind::Ident(name) = &e.kind {
+            if self.is_marker(name) {
+                let words = self.style_values(kind, true);
+                self.complete(Completion::Style(words));
+                return Ok(Vec::new());
+            }
+        }
         let value: String = match &e.kind {
             // `space.md`: a token.
             ExprKind::Field { expr, name }
@@ -801,9 +963,19 @@ impl Checker {
                 let ExprKind::Ident(category) = &expr.kind else {
                     unreachable!()
                 };
+                if self.is_marker(&name.name) {
+                    let words = self.token_words(category, false);
+                    self.complete(Completion::Style(words));
+                    return Ok(Vec::new());
+                }
                 return self.token(category, &name.name, name.span, e.span, kind, props);
             }
             ExprKind::FieldShorthand(name) => {
+                if self.is_marker(&name.name) {
+                    let words = self.style_values(kind, false);
+                    self.complete(Completion::Style(words));
+                    return Ok(Vec::new());
+                }
                 if kind == Kind::TextSize {
                     return self.token("text", &name.name, name.span, e.span, kind, props);
                 }
@@ -926,6 +1098,7 @@ impl Checker {
             });
         };
         let value = format!("var({})", token.property);
+        self.refer_token(name_span, category, name);
         Ok(props
             .iter()
             .map(|p| (p.to_string(), value.clone()))

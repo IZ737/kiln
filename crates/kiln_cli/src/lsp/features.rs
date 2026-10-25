@@ -5,7 +5,9 @@
 //! a request that finds nothing gets an empty answer.
 
 use super::range;
-use kiln_check::ide::{analyze_app, Analysis, Completion, Ref, Target, COMPLETION_MARKER};
+use kiln_check::ide::{
+    analyze_app, Analysis, Completion, Ref, StyleWordKind, Target, COMPLETION_MARKER,
+};
 use kiln_check::types::{AdtKind, Ty};
 use kiln_diagnostics::Span;
 use kiln_syntax::ast::{Glaze, Item, Module, TypeKind};
@@ -73,12 +75,26 @@ impl<'a> Program<'a> {
         };
         let module_refs: Vec<&Module> = modules.iter().map(|(_, m)| *m).collect();
         let glaze_refs: Vec<(&str, &Glaze)> = glazes.iter().map(|(_, n, g)| (*n, *g)).collect();
+        // The stylesheets give the design tokens and CSS Modules.
+        let glaze_files: Vec<crate::styles::GlazeFile> = glaze_refs
+            .iter()
+            .map(|(name, glaze)| crate::styles::GlazeFile { name, glaze })
+            .collect();
+        let styling = crate::styles::load(&self.dir(index), &glaze_files).styling;
         // The checker expects code that parsed; recovered trees can break
         // its assumptions, and a failed request must not stop the server.
         std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            analyze_app(&module_refs, &glaze_refs, target)
+            analyze_app(&module_refs, &glaze_refs, target, &styling)
         }))
         .ok()
+    }
+
+    /// The directory of the `index`th file, which is the program's.
+    fn dir(&self, index: usize) -> PathBuf {
+        match self.sources[index].path.parent() {
+            Some(p) if !p.as_os_str().is_empty() => p.to_path_buf(),
+            _ => PathBuf::from("."),
+        }
     }
 
     /// The editor's URI for the `index`th file.
@@ -123,6 +139,14 @@ pub(super) fn hover(sources: &[Source], index: usize, offset: usize) -> Value {
         return Value::Null;
     };
     let text = &sources[index].text;
+    if let Some((span, target)) = analysis.reference_at(offset) {
+        if let Some(shown) = describe_style(target) {
+            return json!({
+                "contents": {"kind": "markdown", "value": shown},
+                "range": range(text, span.start as usize, span.end as usize),
+            });
+        }
+    }
     let (span, mut shown) = if let Some((span, target)) = analysis.reference_at(offset) {
         (*span, describe(&analysis, target, text))
     } else if let Some((span, ty)) = analysis.binding_at(offset) {
@@ -158,6 +182,22 @@ pub(super) fn hover(sources: &[Source], index: usize, offset: usize) -> Value {
 
 fn analysis_ref(analysis: &Analysis, offset: usize) -> Option<Ref> {
     analysis.reference_at(offset).map(|(_, r)| r.clone())
+}
+
+/// What a style's key, token or theme means in CSS, for hover.
+fn describe_style(target: &Ref) -> Option<String> {
+    Some(match target {
+        Ref::StyleKey { name, css } => format!("```kiln\n{name}\n```\n\nSets {css}."),
+        Ref::Token {
+            name,
+            property,
+            value,
+        } => format!("```kiln\n{name}\n```\n\n```css\n{property}: {value};\n```"),
+        Ref::Theme(class) => {
+            format!("```css\n.{class}\n```\n\nThe theme's class, which sets its tokens.")
+        }
+        _ => return None,
+    })
 }
 
 /// How a name's declaration reads.
@@ -199,6 +239,7 @@ fn describe(a: &Analysis, target: &Ref, text: &str) -> String {
                 None => name.clone(),
             }
         }
+        Ref::StyleKey { name, .. } | Ref::Token { name, .. } | Ref::Theme(name) => name.clone(),
     }
 }
 
@@ -252,12 +293,72 @@ pub(super) fn definition(sources: &[Source], index: usize, offset: usize) -> Val
     let Some(analysis) = program.analyze(index) else {
         return Value::Null;
     };
-    match find_decl(&program, index, &analysis, &analysis_ref(&analysis, offset)) {
+    let target = analysis_ref(&analysis, offset);
+    if let Some(Ref::Token { property, .. } | Ref::Theme(property)) = &target {
+        let needle = match target {
+            Some(Ref::Theme(_)) => format!(".{property}"),
+            _ => property.clone(),
+        };
+        return find_in_css(&program.dir(index), &needle).unwrap_or(Value::Null);
+    }
+    match find_decl(&program, index, &analysis, &target) {
         Some((DeclIn::File(i), decl)) => json!({
             "uri": program.uri(i),
             "range": range(&sources[i].text, decl.name.start as usize, decl.name.end as usize),
         }),
         _ => Value::Null,
+    }
+}
+
+/// Where the program's stylesheets first declare `needle`, a custom
+/// property (`--space-md`) or a class (`.theme-dark`).
+fn find_in_css(dir: &Path, needle: &str) -> Option<Value> {
+    let mut files = Vec::new();
+    css_files(dir, &mut files, 0);
+    files.sort();
+    for file in files {
+        let Ok(text) = std::fs::read_to_string(&file) else {
+            continue;
+        };
+        let mut from = 0;
+        while let Some(i) = text[from..].find(needle) {
+            let start = from + i;
+            let end = start + needle.len();
+            let rest = text[end..].trim_start();
+            let ends_name =
+                !text[end..].starts_with(|c: char| c.is_alphanumeric() || c == '-' || c == '_');
+            let declares = if needle.starts_with("--") {
+                rest.starts_with(':')
+            } else {
+                rest.starts_with(['{', ','])
+            };
+            if ends_name && declares {
+                return Some(json!({
+                    "uri": path_to_uri(&file),
+                    "range": range(&text, start, end),
+                }));
+            }
+            from = end;
+        }
+    }
+    None
+}
+
+fn css_files(dir: &Path, out: &mut Vec<PathBuf>, depth: usize) {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let name = entry.file_name();
+        if name.to_string_lossy().starts_with('.') || name == "target" {
+            continue;
+        }
+        if path.is_dir() && depth < 4 {
+            css_files(&path, out, depth + 1);
+        } else if path.extension().is_some_and(|e| e == "css") {
+            out.push(path);
+        }
     }
 }
 
@@ -287,6 +388,7 @@ fn find_decl(
         Ref::Fn(name) => !program.modules().any(|(_, m)| declares_fn(m, name)),
         Ref::Module(_) | Ref::ModuleFn(..) => true,
         Ref::Const(_) | Ref::Local(_) => false,
+        Ref::StyleKey { .. } | Ref::Token { .. } | Ref::Theme(_) => return None,
     };
     if !is_std {
         return program
@@ -395,6 +497,9 @@ const ENUM: u32 = 13;
 const KEYWORD: u32 = 14;
 const ENUM_MEMBER: u32 = 20;
 const CONSTANT: u32 = 21;
+const PROPERTY: u32 = 10;
+const VALUE: u32 = 12;
+const CLASS: u32 = 7;
 const STRUCT: u32 = 22;
 
 /// The completions at `offset`: the name being typed there is replaced by
@@ -578,6 +683,17 @@ fn items(a: &Analysis, completion: &Completion, glaze: bool) -> Vec<Value> {
         Completion::ModuleTypes(m) => {
             for (name, &id) in &a.modules[*m].types {
                 out.push(item(name, adt_kind(a, id), a.show_adt(id), 0));
+            }
+        }
+        Completion::Style(words) => {
+            for w in words {
+                let kind = match w.kind {
+                    StyleWordKind::Key => PROPERTY,
+                    StyleWordKind::Token => CONSTANT,
+                    StyleWordKind::Keyword => VALUE,
+                    StyleWordKind::Theme => CLASS,
+                };
+                out.push(item(&w.label, kind, w.detail.clone(), 0));
             }
         }
     }
