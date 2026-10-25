@@ -132,13 +132,44 @@ An SSR page selectively hydrates a component:
 
 ## 8. JavaScript and browser interoperability
 
-- Provide typed bindings for practical DOM/browser APIs and safe reuse of small framework-independent JavaScript libraries.
-- Use TypeScript declarations for binding generation when mappings are sound, with explicit annotations for unusual APIs; unsupported overloads and Node-only packages should get diagnostics.
-- Define string/array/record/object-handle conversion, callback lifetime, errors and promises across JS↔WasmGC boundaries.
-- Let existing HTML/CSS/JS work alongside Kiln components; do not claim every npm package (or React-specific component) can run as Kiln/WasmGC.
-- Build assets through existing tooling without a developer-maintained Vite/Webpack/npm project; follow normal CSP/origin/browser permission boundaries.
+**Finalized architecture (2026-10-25): Option B — strongly typed by default, with an explicit dynamic escape hatch.** Kiln authors must be able to use browser standards and compatible existing npm packages *without writing application JavaScript*. The compiler/toolchain generates the minimal JavaScript bootstrap, browser/WasmGC bridge and package bundling. This is **not** a JavaScript code-generation backend for Kiln; WasmGC remains the Phase 4 browser target.
 
-**Gate:** one Ember integrates a browser API/external library with typed calls and handles errors predictably.
+### 8.1 Typed browser APIs
+
+- Provide browser-targeted typed modules (initially `browser`) for representative DOM events, clipboard, storage, fetch and element references; expand to history/location, files, canvas, observers and other standards as needed. Wrap host APIs rather than reimplementing browser behavior.
+- Browser-only modules and functions are rejected when called from server-only code or during SSR evaluation. Browser effects belong in client lifecycle/tasks/event handlers. Browser permissions, secure-context requirements, same-origin and CSP rules continue to apply.
+- Ordinary Glazes remain server-rendered with no bridge if they contain no Embers. Interactive components use the separately chosen `.ember` source model; their exact grammar and state notation must be reconciled across this plan before implementation.
+
+### 8.2 npm packages with automatically generated bindings
+
+- Support direct, clearly namespaced npm imports in browser-targeted Kiln code, with a proposed convenience command such as `kiln add npm:canvas-confetti`; exact grammar/command naming remains a syntax/tooling decision, not a prerequisite to the architectural contract.
+- Resolve compatible browser exports and TypeScript declaration files (bundled types or `@types`) and translate **supported** types/signatures to Kiln bindings; compile those calls into the JS/WasmGC bridge and bundle only the required browser-side assets where possible.
+- Do not silently convert an unmappable typed API to an unchecked dynamic type. Explain unsupported overloads, complex TypeScript conditional types, Node-only built-ins, framework-specific runtime assumptions and missing declarations with source-linked diagnostics and suggested alternatives.
+- Use framework-independent browser libraries first. React-specific components, Node-only modules and arbitrary npm packages are **not** guaranteed to interoperate. Wares are Kiln-native packages; optional curated Wares may wrap popular npm libraries but are not required for ordinary supported npm imports.
+- Phase 4 needs a pinned, reproducible path for at least one small browser library, **without** requiring Phase 6's general Ware registry, multi-folder package system or public package-manager UX. Phase 6 can unify resolution, manifest/lockfile and dependency-management commands. Released builds must identify and integrity-check the resolved JS artifacts; installation must not execute arbitrary npm lifecycle scripts by default.
+
+### 8.3 Typed foreign values and explicit dynamic escape hatch
+
+- Provide opaque typed `js.Handle<T>`-style references for external JS/DOM object identities and an explicitly marked `js.Value`-style dynamic representation for APIs that generated bindings cannot model. These names describe the decided model; exact parser syntax and core type definitions remain to be finalized.
+- Dynamic calls/property access are opt-in and visibly foreign. **Never** make an unsupported operation implicitly dynamic. Converting `js.Value` into a Kiln value requires a checked, recoverable conversion; no unchecked casts by default.
+- Allow explicit Kiln-authored foreign binding declarations for awkward libraries. An escape hatch does not require developers to write JavaScript, although third-party JS implementations still execute in the browser.
+- Start with explicit conversion rules: JS `string`/boolean to Kiln `String`/`Bool`; JS `number` to `Float` unless a verified narrower conversion is requested; JS `bigint` to `Int` only after bounds checks; supported arrays/records to typed collections/records; `null` or `undefined` to optionals where their distinction is unimportant. Preserve their distinction explicitly if an API depends on it.
+- Specify copied values vs retained handles, equality/identity, handle table/rooting and cross-GC lifetime. No raw JavaScript object or host capability is treated as a serializable Kiln/server-RPC value by default.
+
+### 8.4 Async, callbacks, errors and DOM ownership
+
+- JS promises integrate with Kiln's agreed implicit async/task model and cancellation/error policies; no JavaScript `await` needs to appear in user code. Promise rejection and synchronous JS exceptions become typed, inspectable failures at the foreign boundary.
+- Callback closures can be passed to browser APIs with explicit rooting, lifetime and disposal semantics. Subscriptions, event listeners, observers, timers and retained JS handles must be released on Ember disposal/navigation where applicable.
+- JS-driven DOM libraries must integrate through an explicit owned/borrowed element boundary so they do not mutate Ember-owned reconciled DOM unpredictably. A JS library's mutations do **not** automatically become Kiln reactive state: foreign callbacks update Kiln state through explicit typed writes.
+- Respect browser security and permissions. Typed bindings improve developer confidence but do **not** sandbox third-party JS or eliminate supply-chain risk.
+
+### 8.5 Build and diagnostics
+
+- Generate deterministic, content-addressed Wasm and JS bridge/assets through Kiln's build pipeline, without a developer-maintained Vite/Webpack/npm project or a Node runtime on the deployed Kiln server. Existing build tools may be reused internally.
+- Produce diagnostics for server/browser misuse, failed type mapping, unsafe dynamic conversions, unsupported packages, stale/disposed handles, incompatible platform features, missing browser permissions and JS exceptions. Source locations should point back to Ember/Kiln where practical.
+- Static-only pages must not load an Ember bootstrap or third-party JS. Unsupported WasmGC browsers retain SSR content and native links/forms as far as possible; a separate fallback JS compiler remains a longer-term vision item.
+
+**Gate:** a real-browser Ember invokes a typed native browser API and a small pinned npm library without handwritten JavaScript; an explicitly dynamic `js.Value` call works and fails safely on a bad conversion; exception/promise/callback cleanup, Node-only import diagnostics, SSR/browser guardrails, CSP and production asset delivery pass conformance tests.
 
 ## 9. Security, performance and cross-target CI
 
@@ -149,7 +180,7 @@ An SSR page selectively hydrates a component:
 | Events/DOM | Focus, keyboard, conditional updates | Leaked listener, stale DOM, clobbered input |
 | RPC | Exposed typed pure function, result/error codec | Unexposed function, malformed/oversized input, invalid origin/CSRF, error leakage |
 | Async | Pending, cancellation, optimistic success | Stale response, duplicate mutation, failed rollback |
-| Interop | DOM handles, JS callback, promise/error | Disposed handles, Node-only imports, invalid conversion |
+| Interop | Typed browser API, pinned npm package, explicit dynamic call, JS callback/promise | Disposed handles, Node-only imports, failed checked conversions, SSR-only misuse, exception/cancellation |
 | Delivery | No Wasm on SSR-only page, Linux/Windows server | CSP breakage, wrong MIME, excessive unnecessary Wasm |
 
 - Real-browser smoke/regression testing belongs in Phase 4 despite the public `kiln test` runner arriving later.
@@ -165,7 +196,7 @@ An SSR page selectively hydrates a component:
 | **3 — State and events** | Reactive dependencies, typed handlers, DOM updates and disposal | Counter, list and form update without losing focus |
 | **4 — Server functions** | RPC contracts/codecs/server endpoints, validation/origin/CSRF hooks | Public pure function succeeds, unexposed/hostile calls fail without auth or a database |
 | **5 — Async UX** | Pending/cancel, stale results, optimistic rollback | Repeated actions/failure/reorder leave consistent state |
-| **6 — JS interoperability** | Browser API/TypeScript bindings and JS bridge | Small external browser library works via typed Kiln |
+| **6 — JS interoperability** | Typed browser API, TypeScript declaration bindings, pinned npm bundling, explicit dynamic escape hatch and JS bridge | Browser API + external library run without handwritten JS; invalid dynamic conversions and unsupported packages fail safely |
 | **7 — Polish** | Diagnostics/LSP, CSP/assets, cross-target CI, performance basics | Static pages ship no Ember runtime, platform suites pass |
 | **8 — Dogfood** | Real database-free SSR site with independent islands, reactive inputs and pure/ephemeral RPC | Full browser-server interaction works in Kiln without SQL/auth/JavaScript glue |
 
@@ -179,7 +210,7 @@ Each step is a separately reviewable milestone with diagnostics, conformance/bro
 - [ ] State/handlers update DOM predictably with safe lifecycle, list identity and keyboard/focus handling.
 - [ ] `server fn` calls compile into typed serialized RPC with failure, cancellation and version checks, without handwritten frontend route wrappers.
 - [ ] The RPC transport implements explicit export control, input validation, origin/CORS/CSRF protection as appropriate, bounded resources and request context/policy hooks ready for Phase 5 authentication.
-- [ ] Browser JS interoperability supports practical existing APIs with honest compatibility boundaries.
+- [ ] Browser JS interoperability uses typed browser APIs and compatible npm bindings by default, provides an explicit checked dynamic escape hatch, bundles reproducibly without handwritten JavaScript and enforces browser-only/lifecycle constraints.
 - [ ] Deterministic Wasm/assets integrate with Phase 3 CSS/Finishes; static-only pages don't emit Ember code.
 - [ ] Real-browser/CI regression cases and Linux/Windows native server checks pass.
 - [ ] A database-free interactive Kiln app with SSR, islands, reactive state, and typed pure/ephemeral-state RPC works end-to-end without writing client JavaScript or transport glue.

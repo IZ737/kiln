@@ -54,8 +54,12 @@ later design explorations, not mandatory ownership rules.
 and existing applications should be able to call Kiln modules. Proposed
 paths include C-compatible FFI, generated Python/Node bindings, portable
 Wasm components and browser JavaScript/npm integration through typed
-bindings. Mixed stacks must remain viable, and interop boundaries must
-handle memory, errors and ownership explicitly.
+bindings. For Phase 4 browser Embers, the finalized direction is **typed
+browser/npm bindings by default, with a deliberate checked `js.Value`
+dynamic escape hatch**; Kiln developers need not author JavaScript. Mixed
+stacks must remain viable, and interop boundaries must handle memory,
+errors, security, lifecycle and ownership explicitly. See the
+[Phase 4 interop contract](plans/phase-4.md#8-javascript-and-browser-interoperability).
 
 The complete reasoning and future scope live in [vision.md](vision.md).
 

@@ -329,22 +329,16 @@ interchangeable. Keep these boundaries explicit and testable.
 
 ### JavaScript and npm for browser Embers
 
-The Phase 4 frontend plan includes JS interoperability so Kiln programs
-can reuse the massive existing browser/npm ecosystem instead of
-reimplementing it. The preferred direction is:
+**Finalized Phase 4 direction (2026-10-25): typed by default, explicit dynamic escape hatch (Option B).** Kiln authors can use native browser standards and compatible existing npm libraries from Ember/Kiln without authoring JavaScript glue. The compiler manages typed browser wrappers, generated JavaScript/WasmGC bindings and production bundling.
 
-- Generate type-safe bindings from TypeScript declarations when mappings are
-  clear; allow explicit bindings for unusual APIs.
-- Bridge promises, events, callbacks, object handles and JS exceptions
-  predictably across Wasm/JS.
-- Bundle browser dependencies as part of Kiln's normal build workflow,
-  without requiring every Kiln author to become a bundler expert.
-- Support framework-independent browser libraries first; React-specific
-  components and Node-only modules are not automatically compatible.
+- Generate type-safe bindings from supported TypeScript declarations; report unsupported shapes rather than silently dropping into dynamic typing. Browser-only imports are checked against server/SSR usage.
+- Provide explicit opaque `js.Handle<T>`-style host references and an opt-in `js.Value`-style dynamic API for unusual packages, with checked conversions and typed failures. Exact spelling is subject to language grammar validation; the architecture is decided.
+- Translate values, retained object identities, closures/callbacks, promises and JS exceptions predictably across the bridge; integrate cleanup with Ember disposal and keep external DOM ownership explicit.
+- Compile/bundle pinned browser-side JS dependencies without forcing developers to maintain a separate npm/Node project or deploy Node with their server. Phase 6's manifest/Ware package infrastructure can mature the CLI and lockfile workflow.
+- Use maintained browser implementations rather than reimplementing libraries. Framework-independent browser packages are the starting point; React-specific or Node-only modules are not universally compatible. Package scripts must not execute automatically by default.
+- Browser APIs remain subject to web platform permissions, CSP and origin rules. Third-party JS is not sandboxed merely by passing through a typed bridge.
 
-**"Access to npm" does not mean "every npm package works everywhere."**
-Interop should be honest about browser/runtime constraints and give useful
-diagnostics when an API cannot be mapped.
+**“Access to npm” does not mean “every npm package works everywhere.”** See the [Phase 4 interop contract](plans/phase-4.md#8-javascript-and-browser-interoperability) for conversion, fallback, error and acceptance requirements.
 
 The adoption path is intentionally incremental: **try one Kiln module,
 service or component → keep existing dependencies → choose Kiln more broadly
