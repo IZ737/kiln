@@ -37,14 +37,18 @@ fn upgrade(options: Options) -> Result<(), String> {
     // A Windows upgrade leaves the old kiln.exe behind while it runs.
     let _ = std::fs::remove_file(old_path(&exe));
 
-    let releases = std::env::var("KILN_RELEASES_URL").unwrap_or_else(|_| RELEASES.to_string());
-    let releases = releases.trim_end_matches('/');
-    let agent = agent()?;
+    let releases = releases_url();
+    let releases = releases.as_str();
+    let agent = agent(Duration::from_secs(300))?;
 
     let tag = match options.version {
         Some(version) if version.starts_with('v') => version,
         Some(version) => format!("v{version}"),
-        None => latest(&agent, releases)?,
+        None => {
+            let tag = latest(&agent, releases)?;
+            crate::notice::save(Some(&tag));
+            tag
+        }
     };
     let current = env!("CARGO_PKG_VERSION");
     let wanted = tag.trim_start_matches('v');
@@ -87,6 +91,17 @@ fn upgrade(options: Options) -> Result<(), String> {
     Ok(())
 }
 
+/// The latest release's tag, for the notice that a newer kiln is out. It
+/// gives up sooner than an upgrade.
+pub fn latest_release() -> Result<String, String> {
+    latest(&agent(Duration::from_secs(15))?, &releases_url())
+}
+
+fn releases_url() -> String {
+    let releases = std::env::var("KILN_RELEASES_URL").unwrap_or_else(|_| RELEASES.to_string());
+    releases.trim_end_matches('/').to_string()
+}
+
 /// This executable, with symbolic links followed on Unix so the file
 /// itself is replaced. (On Windows that would give a `\\?\` path.)
 fn current_exe() -> Result<PathBuf, String> {
@@ -107,8 +122,8 @@ fn old_path(exe: &Path) -> PathBuf {
 /// An HTTP client that trusts the system's certificates, so it works behind
 /// proxies that a company's own certificate signs, and Mozilla's where the
 /// system has none (such as an empty container). It uses the HTTPS_PROXY
-/// and NO_PROXY environment variables.
-fn agent() -> Result<ureq::Agent, String> {
+/// and NO_PROXY environment variables. Requests give up after `timeout`.
+fn agent(timeout: Duration) -> Result<ureq::Agent, String> {
     use ureq::tls::{Certificate, RootCerts, TlsConfig};
     let native = rustls_native_certs::load_native_certs().certs;
     let certs: Vec<Certificate<'static>> = if native.is_empty() {
@@ -129,7 +144,7 @@ fn agent() -> Result<ureq::Agent, String> {
         .tls_config(tls)
         .http_status_as_error(false)
         .user_agent(concat!("kiln/", env!("CARGO_PKG_VERSION")))
-        .timeout_global(Some(Duration::from_secs(300)))
+        .timeout_global(Some(timeout))
         .build();
     Ok(config.into())
 }
