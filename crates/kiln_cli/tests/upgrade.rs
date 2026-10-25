@@ -88,10 +88,22 @@ fn serve(bad_sum: bool) -> String {
 }
 
 fn upgrade(exe: &PathBuf, base: &str, args: &[&str]) -> std::process::Output {
+    let home = exe.parent().unwrap().join("home");
+    kiln(exe, base, &home, "upgrade", args)
+}
+
+fn kiln(
+    exe: &PathBuf,
+    base: &str,
+    home: &PathBuf,
+    command: &str,
+    args: &[&str],
+) -> std::process::Output {
     Command::new(exe)
-        .arg("upgrade")
+        .arg(command)
         .args(args)
         .env("KILN_RELEASES_URL", base)
+        .env("KILN_HOME", home)
         .env_remove("HTTP_PROXY")
         .env_remove("HTTPS_PROXY")
         .env_remove("http_proxy")
@@ -124,9 +136,81 @@ fn upgrade_replaces_kiln_with_the_latest_release() {
     assert_eq!(std::fs::read_to_string(&exe).unwrap(), NEW_KILN);
     let version = Command::new(&exe).arg("--version").output().unwrap();
     assert_eq!(String::from_utf8_lossy(&version.stdout), "kiln 9.0.0\n");
-    // Nothing is left beside it.
-    let files = std::fs::read_dir(exe.parent().unwrap()).unwrap().count();
-    assert_eq!(files, 1);
+    // Nothing is left beside it but the cache of the latest release.
+    let dir = exe.parent().unwrap();
+    let files: Vec<_> = std::fs::read_dir(dir)
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name())
+        .collect();
+    assert_eq!(files.len(), 2, "{files:?}");
+    let cache = std::fs::read_to_string(dir.join("home/update-check")).unwrap();
+    assert_eq!(cache.lines().nth(1), Some("v9.0.0"));
+}
+
+#[test]
+fn update_check_records_the_latest_release() {
+    let exe = kiln_copy("notice");
+    let base = serve(false);
+    let home = exe.parent().unwrap().join("home");
+
+    let out = kiln(&exe, &base, &home, "update-check", &[]);
+    assert!(out.status.success());
+    assert!(out.stdout.is_empty() && out.stderr.is_empty());
+    let cache = std::fs::read_to_string(home.join("update-check")).unwrap();
+    let mut lines = cache.lines();
+    assert!(lines.next().unwrap().parse::<u64>().is_ok());
+    assert_eq!(lines.next(), Some("v9.0.0"));
+
+    // Without a terminal, commands do not show the notice.
+    let out = kiln(&exe, &base, &home, "explain", &["E0101"]);
+    assert!(out.status.success());
+    assert!(!String::from_utf8_lossy(&out.stderr).contains("is available"));
+
+    // When the server is gone, what was found before stays.
+    let out = kiln(
+        &exe,
+        "http://127.0.0.1:1/releases",
+        &home,
+        "update-check",
+        &[],
+    );
+    assert!(out.status.success());
+    let cache = std::fs::read_to_string(home.join("update-check")).unwrap();
+    assert_eq!(cache.lines().nth(1), Some("v9.0.0"));
+}
+
+/// Under a pseudo-terminal (from `script`), a command shows the notice
+/// after its output.
+#[test]
+fn commands_in_a_terminal_say_a_newer_kiln_is_out() {
+    if Command::new("script").arg("--version").output().is_err() {
+        return;
+    }
+    let exe = kiln_copy("terminal");
+    let home = exe.parent().unwrap().join("home");
+    std::fs::create_dir_all(&home).unwrap();
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+    std::fs::write(home.join("update-check"), format!("{now}\nv9.0.0\n")).unwrap();
+    let run = |no_check: &str| {
+        let out = Command::new("script")
+            .args([
+                "-qec",
+                &format!("{} explain E0101", exe.display()),
+                "/dev/null",
+            ])
+            .env("KILN_HOME", &home)
+            .env("KILN_NO_UPDATE_CHECK", no_check)
+            .env_remove("CI")
+            .output()
+            .unwrap();
+        String::from_utf8_lossy(&out.stdout).into_owned()
+    };
+    let shown = run("");
+    assert!(shown.contains("note: kiln 9.0.0 is available"), "{shown}");
+    assert!(!run("1").contains("is available"));
 }
 
 #[test]

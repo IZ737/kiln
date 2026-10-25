@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.5.3 (2026-10-25)
+
+- kiln says when a newer release is out, after a command finishes, and to
+  run `kiln upgrade` to install it. Commands never wait for the network:
+  they read what the last check found from `~/.kiln/update-check` (or
+  `$KILN_HOME`), and once a day a check runs in the background for the
+  next command. The notice goes to standard error and only to a terminal,
+  so it never shows in CI, editors, pipes, `kiln check --json` or `kiln
+  lsp`. `KILN_NO_UPDATE_CHECK=1` turns it off.
+
 ## 0.5.2 (2026-10-25)
 
 - `kiln lsp` no longer lists a declaration whose name is not typed yet,

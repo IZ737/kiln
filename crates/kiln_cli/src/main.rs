@@ -2,6 +2,7 @@
 //! `upgrade`.
 
 mod lsp;
+mod notice;
 mod upgrade;
 
 use clap::{Parser, Subcommand};
@@ -108,10 +109,32 @@ enum Command {
         #[arg(long)]
         force: bool,
     },
+    /// Record the latest release for the notice that a newer kiln is out.
+    /// Other commands start it in the background once a day.
+    #[command(hide = true)]
+    UpdateCheck,
 }
 
 fn main() -> ExitCode {
-    match Cli::parse().command {
+    let command = Cli::parse().command;
+    // The language server talks to an editor, `upgrade` says itself what
+    // is available, and JSON output is for programs.
+    let notice = !matches!(
+        command,
+        Command::Lsp
+            | Command::Upgrade { .. }
+            | Command::UpdateCheck
+            | Command::Check { json: true, .. }
+    );
+    let code = dispatch(command);
+    if notice {
+        notice::show();
+    }
+    code
+}
+
+fn dispatch(command: Command) -> ExitCode {
+    match command {
         Command::Check { paths, json } => check(paths, json),
         Command::Build {
             file,
@@ -150,6 +173,7 @@ fn main() -> ExitCode {
             check,
             force,
         }),
+        Command::UpdateCheck => notice::update_check(),
     }
 }
 
