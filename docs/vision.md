@@ -474,9 +474,19 @@ debugging and deployment should feel like parts of one toolchain.
   VS Code extension, icons, syntax highlighting and enhanced compiler-backed
   completion/navigation; intelligence belongs in the shared LSP so other
   editors benefit.
-- **Testing and formatting:** a consistent test runner, formatter, hot
-  reload and richer editor refactorings are planned for Phase 5. A real
-  application should be easy to check locally and in CI.
+- **Built-in tests from logic to browser:** Phase 5 plans one `kiln test`
+  workflow covering Kiln unit tests, isolated integration tests for
+  API/database/auth flows and **automated real-browser/frontend E2E
+  tests** for Glazes, navigation, forms, keyboard/focus behaviour and
+  theme styling. Kiln owns test discovery, assertions, fixtures,
+  application startup, reporting, screenshots and CI integration; it
+  reuses a maintained browser automation engine underneath rather than
+  reinventing Chromium or requiring users to maintain a Node-based test
+  project. See the [integrated testing plan](testing.md).
+- **Future interactive coverage:** Phase 6 extends that same browser
+  runner to Ember hydration, reactive state, events and typed RPC.
+  Formatter, hot reload and richer editor refactorings remain planned
+  for Phase 5.
 - **Agent-friendly contracts:** structured JSON diagnostics, stable error
   codes, machine-applicable fixes, generated docs/examples and explicit
   tool schemas minimize guesswork for coding agents.
