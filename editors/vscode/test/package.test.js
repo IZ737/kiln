@@ -8,7 +8,7 @@ const manifest = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "ut
 const brand = path.join(root, "..", "..", "assets", "brand");
 
 test("every file the manifest names exists", () => {
-  const files = [manifest.icon];
+  const files = [manifest.icon, manifest.main];
   for (const lang of manifest.contributes.languages) {
     files.push(lang.configuration, lang.icon.light, lang.icon.dark);
   }
@@ -38,4 +38,32 @@ test("language configurations are valid JSON", () => {
   for (const lang of manifest.contributes.languages) {
     JSON.parse(fs.readFileSync(path.join(root, lang.configuration), "utf8"));
   }
+});
+
+test("menus only name contributed commands", () => {
+  const commands = new Set(manifest.contributes.commands.map((c) => c.command));
+  for (const entries of Object.values(manifest.contributes.menus)) {
+    for (const entry of entries) {
+      assert.ok(commands.has(entry.command), `${entry.command} is not contributed`);
+    }
+  }
+});
+
+test("the problem matcher reads kiln's errors", () => {
+  const [first, second] = manifest.contributes.problemMatchers[0].pattern;
+  const output = [
+    "error[E0106]: Kiln has no `null`",
+    " --> /home/ada/blog/main.kiln:2:11",
+    "  |",
+  ];
+  const head = output[0].match(new RegExp(first.regexp));
+  assert.deepStrictEqual([head[first.code], head[first.message]], ["E0106", "Kiln has no `null`"]);
+  const at = output[1].match(new RegExp(second.regexp));
+  assert.deepStrictEqual(
+    [at[second.file], at[second.line], at[second.column]],
+    ["/home/ada/blog/main.kiln", "2", "11"],
+  );
+  // Windows paths keep their drive letter.
+  const windows = " --> C:\\blog\\main.kiln:2:11".match(new RegExp(second.regexp));
+  assert.strictEqual(windows[second.file], "C:\\blog\\main.kiln");
 });
