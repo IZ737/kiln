@@ -18,8 +18,9 @@ pub struct GlazeFile<'a> {
 
 #[derive(Default)]
 pub struct AppStyles {
-    /// The CSS Module class names each glaze can use, for the checker.
-    pub modules: kiln_check::CssModules,
+    /// The CSS Module class names each glaze can use, and the design
+    /// tokens, for the checker.
+    pub styling: kiln_check::Styling,
     /// Errors in each glaze's CSS, by glaze file name.
     pub diagnostics: HashMap<String, Vec<Diagnostic>>,
     /// For the compiler: each glaze's CSS Modules, by import name, with
@@ -27,9 +28,15 @@ pub struct AppStyles {
     pub exports: HashMap<String, HashMap<String, BTreeMap<String, String>>>,
     /// The attribute that marks the elements of each glaze with a `<style>`.
     pub scopes: HashMap<String, String>,
-    /// The app's stylesheet, the first asset, and the files it refers to.
+    /// The app's stylesheet, the first asset once [`AppStyles::finish`]
+    /// makes it, and the files it refers to.
     pub stylesheet: Option<String>,
     pub assets: Vec<Asset>,
+    /// The parts of the stylesheet: global stylesheets' URLs, CSS Modules
+    /// and scoped styles.
+    globals: Vec<String>,
+    modules_css: Vec<String>,
+    scoped_css: Vec<String>,
 }
 
 /// Reads and processes the CSS of the glazes in `dir`.
@@ -39,6 +46,7 @@ pub fn load(dir: &Path, glazes: &[GlazeFile]) -> AppStyles {
         assets: Vec::new(),
         by_file: HashMap::new(),
         globals: Vec::new(),
+        properties: Vec::new(),
     };
     let mut out = AppStyles::default();
     let mut modules_css = Vec::new();
@@ -64,7 +72,8 @@ pub fn load(dir: &Path, glazes: &[GlazeFile]) -> AppStyles {
                                 field_name(class).map(|f| (f, renamed.clone()))
                             })
                             .collect();
-                        out.modules
+                        out.styling
+                            .modules
                             .entry(g.name.to_string())
                             .or_default()
                             .insert(name.name.clone(), fields.keys().cloned().collect());
@@ -78,7 +87,8 @@ pub fn load(dir: &Path, glazes: &[GlazeFile]) -> AppStyles {
                     }
                     Err(e) => {
                         // Unknown classes would only repeat the error.
-                        out.modules
+                        out.styling
+                            .modules
                             .entry(g.name.to_string())
                             .or_default()
                             .remove(&name.name);
@@ -112,21 +122,46 @@ pub fn load(dir: &Path, glazes: &[GlazeFile]) -> AppStyles {
         }
     }
 
-    // One stylesheet, with Kiln's styles in layers so that their order is
-    // fixed: global stylesheets, then CSS Modules, then scoped styles.
-    // Unlayered CSS from elsewhere comes after all of them.
-    if !(l.globals.is_empty() && modules_css.is_empty() && scoped_css.is_empty()) {
+    out.styling.tokens = kiln_check::style::Tokens::from_properties(
+        l.properties.iter().map(|(n, v)| (n.as_str(), v.as_str())),
+    );
+    out.assets = l.assets;
+    out.globals = l.globals;
+    out.modules_css = modules_css;
+    out.scoped_css = scoped_css;
+    out
+}
+
+impl AppStyles {
+    /// Makes the app's stylesheet, with `ui_css`, the CSS of its typed
+    /// styles. Kiln's styles are in layers so that their order is fixed:
+    /// global stylesheets, then CSS Modules, then scoped styles, then
+    /// typed styles. Unlayered CSS from elsewhere comes after all of them.
+    pub fn finish(&mut self, ui_css: &str) {
+        if self.globals.is_empty()
+            && self.modules_css.is_empty()
+            && self.scoped_css.is_empty()
+            && ui_css.is_empty()
+        {
+            return;
+        }
         let mut sheet = String::from("@layer kiln.global,kiln.modules,kiln.scoped,kiln.ui;");
-        for url in &l.globals {
+        for url in &self.globals {
             sheet.push_str(&format!("@import \"{url}\" layer(kiln.global);"));
         }
-        for (layer, parts) in [("modules", &modules_css), ("scoped", &scoped_css)] {
-            if !parts.is_empty() {
-                sheet.push_str(&format!("@layer kiln.{layer}{{{}}}", parts.concat()));
+        let ui = [ui_css.to_string()];
+        for (layer, parts) in [
+            ("modules", &self.modules_css[..]),
+            ("scoped", &self.scoped_css[..]),
+            ("ui", &ui[..]),
+        ] {
+            let css = parts.concat();
+            if !css.is_empty() {
+                sheet.push_str(&format!("@layer kiln.{layer}{{{css}}}"));
             }
         }
         let path = format!("/_kiln/app-{}.css", kiln_css::short_hash(sheet.as_bytes()));
-        l.assets.insert(
+        self.assets.insert(
             0,
             Asset {
                 path: path.clone(),
@@ -135,10 +170,8 @@ pub fn load(dir: &Path, glazes: &[GlazeFile]) -> AppStyles {
                 immutable: true,
             },
         );
-        out.stylesheet = Some(path);
+        self.stylesheet = Some(path);
     }
-    out.assets = l.assets;
-    out
 }
 
 /// The files in the app's `static/` folder, served at `/static/...`.
@@ -194,6 +227,8 @@ struct Loader {
     by_file: HashMap<PathBuf, String>,
     /// The URLs of the global stylesheets glazes import, in order.
     globals: Vec<String>,
+    /// The custom properties they declare, in order: the design tokens.
+    properties: Vec<(String, String)>,
 }
 
 impl Loader {
@@ -247,6 +282,7 @@ impl Loader {
         let mut resolve = |url: &str, kind: UrlKind| self.resolve(&base, url, kind, true);
         let css =
             kiln_css::global(&text, &label, &mut resolve).map_err(|e| css_error(&label, e))?;
+        self.properties.extend(css.properties);
         let url = self.add(path, "text/css; charset=utf-8", css.code.into_bytes());
         Ok(url)
     }

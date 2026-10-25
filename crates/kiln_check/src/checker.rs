@@ -75,6 +75,12 @@ pub struct Checker {
     /// The class names of the CSS Modules each glaze imports: by glaze
     /// file, then by the name it imports them as.
     pub(crate) css_modules: crate::CssModules,
+    /// The app's design tokens, for styles.
+    pub(crate) tokens: std::rc::Rc<crate::style::Tokens>,
+    /// Every atomic CSS rule the program's styles use, by class name.
+    pub(crate) ui_rules: std::collections::BTreeMap<String, crate::style::UiRule>,
+    /// How to build each expression in a style, by its span.
+    pub(crate) styles: HashMap<Span, crate::style::StyleExpr>,
     /// What each value a glaze outputs is, by the span of its expression.
     pub(crate) glaze_values: HashMap<Span, crate::glaze::ValueKind>,
     /// The type of every expression, by span, for the code generator.
@@ -161,6 +167,9 @@ impl Checker {
             in_ember: false,
             glaze_values: HashMap::new(),
             css_modules: HashMap::new(),
+            tokens: Default::default(),
+            ui_rules: Default::default(),
+            styles: HashMap::new(),
             expr_types: HashMap::new(),
             binding_types: HashMap::new(),
             std_adts: 0,
@@ -330,6 +339,11 @@ impl Checker {
         Ty::Adt(self.global_types[name], Vec::new())
     }
 
+    /// Whether `ty` is `Ui`, the type of styles.
+    pub(crate) fn is_ui(&self, ty: &Ty) -> bool {
+        matches!(ty, Ty::Adt(id, _) if Some(id) == self.global_types.get("Ui") && *id < self.std_adts)
+    }
+
     pub(crate) fn list_of(&self, elem: Ty) -> Ty {
         Ty::Adt(self.global_types["List"], vec![elem])
     }
@@ -421,6 +435,7 @@ impl Checker {
             }
             (Ty::Param(x), Ty::Param(y)) => x == y,
             (Ty::Unit, Ty::Unit) => true,
+            (Ty::Style(x), Ty::Style(y)) => x == y,
             _ => false,
         }
     }
@@ -893,6 +908,25 @@ impl Checker {
     }
 
     fn infer_kind(&mut self, e: &Expr, expect: &Expect) -> Ty {
+        match self.expected_ty(expect) {
+            Some(Ty::Style(pos)) => {
+                if let Some(ty) = self.infer_style(e, &pos) {
+                    return ty;
+                }
+            }
+            // A record where a `Ui` is expected is a style.
+            Some(ui) if self.is_ui(&ui) => {
+                if let ExprKind::Record(fields) = &e.kind {
+                    let pos = crate::style::StylePos::Group {
+                        state: None,
+                        at: None,
+                    };
+                    self.infer_style_record(fields, &pos, e.span);
+                    return ui;
+                }
+            }
+            _ => {}
+        }
         match &e.kind {
             ExprKind::Int(_) => self.prim("Int"),
             ExprKind::Float(_) => self.prim("Float"),
@@ -1770,6 +1804,10 @@ impl Checker {
             _ => "function".into(),
         };
 
+        if let Some(result) = self.infer_ui_call(callee, args, e.span) {
+            return result;
+        }
+
         // `module.function(...)` or `module.Type(...)`
         if let ExprKind::Field { expr: base, name } = &callee.kind {
             if self.is_marker(&name.name) {
@@ -2566,6 +2604,7 @@ pub(crate) fn show_type(adts: &[AdtDef], ty: &Ty, resolve: &dyn Fn(&Ty) -> Ty) -
         Ty::Never => "Never".into(),
         Ty::Any => "Any".into(),
         Ty::Rest => "...".into(),
+        Ty::Style(_) => "style value".into(),
         Ty::Unknown => "{unknown}".into(),
     }
 }

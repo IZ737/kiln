@@ -1,0 +1,15 @@
+{% props finish: CardFinish, cta: Ui %}
+{% css "design.css" %}
+<!doctype html>
+<html>
+<head>
+<title>Styles</title>
+</head>
+<body ui={{ m: 0, font: font.body, lineHeight: 1.5 }}>
+<article class="card" ui={finish.root}>
+<h2 ui={finish.title}>Glazes</h2>
+<p ui={{ fg: color.text, maxW: "60ch" }}>Typed styles become CSS classes.</p>
+<a href="/more" ui={ui.merge(cta, ui({ px: space.lg }))}>Read more</a>
+</article>
+</body>
+</html>

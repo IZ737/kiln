@@ -171,6 +171,91 @@ that does not parse, a missing file, or an `@import` in a `<style>` or CSS
 Module is E0312. CSS is read with
 [Lightning CSS](https://lightningcss.dev), and written minified.
 
+## Typed styles
+
+`ui={{ ... }}` styles an element with a record of keys, checked by the
+compiler and turned into CSS classes; no class names to invent and no
+Tailwind:
+
+```glaze
+{% css "design.css" %}
+<article class="card" ui={{
+    grid: true, cols: 1, gap: space.md, p: space.lg,
+    bg: color.surface, rounded: radius.card,
+    borderColor: if featured { color.accent } else { .transparent },
+    hover: { shadow: shadow.lg },
+    at: { tablet: { cols: 2 } },
+}}>
+```
+
+In Kiln code, the same record is `ui({ ... })`, of type `Ui`, and any
+record where a `Ui` is expected is one. A function that returns styles is
+a **Finish**: an ordinary function, which may take an enum to choose a
+variant and return a struct of several `Ui`s for a glaze's parts:
+
+```kiln
+fn button(tone: Tone) -> Ui {
+    let base = ui({ px: space.md, py: space.sm, rounded: radius.card })
+    return ui.merge(base, match tone {
+        Tone.Plain => ui({ bg: color.surface })
+        Tone.Accent => ui({ bg: color.accent, hover: { opacity: 0.9 } })
+    })
+}
+```
+
+`ui.merge(a, b, ...)` combines styles; for each property, state and
+breakpoint the later style wins, so `px` after `p` changes only the left
+and right padding. `ui.classes(style)` is a style's class names as a
+`String`. An element's own `class` stays, before the style's classes.
+
+| Keys | Values |
+| --- | --- |
+| `bg`, `fg` (text colour), `borderColor` | `color.*` tokens, `.transparent`, `.current` |
+| `p`, `px`, `py`, `pt`, `pr`, `pb`, `pl`, `gap` | `space.*` tokens, `0` |
+| `m`, `mx`, `my`, `mt`, `mr`, `mb`, `ml` | `space.*` tokens, `0`, `.auto` |
+| `w`, `h`, `minW`, `maxW`, `minH`, `maxH` | `size.*` or `space.*` tokens, `0`, `.auto`, `.full`, `.min`, `.max`, `.fit` |
+| `rounded` | `radius.*` tokens, `.none`, `.full` |
+| `border` | `true` (1px solid), or a width |
+| `shadow` | `shadow.*` tokens, `.none` |
+| `flex`, `grid` | `true` (not both in one style) |
+| `direction` | `.row`, `.column`, `.rowReverse`, `.columnReverse` |
+| `cols`, `rows` | `1` to `12` equal tracks, `.none` |
+| `items` | `.start`, `.center`, `.end`, `.stretch`, `.baseline` |
+| `justify` | `.start`, `.center`, `.end`, `.between`, `.around`, `.evenly`, `.stretch` |
+| `wrap`, `underline` | `true` or `false` |
+| `font` | `font.*` tokens |
+| `textSize` | `text.*` tokens; `.lg` is `text.lg` |
+| `weight` | `.thin`, `.light`, `.normal`, `.medium`, `.semibold`, `.bold`, `.black`, `100`-`1000`, `weight.*` |
+| `lineHeight` | a number, `leading.*` tokens |
+| `align` | `.left`, `.center`, `.right`, `.justify`, `.start`, `.end` |
+| `tracking` | `tracking.*` tokens |
+| `opacity` | `0` to `1` |
+| `overflow` | `.hidden`, `.auto`, `.scroll`, `.visible`, `.clip` |
+| `transition` | `motion.*` tokens, `.none` |
+| `cursor` | `.pointer`, `.default`, `.text`, `.notAllowed`, `.grab`, `.move`, `.wait`, `.help`, `.none` |
+| `transform` | a CSS string, `.none` |
+| `hover`, `focus`, `focusVisible`, `disabled` | a record of the keys above |
+| `at` | a record of breakpoints, each a record of keys (and states) |
+
+Every key also takes a CSS string written out, such as `p: "1rem 2px"`,
+which is checked as CSS for its property. Values are written in place:
+code chooses between them with `if` and `match`, but cannot compute them
+(E0220), because each becomes an atomic CSS class when the program is
+compiled. Rarer CSS properties go in a `<style>`.
+
+**Tokens** are the CSS custom properties that global stylesheets declare,
+named `--<category>-<name>`: `--space-md` is `space.md` and
+`--color-on-accent` is `color.on_accent`. The categories are `color`,
+`space`, `size`, `radius`, `shadow`, `font`, `text`, `weight`, `leading`,
+`tracking`, `motion` and `breakpoint`. A style refers to the property
+(`var(--space-md)`), so a stylesheet that changes it changes every style.
+Breakpoints are widths: `at: { tablet: ... }` is
+`@media (min-width: <--breakpoint-tablet>)`, in the order they are
+declared. A token or breakpoint that is not declared is E0221.
+
+The classes are in the `kiln.ui` layer, after the other layers, and a
+class name is `k` and twelve letters and digits.
+
 ## Elements and components
 
 - HTML elements are written as usual. Void elements (`<br>`, `<img>`,

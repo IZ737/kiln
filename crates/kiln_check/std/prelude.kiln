@@ -24,6 +24,10 @@ struct List<T> {}
 struct Map<K, V> {}
 struct Set<T> {}
 
+// A style: `ui({ p: space.md, bg: color.surface })`. See `ui` below and
+// "Styles" in docs/reference/glazes.md.
+struct Ui {}
+
 fn print(value: Any) {}
 fn env(name: String) -> String {}
 fn panic(message: String) -> Never {}

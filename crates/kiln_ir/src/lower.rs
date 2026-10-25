@@ -7,6 +7,7 @@
 //! here, at the spot that uses it.
 
 use crate::*;
+use kiln_check::style::StyleExpr;
 use kiln_check::types::{substitute, FnSig, ParamSig};
 use kiln_diagnostics::{codes, Diagnostic};
 use kiln_syntax::ast;
@@ -807,6 +808,9 @@ impl<'a> Lowerer<'a> {
     // ----- expressions -----
 
     fn expr(&mut self, e: &ast::Expr) -> Expr {
+        if let Some(style) = self.p.styles.get(&e.span) {
+            return self.style(e, style.clone());
+        }
         let ty = self.ty(e);
         let span = e.span;
         let kind = match &e.kind {
@@ -1890,6 +1894,41 @@ impl<'a> Lowerer<'a> {
 }
 
 impl Lowerer<'_> {
+    /// A style, which is the string of its classes (see
+    /// [`kiln_check::style`]).
+    fn style(&mut self, e: &ast::Expr, style: StyleExpr) -> Expr {
+        let string = Ty::Adt(self.prims.string, Vec::new());
+        let span = e.span;
+        let parts: Vec<&ast::Expr> = match (&style, &e.kind) {
+            (StyleExpr::Classes(classes), _) => {
+                return mk(ExprKind::Str(classes.clone()), string, span);
+            }
+            (StyleExpr::Record, E::Record(fields)) => {
+                fields.iter().filter_map(|f| f.value.as_ref()).collect()
+            }
+            (StyleExpr::Same | StyleExpr::Merge, E::Call { args, .. }) => {
+                args.iter().map(|a| &a.value).collect()
+            }
+            _ => return self.unsupported(span, "this style"),
+        };
+        let mut values = parts.into_iter().map(|p| self.expr(p));
+        let Some(first) = values.next() else {
+            return mk(ExprKind::Str(String::new()), string, span);
+        };
+        // Later values replace the classes of what they set.
+        values.fold(first, |acc, next| {
+            mk(
+                ExprKind::Lib {
+                    module: "ui".into(),
+                    name: "merge".into(),
+                    args: vec![acc, next],
+                },
+                string.clone(),
+                span,
+            )
+        })
+    }
+
     /// `web.app()` with the routes that serve the program's files (see
     /// [`crate::glaze::ASSETS_FN`]) added, when it has any.
     fn with_assets(&mut self, app: Expr) -> Expr {

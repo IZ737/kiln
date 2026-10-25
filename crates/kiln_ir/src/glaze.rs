@@ -203,7 +203,8 @@ pub fn generate(glazes: &[GlazeInput], app: &App) -> Option<GlazeSource> {
          \n\
          fn __glaze_no_slot(__out: List<String>) {}\n\
          fn __glaze_text(text: String) -> String { html.escape(text) }\n\
-         fn __glaze_url(url: String) -> String { html.escape(html.safe_url(url)) }\n",
+         fn __glaze_url(url: String) -> String { html.escape(html.safe_url(url)) }\n\
+         fn __glaze_ui(style: Ui) -> String { ui.classes(style) }\n",
     );
     if !app.assets.is_empty() {
         g.assets(app.assets);
@@ -679,8 +680,17 @@ impl<'a> Gen<'a> {
             self.pending.push(' ');
             self.pending.push_str(scope);
         }
+        let style = e.attrs.iter().find_map(|a| match &a.value {
+            AttrValue::Expr(x) if a.name.name == "ui" => Some((x, a.span)),
+            _ => None,
+        });
         for attr in &e.attrs {
-            self.attr(attr);
+            if style.is_none() || !matches!(attr.name.name.as_str(), "ui" | "class") {
+                self.attr(attr);
+            }
+        }
+        if let Some((x, span)) = style {
+            self.styled_class(e, x, span);
         }
         self.pending.push('>');
         if VOID_ELEMENTS.contains(&lower.as_str()) {
@@ -747,6 +757,36 @@ impl<'a> Gen<'a> {
                 self.pending.push('"');
             }
         }
+    }
+
+    /// The `class` of an element with `ui={...}`: its own classes, then the
+    /// style's.
+    fn styled_class(&mut self, e: &Element, style: &Expr, span: Span) {
+        self.pending.push_str(" class=\"");
+        let class = e.attrs.iter().find(|a| a.name.name == "class");
+        if let Some(class) = class {
+            match &class.value {
+                AttrValue::Text(parts) => {
+                    for part in parts {
+                        match part {
+                            AttrPart::Text(t) => self.pending.push_str(&t.replace('"', "&quot;")),
+                            AttrPart::Expr(x) => self.push_value(x, "__glaze_text"),
+                        }
+                    }
+                }
+                AttrValue::Expr(x) => self.push_value(x, "__glaze_text"),
+                _ => {}
+            }
+            self.pending.push(' ');
+        }
+        self.flush();
+        self.start_line();
+        let start = self.text.len();
+        self.text.push_str("__out.push(__glaze_text(__glaze_ui(");
+        self.copy(style.span, true);
+        self.text.push_str(")))\n");
+        self.segment(start, span);
+        self.pending.push('"');
     }
 
     /// `<Card title={t}>children</Card>` calls `__glaze_card`.

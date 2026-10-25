@@ -1,0 +1,48 @@
+### GET / HTTP/1.1
+HTTP/1.1 200 OK
+content-type: text/html; charset=utf-8
+content-length: 804
+connection: close
+
+<!doctype html>
+<html>
+<head>
+<title>Styles</title>
+<link rel="stylesheet" href="/_kiln/app-vnfa9k.css"></head>
+<body class="kxl92h6z18e63 kcraaysfjlg7g kttopu1z7kage krh1pgmvcfzp3 k3jv70k7efyp7 k1tcjru9arxz2">
+<article class="card kti372ixufx4f k4lgiieenjvgp kuka0uc1cld51 kur46pn3xzukd kw6f5uc5xs22q klpcd22b8c9a7 ka5aucuvfxrm4 kwhwdojvx5k8f kzxmvrdsa7gxm kvxcl6ew5uz1f ka09clngcsnm1 ktl06tdxyxjv9 kwar2ng9jatey kkvcpxdcn1yoe kwwkf0yencbky kf8g40cuacv5k kuqrvym0a2zmf kwx9eqvsjxjki">
+<h2 class="kmm4i01wj6a5i kbm44z5yix16m kbbhviksd1wao">Glazes</h2>
+<p class="ko6adaya00pf7 k86ejkregfr9f">Typed styles become CSS classes.</p>
+<a href="/more" class="kw6f5uceymcht ka5aucuwy6096 koz9onsw7bjlt kbm44z55cjyl0 kzxmvrdsa7gxm ko6adaya00pf7 kwhwdojvx5k8f klpcd22b8c9a7">Read more</a>
+</article>
+</body>
+</html>
+### GET /?featured=1 HTTP/1.1
+HTTP/1.1 200 OK
+content-type: text/html; charset=utf-8
+content-length: 818
+connection: close
+
+<!doctype html>
+<html>
+<head>
+<title>Styles</title>
+<link rel="stylesheet" href="/_kiln/app-vnfa9k.css"></head>
+<body class="kxl92h6z18e63 kcraaysfjlg7g kttopu1z7kage krh1pgmvcfzp3 k3jv70k7efyp7 k1tcjru9arxz2">
+<article class="card kti372ixufx4f k4lgiieenjvgp kuka0uc1cld51 kur46pn3xzukd kw6f5uc5xs22q klpcd22b8c9a7 ka5aucuvfxrm4 kwhwdojvx5k8f kzxmvrdsa7gxm kvxcl6ew5uz1f ka09clngcsnm1 ktl06tdro5x40 kwar2ng9jatey kkvcpxdcn1yoe kwwkf0yencbky kf8g40cuacv5k kuqrvym0a2zmf kwx9eqvsjxjki">
+<h2 class="kmm4i01zovz8r kbm44z5yix16m kbbhviksd1wao">Glazes</h2>
+<p class="ko6adaya00pf7 k86ejkregfr9f">Typed styles become CSS classes.</p>
+<a href="/more" class="kw6f5uceymcht ka5aucuwy6096 koz9onsw7bjlt kbm44z55cjyl0 kzxmvrd7dwhnt ko6adayqjb5uw kuullmfwstt4p kwhwdojvx5k8f klpcd22b8c9a7">Read more</a>
+</article>
+</body>
+</html>
+### GET /_kiln/app-vnfa9k.css HTTP/1.1
+HTTP/1.1 200 OK
+content-type: text/css; charset=utf-8
+cache-control: public, max-age=31536000, immutable
+x-content-type-options: nosniff
+content-length: 1811
+connection: close
+
+@layer kiln.global,kiln.modules,kiln.scoped,kiln.ui;@import "/_kiln/design-qagkn3.css" layer(kiln.global);@layer kiln.ui{.k1tcjru9arxz2{line-height:1.5}.k3jv70k7efyp7{font-family:var(--font-body)}.k4lgiieenjvgp{grid-template-columns:repeat(1,minmax(0,1fr))}.k86ejkregfr9f{max-width:60ch}.ka09clngcsnm1{border-width:1px}.ka5aucuvfxrm4{padding-bottom:var(--space-lg)}.ka5aucuwy6096{padding-bottom:var(--space-sm)}.kbbhviksd1wao:focus-visible{text-decoration-line:underline}.kbm44z55cjyl0{font-weight:600}.kbm44z5yix16m{font-weight:700}.kcraaysfjlg7g{margin-right:0}.klpcd22b8c9a7{padding-right:var(--space-lg)}.klpcd22bot20v{padding-right:var(--space-md)}.kmm4i01wj6a5i{font-size:var(--text-lg)}.kmm4i01zovz8r{font-size:var(--text-xl)}.ko6adaya00pf7{color:var(--color-text)}.ko6adayqjb5uw{color:var(--color-surface)}.koz9onsw7bjlt{border-radius:var(--radius-card)}.krh1pgmvcfzp3{margin-left:0}.kti372ixufx4f{display:grid}.ktl06tdro5x40{border-color:var(--color-accent)}.ktl06tdxyxjv9{border-color:transparent}.kttopu1z7kage{margin-bottom:0}.kuka0uc1cld51{row-gap:var(--space-md)}.kur46pn3xzukd{column-gap:var(--space-md)}.kuullmfwstt4p:hover{opacity:0.9}.kvxcl6ew5uz1f{border-style:solid}.kw6f5uc5xs22q{padding-top:var(--space-lg)}.kw6f5uceymcht{padding-top:var(--space-sm)}.kwhwdojrqq8e8{padding-left:var(--space-md)}.kwhwdojvx5k8f{padding-left:var(--space-lg)}.kxl92h6z18e63{margin-top:0}.kzxmvrd7dwhnt{background-color:var(--color-accent)}.kzxmvrdsa7gxm{background-color:var(--color-surface)}@media (min-width:640px){.kwar2ng9jatey{grid-template-columns:repeat(2,minmax(0,1fr))}}@media (min-width:1024px){.kf8g40cuacv5k{padding-right:2.5rem}.kkvcpxdcn1yoe{grid-template-columns:repeat(3,minmax(0,1fr))}.kuqrvym0a2zmf{padding-bottom:2.5rem}.kwwkf0yencbky{padding-top:2.5rem}.kwx9eqvsjxjki{padding-left:2.5rem}}}
+### GET /quit HTTP/1.1

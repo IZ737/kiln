@@ -375,7 +375,11 @@ fn check_app_sources(
         })
         .collect();
     let mut styles = styles::load(&dir, &glaze_files);
-    let mut result = kiln_check::check_app_with_css(&modules, &glazes, &styles.modules);
+    let mut result = kiln_check::check_app_with_css(&modules, &glazes, &styles.styling);
+    styles.finish(&kiln_check::style::stylesheet(
+        &result.ui_rules,
+        &styles.styling.tokens,
+    ));
     let mut module_diags = result.modules.drain(..);
     let mut glaze_diags = result.glazes.drain(..);
     let mut out = Vec::new();
@@ -621,7 +625,8 @@ fn build(
         .map(String::as_str)
         .zip(&parsed_glazes)
         .collect();
-    let program = kiln_check::check_program_with_glazes(&parsed.module, &glaze_refs);
+    let program =
+        kiln_check::check_program_with_tokens(&parsed.module, &glaze_refs, &styles.styling.tokens);
     if !program.diagnostics.is_empty() {
         return Err(report(program.diagnostics));
     }

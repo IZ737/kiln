@@ -83,7 +83,7 @@ pub struct Analysis {
 /// errors; whatever the parser recovered is analyzed.
 pub fn analyze_app(modules: &[&Module], glazes: &[(&str, &Glaze)], target: Target) -> Analysis {
     let mut checker = match target {
-        Target::Module(i) => module_checker(modules, glazes, i, true),
+        Target::Module(i) => module_checker(modules, glazes, i, true, &Default::default()),
         Target::Glaze(i) => glaze_checker(modules, glazes, i, true, &Default::default()),
     };
     checker.zonk_recorded();

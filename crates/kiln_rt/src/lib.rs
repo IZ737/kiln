@@ -20,6 +20,7 @@ mod base64;
 mod html;
 mod json;
 mod server;
+mod ui;
 mod value;
 mod web;
 
@@ -27,4 +28,5 @@ pub use base64::{k_rt_base64_decode, k_rt_base64_encode};
 pub use html::{k_rt_html_escape, k_rt_html_safe_url};
 pub use json::{k_json_encode, k_rt_json_decode};
 pub use server::k_rt_web_serve;
+pub use ui::k_rt_ui_merge;
 pub use web::{k_rt_cookie, k_rt_path_decode, k_rt_query, k_web_reason};

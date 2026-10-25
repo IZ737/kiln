@@ -16,6 +16,8 @@
 //! gives the URL the program serves the file at.
 
 use lightningcss::css_modules::{Config, Pattern};
+use lightningcss::properties::custom::CustomPropertyName;
+use lightningcss::properties::Property;
 use lightningcss::rules::CssRule;
 use lightningcss::selector::{Component, Selector};
 use lightningcss::stylesheet::{ParserOptions, PrinterOptions, StyleSheet};
@@ -32,6 +34,9 @@ pub struct Css {
     pub code: String,
     /// For a CSS Module, each class name and the name it was renamed to.
     pub exports: BTreeMap<String, String>,
+    /// The custom properties its rules declare, in order, without their
+    /// `--`: `("color-accent", "#c65a34")`. Design tokens come from these.
+    pub properties: Vec<(String, String)>,
 }
 
 /// CSS that could not be read: what was wrong, and where, as a 0-based
@@ -125,6 +130,7 @@ fn process(
         scope: scope.map(|s| Ident::from(s.to_string())),
         resolve,
         failed: None,
+        properties: Vec::new(),
     };
     let _ = sheet.visit(&mut v);
     if let Some(e) = v.failed {
@@ -158,7 +164,37 @@ fn process(
     Ok(Css {
         code: printed.code,
         exports,
+        properties: v.properties,
     })
+}
+
+/// The value of one CSS declaration, checked and minified:
+/// `declaration("padding", "1rem 2px")` is `1rem 2px`. Anything other than
+/// one valid value for a known property is an error.
+pub fn declaration(property: &str, value: &str) -> Result<String, String> {
+    let invalid = || format!("`{value}` is not a valid `{property}` value");
+    let text = format!("a{{{property}:{value}}}");
+    let sheet = StyleSheet::parse(&text, ParserOptions::default()).map_err(|_| invalid())?;
+    let [CssRule::Style(rule)] = sheet.rules.0.as_slice() else {
+        return Err(invalid());
+    };
+    let decls = &rule.declarations;
+    let ([decl], []) = (
+        decls.declarations.as_slice(),
+        decls.important_declarations.as_slice(),
+    ) else {
+        return Err(invalid());
+    };
+    match decl {
+        Property::Custom(_) => Err(format!("`{property}` is not a CSS property")),
+        Property::Unparsed(_) if !value.contains("var(") => Err(invalid()),
+        _ => decl
+            .value_to_css_string(PrinterOptions {
+                minify: true,
+                ..PrinterOptions::default()
+            })
+            .map_err(|_| invalid()),
+    }
 }
 
 fn error(message: String, loc: Option<lightningcss::error::ErrorLocation>) -> CssError {
@@ -179,6 +215,7 @@ struct Transform<'a> {
     scope: Option<Ident<'static>>,
     resolve: Resolve<'a>,
     failed: Option<CssError>,
+    properties: Vec<(String, String)>,
 }
 
 impl<'i> Visitor<'i> for Transform<'_> {
@@ -191,6 +228,22 @@ impl<'i> Visitor<'i> for Transform<'_> {
     fn visit_rule(&mut self, rule: &mut CssRule<'i>) -> Result<(), Self::Error> {
         match rule {
             CssRule::Style(style) => {
+                let decls = &style.declarations;
+                for p in decls
+                    .declarations
+                    .iter()
+                    .chain(&decls.important_declarations)
+                {
+                    if let Property::Custom(c) = p {
+                        if let CustomPropertyName::Custom(name) = &c.name {
+                            let value = p
+                                .value_to_css_string(PrinterOptions::default())
+                                .unwrap_or_default();
+                            let name = name.as_ref().trim_start_matches("--").to_string();
+                            self.properties.push((name, value.trim().to_string()));
+                        }
+                    }
+                }
                 if let Some(attr) = &self.scope {
                     for selector in style.selectors.0.iter_mut() {
                         scope_selector(selector, attr);
@@ -295,6 +348,34 @@ fn scope_selector<'i>(selector: &mut Selector<'i>, attr: &Ident<'static>) {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn declarations_are_checked() {
+        assert_eq!(declaration("padding", "1rem  2px").unwrap(), "1rem 2px");
+        assert_eq!(declaration("color", "#FF0000").unwrap(), "red");
+        assert!(declaration("color", "1rem").is_err());
+        assert!(declaration("color", "red; background: url(x)").is_err());
+        assert!(declaration("color", "red} b{color:blue").is_err());
+        assert!(declaration("colour", "red").is_err());
+        assert_eq!(declaration("color", "var(--x)").unwrap(), "var(--x)");
+    }
+
+    #[test]
+    fn custom_properties_are_collected() {
+        let css = global(
+            ":root { --color-accent: #C65A34; --space-md: 1rem; color: red }",
+            "t.css",
+            &mut |u, _| Ok(u.to_string()),
+        )
+        .unwrap();
+        assert_eq!(
+            css.properties,
+            [
+                ("color-accent".to_string(), "#c65a34".to_string()),
+                ("space-md".to_string(), "1rem".to_string())
+            ]
+        );
+    }
+
     use super::*;
 
     fn no_urls(url: &str, _: UrlKind) -> Result<String, String> {

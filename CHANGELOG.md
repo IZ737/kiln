@@ -23,6 +23,14 @@
   `<head>` links. The program serves it, the files CSS refers to and the
   `static/` folder from inside itself. CSS is read with Lightning CSS;
   CSS errors and missing files are E0312.
+- **Typed styles.** `ui({ p: space.md, bg: color.surface, hover: {...},
+  at: { tablet: {...} } })` and `ui={{ ... }}` in glazes are checked
+  against a fixed set of keys and compiled into atomic CSS classes, with
+  `ui.merge` (later styles win per property) and Finishes as ordinary
+  functions returning `Ui`. Design tokens come from the `--color-*`,
+  `--space-*`, ... custom properties of global stylesheets, and
+  breakpoints from `--breakpoint-*`. Wrong values are E0220 and unknown
+  tokens E0221.
 - The new `html` module has `html.escape` and `html.safe_url`, on the
   html-escape crate, and the new `base64` module has `base64.encode` and
   `base64.decode`.

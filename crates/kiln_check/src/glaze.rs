@@ -251,6 +251,21 @@ impl Checker {
     }
 
     fn check_attr(&mut self, attr: &Attr) {
+        // `ui={{ p: space.md }}` styles the element.
+        if attr.name.name == "ui" {
+            match &attr.value {
+                AttrValue::Expr(e) => {
+                    let ui = self.prim("Ui");
+                    self.check(e, &ui);
+                }
+                _ => self.error(Diagnostic::error(
+                    codes::BAD_STYLE,
+                    "`ui` takes a style: `ui={{ p: space.md }}`",
+                    attr.span,
+                )),
+            }
+            return;
+        }
         match &attr.value {
             AttrValue::Flag => {}
             AttrValue::Text(parts) => {

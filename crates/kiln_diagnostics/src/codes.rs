@@ -52,6 +52,8 @@ pub const UNKNOWN_TYPE: &str = "E0216";
 pub const NOT_DISPLAYABLE: &str = "E0217";
 pub const SERVER_ONLY: &str = "E0218";
 pub const UNKNOWN_GLAZE: &str = "E0219";
+pub const BAD_STYLE: &str = "E0220";
+pub const UNKNOWN_TOKEN: &str = "E0221";
 
 pub const UNCLOSED_GLAZE_TAG: &str = "E0301";
 pub const MISMATCHED_CLOSING_TAG: &str = "E0302";
@@ -370,6 +372,20 @@ pub static ALL: &[ErrorCode] = &[
         explanation: "This closing tag, `{% end %}`, `{% else %}`, `{% empty %}` or `{% case %}` has no matching opening element or block.",
         wrong: "<p>Hi</p></div>",
         right: "<p>Hi</p>",
+    },
+    ErrorCode {
+        code: BAD_STYLE,
+        title: "a style that cannot be compiled",
+        explanation: "A style, `ui({ ... })` or a glaze's `ui={{ ... }}`, sets keys such as `p`, `bg` and `hover` to values written in place: a design token such as `space.md`, a keyword such as `.bold`, a number, `true`, or a CSS string such as `\"1rem 2px\"`, which must be valid for the key's CSS property. Code may choose between such values with `if` and `match`, but cannot compute them, because every style becomes CSS when the program is compiled. A style cannot set both `flex` and `grid`.",
+        wrong: "ui({ p: \"${n}px\", bg: color.accent })",
+        right: "ui({ p: if roomy { space.lg } else { space.sm }, bg: color.accent })",
+    },
+    ErrorCode {
+        code: UNKNOWN_TOKEN,
+        title: "a design token or breakpoint that is not declared",
+        explanation: "Design tokens are the CSS custom properties that the program's global stylesheets (imported with `{% css \"...\" %}`) declare, named `--<category>-<name>`: `--space-md` is `space.md`, and `--color-on-accent` is `color.on_accent`. The categories are color, space, size, radius, shadow, font, text, weight, leading, tracking, motion and breakpoint. Breakpoints, used in `at: { ... }`, are `--breakpoint-<name>` tokens holding a width.",
+        wrong: "ui({ bg: color.surfce })",
+        right: "ui({ bg: color.surface })   /* :root { --color-surface: #faf9f6; } */",
     },
     ErrorCode {
         code: UNSAFE_ATTRIBUTE,

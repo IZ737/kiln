@@ -1025,6 +1025,7 @@ dependencies = [
 name = "kiln_check"
 version = "0.6.0"
 dependencies = [
+ "kiln_css",
  "kiln_diagnostics",
  "kiln_syntax",
 ]

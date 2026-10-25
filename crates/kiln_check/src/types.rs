@@ -30,6 +30,10 @@ pub enum Ty {
     /// Produced after an error, and compatible with everything so one
     /// mistake is reported once.
     Unknown,
+    /// A value in a style, at a place that says what it may be (see
+    /// [`crate::style`]). Only expected while checking; programs see
+    /// `String`.
+    Style(Rc<crate::style::StylePos>),
 }
 
 #[derive(Clone, Debug, PartialEq)]
