@@ -69,8 +69,10 @@ npm run package          # makes kiln-<version>.vsix
 
 ## Develop
 
-Open this folder in VS Code and press F5: a second window opens with the
-extension loaded and the repository's `examples` folder open. After
+The extension is plain JavaScript in `src/`; `npm run bundle` puts it and
+the libraries it uses into one file, `dist/extension.js`, which is what VS
+Code loads (packaging runs it too). Open this folder in VS Code and press
+F5: it bundles, then a second window opens with the extension loaded and the repository's `examples` folder open. After
 changing a grammar, run **Developer: Reload Window** there, and use
 **Developer: Inspect Editor Tokens and Scopes** to see the scopes a token
 gets.
@@ -87,6 +89,8 @@ The integration test downloads VS Code the first time and needs a display
 TextMate engine VS Code uses, check the scopes of the constructs in
 `docs/syntax.md` and `docs/glazes.md`, check that every program in
 `examples/` tokenizes with no rule left open, and activate the extension
-against a stand-in for VS Code. The icons in `icons/` are copies of
+against a stand-in for VS Code. They also check that the bundle loads with
+nothing but VS Code around it, and that the package holds only what VS Code
+loads. The icons in `icons/` are copies of
 `assets/brand`; a test fails if they drift apart. The extension's version
 is kiln's, and a test checks that too.
