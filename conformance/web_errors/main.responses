@@ -87,9 +87,7 @@ connection: close
 <p>Content Too Large</p>
 ### GET /posts/1 HTTP/1.1
 HTTP/1.1 431 Request Header Fields Too Large
-content-type: text/plain; charset=utf-8
-content-length: 31
 connection: close
+content-length: 0
 
-Request Header Fields Too Large
 ### GET /quit HTTP/1.1

@@ -629,7 +629,8 @@ Kiln server executables. Detailed scope and acceptance criteria:
 
 The network-facing parts of the runtime (HTTP, JSON, later TLS) are moving
 from hand-written C to maintained Rust libraries (hyper, serde_json,
-rustls), with hyper running on Kiln's own tasks. The plan, its rules and
+rustls), with hyper running on Kiln's own tasks. JSON and the HTTP server
+have moved. The plan, its rules and
 its order are in [runtime-rust.md](runtime-rust.md).
 
 The runtime's Rust part is `crates/kiln_rt`, a static library that every

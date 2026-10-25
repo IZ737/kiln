@@ -115,8 +115,8 @@ nobody
 ### GET /old HTTP/1.1
 HTTP/1.1 302 Found
 location: /
-content-length: 0
 connection: close
+content-length: 0
 
 ### GET /custom HTTP/1.1
 HTTP/1.1 418 I'm a Teapot
@@ -174,9 +174,7 @@ connection: close
 Not Found
 ### NONSENSE
 HTTP/1.1 400 Bad Request
-content-type: text/plain; charset=utf-8
-content-length: 11
 connection: close
+content-length: 0
 
-Bad Request
 ### GET /quit HTTP/1.1
