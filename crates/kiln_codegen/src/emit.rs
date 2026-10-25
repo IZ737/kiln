@@ -1554,6 +1554,30 @@ impl<'a> Gen<'a> {
                 (self.store(&format!("k_io_{name}({})", arg(0)), ty), false)
             }
             ("os", "env" | "exit") => (self.store(&format!("k_os_{name}({})", arg(0)), ty), false),
+            ("web", "app" | "not_found") => (self.store(&format!("k_web_{name}()"), ty), false),
+            ("web", "text" | "html" | "redirect") => {
+                let call = format!("(void *)k_web_{name}({}, {})", arg(0), arg(1));
+                (self.store(&call, ty), false)
+            }
+            ("web", "App.get" | "App.post" | "App.put" | "App.patch" | "App.delete") => {
+                let method = ["get", "post", "put", "patch", "delete"]
+                    .iter()
+                    .position(|m| name.ends_with(&format!(".{m}")))
+                    .unwrap_or(0);
+                let call = format!("k_web_route({}, {method}, {}, {})", arg(0), arg(1), arg(2));
+                (self.store(&call, ty), false)
+            }
+            ("web", "App.listen") => (
+                self.store(&format!("k_web_listen({}, {})", arg(0), arg(1)), ty),
+                true,
+            ),
+            ("web", "Request.query" | "Request.header" | "Request.cookie") => {
+                let f = &name["Request.".len()..];
+                (
+                    self.store(&format!("k_web_{f}({}, {})", arg(0), arg(1)), ty),
+                    false,
+                )
+            }
             _ => return self.unsupported(span, format!("`{module}.{name}`")),
         };
         if fallible {

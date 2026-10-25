@@ -2348,7 +2348,8 @@ impl Fx<'_, '_, '_> {
         t
     }
 
-    /// A call to a function of the `time`, `fs`, `os` or `io` module. A
+    /// A call to a function of the `time`, `fs`, `os`, `io` or `web` module,
+    /// or a method of a `web` type. A
     /// function that can fail is followed by the check that turns the
     /// runtime's message into a failed standard `Error`.
     fn lib_call(&mut self, module: &str, name: &str, a: &[Value], ty: &Ty, span: Span) -> Value {
@@ -2414,6 +2415,29 @@ impl Fx<'_, '_, '_> {
                     "read_lines" => "k_io_read_lines",
                     "write" => "k_io_write",
                     "print_err" => "k_io_print_err",
+                    _ => return self.unsupported(span, format!("`{module}.{name}`")),
+                };
+                (self.call_rt(f, a), false)
+            }
+            ("web", "App.listen") => (self.call_rt("k_web_listen", a), true),
+            ("web", _) => {
+                let f: &'static str = match name {
+                    "app" => "k_web_app",
+                    "not_found" => "k_web_not_found",
+                    "text" => "k_web_text",
+                    "html" => "k_web_html",
+                    "redirect" => "k_web_redirect",
+                    "Request.query" => "k_web_query",
+                    "Request.header" => "k_web_header",
+                    "Request.cookie" => "k_web_cookie",
+                    "App.get" | "App.post" | "App.put" | "App.patch" | "App.delete" => {
+                        let index = ["get", "post", "put", "patch", "delete"]
+                            .iter()
+                            .position(|m| name.ends_with(&format!(".{m}")))
+                            .unwrap_or(0);
+                        let method = self.iconst(index as i64);
+                        return self.call_rt("k_web_route", &[a[0], method, a[1], a[2]]);
+                    }
                     _ => return self.unsupported(span, format!("`{module}.{name}`")),
                 };
                 (self.call_rt(f, a), false)

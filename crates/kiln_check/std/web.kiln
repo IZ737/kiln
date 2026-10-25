@@ -1,14 +1,27 @@
 // HTTP server, routing and responses.
 
+// A web application: its routes, and the server that runs them.
 struct App {}
 
+// The runtime builds requests and reads responses as arrays of 8-byte slots
+// in field order, so fields keep this order and these types.
 struct Request {
     method: String
+    // The path without the query string, as the client sent it.
     path: String
+    // What follows `?` in the target, or "" when there is none.
+    query_string: String
+    // Header names are in lower case.
+    headers: Map<String, String>
+    body: String
 }
 
 struct Response {
     status: Int
+    // Header names are written as they are here; the server adds
+    // `content-length`, `date` and `connection`.
+    headers: Map<String, String>
+    body: String
 }
 
 fn app() -> App {}
@@ -16,7 +29,7 @@ fn render(template: String, data: Any = {}) -> Response {}
 fn json(value: Any, status: Int = 200) -> Response {}
 fn text(body: String, status: Int = 200) -> Response {}
 fn html(body: String, status: Int = 200) -> Response {}
-fn redirect(to: String) -> Response {}
+fn redirect(to: String, status: Int = 302) -> Response {}
 fn not_found() -> Response {}
 
 // A handler takes the request, then one parameter per `{name}` in the route

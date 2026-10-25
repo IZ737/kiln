@@ -77,7 +77,11 @@ Run `cargo fmt --all`, `cargo clippy --all-targets -- -D warnings` and
 - `conformance/`: programs, one folder each, with expected output
   (`main.out`, and `main.err` when
   they fail). `crates/kiln_cli/tests/conformance.rs` runs each one; add one
-  for every feature the compiler learns.
+  for every feature the compiler learns. A server program also has
+  `main.requests` and `main.responses` (see `conformance/README.md`), and
+  `scripts/lib/conformance.sh` sends them in the clean-system checks too.
+  The `web` server lives in `kiln.c`; it builds `Request` and reads
+  `Response` as slot arrays in the field order of `std/web.kiln`.
 - `examples/`: Kiln programs. Tests in `crates/kiln_syntax/tests/examples.rs`
   and `crates/kiln_check/tests/examples.rs` parse and type-check every one of
   them, so they must stay valid.

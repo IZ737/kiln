@@ -3,7 +3,16 @@
 ## Unreleased
 
 Phase 1.5 for Linux and Windows x86-64: a self-contained compiler and
-executables.
+executables, and the start of phase 2: HTTP servers.
+
+- **HTTP server:** `web.app()`, routes with typed parameters
+  (`app.get("/posts/{id: Int}", fn(req, id) { ... })`), `web.text`,
+  `web.html`, `web.redirect` and `web.not_found`, request headers, query
+  parameters, cookies and bodies, and `app.listen`. A handler that fails or
+  panics gets a 500 response and the server keeps going. It works with both
+  backends, on Linux and Windows. See [docs/stdlib.md](docs/stdlib.md#web).
+- **Default arguments of standard library functions** are filled in when
+  they are left out, as in `web.text("hi")`.
 
 - **Native backend:** `kiln build` and `kiln run` compile to machine code
   with Cranelift and link with a linker built into `kiln`, against the Kiln

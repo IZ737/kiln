@@ -27,16 +27,16 @@ fn main() ! {
 
 > **Status: phases 0 and 1 are done, and phase 1.5 (self-contained compiler
 > and executables) is done for Linux x86-64 and Windows x86-64; phase 2
-> (HTTP) is next.**
+> (HTTP) is in progress.**
 > `kiln check` reports syntax and type errors in `.kiln` files and glazes,
 > `kiln lsp` shows them in your editor, and `kiln run` compiles command-line
-> programs with the `time`, `fs`, `os` and `io` modules. `kiln` compiles to
+> programs with the `time`, `fs`, `os` and `io` modules, and HTTP servers
+> with `web`: the example above runs. `kiln` compiles to
 > machine code with Cranelift and makes Linux and Windows x86-64
 > executables itself (`--target linux` or `--target windows`, from either
 > system), so it needs no C compiler, linker or libraries; the C backend
-> (`--backend c`) remains for other platforms. The
-> web standard library (`web`, `sql`, `json`, `auth`) arrives in later
-> phases. See the [roadmap](#roadmap) and
+> (`--backend c`) remains for other platforms. JSON, templates, `sql` and
+> `auth` arrive in later phases. See the [roadmap](#roadmap) and
 > [what phase 1 leaves for later](docs/design.md#what-phase-1-leaves-for-later).
 
 ## Highlights

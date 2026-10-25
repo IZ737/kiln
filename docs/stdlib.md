@@ -4,8 +4,9 @@ The standard library's signatures are Kiln files in
 [`crates/kiln_check/std/`](../crates/kiln_check/std). The prelude is visible
 everywhere; every other module is imported by name (`import fs`). This page
 lists the modules the compiler can build into native programs today. The
-others (`web`, `sql`, `auth`, `json`) type-check, and building a program that
-uses them reports E0401 until their phase arrives.
+others (`sql`, `auth`, `json`), and the parts of `web` not listed here,
+type-check, and building a program that uses them reports E0401 until their
+phase arrives.
 
 ## Prelude
 
@@ -119,6 +120,81 @@ fn main() {
 ```
 
 `fs`, `os` and `io` need the server, so embers cannot use them.
+
+## `web`
+
+An HTTP/1.1 server. `web.app()` makes an app, each route adds a handler,
+and `listen` serves them:
+
+```kiln
+import web
+
+fn main() ! {
+    let app = web.app()
+    app.get("/posts/{id: Int}", fn(req, id) {
+        if id > 100 {
+            return web.not_found()
+        }
+        return web.text("post ${id}, sorted by ${req.query("sort") ?? "date"}")
+    })
+    app.post("/posts", fn(req) {
+        print("new post: ${req.body}")
+        return web.text("created", status: 201)
+    })
+    try app.listen(":8080")
+}
+```
+
+**Routes.** `app.get`, `post`, `put`, `patch` and `delete` take a pattern
+and a handler. Each `{name}` segment of the pattern is a handler parameter,
+after the request: a `String` by default, or `Int`, `Float` or `Bool` with a
+type (`{id: Int}`). A segment that does not convert, such as `/posts/abc`
+for `{id: Int}`, does not match. Segments are compared after `%XX` escapes
+are decoded. The first route that matches the method and the path handles
+the request; `HEAD` requests go to `GET` routes and get no body. A path
+that no route matches gets 404, and a path that matches only with other
+methods gets 405 with an `allow` header. A handler can also be a function:
+`app.get("/", home)` with `fn home(req: web.Request) -> web.Response !`.
+
+**Requests.** A `web.Request` has `method`, `path` (without the query
+string), `query_string`, `headers` (a `Map<String, String>` with names in
+lower case) and `body`.
+
+| Method | |
+| --- | --- |
+| `req.query(name) -> String?` | A query parameter, decoded (`+` is a space) |
+| `req.header(name) -> String?` | A header; the name is not case-sensitive |
+| `req.cookie(name) -> String?` | A cookie from the `cookie` header |
+
+**Responses.** A `web.Response` has `status`, `headers` and `body`, and can
+be changed before it is returned (`res.headers["cache-control"] = "no-store"`)
+or made directly with `web.Response(status: 204, headers: Map(), body: "")`.
+
+| Function | |
+| --- | --- |
+| `web.text(body, status: 200)` | `text/plain; charset=utf-8` |
+| `web.html(body, status: 200)` | `text/html; charset=utf-8` |
+| `web.redirect(to, status: 302)` | Sends the client to `to` |
+| `web.not_found()` | 404 with `Not Found` |
+
+The server adds `content-length`, `date` and `connection: close`.
+
+**Errors.** When a handler fails, the server logs the error on standard
+error (`error GET /posts/7 failed: ...`) and answers 500; a panic is logged
+the same way (`... panicked: ...`). The server goes on with the next
+request either way.
+
+**Listening.** `app.listen(address)` serves until the program ends. The
+address is `host:port`: `:8080` is every IPv4 address, `localhost:8080`
+only this machine, `[::1]:8080` an IPv6 address, and port 0 any free port.
+It logs `info listening on http://localhost:8080` when it starts, and fails
+if it cannot listen, such as when the port is in use.
+
+For now the server handles one connection at a time and closes it after
+each response; requests are limited to 64 KiB of
+headers and 16 MiB of body, and a client that sends nothing for 10 seconds
+is dropped. `web.json`, `req.json`, `req.form` and `web.render` come later
+in phase 2 and in phase 3.
 
 ## Adding to the standard library
 

@@ -199,6 +199,7 @@ fn windows(p: &Paths) -> Result<(), String> {
             .arg(dir.join("native.o"))
             .arg(dir.join("gc.o"))
             .arg(dir.join("manifest.o"))
+            .arg("-lws2_32")
             .arg("-o")
             .arg(&linked),
         &cc,

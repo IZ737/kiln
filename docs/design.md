@@ -186,7 +186,7 @@ container (`scripts/clean-check.sh`), and pushing a `v*` tag publishes it
 as a GitHub release. That meets the phase 1.5 goal for Linux x86-64.
 
 For Windows, `kiln build --target windows` makes `.exe` files that use only
-`kernel32`, `msvcrt` and `user32`, with a manifest that makes file names,
+`kernel32`, `msvcrt`, `user32` and `ws2_32` (sockets), with a manifest that makes file names,
 arguments and the console UTF-8. `kiln.exe` is cross-compiled from Linux
 (`x86_64-pc-windows-gnu`) and carries both runtimes, as the Linux `kiln`
 does, so each builds for both systems. CI runs every conformance program
@@ -200,14 +200,37 @@ Phase 1 is done when native CLI programs compile and run correctly; the
 programs in `conformance/` are the evidence. These gaps are known and
 deliberate:
 
-- The `web`, `sql`, `auth` and `json` modules type-check but report E0401
-  when built; they arrive in phases 2 to 4. So do tasks and the scheduler.
+- The `sql`, `auth` and `json` modules type-check but report E0401 when
+  built; they arrive in phases 2 to 4. So do tasks and the scheduler.
+  Phase 2 has started with `web`'s server and routing; see below.
 - Built-in methods cannot have default arguments yet, so `pad_start` and
   `pad_end` take their fill text explicitly.
 - `upper` and `lower` change only ASCII letters.
 - Maps, sets and functions cannot be map keys or sorted by value.
 - Methods cannot be used as values (`ps.map(P.get)`); write a closure.
 - The collector is Boehm's conservative one until phase 7.
+
+### Phase 2: the HTTP server
+
+Phase 2 is done when a real HTTP API runs as a native binary. It is built
+in steps, each on both backends and both targets:
+
+1. **The server and routing (done).** `web.app()`, routes with typed
+   parameters (`/posts/{id: Int}`), `text`, `html`, `redirect` and
+   `not_found` responses, request headers, query parameters, cookies and
+   bodies, and `listen`. The server is HTTP/1.1, written in the shared
+   runtime (`kiln.c`) over the system's sockets (Winsock on Windows). It
+   serves one connection at a time and closes it after the response. A
+   handler that fails or panics gets a 500 response and the error is
+   logged; the server keeps running. Requests with no matching route get
+   404, and a path that matches with another method gets 405 with `allow`.
+2. JSON: `json.encode`, `json.decode<T>`, `web.json` and `req.json<T>()`,
+   derived from types at compile time.
+3. Concurrency: requests on lightweight tasks, so a slow request does not
+   hold up the others, and keep-alive connections.
+4. Error handling and configuration for real deployments: error pages and
+   types that map to statuses, request limits and timeouts, and an access
+   log.
 
 ## Web standard library
 
