@@ -17,6 +17,7 @@ on:
 jobs:
   linux:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - name: Latest release through a pipe, as the README shows
@@ -40,6 +41,7 @@ jobs:
   # BusyBox sh and wget, with no curl and no bash.
   alpine:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     container: alpine:3.20
     steps:
       - uses: actions/checkout@v4
@@ -48,6 +50,7 @@ jobs:
 
   macos:
     runs-on: macos-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       # There is no macOS build yet: the installer must say so and fail.
@@ -58,6 +61,7 @@ jobs:
 
   windows:
     runs-on: windows-latest
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
