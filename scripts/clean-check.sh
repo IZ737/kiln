@@ -28,7 +28,10 @@ source "$root/scripts/lib/conformance.sh"
 run_program() {
     local name=$1
     shift
-    docker run --rm -i --network none "$image" /kiln run "/conformance/$name" "$@"
+    # A server shares the host's network, so that the requests reach it.
+    local network=(--network none)
+    [[ -n ${PORT:-} ]] && network=(--network host -e "PORT=$PORT")
+    docker run --rm -i "${network[@]}" "$image" /kiln run "/conformance/$name" "$@"
 }
 failed=0
 check_conformance || failed=1

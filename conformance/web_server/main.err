@@ -1,0 +1,3 @@
+info listening on http://127.0.0.1:PORT
+error GET /fail failed: no luck with 0
+error GET /crash panicked: index 7 is out of range for a list of length 3

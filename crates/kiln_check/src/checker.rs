@@ -2373,6 +2373,13 @@ impl Checker {
     }
 }
 
+pub(crate) fn std_source(name: &str) -> Option<&'static str> {
+    STD_MODULES
+        .iter()
+        .find(|(n, _)| *n == name)
+        .map(|(_, src)| *src)
+}
+
 fn parse_std(name: &str, src: &str) -> Module {
     let result = kiln_syntax::parse(src);
     assert!(

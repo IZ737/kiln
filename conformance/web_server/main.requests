@@ -1,0 +1,69 @@
+GET / HTTP/1.1
+Host: localhost
+###
+GET /todos/2 HTTP/1.1
+###
+GET /todos/9 HTTP/1.1
+###
+GET /todos/two HTTP/1.1
+###
+GET /hello/J%C3%BCrgen%20K?greeting=Good+day%21 HTTP/1.1
+###
+GET /hello/Ada HTTP/1.1
+###
+GET /price/10/true HTTP/1.1
+###
+GET /price/10.5/false HTTP/1.1
+###
+GET /price/10/maybe HTTP/1.1
+###
+POST /echo HTTP/1.1
+Content-Type: application/x-www-form-urlencoded
+
+title=Fire+the+pots
+###
+POST /echo HTTP/1.1
+Transfer-Encoding: chunked
+
+5
+hello
+7
+, world
+0
+
+###
+PUT /echo HTTP/1.1
+Expect: 100-continue
+
+big body
+###
+DELETE /echo HTTP/1.1
+###
+HEAD /todos/1 HTTP/1.1
+###
+GET /whoami HTTP/1.1
+Cookie: theme=dark; user=ada
+###
+GET /whoami HTTP/1.1
+###
+GET /old HTTP/1.1
+###
+GET /custom HTTP/1.1
+###
+GET /empty HTTP/1.1
+###
+GET /visits HTTP/1.1
+###
+GET /visits HTTP/1.1
+###
+GET /fail HTTP/1.1
+###
+GET /crash HTTP/1.1
+###
+GET /todos/1 HTTP/1.1
+###
+GET /nowhere HTTP/1.1
+###
+NONSENSE
+###
+GET /quit HTTP/1.1

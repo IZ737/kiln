@@ -24,7 +24,14 @@
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
+#include <winsock2.h>
+#include <ws2tcpip.h>
 #include <windows.h>
+#else
+#include <arpa/inet.h>
+#include <netinet/in.h>
+#include <sys/socket.h>
+#include <sys/time.h>
 #endif
 
 /* Runtime functions and variables are `K_API`: `static` when the runtime is
@@ -131,8 +138,22 @@ K_API int k_str_cmp(kstr *a, kstr *b) {
 
 /* ----- panics and errors ----- */
 
+/* While the web server runs a handler, a panic returns to the server
+ * instead of ending the program: `k_panic_trap` is set and `k_panic_jmp` is
+ * a `__builtin_setjmp` buffer. The builtin forms restore only the stack and
+ * frame pointers, so they also work across frames compiled by Cranelift,
+ * which have no unwind information. */
+K_API bool k_panic_trap = false;
+K_API void *k_panic_jmp[5];
+K_API kstr *k_panic_message = NULL;
+
 K_API _Noreturn void k_panic(kstr *message) {
     fflush(stdout);
+    if (k_panic_trap) {
+        k_panic_trap = false;
+        k_panic_message = message;
+        __builtin_longjmp(k_panic_jmp, 1);
+    }
     fprintf(stderr, "panic: %s\n", k_cstr(message));
     exit(101);
 }
@@ -1384,4 +1405,676 @@ K_API void k_io_print_err(kstr *s) {
     fflush(stdout);
     fwrite(s->data, 1, (size_t)s->len, stderr);
     fputc('\n', stderr);
+}
+
+/* ----- web: an HTTP/1.1 server -----
+ *
+ * `web.app()` makes a `kapp`, and each route adds a `kroute` to it. `listen`
+ * binds the address and serves one connection at a time: it reads one
+ * request, calls the handler of the route that matches, writes the response
+ * and closes the connection. A handler that fails or panics gets a 500
+ * response, and the server goes on.
+ *
+ * Requests and responses are the `Request` and `Response` structs of
+ * `std/web.kiln`. Every field there is 8 bytes wide, so both backends lay
+ * them out as arrays of slots in field order, which is how they are built
+ * and read here. */
+
+enum { K_REQ_METHOD, K_REQ_PATH, K_REQ_QUERY, K_REQ_HEADERS, K_REQ_BODY, K_REQ_FIELDS };
+enum { K_RES_STATUS, K_RES_HEADERS, K_RES_BODY, K_RES_FIELDS };
+
+#define K_WEB_MAX_HEAD (64 * 1024)
+#define K_WEB_MAX_BODY (16 * 1024 * 1024)
+#define K_WEB_TIMEOUT_SECS 10
+
+#ifdef _WIN32
+typedef SOCKET ksock;
+#define K_BAD_SOCK INVALID_SOCKET
+#define k_sock_close closesocket
+#define K_SEND_FLAGS 0
+#else
+typedef int ksock;
+#define K_BAD_SOCK (-1)
+#define k_sock_close close
+#define K_SEND_FLAGS MSG_NOSIGNAL
+#endif
+
+/* A route: its method (an index into `k_web_methods`), and its pattern's
+ * segments. A literal segment has kind 0 and its text in `parts`; a
+ * parameter has kind 's', 'i', 'f' or 'b' for `String`, `Int`, `Float` or
+ * `Bool`. */
+typedef struct kroute {
+    int64_t method, n;
+    kstr **parts;
+    char *kinds;
+    kclosure *handler;
+} kroute;
+
+typedef struct kapp { int64_t n, cap; kroute **routes; } kapp;
+
+static const char *const k_web_methods[] = {"GET", "POST", "PUT", "PATCH", "DELETE"};
+
+K_API bool k_web_str_eq(kv a, kv b) { return k_str_eq(K_KV2P(kstr *, a), K_KV2P(kstr *, b)); }
+
+K_API kmap *k_web_headers(void) { return k_map_new(k_hash_str, k_web_str_eq); }
+
+K_API kstr *k_web_lower(const char *s, int64_t n) {
+    kstr *r = k_str_n(s, n);
+    for (int64_t i = 0; i < n; i++)
+        if (r->data[i] >= 'A' && r->data[i] <= 'Z') r->data[i] = (char)(r->data[i] + 32);
+    return r;
+}
+
+K_API void *k_web_app(void) {
+    kapp *a = k_alloc(sizeof(kapp));
+    a->cap = 8;
+    a->routes = k_alloc(sizeof(kroute *) * 8);
+    return a;
+}
+
+/* The segments of a path after its leading `/`: `/a/b` has `a` and `b`,
+ * and `/` has one empty segment. */
+K_API klist *k_web_segments(kstr *path) {
+    kstr rest = *path;
+    if (rest.len > 0 && rest.data[0] == '/') { rest.data++; rest.len--; }
+    return k_str_split(k_str_n(rest.data, rest.len), k_str("/"));
+}
+
+K_API void k_web_route(void *app, int64_t method, kstr *pattern, kclosure *handler) {
+    kapp *a = app;
+    kroute *r = k_alloc(sizeof(kroute));
+    klist *segs = k_web_segments(pattern);
+    r->method = method;
+    r->n = segs->len;
+    r->parts = k_alloc(sizeof(kstr *) * (size_t)(segs->len + 1));
+    r->kinds = k_alloc_atomic((size_t)segs->len + 1);
+    r->handler = handler;
+    for (int64_t i = 0; i < segs->len; i++) {
+        kstr *s = K_KV2P(kstr *, segs->items[i]);
+        r->kinds[i] = 0;
+        r->parts[i] = s;
+        if (s->len >= 2 && s->data[0] == '{' && s->data[s->len - 1] == '}') {
+            kstr *inner = k_str_trim(k_str_n(s->data + 1, s->len - 2));
+            int64_t colon = k_str_find(inner, k_str(":"), 0);
+            kstr *ty = colon < 0 ? k_str("String") : k_str_trim(k_str_n(inner->data + colon + 1, inner->len - colon - 1));
+            r->parts[i] = colon < 0 ? inner : k_str_trim(k_str_n(inner->data, colon));
+            r->kinds[i] = k_str_eq(ty, k_str("Int")) ? 'i'
+                        : k_str_eq(ty, k_str("Float")) ? 'f'
+                        : k_str_eq(ty, k_str("Bool")) ? 'b' : 's';
+        }
+    }
+    if (a->n == a->cap) {
+        kroute **routes = k_alloc(sizeof(kroute *) * (size_t)(a->cap * 2));
+        memcpy(routes, a->routes, sizeof(kroute *) * (size_t)a->n);
+        a->routes = routes;
+        a->cap *= 2;
+    }
+    a->routes[a->n++] = r;
+}
+
+/* ----- responses ----- */
+
+K_API kv *k_web_response(int64_t status, kstr *body, const char *type) {
+    kv *r = k_alloc(sizeof(kv) * K_RES_FIELDS);
+    kmap *h = k_web_headers();
+    if (type) k_map_set(h, K_P2KV(k_str("content-type")), K_P2KV(k_str(type)));
+    r[K_RES_STATUS] = (kv)status;
+    r[K_RES_HEADERS] = K_P2KV(h);
+    r[K_RES_BODY] = K_P2KV(body);
+    return r;
+}
+
+K_API kv *k_web_text(kstr *body, int64_t status) {
+    return k_web_response(status, body, "text/plain; charset=utf-8");
+}
+
+K_API kv *k_web_html(kstr *body, int64_t status) {
+    return k_web_response(status, body, "text/html; charset=utf-8");
+}
+
+K_API kv *k_web_redirect(kstr *to, int64_t status) {
+    kv *r = k_web_response(status, k_str(""), NULL);
+    k_map_set(K_KV2P(kmap *, r[K_RES_HEADERS]), K_P2KV(k_str("location")), K_P2KV(to));
+    return r;
+}
+
+K_API kv *k_web_not_found(void) { return k_web_text(k_str("Not Found"), 404); }
+
+/* ----- request data ----- */
+
+K_API int k_hex(char c) {
+    if (c >= '0' && c <= '9') return c - '0';
+    if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+    if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+    return -1;
+}
+
+/* Decodes `%XX` escapes, and `+` as a space when `plus` is set, as in a
+ * query string. A `%` not followed by two hex digits stays as it is. */
+K_API kstr *k_web_decode(const char *s, int64_t n, bool plus) {
+    kstr *r = k_str_alloc(n, n);
+    int64_t j = 0;
+    for (int64_t i = 0; i < n; i++) {
+        char c = s[i];
+        if (c == '%' && i + 2 < n && k_hex(s[i + 1]) >= 0 && k_hex(s[i + 2]) >= 0) {
+            r->data[j++] = (char)(k_hex(s[i + 1]) * 16 + k_hex(s[i + 2]));
+            i += 2;
+        } else {
+            r->data[j++] = plus && c == '+' ? ' ' : c;
+        }
+    }
+    r->len = j;
+    r->data[j] = 0;
+    k_strbuf_of(r)->used = j;
+    return r;
+}
+
+/* The value of `name` in a list of `name=value` pairs split by `sep`, with
+ * spaces around each pair trimmed, or NULL. */
+K_API kbox *k_web_pair(kstr *text, kstr *name, char sep, bool decode) {
+    const char *p = text->data, *end = p + text->len;
+    while (p < end) {
+        const char *next = memchr(p, sep, (size_t)(end - p));
+        if (!next) next = end;
+        const char *a = p, *b = next;
+        while (a < b && *a == ' ') a++;
+        while (b > a && b[-1] == ' ') b--;
+        const char *eq = memchr(a, '=', (size_t)(b - a));
+        const char *key_end = eq ? eq : b;
+        kstr *key = decode ? k_web_decode(a, key_end - a, true) : k_str_n(a, key_end - a);
+        if (k_str_eq(key, name)) {
+            const char *v = eq ? eq + 1 : b;
+            kstr *value = decode ? k_web_decode(v, b - v, true) : k_str_n(v, b - v);
+            return k_box(K_P2KV(value));
+        }
+        p = next + 1;
+    }
+    return NULL;
+}
+
+K_API kbox *k_web_query(void *request, kstr *name) {
+    kv *req = request;
+    return k_web_pair(K_KV2P(kstr *, req[K_REQ_QUERY]), name, '&', true);
+}
+
+K_API kbox *k_web_header(void *request, kstr *name) {
+    kv *req = request;
+    kmap *h = K_KV2P(kmap *, req[K_REQ_HEADERS]);
+    return k_map_get(h, K_P2KV(k_web_lower(name->data, name->len)));
+}
+
+K_API kbox *k_web_cookie(void *request, kstr *name) {
+    kv *req = request;
+    kbox *header = k_web_header(request, k_str("cookie"));
+    if (!header) return NULL;
+    return k_web_pair(K_KV2P(kstr *, header->v), name, ';', false);
+}
+
+/* ----- routing ----- */
+
+/* Reads a whole segment as a route parameter of kind `kind` into `out`. */
+K_API bool k_web_param(kstr *s, char kind, kv *out) {
+    const char *p = s->data, *end = p + s->len;
+    switch (kind) {
+    case 's':
+        if (s->len == 0) return false;
+        *out = K_P2KV(s);
+        return true;
+    case 'b':
+        if (k_str_eq(s, k_str("true"))) { *out = 1; return true; }
+        if (k_str_eq(s, k_str("false"))) { *out = 0; return true; }
+        return false;
+    case 'i': {
+        bool neg = p < end && *p == '-';
+        if (neg) p++;
+        if (p == end) return false;
+        uint64_t v = 0, limit = neg ? (uint64_t)INT64_MAX + 1 : (uint64_t)INT64_MAX;
+        for (; p < end; p++) {
+            if (*p < '0' || *p > '9') return false;
+            uint64_t d = (uint64_t)(*p - '0');
+            if (v > (limit - d) / 10) return false;
+            v = v * 10 + d;
+        }
+        *out = neg ? (kv)(0 - v) : (kv)v;
+        return true;
+    }
+    case 'f': {
+        if (p == end || !(*p == '-' || *p == '.' || (*p >= '0' && *p <= '9'))) return false;
+        const char *c = k_cstr(s);
+        char *stop;
+        double f = strtod(c, &stop);
+        if (stop != c + s->len || !isfinite(f)) return false;
+        *out = k_f2kv(f);
+        return true;
+    }
+    }
+    return false;
+}
+
+K_API bool k_web_match(kroute *r, klist *segs, kv *args) {
+    if (r->n != segs->len) return false;
+    int64_t k = 1;
+    for (int64_t i = 0; i < r->n; i++) {
+        kstr *seg = K_KV2P(kstr *, segs->items[i]);
+        if (r->kinds[i] == 0) {
+            if (!k_str_eq(seg, r->parts[i])) return false;
+        } else if (!k_web_param(seg, r->kinds[i], &args[k++])) {
+            return false;
+        }
+    }
+    return true;
+}
+
+K_API void k_web_log(const char *level, kv *req, const char *what, kstr *message) {
+    fflush(stdout);
+    fprintf(stderr, "%s %s %s %s: %s\n", level, k_cstr(K_KV2P(kstr *, req[K_REQ_METHOD])),
+            k_cstr(K_KV2P(kstr *, req[K_REQ_PATH])), what, k_cstr(message));
+}
+
+/* Calls a handler, turning an error or a panic into a 500 response. The
+ * call is in a function of its own because `__builtin_setjmp` must not
+ * return to a frame whose locals changed after it. */
+K_API kv *k_web_call(kroute *r, kv *req, kv *args) {
+    if (__builtin_setjmp(k_panic_jmp) != 0) {
+        k_failed = false;
+        k_web_log("error", req, "panicked", k_panic_message);
+        return k_web_text(k_str("Internal Server Error"), 500);
+    }
+    k_panic_trap = true;
+    kv res = r->handler->fn(r->handler->env, args);
+    k_panic_trap = false;
+    if (k_failed) {
+        kv err = k_take_error();
+        k_web_log("error", req, "failed", k_error_show(err));
+        return k_web_text(k_str("Internal Server Error"), 500);
+    }
+    return K_KV2P(kv *, res);
+}
+
+/* The response to a request: the first route whose method and pattern
+ * match handles it. `HEAD` requests go to `GET` routes. */
+K_API kv *k_web_dispatch(kapp *a, kv *req) {
+    kstr *method = K_KV2P(kstr *, req[K_REQ_METHOD]);
+    kstr *path = K_KV2P(kstr *, req[K_REQ_PATH]);
+    klist *raw = k_web_segments(path);
+    klist *segs = k_list(0, NULL);
+    for (int64_t i = 0; i < raw->len; i++) {
+        kstr *s = K_KV2P(kstr *, raw->items[i]);
+        k_list_push(segs, K_P2KV(k_web_decode(s->data, s->len, false)));
+    }
+    bool head = k_str_eq(method, k_str("HEAD"));
+    kstr *allow = NULL;
+    for (int64_t i = 0; i < a->n; i++) {
+        kroute *r = a->routes[i];
+        kv *args = k_alloc(sizeof(kv) * (size_t)(r->n + 1));
+        args[0] = K_P2KV(req);
+        if (!k_web_match(r, segs, args)) continue;
+        const char *m = k_web_methods[r->method];
+        if (k_str_eq(method, k_str(m)) || (head && r->method == 0)) return k_web_call(r, req, args);
+        kstr *name = k_str(m);
+        if (!allow) allow = name;
+        else if (k_str_find(allow, name, 0) < 0) allow = k_concat(k_concat(allow, k_str(", ")), name);
+    }
+    if (!allow) return k_web_not_found();
+    kv *res = k_web_text(k_str("Method Not Allowed"), 405);
+    k_map_set(K_KV2P(kmap *, res[K_RES_HEADERS]), K_P2KV(k_str("allow")), K_P2KV(allow));
+    return res;
+}
+
+/* ----- the connection ----- */
+
+K_API const char *k_web_reason(int64_t status) {
+    switch (status) {
+    case 100: return "Continue";
+    case 200: return "OK";
+    case 201: return "Created";
+    case 202: return "Accepted";
+    case 204: return "No Content";
+    case 301: return "Moved Permanently";
+    case 302: return "Found";
+    case 303: return "See Other";
+    case 304: return "Not Modified";
+    case 307: return "Temporary Redirect";
+    case 308: return "Permanent Redirect";
+    case 400: return "Bad Request";
+    case 401: return "Unauthorized";
+    case 403: return "Forbidden";
+    case 404: return "Not Found";
+    case 405: return "Method Not Allowed";
+    case 409: return "Conflict";
+    case 410: return "Gone";
+    case 411: return "Length Required";
+    case 413: return "Content Too Large";
+    case 415: return "Unsupported Media Type";
+    case 418: return "I'm a Teapot";
+    case 422: return "Unprocessable Content";
+    case 429: return "Too Many Requests";
+    case 431: return "Request Header Fields Too Large";
+    case 500: return "Internal Server Error";
+    case 501: return "Not Implemented";
+    case 502: return "Bad Gateway";
+    case 503: return "Service Unavailable";
+    }
+    return "";
+}
+
+K_API void k_web_send(ksock fd, const char *p, int64_t n) {
+    while (n > 0) {
+        int chunk = n > (1 << 30) ? (1 << 30) : (int)n;
+        int sent = (int)send(fd, p, chunk, K_SEND_FLAGS);
+        if (sent <= 0) return;
+        p += sent;
+        n -= sent;
+    }
+}
+
+/* Appends to a growing buffer of bytes. */
+typedef struct kbuf { char *data; int64_t len, cap; } kbuf;
+
+K_API void k_buf_add(kbuf *b, const char *s, int64_t n) {
+    if (b->len + n > b->cap) {
+        int64_t cap = b->cap ? b->cap : 256;
+        while (cap < b->len + n) cap *= 2;
+        char *data = k_alloc_atomic((size_t)cap);
+        if (b->len) memcpy(data, b->data, (size_t)b->len);
+        b->data = data;
+        b->cap = cap;
+    }
+    memcpy(b->data + b->len, s, (size_t)n);
+    b->len += n;
+}
+
+K_API void k_buf_str(kbuf *b, const char *s) { k_buf_add(b, s, (int64_t)strlen(s)); }
+
+/* Adds header text, leaving out line breaks so that a value cannot start a
+ * header of its own. */
+K_API void k_buf_header_text(kbuf *b, kstr *s) {
+    for (int64_t i = 0; i < s->len; i++)
+        if (s->data[i] != '\r' && s->data[i] != '\n') k_buf_add(b, s->data + i, 1);
+}
+
+K_API void k_web_respond(ksock fd, kv *res, bool head) {
+    int64_t status = (int64_t)res[K_RES_STATUS];
+    kmap *headers = K_KV2P(kmap *, res[K_RES_HEADERS]);
+    kstr *body = K_KV2P(kstr *, res[K_RES_BODY]);
+    if (status < 100 || status > 999) {
+        fflush(stdout);
+        fprintf(stderr, "error a handler returned the status %" PRId64 ", which is not an HTTP status\n", status);
+        res = k_web_text(k_str("Internal Server Error"), 500);
+        status = 500;
+        headers = K_KV2P(kmap *, res[K_RES_HEADERS]);
+        body = K_KV2P(kstr *, res[K_RES_BODY]);
+    }
+    char line[128];
+    kbuf b = {0};
+    snprintf(line, sizeof line, "HTTP/1.1 %" PRId64 " %s\r\n", status, k_web_reason(status));
+    k_buf_str(&b, line);
+    bool no_body = status == 204 || status == 304 || status < 200;
+    bool has_length = false;
+    for (int64_t i = 0; i < headers->used; i++) {
+        if (!headers->live[i]) continue;
+        kstr *name = K_KV2P(kstr *, headers->keys[i]);
+        if (k_str_eq(k_web_lower(name->data, name->len), k_str("content-length"))) has_length = true;
+        k_buf_header_text(&b, name);
+        k_buf_str(&b, ": ");
+        k_buf_header_text(&b, K_KV2P(kstr *, headers->vals[i]));
+        k_buf_str(&b, "\r\n");
+    }
+    if (!has_length && !no_body) {
+        snprintf(line, sizeof line, "content-length: %" PRId64 "\r\n", body->len);
+        k_buf_str(&b, line);
+    }
+    ktm t = k_time_parts(k_time_now());
+    snprintf(line, sizeof line, "date: %.3s, %02d %.3s %04d %02d:%02d:%02d GMT\r\n",
+             k_day_names[t.weekday], (int)t.day, k_month_names[t.month - 1], (int)t.year,
+             (int)t.hour, (int)t.minute, (int)t.second);
+    k_buf_str(&b, line);
+    k_buf_str(&b, "connection: close\r\n\r\n");
+    if (!head && !no_body) k_buf_add(&b, body->data, body->len);
+    k_web_send(fd, b.data, b.len);
+}
+
+K_API void k_web_fail(ksock fd, int64_t status) {
+    k_web_respond(fd, k_web_text(k_str(k_web_reason(status)), status), false);
+}
+
+/* Reads more of the request into `b`; false at the end or on a timeout. */
+K_API bool k_web_read(ksock fd, kbuf *b) {
+    char chunk[16384];
+    int n = (int)recv(fd, chunk, sizeof chunk, 0);
+    if (n <= 0) return false;
+    k_buf_add(b, chunk, n);
+    return true;
+}
+
+/* Reads `n` body bytes starting at `start`; false if the connection ends. */
+K_API bool k_web_need(ksock fd, kbuf *b, int64_t start, int64_t n) {
+    while (b->len - start < n)
+        if (!k_web_read(fd, b)) return false;
+    return true;
+}
+
+K_API int64_t k_web_find(const char *p, int64_t n, const char *what) {
+    int64_t w = (int64_t)strlen(what);
+    for (int64_t i = 0; i + w <= n; i++)
+        if (memcmp(p + i, what, (size_t)w) == 0) return i;
+    return -1;
+}
+
+/* Decodes a chunked body that starts at `at`. Returns the status to fail
+ * with, or 0. */
+K_API int64_t k_web_chunked(ksock fd, kbuf *b, int64_t at, kbuf *body) {
+    for (;;) {
+        int64_t eol;
+        while ((eol = k_web_find(b->data + at, b->len - at, "\r\n")) < 0)
+            if (!k_web_read(fd, b)) return 400;
+        int64_t size = 0;
+        int64_t i = 0;
+        for (; i < eol && k_hex(b->data[at + i]) >= 0; i++) {
+            size = size * 16 + k_hex(b->data[at + i]);
+            if (size > K_WEB_MAX_BODY) return 413;
+        }
+        if (i == 0) return 400;
+        at += eol + 2;
+        if (body->len + size > K_WEB_MAX_BODY) return 413;
+        if (size == 0) return 0; /* trailers are ignored */
+        if (!k_web_need(fd, b, at, size + 2)) return 400;
+        k_buf_add(body, b->data + at, size);
+        at += size + 2;
+    }
+}
+
+/* Reads one request and answers it. */
+K_API void k_web_serve(kapp *a, ksock fd) {
+    kbuf b = {0};
+    int64_t end;
+    while ((end = k_web_find(b.data, b.len, "\r\n\r\n")) < 0) {
+        if (b.len > K_WEB_MAX_HEAD) { k_web_fail(fd, 431); return; }
+        if (!k_web_read(fd, &b)) {
+            if (b.len > 0) k_web_fail(fd, 400);
+            return;
+        }
+    }
+    if (end > K_WEB_MAX_HEAD) { k_web_fail(fd, 431); return; }
+    /* The request line: method, target and version. */
+    const char *p = b.data, *head_end = b.data + end;
+    const char *eol = p + k_web_find(p, head_end - p + 2, "\r\n");
+    const char *sp1 = memchr(p, ' ', (size_t)(eol - p));
+    const char *sp2 = sp1 ? memchr(sp1 + 1, ' ', (size_t)(eol - sp1 - 1)) : NULL;
+    if (!sp1 || !sp2 || sp1 == p || sp2 == sp1 + 1 || sp1[1] != '/' ||
+        (eol - sp2 - 1 != 8) || memcmp(sp2 + 1, "HTTP/1.", 7) != 0) {
+        k_web_fail(fd, 400);
+        return;
+    }
+    kv *req = k_alloc(sizeof(kv) * K_REQ_FIELDS);
+    req[K_REQ_METHOD] = K_P2KV(k_str_n(p, sp1 - p));
+    const char *target = sp1 + 1, *q = memchr(target, '?', (size_t)(sp2 - target));
+    req[K_REQ_PATH] = K_P2KV(k_str_n(target, (q ? q : sp2) - target));
+    req[K_REQ_QUERY] = K_P2KV(q ? k_str_n(q + 1, sp2 - q - 1) : k_str(""));
+    /* Headers: names in lower case; a repeated header's values are joined
+     * with ", ". */
+    kmap *headers = k_web_headers();
+    req[K_REQ_HEADERS] = K_P2KV(headers);
+    for (p = eol + 2; p < head_end; ) {
+        const char *line_end = p + k_web_find(p, head_end - p + 2, "\r\n");
+        const char *colon = memchr(p, ':', (size_t)(line_end - p));
+        if (!colon || colon == p || *p == ' ' || *p == '\t') { k_web_fail(fd, 400); return; }
+        const char *v = colon + 1, *v_end = line_end;
+        while (v < v_end && (*v == ' ' || *v == '\t')) v++;
+        while (v_end > v && (v_end[-1] == ' ' || v_end[-1] == '\t')) v_end--;
+        kv name = K_P2KV(k_web_lower(p, colon - p));
+        kstr *value = k_str_n(v, v_end - v);
+        kbox *old = k_map_get(headers, name);
+        if (old) value = k_concat(k_concat(K_KV2P(kstr *, old->v), k_str(", ")), value);
+        k_map_set(headers, name, K_P2KV(value));
+        p = line_end + 2;
+    }
+    /* The body. */
+    int64_t at = end + 4;
+    kbox *expect = k_map_get(headers, K_P2KV(k_str("expect")));
+    kbox *te = k_map_get(headers, K_P2KV(k_str("transfer-encoding")));
+    kbox *cl = k_map_get(headers, K_P2KV(k_str("content-length")));
+    if ((te || cl) && expect && k_str_eq(k_web_lower(K_KV2P(kstr *, expect->v)->data, K_KV2P(kstr *, expect->v)->len), k_str("100-continue")))
+        k_web_send(fd, "HTTP/1.1 100 Continue\r\n\r\n", 25);
+    kstr *body = k_str("");
+    if (te) {
+        kstr *t = K_KV2P(kstr *, te->v);
+        if (!k_str_ends_with(k_web_lower(t->data, t->len), k_str("chunked"))) { k_web_fail(fd, 501); return; }
+        kbuf chunks = {0};
+        int64_t status = k_web_chunked(fd, &b, at, &chunks);
+        if (status) { k_web_fail(fd, status); return; }
+        body = k_str_n(chunks.data ? chunks.data : "", chunks.len);
+    } else if (cl) {
+        kstr *t = K_KV2P(kstr *, cl->v);
+        int64_t n = 0;
+        if (t->len == 0) { k_web_fail(fd, 400); return; }
+        for (int64_t i = 0; i < t->len; i++) {
+            if (t->data[i] < '0' || t->data[i] > '9') { k_web_fail(fd, 400); return; }
+            n = n * 10 + (t->data[i] - '0');
+            if (n > K_WEB_MAX_BODY) { k_web_fail(fd, 413); return; }
+        }
+        if (!k_web_need(fd, &b, at, n)) { k_web_fail(fd, 400); return; }
+        body = k_str_n(b.data + at, n);
+    }
+    req[K_REQ_BODY] = K_P2KV(body);
+    kv *res = k_web_dispatch(a, req);
+    fflush(stdout);
+    k_web_respond(fd, res, k_str_eq(K_KV2P(kstr *, req[K_REQ_METHOD]), k_str("HEAD")));
+}
+
+#ifdef _WIN32
+K_API void k_web_sock_fail(kstr *address) {
+    int e = WSAGetLastError();
+    const char *why = e == WSAEADDRINUSE ? "address already in use"
+                    : e == WSAEACCES ? "permission denied"
+                    : e == WSAEADDRNOTAVAIL ? "address not available" : NULL;
+    char buf[512];
+    if (why) snprintf(buf, sizeof buf, "cannot listen on %s: %s", k_cstr(address), why);
+    else snprintf(buf, sizeof buf, "cannot listen on %s: socket error %d", k_cstr(address), e);
+    k_lib_error = k_str(buf);
+}
+#else
+K_API void k_web_sock_fail(kstr *address) { k_lib_fail("listen on", address); }
+#endif
+
+/* Closes a connection without losing the response: closing with request
+ * bytes still unread would reset the connection, and the client could lose
+ * the response. So the server stops sending, then reads what is left. */
+K_API void k_web_close(ksock c) {
+#ifdef _WIN32
+    shutdown(c, SD_SEND);
+    DWORD timeout = 1000;
+#else
+    shutdown(c, SHUT_WR);
+    struct timeval timeout = {1, 0};
+#endif
+    setsockopt(c, SOL_SOCKET, SO_RCVTIMEO, (const char *)&timeout, sizeof timeout);
+    char rest[4096];
+    for (int i = 0; i < 256 && recv(c, rest, sizeof rest, 0) > 0; i++) {}
+    k_sock_close(c);
+}
+
+K_API void k_web_listen_error(kstr *address, const char *why) {
+    char buf[512];
+    snprintf(buf, sizeof buf, "cannot listen on %s: %s", k_cstr(address), why);
+    k_lib_error = k_str(buf);
+}
+
+/* Binds `host:port` and serves forever. An empty host, as in `:8080`, is
+ * every IPv4 address, and `localhost` is 127.0.0.1. A host in brackets is
+ * an IPv6 address. Port 0 lets the system choose a free port. */
+K_API void k_web_listen(void *app, kstr *address) {
+    const char *s = k_cstr(address);
+    const char *colon = strrchr(s, ':');
+    if (!colon || colon[1] == 0) { k_web_listen_error(address, "expected host:port, such as :8080"); return; }
+    long port = 0;
+    for (const char *c = colon + 1; *c; c++) {
+        if (*c < '0' || *c > '9' || port > 65535) { k_web_listen_error(address, "the port must be a number up to 65535"); return; }
+        port = port * 10 + (*c - '0');
+    }
+    if (port > 65535) { k_web_listen_error(address, "the port must be a number up to 65535"); return; }
+    char host[256];
+    size_t hn = (size_t)(colon - s);
+    if (hn >= sizeof host) { k_web_listen_error(address, "the host name is too long"); return; }
+    memcpy(host, s, hn);
+    host[hn] = 0;
+#ifdef _WIN32
+    static bool started = false;
+    if (!started) {
+        WSADATA wsa;
+        if (WSAStartup(MAKEWORD(2, 2), &wsa) != 0) { k_web_listen_error(address, "cannot start Winsock"); return; }
+        started = true;
+    }
+#endif
+    struct sockaddr_storage ss;
+    memset(&ss, 0, sizeof ss);
+    socklen_t len;
+    int family;
+    if (hn >= 2 && host[0] == '[' && host[hn - 1] == ']') {
+        struct sockaddr_in6 *a6 = (struct sockaddr_in6 *)&ss;
+        host[hn - 1] = 0;
+        if (inet_pton(AF_INET6, host + 1, &a6->sin6_addr) != 1) { k_web_listen_error(address, "not an IPv6 address"); return; }
+        a6->sin6_family = AF_INET6;
+        a6->sin6_port = htons((unsigned short)port);
+        family = AF_INET6;
+        len = sizeof *a6;
+    } else {
+        struct sockaddr_in *a4 = (struct sockaddr_in *)&ss;
+        const char *h = hn == 0 ? "0.0.0.0" : strcmp(host, "localhost") == 0 ? "127.0.0.1" : host;
+        if (inet_pton(AF_INET, h, &a4->sin_addr) != 1) { k_web_listen_error(address, "the host must be an IP address or localhost"); return; }
+        a4->sin_family = AF_INET;
+        a4->sin_port = htons((unsigned short)port);
+        family = AF_INET;
+        len = sizeof *a4;
+    }
+    ksock fd = socket(family, SOCK_STREAM, 0);
+    if (fd == K_BAD_SOCK) { k_web_sock_fail(address); return; }
+#ifndef _WIN32
+    int one = 1;
+    setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &one, sizeof one);
+#endif
+    if (bind(fd, (struct sockaddr *)&ss, len) != 0 || listen(fd, 128) != 0) {
+        k_web_sock_fail(address);
+        k_sock_close(fd);
+        return;
+    }
+    getsockname(fd, (struct sockaddr *)&ss, &len);
+    int bound = ntohs(family == AF_INET6 ? ((struct sockaddr_in6 *)&ss)->sin6_port : ((struct sockaddr_in *)&ss)->sin_port);
+    fflush(stdout);
+    if (family == AF_INET6) host[hn - 1] = ']';
+    const char *shown = hn == 0 || strcmp(host, "0.0.0.0") == 0 ? "localhost" : host;
+    fprintf(stderr, "info listening on http://%s:%d\n", shown, bound);
+    for (;;) {
+        ksock c = accept(fd, NULL, NULL);
+        if (c == K_BAD_SOCK) continue;
+#ifdef _WIN32
+        DWORD timeout = K_WEB_TIMEOUT_SECS * 1000;
+#else
+        struct timeval timeout = {K_WEB_TIMEOUT_SECS, 0};
+#endif
+        setsockopt(c, SOL_SOCKET, SO_RCVTIMEO, (const char *)&timeout, sizeof timeout);
+        setsockopt(c, SOL_SOCKET, SO_SNDTIMEO, (const char *)&timeout, sizeof timeout);
+        k_web_serve((kapp *)app, c);
+        k_web_close(c);
+    }
 }

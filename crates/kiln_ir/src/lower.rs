@@ -108,6 +108,8 @@ struct Lowerer<'a> {
     instances: HashMap<(Template, String), FuncId>,
     copies: HashMap<Template, usize>,
     pending: Vec<PendingCopy>,
+    /// Standard library modules parsed for their default arguments.
+    std_asts: HashMap<String, ast::Module>,
 }
 
 impl<'a> Lowerer<'a> {
@@ -138,6 +140,7 @@ impl<'a> Lowerer<'a> {
             init: 0,
             main: 0,
             instances: HashMap::new(),
+            std_asts: HashMap::new(),
             copies: HashMap::new(),
             pending: Vec::new(),
         }
@@ -1655,6 +1658,9 @@ impl<'a> Lowerer<'a> {
             let (func, sig) = self.instance(func, template, &sig, span, Some(&recv_ty));
             return Some(self.user_call(func, &sig, decl, Some(recv), args, rt, span));
         }
+        if let Some(type_name) = self.lib_type(id) {
+            return Some(self.lib_method(&type_name, recv, &sig, name, args, rt, span));
+        }
         // A built-in method takes items of a type parameter in slots. Move
         // each argument to the receiver's item type first, so that, say,
         // an `Int` pushed onto a `List<Int?>` is boxed before it goes in.
@@ -1692,6 +1698,120 @@ impl<'a> Lowerer<'a> {
         );
         let call = coerce_value(call, rt);
         Some((with_prelude(prelude, call), None))
+    }
+
+    /// For a type in [`LIB_TYPES`], its name.
+    fn lib_type(&self, id: AdtId) -> Option<String> {
+        LIB_TYPES.iter().find_map(|(module, ty)| {
+            let m = self.p.modules.get(*module)?;
+            (m.types.get(*ty) == Some(&id)).then(|| ty.to_string())
+        })
+    }
+
+    /// A method of a [`LIB_TYPES`] type, such as `app.get(...)`.
+    #[allow(clippy::too_many_arguments)]
+    fn lib_method(
+        &mut self,
+        type_name: &str,
+        recv: Expr,
+        sig: &FnSig,
+        name: &str,
+        args: &[ast::Arg],
+        rt: &Ty,
+        span: Span,
+    ) -> (Expr, Option<Ty>) {
+        let (prelude, recv, mut vals) = self.arrange(&sig.params, &[], Some(recv), args);
+        let module = LIB_TYPES
+            .iter()
+            .find(|(_, t)| *t == type_name)
+            .map_or("", |(m, _)| *m);
+        self.std_defaults(module, Some(type_name), name, &sig.params, &mut vals, span);
+        // A route handler keeps its own type: its parameters come from the
+        // route pattern, not from the `Rest` in the declared type.
+        let vals = vals.into_iter().map(|v| match v.kind {
+            ExprKind::Coerce(inner) if matches!(inner.ty, Ty::Fn(_)) => *inner,
+            kind => Expr { kind, ..v },
+        });
+        let mut all = vec![recv.expect("the receiver is kept")];
+        all.extend(vals);
+        let call = mk(
+            ExprKind::Lib {
+                module: module.to_string(),
+                name: format!("{type_name}.{name}"),
+                args: all,
+            },
+            sig.ret.clone(),
+            span,
+        );
+        let call = coerce_value(call, rt);
+        (with_prelude(prelude, call), sig.throws.clone())
+    }
+
+    /// Fills the arguments left out of a call to a standard library
+    /// function with the defaults its declaration gives. `arrange` leaves
+    /// each of them as an [`ExprKind::Error`] with an empty span.
+    fn std_defaults(
+        &mut self,
+        module: &str,
+        impl_type: Option<&str>,
+        name: &str,
+        params: &[ParamSig],
+        vals: &mut [Expr],
+        span: Span,
+    ) {
+        if !vals
+            .iter()
+            .any(|v| matches!(v.kind, ExprKind::Error) && v.span == Span::new(0, 0))
+        {
+            return;
+        }
+        if !self.std_asts.contains_key(module) {
+            let Some(src) = kiln_check::std_source(module) else {
+                return;
+            };
+            self.std_asts
+                .insert(module.to_string(), kiln_syntax::parse(src).module);
+        }
+        let defaults: Vec<Option<ast::Expr>> = {
+            let ast = &self.std_asts[module];
+            let decl = ast.items.iter().find_map(|item| match (item, impl_type) {
+                (ast::Item::Fn(f), None) if f.name.name == name => Some(f),
+                (ast::Item::Impl(i), Some(t)) if type_expr_name(&i.target) == Some(t) => {
+                    i.methods.iter().find(|m| m.name.name == name)
+                }
+                _ => None,
+            });
+            let Some(decl) = decl else { return };
+            decl.params
+                .iter()
+                .filter(|p| p.name.name != "self")
+                .map(|p| p.default.clone())
+                .collect()
+        };
+        for (i, v) in vals.iter_mut().enumerate() {
+            if !(matches!(v.kind, ExprKind::Error) && v.span == Span::new(0, 0)) {
+                continue;
+            }
+            let Some(Some(d)) = defaults.get(i) else {
+                continue;
+            };
+            let ty = params[i].ty.clone();
+            let kind = match &d.kind {
+                E::Int(text) => text.replace('_', "").parse().ok().map(ExprKind::Int),
+                E::Bool(b) => Some(ExprKind::Bool(*b)),
+                E::None => Some(ExprKind::None),
+                E::Str(pieces) => match pieces.as_slice() {
+                    [] => Some(ExprKind::Str(String::new())),
+                    [ast::StrPiece::Text(t)] => Some(ExprKind::Str(t.clone())),
+                    _ => None,
+                },
+                _ => None,
+            };
+            *v = match kind {
+                Some(kind) => mk(kind, ty, span),
+                None => self.unsupported(span, "this default argument"),
+            };
+        }
     }
 
     fn module_call(
@@ -1751,7 +1871,8 @@ impl<'a> Lowerer<'a> {
                 .and_then(|m| m.fns.get(&name.name))
                 .cloned();
             if let Some(sig) = sig {
-                let (prelude, _, vals) = self.arrange(&sig.params, &[], None, args);
+                let (prelude, _, mut vals) = self.arrange(&sig.params, &[], None, args);
+                self.std_defaults(module, None, &name.name, &sig.params, &mut vals, span);
                 let call = mk(
                     ExprKind::Lib {
                         module: module.to_string(),
@@ -1772,7 +1893,11 @@ impl<'a> Lowerer<'a> {
 
 /// Modules whose functions become [`ExprKind::Lib`] calls, for the
 /// backend to build.
-const LIB_MODULES: &[&str] = &["time", "fs", "os", "io"];
+const LIB_MODULES: &[&str] = &["time", "fs", "os", "io", "web"];
+
+/// Types of those modules whose methods are [`ExprKind::Lib`] calls too,
+/// named `Type.method`, with the receiver as the first argument.
+const LIB_TYPES: &[(&str, &str)] = &[("web", "App"), ("web", "Request")];
 
 fn is_generic(sig: &FnSig) -> bool {
     !sig.generics.is_empty() || !sig.impl_params.is_empty()
@@ -1824,4 +1949,14 @@ fn with_prelude(prelude: Vec<Stmt>, e: Expr) -> Expr {
         ty,
         span,
     )
+}
+
+/// The name of a plain named type, such as `App` in `impl App`.
+fn type_expr_name(t: &ast::TypeExpr) -> Option<&str> {
+    match &t.kind {
+        ast::TypeKind::Named { path, args } if path.len() == 1 && args.is_empty() => {
+            Some(&path[0].name)
+        }
+        _ => None,
+    }
 }

@@ -17,6 +17,12 @@ use std::collections::HashMap;
 /// Type-checks a parsed file on its own. Call it only on a file without
 /// parse errors. `web.render` calls are not checked, because the glazes
 /// they name are not known.
+/// The source of a standard library module, such as `web`. Its function
+/// bodies are placeholders, but the default values of parameters are real.
+pub fn std_source(name: &str) -> Option<&'static str> {
+    checker::std_source(name)
+}
+
 pub fn check(module: &Module) -> Vec<Diagnostic> {
     let mut checker = checker::Checker::new();
     checker.check_module(module);

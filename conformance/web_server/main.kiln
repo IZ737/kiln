@@ -1,0 +1,92 @@
+// An HTTP server: typed routes, request data, responses, and what happens
+// when a handler fails or panics. The test sends the requests in
+// main.requests and compares the responses with main.responses.
+import web, os
+
+struct Todo {
+    id: Int
+    title: String
+}
+
+fn todos() -> List<Todo> {
+    return [Todo(id: 1, title: "Fire the pots"), Todo(id: 2, title: "Glaze the bowls")]
+}
+
+fn home(req: web.Request) -> web.Response ! {
+    return web.html("<h1>Kiln</h1>")
+}
+
+fn main() ! {
+    let app = web.app()
+    app.get("/", home)
+
+    app.get("/todos/{id: Int}", fn(req, id) {
+        match todos().find(fn(t) { t.id == id }) {
+            some(t) => web.text("${t.id}: ${t.title}")
+            none => web.not_found()
+        }
+    })
+
+    app.get("/hello/{name}", fn(req, name) {
+        let greeting = req.query("greeting") ?? "Hello"
+        return web.text("${greeting}, ${name}!")
+    })
+
+    app.get("/price/{amount: Float}/{member: Bool}", fn(req, amount, member) {
+        let total = if member { amount * 0.9 } else { amount }
+        return web.text(total.fixed(2))
+    })
+
+    app.post("/echo", fn(req) {
+        print("echo got ${req.body.len()} characters")
+        let kind = req.header("Content-Type") ?? "nothing"
+        return web.text("${req.method} ${req.path} (${kind}): ${req.body}", status: 201)
+    })
+
+    app.put("/echo", fn(req) {
+        return web.text(req.body)
+    })
+
+    app.get("/whoami", fn(req) {
+        let user = req.cookie("user") ?? "nobody"
+        return web.text(user)
+    })
+
+    app.get("/old", fn(req) {
+        return web.redirect("/")
+    })
+
+    app.get("/custom", fn(req) {
+        var res = web.text("teapot", status: 418)
+        res.headers["x-kiln"] = "fired"
+        return res
+    })
+
+    app.get("/empty", fn(req) {
+        return web.Response(status: 204, headers: Map(), body: "")
+    })
+
+    // Handlers can keep state between requests in captured variables.
+    var visits = 0
+    app.get("/visits", fn(req) {
+        visits += 1
+        return web.text("visit ${visits}")
+    })
+
+    app.get("/fail", fn(req) {
+        let n = "x".to_int() ?? 0
+        throw "no luck with ${n}"
+    })
+
+    app.get("/crash", fn(req) {
+        let items = [1, 2, 3]
+        return web.text("${items[7]}")
+    })
+
+    app.get("/quit", fn(req) {
+        print("bye")
+        os.exit(0)
+    })
+
+    try app.listen("127.0.0.1:${env("PORT")}")
+}

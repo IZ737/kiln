@@ -1,0 +1,182 @@
+### GET / HTTP/1.1
+HTTP/1.1 200 OK
+content-type: text/html; charset=utf-8
+content-length: 13
+connection: close
+
+<h1>Kiln</h1>
+### GET /todos/2 HTTP/1.1
+HTTP/1.1 200 OK
+content-type: text/plain; charset=utf-8
+content-length: 18
+connection: close
+
+2: Glaze the bowls
+### GET /todos/9 HTTP/1.1
+HTTP/1.1 404 Not Found
+content-type: text/plain; charset=utf-8
+content-length: 9
+connection: close
+
+Not Found
+### GET /todos/two HTTP/1.1
+HTTP/1.1 404 Not Found
+content-type: text/plain; charset=utf-8
+content-length: 9
+connection: close
+
+Not Found
+### GET /hello/J%C3%BCrgen%20K?greeting=Good+day%21 HTTP/1.1
+HTTP/1.1 200 OK
+content-type: text/plain; charset=utf-8
+content-length: 21
+connection: close
+
+Good day!, Jürgen K!
+### GET /hello/Ada HTTP/1.1
+HTTP/1.1 200 OK
+content-type: text/plain; charset=utf-8
+content-length: 11
+connection: close
+
+Hello, Ada!
+### GET /price/10/true HTTP/1.1
+HTTP/1.1 200 OK
+content-type: text/plain; charset=utf-8
+content-length: 4
+connection: close
+
+9.00
+### GET /price/10.5/false HTTP/1.1
+HTTP/1.1 200 OK
+content-type: text/plain; charset=utf-8
+content-length: 5
+connection: close
+
+10.50
+### GET /price/10/maybe HTTP/1.1
+HTTP/1.1 404 Not Found
+content-type: text/plain; charset=utf-8
+content-length: 9
+connection: close
+
+Not Found
+### POST /echo HTTP/1.1
+HTTP/1.1 201 Created
+content-type: text/plain; charset=utf-8
+content-length: 67
+connection: close
+
+POST /echo (application/x-www-form-urlencoded): title=Fire+the+pots
+### POST /echo HTTP/1.1
+HTTP/1.1 201 Created
+content-type: text/plain; charset=utf-8
+content-length: 34
+connection: close
+
+POST /echo (nothing): hello, world
+### PUT /echo HTTP/1.1
+HTTP/1.1 100 Continue
+
+HTTP/1.1 200 OK
+content-type: text/plain; charset=utf-8
+content-length: 8
+connection: close
+
+big body
+### DELETE /echo HTTP/1.1
+HTTP/1.1 405 Method Not Allowed
+content-type: text/plain; charset=utf-8
+allow: POST, PUT
+content-length: 18
+connection: close
+
+Method Not Allowed
+### HEAD /todos/1 HTTP/1.1
+HTTP/1.1 200 OK
+content-type: text/plain; charset=utf-8
+content-length: 16
+connection: close
+
+### GET /whoami HTTP/1.1
+HTTP/1.1 200 OK
+content-type: text/plain; charset=utf-8
+content-length: 3
+connection: close
+
+ada
+### GET /whoami HTTP/1.1
+HTTP/1.1 200 OK
+content-type: text/plain; charset=utf-8
+content-length: 6
+connection: close
+
+nobody
+### GET /old HTTP/1.1
+HTTP/1.1 302 Found
+location: /
+content-length: 0
+connection: close
+
+### GET /custom HTTP/1.1
+HTTP/1.1 418 I'm a Teapot
+content-type: text/plain; charset=utf-8
+x-kiln: fired
+content-length: 6
+connection: close
+
+teapot
+### GET /empty HTTP/1.1
+HTTP/1.1 204 No Content
+connection: close
+
+### GET /visits HTTP/1.1
+HTTP/1.1 200 OK
+content-type: text/plain; charset=utf-8
+content-length: 7
+connection: close
+
+visit 1
+### GET /visits HTTP/1.1
+HTTP/1.1 200 OK
+content-type: text/plain; charset=utf-8
+content-length: 7
+connection: close
+
+visit 2
+### GET /fail HTTP/1.1
+HTTP/1.1 500 Internal Server Error
+content-type: text/plain; charset=utf-8
+content-length: 21
+connection: close
+
+Internal Server Error
+### GET /crash HTTP/1.1
+HTTP/1.1 500 Internal Server Error
+content-type: text/plain; charset=utf-8
+content-length: 21
+connection: close
+
+Internal Server Error
+### GET /todos/1 HTTP/1.1
+HTTP/1.1 200 OK
+content-type: text/plain; charset=utf-8
+content-length: 16
+connection: close
+
+1: Fire the pots
+### GET /nowhere HTTP/1.1
+HTTP/1.1 404 Not Found
+content-type: text/plain; charset=utf-8
+content-length: 9
+connection: close
+
+Not Found
+### NONSENSE
+HTTP/1.1 400 Bad Request
+content-type: text/plain; charset=utf-8
+content-length: 11
+connection: close
+
+Bad Request
+### GET /quit HTTP/1.1
