@@ -1,0 +1,6 @@
+{% props theme: SiteTheme, post: Post, featured: Bool = false %}
+{% let s = theme.card(featured) %}
+<article ui={s.root}>
+<h2 ui={s.title}>{post.title}</h2>
+<p>{post.summary}</p>
+</article>

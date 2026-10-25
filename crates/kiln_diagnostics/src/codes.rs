@@ -54,6 +54,7 @@ pub const SERVER_ONLY: &str = "E0218";
 pub const UNKNOWN_GLAZE: &str = "E0219";
 pub const BAD_STYLE: &str = "E0220";
 pub const UNKNOWN_TOKEN: &str = "E0221";
+pub const BAD_TOKEN: &str = "E0222";
 
 pub const UNCLOSED_GLAZE_TAG: &str = "E0301";
 pub const MISMATCHED_CLOSING_TAG: &str = "E0302";
@@ -386,6 +387,13 @@ pub static ALL: &[ErrorCode] = &[
         explanation: "Design tokens are the CSS custom properties that the program's global stylesheets (imported with `{% css \"...\" %}`) declare, named `--<category>-<name>`: `--space-md` is `space.md`, and `--color-on-accent` is `color.on_accent`. The categories are color, space, size, radius, shadow, font, text, weight, leading, tracking, motion and breakpoint. Breakpoints, used in `at: { ... }`, are `--breakpoint-<name>` tokens holding a width.",
         wrong: "ui({ bg: color.surfce })",
         right: "ui({ bg: color.surface })   /* :root { --color-surface: #faf9f6; } */",
+    },
+    ErrorCode {
+        code: BAD_TOKEN,
+        title: "a design token with a wrong value, or themes that differ",
+        explanation: "A token's value must suit its category: a colour for `--color-*`, a length for `--space-*`, and so on; a breakpoint must be a width without `var()`, the same in every theme. A theme is a rule `.theme-<name>` in a global stylesheet that sets tokens to its own values, and every theme must set the same tokens, so that a page looks complete whichever theme it uses.",
+        wrong: ".theme-dark { --color-text: white; }\n.theme-light { --color-text: black; --color-accent: red; }",
+        right: ".theme-dark { --color-text: white; --color-accent: orange; }\n.theme-light { --color-text: black; --color-accent: red; }",
     },
     ErrorCode {
         code: UNSAFE_ATTRIBUTE,

@@ -1,0 +1,7 @@
+GET / HTTP/1.1
+###
+GET /vibrant HTTP/1.1
+###
+GET /_kiln/app-dykx3r.css HTTP/1.1
+###
+GET /quit HTTP/1.1

@@ -31,6 +31,10 @@
   `--space-*`, ... custom properties of global stylesheets, and
   breakpoints from `--breakpoint-*`. Wrong values are E0220 and unknown
   tokens E0221.
+- **Themes.** A theme is a struct of Finishes, checked like any value,
+  plus a `.theme-<name>` rule in a global stylesheet that sets the token
+  values; `ui({ theme: .name })` applies it. Every theme must set the
+  same tokens, and token values must suit their category (E0222).
 - The new `html` module has `html.escape` and `html.safe_url`, on the
   html-escape crate, and the new `base64` module has `base64.encode` and
   `base64.decode`.

@@ -256,6 +256,53 @@ declared. A token or breakpoint that is not declared is E0221.
 The classes are in the `kiln.ui` layer, after the other layers, and a
 class name is `k` and twelve letters and digits.
 
+### Themes
+
+A theme is a value of a struct of Finishes, so the type checker checks
+that every theme has every part, with the right arguments and results,
+and the glazes take the theme as a prop:
+
+```kiln
+struct SiteTheme {
+    page: fn() -> PageFinish
+    card: fn(Bool) -> CardFinish
+    button: fn(Tone) -> Ui
+}
+
+fn editorial() -> SiteTheme {
+    return SiteTheme(page: editorial_page, card: editorial_card, button: editorial_button)
+}
+
+// The one place that chooses the theme.
+fn active_theme() -> SiteTheme {
+    return editorial()
+}
+```
+
+A theme's token values are a rule for `.theme-<name>` in a global
+stylesheet, and `theme: .<name>` in a style (at its top, not inside a
+state or breakpoint) adds that class, so the tokens take the theme's
+values on the element and inside it:
+
+```css
+.theme-editorial { --color-accent: #c65a34; --space-md: 1rem; }
+.theme-vibrant   { --color-accent: #7144bf; --space-md: 0.75rem; }
+```
+
+```kiln
+fn editorial_page() -> PageFinish {
+    return PageFinish(root: ui({ theme: .editorial, bg: color.surface }), ...)
+}
+```
+
+Every theme must set the tokens that any other theme sets, and every
+token's value must suit its category (a `color.*` token is a colour, a
+`space.*` token a length); breakpoints are the same in every theme, so a
+theme cannot set them. These are E0222, reported at the `{% css %}` that
+loaded the stylesheet. An unknown theme is E0221. Styles that every theme
+could produce are all in the stylesheet, so changing `active_theme()`
+and building again changes the site, layout included.
+
 ## Elements and components
 
 - HTML elements are written as usual. Void elements (`<br>`, `<img>`,

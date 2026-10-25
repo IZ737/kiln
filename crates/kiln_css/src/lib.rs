@@ -21,6 +21,7 @@ use lightningcss::properties::Property;
 use lightningcss::rules::CssRule;
 use lightningcss::selector::{Component, Selector};
 use lightningcss::stylesheet::{ParserOptions, PrinterOptions, StyleSheet};
+use lightningcss::traits::ToCss;
 use lightningcss::values::ident::Ident;
 use lightningcss::values::url::Url;
 use lightningcss::visit_types;
@@ -35,8 +36,9 @@ pub struct Css {
     /// For a CSS Module, each class name and the name it was renamed to.
     pub exports: BTreeMap<String, String>,
     /// The custom properties its rules declare, in order, without their
-    /// `--`: `("color-accent", "#c65a34")`. Design tokens come from these.
-    pub properties: Vec<(String, String)>,
+    /// `--`, with the rule's selector: `(":root", "color-accent",
+    /// "#c65a34")`. Design tokens come from these.
+    pub properties: Vec<(String, String, String)>,
 }
 
 /// CSS that could not be read: what was wrong, and where, as a 0-based
@@ -215,7 +217,7 @@ struct Transform<'a> {
     scope: Option<Ident<'static>>,
     resolve: Resolve<'a>,
     failed: Option<CssError>,
-    properties: Vec<(String, String)>,
+    properties: Vec<(String, String, String)>,
 }
 
 impl<'i> Visitor<'i> for Transform<'_> {
@@ -229,6 +231,13 @@ impl<'i> Visitor<'i> for Transform<'_> {
         match rule {
             CssRule::Style(style) => {
                 let decls = &style.declarations;
+                let selector = style
+                    .selectors
+                    .to_css_string(PrinterOptions {
+                        minify: true,
+                        ..PrinterOptions::default()
+                    })
+                    .unwrap_or_default();
                 for p in decls
                     .declarations
                     .iter()
@@ -240,7 +249,11 @@ impl<'i> Visitor<'i> for Transform<'_> {
                                 .value_to_css_string(PrinterOptions::default())
                                 .unwrap_or_default();
                             let name = name.as_ref().trim_start_matches("--").to_string();
-                            self.properties.push((name, value.trim().to_string()));
+                            self.properties.push((
+                                selector.clone(),
+                                name,
+                                value.trim().to_string(),
+                            ));
                         }
                     }
                 }
@@ -367,11 +380,16 @@ mod tests {
             &mut |u, _| Ok(u.to_string()),
         )
         .unwrap();
+        let found: Vec<(&str, &str, &str)> = css
+            .properties
+            .iter()
+            .map(|(s, n, v)| (s.as_str(), n.as_str(), v.as_str()))
+            .collect();
         assert_eq!(
-            css.properties,
+            found,
             [
-                ("color-accent".to_string(), "#c65a34".to_string()),
-                ("space-md".to_string(), "1rem".to_string())
+                (":root", "color-accent", "#c65a34"),
+                (":root", "space-md", "1rem")
             ]
         );
     }

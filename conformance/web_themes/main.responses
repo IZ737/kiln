@@ -1,0 +1,60 @@
+### GET / HTTP/1.1
+HTTP/1.1 200 OK
+content-type: text/html; charset=utf-8
+content-length: 869
+connection: close
+
+<!doctype html>
+<html>
+<head>
+<title>Pots</title>
+<link rel="stylesheet" href="/_kiln/app-dykx3r.css"></head>
+<body class="theme-editorial kzxmvrdsa7gxm ko6adaya00pf7 k3jv70k7efyp7 kw6f5uc5xs22q klpcd22b8c9a7 ka5aucuvfxrm4 kwhwdojvx5k8f">
+<main class="kti372ixufx4f k4lgiieenjvgp kuka0ucplwal3 kur46pn3ll4rb kfer7abkg8dmv">
+<article class="kw6f5uchzo8qr klpcd22bot20v ka5aucuzy3oyi kwhwdojrqq8e8 kvxcl6ew5uz1f ka09clngcsnm1 ktl06td0o2yss">
+<h2 class="k3jv70ktya724 kmm4i01wj6a5i kbm44z5v8jfjq">Firing</h2>
+<p>Heat work and cones.</p>
+</article>
+<article class="kw6f5uchzo8qr klpcd22bot20v ka5aucuzy3oyi kwhwdojrqq8e8 kvxcl6ew5uz1f ka09clngcsnm1 ktl06tdro5x40">
+<h2 class="k3jv70ktya724 kmm4i01wj6a5i kbm44z5v8jfjq">Glazes</h2>
+<p>Ash, celadon and tenmoku.</p>
+</article>
+</main>
+<a href="/more" class="kwjicpxbompjs ko6aday9rz7ot kbm44z5yix16m">More</a>
+</body>
+</html>
+### GET /vibrant HTTP/1.1
+HTTP/1.1 200 OK
+content-type: text/html; charset=utf-8
+content-length: 923
+connection: close
+
+<!doctype html>
+<html>
+<head>
+<title>Pots</title>
+<link rel="stylesheet" href="/_kiln/app-dykx3r.css"></head>
+<body class="theme-vibrant kzxmvrdsa7gxm ko6adaya00pf7 k3jv70k7efyp7 kw6f5uchzo8qr klpcd22bot20v ka5aucuzy3oyi kwhwdojrqq8e8">
+<main class="kti372ie7jqnr kqazduwz4nni8 kuka0uc1cld51 kur46pn3xzukd">
+<article class="kw6f5uc5xs22q klpcd22b8c9a7 ka5aucuvfxrm4 kwhwdojvx5k8f koz9onsw7bjlt kzxmvrdst6h5a">
+<h2 class="k3jv70ktya724 kmm4i01zovz8r kbm44z5k3o16l">Firing</h2>
+<p>Heat work and cones.</p>
+</article>
+<article class="kw6f5uc5xs22q klpcd22b8c9a7 ka5aucuvfxrm4 kwhwdojvx5k8f koz9onsw7bjlt kzxmvrd7dwhnt ko6adayqjb5uw">
+<h2 class="k3jv70ktya724 kmm4i01zovz8r kbm44z5k3o16l">Glazes</h2>
+<p>Ash, celadon and tenmoku.</p>
+</article>
+</main>
+<a href="/more" class="kwhwdojrqq8e8 klpcd22bot20v kw6f5uceymcht ka5aucuwy6096 koz9onsbxdo57 kzxmvrd7dwhnt ko6adayqjb5uw kmm4i01wj6a5i kuullmfftvn1t">More</a>
+</body>
+</html>
+### GET /_kiln/app-dykx3r.css HTTP/1.1
+HTTP/1.1 200 OK
+content-type: text/css; charset=utf-8
+cache-control: public, max-age=31536000, immutable
+x-content-type-options: nosniff
+content-length: 1835
+connection: close
+
+@layer kiln.global,kiln.modules,kiln.scoped,kiln.ui;@import "/_kiln/theme-cqt91t.css" layer(kiln.global);@layer kiln.ui{.k3jv70k7efyp7{font-family:var(--font-body)}.k3jv70ktya724{font-family:var(--font-heading)}.k4lgiieenjvgp{grid-template-columns:repeat(1,minmax(0,1fr))}.ka09clngcsnm1{border-width:1px}.ka5aucuvfxrm4{padding-bottom:var(--space-lg)}.ka5aucuwy6096{padding-bottom:var(--space-sm)}.ka5aucuzy3oyi{padding-bottom:var(--space-md)}.kbm44z5k3o16l{font-weight:900}.kbm44z5v8jfjq{font-weight:400}.kbm44z5yix16m{font-weight:700}.klpcd22b8c9a7{padding-right:var(--space-lg)}.klpcd22bot20v{padding-right:var(--space-md)}.kmm4i01wj6a5i{font-size:var(--text-lg)}.kmm4i01zovz8r{font-size:var(--text-xl)}.ko6aday9rz7ot{color:var(--color-accent)}.ko6adaya00pf7{color:var(--color-text)}.ko6adayqjb5uw{color:var(--color-surface)}.koz9onsbxdo57{border-radius:9999px}.koz9onsw7bjlt{border-radius:var(--radius-card)}.kqazduwz4nni8{flex-direction:column}.kti372ie7jqnr{display:flex}.kti372ixufx4f{display:grid}.ktl06td0o2yss{border-color:var(--color-muted)}.ktl06tdro5x40{border-color:var(--color-accent)}.kuka0uc1cld51{row-gap:var(--space-md)}.kuka0ucplwal3{row-gap:var(--space-lg)}.kur46pn3ll4rb{column-gap:var(--space-lg)}.kur46pn3xzukd{column-gap:var(--space-md)}.kuullmfftvn1t:hover{opacity:0.8}.kvxcl6ew5uz1f{border-style:solid}.kw6f5uc5xs22q{padding-top:var(--space-lg)}.kw6f5uceymcht{padding-top:var(--space-sm)}.kw6f5uchzo8qr{padding-top:var(--space-md)}.kwhwdojrqq8e8{padding-left:var(--space-md)}.kwhwdojvx5k8f{padding-left:var(--space-lg)}.kwjicpxbompjs{text-decoration-line:underline}.kzxmvrd7dwhnt{background-color:var(--color-accent)}.kzxmvrdsa7gxm{background-color:var(--color-surface)}.kzxmvrdst6h5a{background-color:var(--color-muted)}@media (min-width:800px){.kfer7abkg8dmv{grid-template-columns:repeat(2,minmax(0,1fr))}}}
+### GET /quit HTTP/1.1

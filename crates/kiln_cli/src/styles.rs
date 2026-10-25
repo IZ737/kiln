@@ -50,6 +50,8 @@ pub fn load(dir: &Path, glazes: &[GlazeFile]) -> AppStyles {
     };
     let mut out = AppStyles::default();
     let mut modules_css = Vec::new();
+    // Where each custom property came from: the glaze and its import.
+    let mut origins: HashMap<String, (String, Span)> = HashMap::new();
     let mut scoped_css = Vec::new();
     for g in glazes {
         let mut diags = Vec::new();
@@ -59,8 +61,14 @@ pub fn load(dir: &Path, glazes: &[GlazeFile]) -> AppStyles {
             };
             match &import.module {
                 None => {
+                    let before = l.properties.len();
                     if let Err(e) = l.global_file(&path) {
                         diags.push(import_error(import, &path, e));
+                    }
+                    for (_, name, _) in &l.properties[before..] {
+                        origins
+                            .entry(format!("--{name}"))
+                            .or_insert((g.name.to_string(), import.path.span));
                     }
                 }
                 Some(name) => match l.module_file(&path) {
@@ -122,9 +130,19 @@ pub fn load(dir: &Path, glazes: &[GlazeFile]) -> AppStyles {
         }
     }
 
-    out.styling.tokens = kiln_check::style::Tokens::from_properties(
-        l.properties.iter().map(|(n, v)| (n.as_str(), v.as_str())),
+    out.styling.tokens = kiln_check::style::Tokens::from_rules(
+        l.properties
+            .iter()
+            .map(|(s, n, v)| (s.as_str(), n.as_str(), v.as_str())),
     );
+    for (property, message) in out.styling.tokens.problems() {
+        if let Some((glaze, span)) = origins.get(&property) {
+            out.diagnostics
+                .entry(glaze.clone())
+                .or_default()
+                .push(Diagnostic::error(codes::BAD_TOKEN, message, *span));
+        }
+    }
     out.assets = l.assets;
     out.globals = l.globals;
     out.modules_css = modules_css;
@@ -228,7 +246,7 @@ struct Loader {
     /// The URLs of the global stylesheets glazes import, in order.
     globals: Vec<String>,
     /// The custom properties they declare, in order: the design tokens.
-    properties: Vec<(String, String)>,
+    properties: Vec<(String, String, String)>,
 }
 
 impl Loader {

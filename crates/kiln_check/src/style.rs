@@ -53,18 +53,55 @@ pub struct Token {
     pub value: String,
 }
 
-/// The tokens an app's global stylesheets declare.
+/// The tokens an app's global stylesheets declare, and its themes.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Tokens {
     pub list: Vec<Token>,
+    /// The themes: rules whose selector is `.theme-<name>`, each setting
+    /// the same tokens to its own values. `ui({ theme: .name })` applies
+    /// one.
+    pub themes: Vec<Theme>,
+}
+
+/// A theme's token values, by the custom property, with its `--`.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Theme {
+    pub name: String,
+    pub values: Vec<(String, String)>,
+}
+
+/// The CSS property whose values a token category holds, to check them.
+fn category_property(category: &str) -> &'static str {
+    match category {
+        "color" => "color",
+        "space" => "margin-top",
+        "size" | "breakpoint" => "width",
+        "radius" => "border-top-left-radius",
+        "shadow" => "box-shadow",
+        "font" => "font-family",
+        "text" => "font-size",
+        "weight" => "font-weight",
+        "leading" => "line-height",
+        "tracking" => "letter-spacing",
+        _ => "transition",
+    }
 }
 
 impl Tokens {
     /// The tokens among custom properties, given without their `--`, in
     /// the order they are declared. A later value replaces an earlier one.
     pub fn from_properties<'a>(properties: impl IntoIterator<Item = (&'a str, &'a str)>) -> Self {
-        let mut list: Vec<Token> = Vec::new();
-        for (property, value) in properties {
+        Self::from_rules(properties.into_iter().map(|(n, v)| (":root", n, v)))
+    }
+
+    /// The tokens and themes among custom properties, given with the
+    /// selector of their rule and without their `--`. Rules for
+    /// `.theme-<name>` are themes; others give tokens their values.
+    pub fn from_rules<'a>(
+        properties: impl IntoIterator<Item = (&'a str, &'a str, &'a str)>,
+    ) -> Self {
+        let mut tokens = Tokens::default();
+        for (selector, property, value) in properties {
             let Some((category, rest)) = property.split_once('-') else {
                 continue;
             };
@@ -77,12 +114,36 @@ impl Tokens {
             if !ok {
                 continue;
             }
-            match list
+            let theme = selector.strip_prefix(".theme-").filter(|t| {
+                !t.is_empty() && t.chars().all(|c| c.is_ascii_alphanumeric() || c == '-')
+            });
+            if let Some(theme) = theme {
+                let full = format!("--{property}");
+                let entry = match tokens.themes.iter_mut().position(|t| t.name == theme) {
+                    Some(i) => &mut tokens.themes[i],
+                    None => {
+                        tokens.themes.push(Theme {
+                            name: theme.to_string(),
+                            values: Vec::new(),
+                        });
+                        tokens.themes.last_mut().unwrap()
+                    }
+                };
+                match entry.values.iter_mut().find(|v| v.0 == full) {
+                    Some(v) => v.1 = value.to_string(),
+                    None => entry.values.push((full, value.to_string())),
+                }
+                if tokens.get(category, &name).is_some() {
+                    continue;
+                }
+            }
+            match tokens
+                .list
                 .iter_mut()
                 .find(|t| t.category == category && t.name == name)
             {
                 Some(t) => t.value = value.to_string(),
-                None => list.push(Token {
+                None => tokens.list.push(Token {
                     category: category.to_string(),
                     name,
                     property: format!("--{property}"),
@@ -90,7 +151,66 @@ impl Tokens {
                 }),
             }
         }
-        Tokens { list }
+        tokens
+    }
+
+    /// What is wrong with the tokens: values that do not suit their
+    /// category, and themes that do not set the tokens other themes set.
+    /// Each problem comes with the custom property it is about.
+    pub fn problems(&self) -> Vec<(String, String)> {
+        let mut out = Vec::new();
+        let category = |property: &str| {
+            let name = property.trim_start_matches("--");
+            name.split_once('-').map_or("", |(c, _)| c).to_string()
+        };
+        let mut check = |property: &str, value: &str, theme: Option<&str>| {
+            let cat = category(property);
+            let ok = if cat == "breakpoint" {
+                theme.is_none()
+                    && !value.contains("var(")
+                    && kiln_css::declaration("width", value).is_ok()
+            } else {
+                kiln_css::declaration(category_property(&cat), value).is_ok()
+            };
+            if !ok {
+                let what = match (cat.as_str(), theme) {
+                    ("breakpoint", Some(t)) => {
+                        format!("theme `{t}` sets `{property}`, but breakpoints are the same in every theme")
+                    }
+                    ("breakpoint", None) => format!(
+                        "`{property}: {value}` is not a width without `var()`, so it cannot be a breakpoint"
+                    ),
+                    _ => format!("`{property}: {value}` is not a valid `{cat}` value"),
+                };
+                out.push((property.to_string(), what));
+            }
+        };
+        for t in &self.list {
+            check(&t.property, &t.value, None);
+        }
+        for theme in &self.themes {
+            for (p, v) in &theme.values {
+                check(p, v, Some(&theme.name));
+            }
+        }
+        for theme in &self.themes {
+            for other in &self.themes {
+                for (p, _) in &other.values {
+                    if !theme.values.iter().any(|v| &v.0 == p) {
+                        out.push((
+                            p.clone(),
+                            format!(
+                                "theme `{}` does not set `{p}`, which theme `{}` sets",
+                                theme.name, other.name
+                            ),
+                        ));
+                    }
+                }
+            }
+        }
+        let mut seen = std::collections::HashSet::new();
+        out.retain(|p| seen.insert(p.clone()));
+        out
     }
 
     pub fn get(&self, category: &str, name: &str) -> Option<&Token> {
@@ -184,6 +304,7 @@ enum Kind {
     Cursor,
     Transform,
     Underline,
+    Theme,
 }
 
 /// The keys a style may set: each key's CSS properties and its kind.
@@ -248,6 +369,7 @@ const KEYS: &[(&str, &[&str], Kind)] = &[
     ("cursor", &["cursor"], Kind::Cursor),
     ("transform", &["transform"], Kind::Transform),
     ("underline", &["text-decoration-line"], Kind::Underline),
+    ("theme", &[], Kind::Theme),
 ];
 
 /// The names of the keys a style may set, for messages and completion.
@@ -289,6 +411,7 @@ impl Kind {
             Kind::Transition => "a transition, such as `motion.fast` or `.none`",
             Kind::Cursor => "a cursor, such as `.pointer`",
             Kind::Transform => "a CSS transform, such as `\"rotate(2deg)\"`",
+            Kind::Theme => "a theme, such as `.dark` for the rule `.theme-dark`",
         }
     }
 
@@ -569,6 +692,10 @@ impl Checker {
                 },
             ) => {
                 let (_, props, kind) = *key(name).expect("a known key");
+                if kind == Kind::Theme {
+                    let ok = self.theme_value(e, state.is_some() || at.is_some());
+                    return Some(if ok { ty } else { Ty::Unknown });
+                }
                 match self.style_value(e, kind, props) {
                     Ok(declarations) => {
                         let slot_end =
@@ -598,6 +725,47 @@ impl Checker {
                 }
             }
         }
+    }
+
+    /// `theme: .dark`, which adds the class `theme-dark`, whose rule in a
+    /// global stylesheet sets the tokens to the theme's values.
+    fn theme_value(&mut self, e: &Expr, nested: bool) -> bool {
+        if nested {
+            self.style_error(
+                e.span,
+                "`theme` goes at the top of a style, outside states and breakpoints".into(),
+            );
+            return false;
+        }
+        let ExprKind::FieldShorthand(name) = &e.kind else {
+            self.style_error(e.span, format!("expected {}", Kind::Theme.what()));
+            return false;
+        };
+        let css_name = name.name.replace('_', "-");
+        if !self.tokens.themes.iter().any(|t| t.name == css_name) {
+            let names: Vec<String> = self
+                .tokens
+                .themes
+                .iter()
+                .map(|t| t.name.replace('-', "_"))
+                .collect();
+            let d = Diagnostic::error(
+                codes::UNKNOWN_TOKEN,
+                format!("there is no theme `{}`", name.name),
+                name.span,
+            );
+            let d = match similar(&name.name, names.iter().map(String::as_str)) {
+                Some(s) => d.with_suggestion(format!("use `{s}`"), name.span, s.clone()),
+                None => d.with_help(format!(
+                    "a theme is a rule in a global stylesheet that sets tokens: `.theme-{css_name} {{ --color-accent: ...; }}`"
+                )),
+            };
+            self.error(d);
+            return false;
+        }
+        self.styles
+            .insert(e.span, StyleExpr::Classes(format!("theme-{css_name}")));
+        true
     }
 
     fn style_error(&mut self, span: Span, message: String) {

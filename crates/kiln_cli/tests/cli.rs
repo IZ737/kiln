@@ -303,6 +303,57 @@ fn check_reports_css_errors_in_glazes() {
 }
 
 #[test]
+fn check_reports_bad_tokens_at_their_import() {
+    let dir = scratch("bad-tokens");
+    std::fs::write(
+        dir.join("main.kiln"),
+        "import web\n\nfn page() -> web.Response {\n    web.render(\"page.glaze\", {})\n}\n",
+    )
+    .unwrap();
+    std::fs::write(
+        dir.join("theme.css"),
+        ".theme-light { --color-accent: #c65a34; --color-text: #222; }\n.theme-dark { --color-accent: 2rem; }\n",
+    )
+    .unwrap();
+    std::fs::write(
+        dir.join("page.glaze"),
+        "<p>hi</p>\n{% css \"theme.css\" %}\n",
+    )
+    .unwrap();
+    let out = kiln().args(["check", "--json"]).arg(&dir).output().unwrap();
+    let report: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    let found: Vec<_> = report["diagnostics"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|d| {
+            (
+                d["code"].as_str().unwrap().to_string(),
+                d["start"]["line"].as_u64().unwrap(),
+                d["message"].as_str().unwrap().to_string(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        found,
+        [
+            (
+                "E0222".to_string(),
+                2,
+                "`--color-accent: 2rem` is not a valid `color` value".to_string()
+            ),
+            (
+                "E0222".to_string(),
+                2,
+                "theme `dark` does not set `--color-text`, which theme `light` sets".to_string()
+            ),
+        ],
+        "{report}"
+    );
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
 fn programs_serve_their_files_byte_for_byte() {
     use std::io::{Read, Write};
     let program = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../conformance/web_styles");
