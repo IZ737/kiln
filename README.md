@@ -38,7 +38,8 @@ fn main() ! {
 > on lightweight tasks with keep-alive, reads and writes JSON (`json`,
 > `web.json`, `req.json<T>()`), answers errors with statuses
 > (`web.error`) and logs each request; [examples/api](examples/api/main.kiln)
-> is a JSON API. Templates, `sql` and `auth` arrive in later phases. See the [roadmap](#roadmap) and
+> is a JSON API. Phase 2.5 (VS Code and enhanced LSP support) is next.
+> Templates, `sql` and `auth` arrive in later phases. See the [roadmap](#roadmap) and
 > [what phase 1 leaves for later](docs/design.md#what-phase-1-leaves-for-later).
 
 ## Highlights
@@ -132,6 +133,7 @@ For errors and quick fixes in your editor, see [docs/editors.md](docs/editors.md
 | `docs/types.md` | The type rules the checker enforces |
 | `docs/stdlib.md` | The standard library modules the compiler builds |
 | `docs/editors.md` | Setting up `kiln lsp` in Neovim, Helix and other editors |
+| `docs/phase-2.5.md` | Planned VS Code extension and enhanced LSP implementation stages and acceptance criteria |
 | `docs/design.md` | Language design overview and roadmap |
 
 ## Roadmap
@@ -143,9 +145,10 @@ For errors and quick fixes in your editor, see [docs/editors.md](docs/editors.md
 | 1.5 | Self-contained toolchain and executables: Cranelift native backend, integrated linking, statically bundled runtime and Boehm GC (Linux x86-64 first); keep the C backend | Download one `kiln` executable and compile supported CLI programs without installing a C compiler, linker or runtime libraries; run the resulting native executables on compatible clean systems without installing dependencies |
 | Windows target (post-1.5, non-blocking) | Windows x86-64 support: standalone `kiln.exe` compiler and native Windows `.exe` outputs, with a bundled linker, statically linked Kiln runtime and GC, and Windows CI conformance | Download `kiln.exe`, compile a supported CLI app and run its `.exe` on a clean compatible Windows system without installing a C compiler, linker, Rust or a separate GC/runtime package |
 | 2 | Core runtime, HTTP server, typed routing, JSON, error handling | A real HTTP API runs as a native binary (done) |
+| 2.5 | VS Code developer experience: dedicated extension, Kiln/Glaze highlighting and file icons, compiler-backed completion, hover, definition and symbol navigation, diagnostics/quick fixes, Check/Run/Build actions; [implementation plan](docs/phase-2.5.md) | A developer can edit, navigate, check, build and run Kiln programs comfortably in VS Code with the Rust LSP providing intelligence to other editors |
 | 3 | Glazes, server-rendered components, layouts, CSS, scoped styling, design tokens | The Kiln documentation website is built in Kiln |
 | 4 | SQL (SQLite first, for local development with no database server, then Postgres and MySQL), ORM with schema import (`kiln db pull`), migrations, forms, validation, sessions and auth, generated admin UI | A database-backed application with authentication works |
-| 5 | Developer tooling: full LSP (completion, hover, go to definition, rename, glaze support), formatter, hot reload, testing, wares (package management), MCP server and agent guide | A complete application can be developed and tested comfortably |
+| 5 | Advanced developer tooling: find references, rename, richer Glaze semantic support, formatter, hot reload, testing, wares (package management), MCP server and agent guide | A complete application can be developed and tested comfortably |
 | 6 | Embers on WasmGC, reactive UI, server functions, generated RPC, JS interoperability | A full-stack interactive Kiln application works end-to-end |
 | 7 | Production hardening, static site generation (`kiln fire --static`), deployment, performance (precise GC, LLVM release builds), stability | Kiln 1.0: stable and ready for personal production projects |
 | 8+ | Installable PWAs with local-first data that syncs with the server, advanced optimization, interoperability improvements, desktop apps, additional targets, request arenas, self-hosting | Independent milestones after 1.0 |
