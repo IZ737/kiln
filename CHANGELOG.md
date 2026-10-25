@@ -1,6 +1,9 @@
 # Changelog
 
-## Unreleased
+## 0.7.0 (2026-10-25)
+
+Phase 3: glazes render, with styles, typed `ui`, Finishes and themes, and
+Kiln's documentation site is a Kiln program.
 
 - **Glazes render.** `web.render("page.glaze", { props })` runs the glaze
   and answers with HTML. Glazes are compiled into the program on both
@@ -15,8 +18,42 @@
   or component's `{% slot name %}` its content (E0311 when misplaced). A
   glaze that renders itself without end, through layouts or components, is
   E0310. Slot content is placed without its surrounding whitespace.
+- **Glazes have CSS.** A glaze's `<style>` is scoped to its own elements,
+  `{% css "site.css" %}` adds a global stylesheet and
+  `{% css module card from "card.module.css" %}` gives typed, renamed
+  class names (`card.card_title`; an unknown class is a type error). It is
+  all built into one stylesheet, in fixed cascade layers, which every
+  `<head>` links. The program serves it, the files CSS refers to and the
+  `static/` folder from inside itself. CSS is read with Lightning CSS;
+  CSS errors and missing files are E0312.
+- **Typed styles.** `ui({ p: space.md, bg: color.surface, hover: {...},
+  at: { tablet: {...} } })` and `ui={{ ... }}` in glazes are checked
+  against a fixed set of keys and compiled into atomic CSS classes, with
+  `ui.merge` (later styles win per property) and Finishes as ordinary
+  functions returning `Ui`. Design tokens come from the `--color-*`,
+  `--space-*`, ... custom properties of global stylesheets, and
+  breakpoints from `--breakpoint-*`. Wrong values are E0220 and unknown
+  tokens E0221.
+- **Themes.** A theme is a struct of Finishes, checked like any value,
+  plus a `.theme-<name>` rule in a global stylesheet that sets the token
+  values; `ui({ theme: .name })` applies it. Every theme must set the
+  same tokens, and token values must suit their category (E0222).
+- **Editors know styles.** `kiln lsp` completes style keys, breakpoints,
+  tokens, keywords and themes in `ui` records and CSS Module class names,
+  hovers keys and tokens with their CSS, and goes to the stylesheet that
+  declares a token or theme.
+- **The documentation site is a Kiln program.** `site/` serves the
+  landing, install and getting started pages and every page of `docs/`,
+  with glazes, layouts, typed styles, Finishes, a CSS Module and two
+  themes; changing `active_theme()` switches between them, layout
+  included. `kiln run site/tools/content` regenerates its pages from
+  `docs/`, and a test crawls every page and file it serves.
+- The new `markdown` module has `markdown.to_html`, on the pulldown-cmark
+  crate: HTML in the Markdown stays text, unsafe links are dropped and
+  headings get ids.
 - The new `html` module has `html.escape` and `html.safe_url`, on the
-  html-escape crate.
+  html-escape crate, and the new `base64` module has `base64.encode` and
+  `base64.decode`.
 
 ## 0.6.0 (2026-10-25)
 

@@ -52,6 +52,9 @@ pub const UNKNOWN_TYPE: &str = "E0216";
 pub const NOT_DISPLAYABLE: &str = "E0217";
 pub const SERVER_ONLY: &str = "E0218";
 pub const UNKNOWN_GLAZE: &str = "E0219";
+pub const BAD_STYLE: &str = "E0220";
+pub const UNKNOWN_TOKEN: &str = "E0221";
+pub const BAD_TOKEN: &str = "E0222";
 
 pub const UNCLOSED_GLAZE_TAG: &str = "E0301";
 pub const MISMATCHED_CLOSING_TAG: &str = "E0302";
@@ -64,6 +67,7 @@ pub const STRAY_CLOSING_TAG: &str = "E0308";
 pub const UNSAFE_ATTRIBUTE: &str = "E0309";
 pub const ENDLESS_GLAZE: &str = "E0310";
 pub const MISPLACED_FILL: &str = "E0311";
+pub const BAD_CSS: &str = "E0312";
 
 pub const NOT_COMPILED_YET: &str = "E0401";
 pub const NO_MAIN: &str = "E0402";
@@ -371,6 +375,27 @@ pub static ALL: &[ErrorCode] = &[
         right: "<p>Hi</p>",
     },
     ErrorCode {
+        code: BAD_STYLE,
+        title: "a style that cannot be compiled",
+        explanation: "A style, `ui({ ... })` or a glaze's `ui={{ ... }}`, sets keys such as `p`, `bg` and `hover` to values written in place: a design token such as `space.md`, a keyword such as `.bold`, a number, `true`, or a CSS string such as `\"1rem 2px\"`, which must be valid for the key's CSS property. Code may choose between such values with `if` and `match`, but cannot compute them, because every style becomes CSS when the program is compiled. A style cannot set both `flex` and `grid`.",
+        wrong: "ui({ p: \"${n}px\", bg: color.accent })",
+        right: "ui({ p: if roomy { space.lg } else { space.sm }, bg: color.accent })",
+    },
+    ErrorCode {
+        code: UNKNOWN_TOKEN,
+        title: "a design token or breakpoint that is not declared",
+        explanation: "Design tokens are the CSS custom properties that the program's global stylesheets (imported with `{% css \"...\" %}`) declare, named `--<category>-<name>`: `--space-md` is `space.md`, and `--color-on-accent` is `color.on_accent`. The categories are color, space, size, radius, shadow, font, text, weight, leading, tracking, motion and breakpoint. Breakpoints, used in `at: { ... }`, are `--breakpoint-<name>` tokens holding a width.",
+        wrong: "ui({ bg: color.surfce })",
+        right: "ui({ bg: color.surface })   /* :root { --color-surface: #faf9f6; } */",
+    },
+    ErrorCode {
+        code: BAD_TOKEN,
+        title: "a design token with a wrong value, or themes that differ",
+        explanation: "A token's value must suit its category: a colour for `--color-*`, a length for `--space-*`, and so on; a breakpoint must be a width without `var()`, the same in every theme. A theme is a rule `.theme-<name>` in a global stylesheet that sets tokens to its own values, and every theme must set the same tokens, so that a page looks complete whichever theme it uses.",
+        wrong: ".theme-dark { --color-text: white; }\n.theme-light { --color-text: black; --color-accent: red; }",
+        right: ".theme-dark { --color-text: white; --color-accent: orange; }\n.theme-light { --color-text: black; --color-accent: red; }",
+    },
+    ErrorCode {
         code: UNSAFE_ATTRIBUTE,
         title: "a value where HTML escaping is not enough",
         explanation: "Escaping keeps a value from ending an attribute, but in some attributes the browser reads the text as code: JavaScript in `onclick` and the other `on...` attributes, CSS in `style`, and a whole HTML page in `srcdoc`. A value there could run code or change the page, so glazes accept only numbers in `style` and no values in the others. Use classes and a stylesheet to style, and event handlers (`on:click={...}`) in embers.",
@@ -390,6 +415,13 @@ pub static ALL: &[ErrorCode] = &[
         explanation: "`{% fill name %} ... {% end %}` gives the content for a layout's or component's `{% slot name %}`. It goes directly inside a component tag, or at the top level of a page that has a `{% layout %}`, and names a slot that glaze has, once.",
         wrong: "{% layout \"base.glaze\" title: \"Home\" %}\n<div>{% fill sidebar %}<p>Links</p>{% end %}</div>",
         right: "{% layout \"base.glaze\" title: \"Home\" %}\n{% fill sidebar %}<p>Links</p>{% end %}\n<div>Content</div>",
+    },
+    ErrorCode {
+        code: BAD_CSS,
+        title: "CSS that cannot be used",
+        explanation: "A glaze's `<style>`, or a stylesheet it imports with `{% css %}`, is read as CSS when the program is checked. The file must exist inside the program's folder, and the CSS must parse. Files that CSS refers to with `url(...)` or `@import` must exist too, inside the folder. A CSS Module or `<style>` cannot `@import`: import the stylesheet with `{% css %}` instead.",
+        wrong: "{% css \"../shared/site.css\" %}",
+        right: "{% css \"site.css\" %}",
     },
     ErrorCode {
         code: NOT_COMPILED_YET,

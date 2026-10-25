@@ -1,0 +1,21 @@
+// A server whose glazes bring CSS: scoped `<style>`s that use the same
+// class name, a CSS Module with typed class names, and a global stylesheet
+// that imports another and refers to an image. The program serves the
+// stylesheet, the files it refers to and the `static/` folder itself.
+import web, os
+
+fn main() ! {
+    let app = web.app(access_log: false)
+    app.get("/", fn(req) {
+        return web.render("home.glaze", { title: "Home" })
+    })
+    app.get("/about", fn(req) {
+        return web.render("about.glaze", {})
+    })
+    app.get("/quit", fn(req) {
+        os.exit(0)
+        return web.text("bye")
+    })
+    let port = os.env("PORT") ?? "8080"
+    try app.listen("127.0.0.1:${port}")
+}

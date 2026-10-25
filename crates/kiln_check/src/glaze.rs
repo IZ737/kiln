@@ -83,6 +83,33 @@ impl Checker {
                 self.bind(&p.name.name, p.name.span, ty, false, None);
             }
         }
+        for import in &glaze.css {
+            if string_literal(&import.path).is_none() {
+                self.error(Diagnostic::error(
+                    codes::TYPE_MISMATCH,
+                    "the stylesheet must be a file name in quotes, such as `\"site.css\"`",
+                    import.path.span,
+                ));
+            }
+            if let Some(name) = &import.module {
+                let classes = self
+                    .css_modules
+                    .get(file)
+                    .and_then(|m| m.get(&name.name))
+                    .cloned();
+                let ty = match classes {
+                    Some(classes) => {
+                        let string = self.prim("String");
+                        let mut fields: Vec<(String, Ty)> =
+                            classes.into_iter().map(|c| (c, string.clone())).collect();
+                        fields.sort_by(|a, b| a.0.cmp(&b.0));
+                        Ty::Record(fields)
+                    }
+                    None => Ty::Unknown,
+                };
+                self.bind(&name.name, name.span, ty, false, None);
+            }
+        }
         for state in &glaze.states {
             let ty = self.local_value(state);
             self.bind(&state.name.name, state.name.span, ty, true, None);
@@ -224,6 +251,21 @@ impl Checker {
     }
 
     fn check_attr(&mut self, attr: &Attr) {
+        // `ui={{ p: space.md }}` styles the element.
+        if attr.name.name == "ui" {
+            match &attr.value {
+                AttrValue::Expr(e) => {
+                    let ui = self.prim("Ui");
+                    self.check(e, &ui);
+                }
+                _ => self.error(Diagnostic::error(
+                    codes::BAD_STYLE,
+                    "`ui` takes a style: `ui={{ p: space.md }}`",
+                    attr.span,
+                )),
+            }
+            return;
+        }
         match &attr.value {
             AttrValue::Flag => {}
             AttrValue::Text(parts) => {

@@ -362,6 +362,8 @@ pub struct Glaze {
     pub states: Vec<LocalDecl>,
     /// `{% layout "base.glaze" title: post.title %}`
     pub layout: Option<Layout>,
+    /// `{% css "site.css" %}` and `{% css module styles from "card.module.css" %}`
+    pub css: Vec<CssImport>,
     pub nodes: Vec<Node>,
     /// Where each `{% tag %}` and `{# comment #}` is. A line that holds
     /// only these renders as nothing, not as a blank line.
@@ -412,6 +414,17 @@ pub struct LocalDecl {
     pub name: Ident,
     pub ty: Option<TypeExpr>,
     pub value: Expr,
+    pub span: Span,
+}
+
+/// `{% css "site.css" %}` uses a stylesheet; `{% css module styles from
+/// "card.module.css" %}` uses a CSS Module, whose class names are fields
+/// of `styles`.
+#[derive(Clone, Debug, PartialEq)]
+pub struct CssImport {
+    pub module: Option<Ident>,
+    /// The file, a string literal relative to the glaze.
+    pub path: Expr,
     pub span: Span,
 }
 

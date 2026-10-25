@@ -16,6 +16,7 @@ kiln_diagnostics.workspace = true
 kiln_syntax.workspace = true
 kiln_check.workspace = true
 kiln_ir.workspace = true
+kiln_css.workspace = true
 kiln_codegen.workspace = true
 kiln_native.workspace = true
 serde_json.workspace = true

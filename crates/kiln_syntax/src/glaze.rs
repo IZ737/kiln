@@ -83,6 +83,7 @@ enum Tag {
     State(LocalDecl),
     Let(LocalDecl),
     Layout(Layout),
+    Css(CssImport),
     Slot(Option<Ident>),
     Fill(Ident),
     If(Expr),
@@ -546,6 +547,32 @@ impl GlazeParser<'_> {
                 }
                 Tag::Layout(Layout { path, args, span })
             }),
+            "css" => self.parse_code(tokens, |p| {
+                let module = match p.peek() {
+                    TokenKind::Ident(w) if w == "module" => {
+                        p.bump();
+                        let name = p.expect_ident("a name for the module's classes");
+                        match p.peek() {
+                            TokenKind::Ident(w) if w == "from" => {
+                                p.bump();
+                            }
+                            _ => {
+                                let found = p.peek().to_string();
+                                let at = p.span();
+                                p.error(Diagnostic::error(
+                                    codes::EXPECTED_TOKEN,
+                                    format!("expected `from`, found {found}"),
+                                    at,
+                                ));
+                            }
+                        }
+                        Some(name)
+                    }
+                    _ => None,
+                };
+                let path = p.parse_expr();
+                Tag::Css(CssImport { module, path, span })
+            }),
             "slot" => {
                 let name = self.parse_code(tokens, |p| {
                     matches!(p.peek(), TokenKind::Ident(_)).then(|| p.expect_ident("a slot name"))
@@ -635,7 +662,7 @@ impl GlazeParser<'_> {
             "each" | "foreach" => "use `{% for item in items %}`",
             "unless" => "use `{% if not condition %}`",
             "switch" | "when" => "use `{% match value %}` with `{% case pattern %}`",
-            _ => "the tags are `props`, `state`, `layout`, `slot`, `fill`, `let`, `if`, `else`, `for`, `empty`, `match`, `case` and `end`",
+            _ => "the tags are `props`, `state`, `layout`, `css`, `slot`, `fill`, `let`, `if`, `else`, `for`, `empty`, `match`, `case` and `end`",
         };
         self.error(
             Diagnostic::error(
@@ -692,6 +719,13 @@ impl GlazeParser<'_> {
                     ));
                 } else {
                     self.glaze.layout = Some(layout);
+                }
+            }
+            Tag::Css(import) => {
+                if top_level {
+                    self.glaze.css.push(import);
+                } else {
+                    misplaced(self, "css");
                 }
             }
             Tag::Let(decl) => nodes.push(Node::Let(decl)),

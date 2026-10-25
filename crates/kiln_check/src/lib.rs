@@ -9,13 +9,15 @@ mod checker;
 mod collect;
 mod glaze;
 pub mod ide;
+pub mod style;
 pub mod types;
 
 pub use glaze::ValueKind;
 
 use kiln_diagnostics::{Diagnostic, Span};
 use kiln_syntax::ast::{Glaze, Module};
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
+use std::rc::Rc;
 
 /// Type-checks a parsed file on its own. Call it only on a file without
 /// parse errors. `web.render` calls are not checked, because the glazes
@@ -57,6 +59,9 @@ pub struct Program {
     /// The type arguments of every use of a generic function or method, by
     /// the span of the call or name.
     pub instantiations: HashMap<Span, HashMap<String, types::Ty>>,
+    /// How to build each expression in a style, by its span. `Ui` and
+    /// style values are `String`s in the types above.
+    pub styles: HashMap<Span, style::StyleExpr>,
 }
 
 /// Type-checks a whole program for compiling.
@@ -64,11 +69,29 @@ pub fn check_program(module: &Module) -> Program {
     check_program_with_glazes(module, &[])
 }
 
+/// What an app's stylesheets tell the checker: the classes of CSS Modules
+/// and the design tokens.
+#[derive(Clone, Debug, Default)]
+pub struct Styling {
+    pub modules: CssModules,
+    pub tokens: style::Tokens,
+}
+
 /// Type-checks a whole program for compiling, with the glazes that its
 /// `web.render` calls name, so that their data is checked against the
 /// glazes' props. The glazes' own code is checked by [`check_app`].
 pub fn check_program_with_glazes(module: &Module, glazes: &[(&str, &Glaze)]) -> Program {
+    check_program_with_tokens(module, glazes, &style::Tokens::default())
+}
+
+/// [`check_program_with_glazes`], with the app's design tokens.
+pub fn check_program_with_tokens(
+    module: &Module,
+    glazes: &[(&str, &Glaze)],
+    tokens: &style::Tokens,
+) -> Program {
     let mut checker = checker::Checker::new();
+    checker.tokens = Rc::new(tokens.clone());
     checker.collect_module(module);
     if !glazes.is_empty() {
         checker.glazes = Some(Default::default());
@@ -78,6 +101,7 @@ pub fn check_program_with_glazes(module: &Module, glazes: &[(&str, &Glaze)]) -> 
     }
     checker.check_bodies(module);
     checker.zonk_recorded();
+    erase_styles(&mut checker);
     let imports = checker
         .imports
         .iter()
@@ -99,6 +123,82 @@ pub fn check_program_with_glazes(module: &Module, glazes: &[(&str, &Glaze)]) -> 
         expr_types: checker.expr_types,
         binding_types: checker.binding_types,
         instantiations: checker.instantiations,
+        styles: checker.styles,
+    }
+}
+
+/// Makes `Ui` and style values `String`s, which is what they are when the
+/// program runs.
+fn erase_styles(c: &mut checker::Checker) {
+    use types::{FnSig, FnTy, Ty};
+    let ui = c.global_types["Ui"];
+    let string = Ty::Adt(c.global_types["String"], Vec::new());
+    fn erase(ty: &Ty, ui: usize, string: &Ty) -> Ty {
+        let e = |t: &Ty| erase(t, ui, string);
+        match ty {
+            Ty::Adt(id, _) if *id == ui => string.clone(),
+            Ty::Style(_) => string.clone(),
+            Ty::Adt(id, args) => Ty::Adt(*id, args.iter().map(e).collect()),
+            Ty::Opt(inner) => Ty::Opt(Box::new(e(inner))),
+            Ty::Fn(f) => Ty::Fn(Rc::new(FnTy {
+                params: f.params.iter().map(e).collect(),
+                ret: e(&f.ret),
+                throws: f.throws.as_ref().map(e),
+            })),
+            Ty::Record(fields) => {
+                Ty::Record(fields.iter().map(|(n, t)| (n.clone(), e(t))).collect())
+            }
+            other => other.clone(),
+        }
+    }
+    let e = |t: &Ty| erase(t, ui, &string);
+    let sig = |s: &mut FnSig| {
+        for p in &mut s.params {
+            p.ty = e(&p.ty);
+        }
+        s.ret = e(&s.ret);
+        s.throws = s.throws.as_ref().map(e);
+    };
+    for t in c.expr_types.values_mut() {
+        *t = e(t);
+    }
+    for t in c.binding_types.values_mut() {
+        *t = e(t);
+    }
+    for map in c.instantiations.values_mut() {
+        for t in map.values_mut() {
+            *t = e(t);
+        }
+    }
+    for t in c.consts.values_mut() {
+        *t = e(t);
+    }
+    for s in c.global_fns.values_mut() {
+        sig(s);
+    }
+    for m in &mut c.modules {
+        for s in m.fns.values_mut() {
+            sig(s);
+        }
+    }
+    for adt in &mut c.adts {
+        for s in &mut adt.methods {
+            sig(s);
+        }
+        match &mut adt.kind {
+            types::AdtKind::Struct(fields) => {
+                for f in fields {
+                    f.ty = e(&f.ty);
+                }
+            }
+            types::AdtKind::Enum(variants) => {
+                for v in variants {
+                    for f in &mut v.fields {
+                        f.1 = e(&f.1);
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -109,6 +209,9 @@ pub struct AppDiagnostics {
     /// For each glaze, what each value it outputs is, by the span of the
     /// value's expression: what the compiler needs to render it.
     pub glaze_values: Vec<HashMap<Span, ValueKind>>,
+    /// The atomic CSS rules the app's styles use, by class name (see
+    /// [`style::stylesheet`]).
+    pub ui_rules: BTreeMap<String, style::UiRule>,
 }
 
 /// Type-checks the `.kiln` files and glazes of one directory together. The
@@ -118,24 +221,40 @@ pub struct AppDiagnostics {
 /// props of the glazes. Glazes are given with their file names, such as
 /// `"index.glaze"`. Call it only on files without parse errors.
 pub fn check_app(modules: &[&Module], glazes: &[(&str, &Glaze)]) -> AppDiagnostics {
-    AppDiagnostics {
-        modules: (0..modules.len())
-            .map(|i| sorted(module_checker(modules, glazes, i, false).diags))
-            .collect(),
-        ..check_glazes(modules, glazes)
-    }
+    check_app_with_css(modules, glazes, &Styling::default())
 }
 
-fn check_glazes(modules: &[&Module], glazes: &[(&str, &Glaze)]) -> AppDiagnostics {
+/// The class names of the CSS Modules glazes import, by glaze file name and
+/// then by the name each import gives them (`styles` in
+/// `{% css module styles from "card.module.css" %}`). Names are as Kiln
+/// fields: `card-title` is `card_title`.
+pub type CssModules = HashMap<String, HashMap<String, Vec<String>>>;
+
+/// [`check_app`], with what the app's stylesheets declare: the classes of
+/// the CSS Modules the glazes import, so that `styles.card` is checked (a
+/// module missing from them has no known classes, and any name in it is
+/// accepted), and the design tokens styles use.
+pub fn check_app_with_css(
+    modules: &[&Module],
+    glazes: &[(&str, &Glaze)],
+    css: &Styling,
+) -> AppDiagnostics {
     let mut out = AppDiagnostics {
         modules: Vec::new(),
         glazes: Vec::new(),
         glaze_values: Vec::new(),
+        ui_rules: BTreeMap::new(),
     };
+    for i in 0..modules.len() {
+        let checker = module_checker(modules, glazes, i, false, &css.tokens);
+        out.modules.push(sorted(checker.diags));
+        out.ui_rules.extend(checker.ui_rules);
+    }
     for i in 0..glazes.len() {
-        let checker = glaze_checker(modules, glazes, i, false);
+        let checker = glaze_checker(modules, glazes, i, false, css);
         out.glazes.push(sorted(checker.diags));
         out.glaze_values.push(checker.glaze_values);
+        out.ui_rules.extend(checker.ui_rules);
     }
     out
 }
@@ -148,8 +267,10 @@ fn module_checker(
     glazes: &[(&str, &Glaze)],
     i: usize,
     analyze: bool,
+    tokens: &style::Tokens,
 ) -> checker::Checker {
     let mut checker = checker::Checker::new();
+    checker.tokens = Rc::new(tokens.clone());
     checker.completing = analyze;
     // Each file's errors are reported with that file only.
     let mut own = Vec::new();
@@ -210,9 +331,14 @@ fn glaze_checker(
     glazes: &[(&str, &Glaze)],
     i: usize,
     analyze: bool,
+    css: &Styling,
 ) -> checker::Checker {
     let (file, glaze) = glazes[i];
     let mut checker = checker::Checker::new();
+    checker.tokens = Rc::new(css.tokens.clone());
+    if let Some(m) = css.modules.get(file) {
+        checker.css_modules.insert(file.to_string(), m.clone());
+    }
     checker.completing = analyze;
     for module in modules {
         checker.collect_module(module);

@@ -1,0 +1,20 @@
+/* The navigation's lists. A CSS Module: the glazes use these classes as
+   `nav.list` and `nav.heading`, renamed so they cannot clash. */
+
+.list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+
+.heading {
+    font-size: 0.75rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    opacity: 0.7;
+    margin: 0 0 0.25rem;
+}
+
+.item {
+    display: block;
+}

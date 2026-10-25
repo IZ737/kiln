@@ -1,0 +1,17 @@
+GET / HTTP/1.1
+###
+GET /about HTTP/1.1
+###
+GET /_kiln/app-6cb3pr.css HTTP/1.1
+###
+GET /_kiln/site-orgjxb.css HTTP/1.1
+###
+GET /_kiln/reset-jmq9e2.css HTTP/1.1
+###
+GET /_kiln/dot-t915x7.svg HTTP/1.1
+###
+GET /static/robots.txt HTTP/1.1
+###
+GET /static/../main.kiln HTTP/1.1
+###
+GET /quit HTTP/1.1

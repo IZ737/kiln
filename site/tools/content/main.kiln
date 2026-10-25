@@ -1,0 +1,111 @@
+// Writes `site/content.kiln`, the documentation pages the site carries,
+// from the Markdown in `docs/`. Run it from the repository's root after
+// changing the docs:
+//
+//     kiln run site/tools/content
+//
+// Each page's lines become string literals, so the site needs no files
+// next to it. Links to other pages stay relative, and the site serves them
+// without `.md`; links to the repository's other files go to GitHub.
+import fs, io
+
+struct Source {
+    // The page's path on the site, under `/docs/`.
+    path: String
+    section: String
+}
+
+fn sources() -> List<Source> {
+    return [
+        Source(path: "README", section: "Documentation"),
+        Source(path: "reference/syntax", section: "Language reference"),
+        Source(path: "reference/types", section: "Language reference"),
+        Source(path: "reference/glazes", section: "Language reference"),
+        Source(path: "reference/stdlib", section: "Language reference"),
+        Source(path: "guides/editors", section: "Guides"),
+        Source(path: "design", section: "Project"),
+        Source(path: "vision", section: "Project"),
+        Source(path: "plans/phase-2.5", section: "Plans"),
+        Source(path: "plans/phase-3", section: "Plans"),
+        Source(path: "plans/phase-4", section: "Plans"),
+        Source(path: "plans/phase-5", section: "Plans"),
+        Source(path: "plans/phase-6", section: "Plans"),
+        Source(path: "plans/runtime-rust", section: "Plans"),
+        Source(path: "plans/testing", section: "Plans"),
+    ]
+}
+
+const REPO: String = "https://github.com/IZ737/kiln/blob/main/"
+
+// A Kiln string literal with `text` in it.
+fn quote(text: String) -> String {
+    let escaped = text
+        .replace("\\", "\\\\")
+        .replace("\"", "\\\"")
+        .replace("$", "\\$")
+        .replace("\t", "\\t")
+        .replace("\r", "")
+    return "\"${escaped}\""
+}
+
+// The repository path `target` names, from a file in `dir`.
+fn resolve(dir: String, target: String) -> String {
+    let parts: List<String> = []
+    for p in dir.split("/").concat(target.split("/")) {
+        if p == ".." {
+            parts.pop()
+        } else if p != "." and p != "" {
+            parts.push(p)
+        }
+    }
+    return parts.join("/")
+}
+
+// The link target as the site needs it.
+fn link(dir: String, target: String, pages: List<String>) -> String {
+    if target.starts_with("#") or target.contains("://") or target.starts_with("mailto:") {
+        return target
+    }
+    let hash = target.index_of("#") ?? target.len()
+    let path = resolve(dir, target.slice(0, hash))
+    let fragment = target.slice(hash, target.len())
+    if path == "README.md" or pages.contains(path) {
+        return target
+    }
+    return "${REPO}${path}${fragment}"
+}
+
+// The line with its relative links to files that are not pages made
+// absolute.
+fn links(line: String, dir: String, pages: List<String>) -> String {
+    let pieces = line.split("](")
+    var out = pieces.get(0) ?? ""
+    for piece in pieces.skip(1) {
+        let end = piece.index_of(")") ?? piece.len()
+        let target = piece.slice(0, end)
+        out = "${out}](${link(dir, target, pages)}${piece.slice(end, piece.len())}"
+    }
+    return out
+}
+
+fn main() ! {
+    let pages = sources().map(fn(s) { "docs/${s.path}.md" })
+    var out = "// Generated from docs/ by `kiln run site/tools/content`. Do not edit.\n\nfn doc_sources() -> List<DocSource> {\n    return [\n"
+    for s in sources() {
+        let file = "docs/${s.path}.md"
+        let dir = resolve(file, "..")
+        out = "${out}        DocSource(path: ${quote(s.path)}, section: ${quote(s.section)}, lines: [\n"
+        var fenced = false
+        for line in try fs.read_lines(file) {
+            if line.trim_start().starts_with("```") {
+                fenced = not fenced
+            }
+            let fixed = if fenced { line } else { links(line, dir, pages) }
+            out = "${out}            ${quote(fixed)},\n"
+        }
+        out = "${out}        ]),\n"
+    }
+    out = "${out}    ]\n}\n"
+    try fs.write("site/content.kiln", out)
+    io.print_err("wrote site/content.kiln: ${sources().len()} pages")
+}

@@ -1,0 +1,54 @@
+// Typed styles: a Finish (an ordinary function returning styles), a
+// responsive card with hover and focus states, styles chosen by `if` and
+// `match`, and `ui.merge`, where later styles win. Tokens come from
+// design.css.
+import web, os
+
+enum Tone {
+    Plain
+    Accent
+}
+
+struct CardFinish {
+    root: Ui
+    title: Ui
+}
+
+fn button(tone: Tone) -> Ui {
+    let base = ui({ px: space.md, py: space.sm, rounded: radius.card, weight: .semibold })
+    let look = match tone {
+        Tone.Plain => ui({ bg: color.surface, fg: color.text })
+        Tone.Accent => ui({ bg: color.accent, fg: color.surface, hover: { opacity: 0.9 } })
+    }
+    return ui.merge(base, look)
+}
+
+fn card(featured: Bool) -> CardFinish {
+    return CardFinish(
+        root: ui({
+            grid: true,
+            cols: 1,
+            gap: space.md,
+            p: space.lg,
+            bg: color.surface,
+            border: true,
+            borderColor: if featured { color.accent } else { .transparent },
+            at: { tablet: { cols: 2 }, desktop: { cols: 3, p: "2.5rem" } },
+        }),
+        title: ui({ textSize: if featured { .xl } else { .lg }, weight: .bold, focusVisible: { underline: true } }),
+    )
+}
+
+fn main() ! {
+    let app = web.app(access_log: false)
+    app.get("/", fn(req) {
+        let featured = req.query("featured") != none
+        return web.render("page.glaze", { finish: card(featured), cta: button(if featured { Tone.Accent } else { Tone.Plain }) })
+    })
+    app.get("/quit", fn(req) {
+        os.exit(0)
+        return web.text("bye")
+    })
+    let port = os.env("PORT") ?? "8080"
+    try app.listen("127.0.0.1:${port}")
+}

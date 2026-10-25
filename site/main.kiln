@@ -1,0 +1,118 @@
+// Kiln's documentation site, written in Kiln: routes here, pages as
+// glazes, styles as Finishes in theme.kiln, and the reference pages from
+// the Markdown in docs/ (see content.kiln). `kiln run site` serves it.
+import web, os, markdown
+
+// A page of docs/, as content.kiln carries it.
+struct DocSource {
+    // Where it is under `/docs/`, such as `reference/syntax`.
+    path: String
+    // The heading it is listed under.
+    section: String
+    lines: List<String>
+}
+
+struct DocPage {
+    title: String
+    html: String
+}
+
+struct NavLink {
+    href: String
+    label: String
+}
+
+struct NavGroup {
+    title: String
+    links: List<NavLink>
+}
+
+fn title_of(source: DocSource) -> String {
+    let heading = source.lines.find(fn(l) { l.starts_with("# ") }) ?? "# ${source.path}"
+    return heading.slice(2, heading.len())
+}
+
+fn href_of(source: DocSource) -> String {
+    return if source.path == "README" { "/docs/" } else { "/docs/${source.path}" }
+}
+
+// The links to the site's pages, in groups.
+fn nav_groups() -> List<NavGroup> {
+    let groups = [NavGroup(title: "Start", links: [
+        NavLink(href: "/", label: "Home"),
+        NavLink(href: "/install", label: "Install"),
+        NavLink(href: "/start", label: "Getting started"),
+    ])]
+    for source in doc_sources() {
+        let link = NavLink(href: href_of(source), label: title_of(source))
+        let last = groups.last()
+        if last is some(g) and g.title == source.section {
+            g.links.push(link)
+        } else {
+            groups.push(NavGroup(title: source.section, links: [link]))
+        }
+    }
+    return groups
+}
+
+// The page's HTML. Links between the Markdown files lose their `.md`, so
+// they go to the pages the site serves.
+fn doc_page(path: String) -> DocPage? {
+    let found = doc_sources().find(fn(s) { s.path == path })
+    if found is some(source) {
+        let html = markdown.to_html(source.lines.join("\n"))
+            .replace(".md#", "#")
+            .replace(".md\"", "\"")
+        return DocPage(title: title_of(source), html: html)
+    }
+    return none
+}
+
+fn show_doc(path: String) -> web.Response ! {
+    let found = doc_page(path)
+    if found is some(page) {
+        return web.render("doc.glaze", { page: page, current: if path == "README" { "/docs/" } else { "/docs/${path}" } })
+    }
+    throw web.error(404, "There is no page /docs/${path}.")
+}
+
+// The code on the getting started page.
+fn samples() -> { main: String, glaze: String } {
+    return {
+        main: [
+            "import web",
+            "",
+            "fn main() ! {",
+            "    let app = web.app()",
+            "    app.get(\"/\", fn(req) { web.render(\"home.glaze\", { name: \"kiln\" }) })",
+            "    app.get(\"/hello/{name}\", fn(req, name) { web.text(\"Hello, \${name}!\") })",
+            "    try app.listen(\"127.0.0.1:8080\")",
+            "}",
+        ].join("\n"),
+        glaze: [
+            "{% props name: String %}",
+            "<h1 ui={{ fg: .current, weight: .bold }}>Hello from {name}</h1>",
+        ].join("\n"),
+    }
+}
+
+fn main() ! {
+    let app = web.app()
+    app.get("/", fn(req) { web.render("home.glaze") })
+    app.get("/install", fn(req) { web.render("install.glaze") })
+    app.get("/start", fn(req) { web.render("start.glaze") })
+    app.get("/docs", fn(req) { web.redirect("/docs/", 301) })
+    app.get("/docs/", fn(req) { try show_doc("README") })
+    app.get("/docs/README", fn(req) { web.redirect("/docs/", 301) })
+    app.get("/docs/{page}", fn(req, page) { try show_doc(page) })
+    app.get("/docs/{dir}/{page}", fn(req, dir, page) { try show_doc("${dir}/${page}") })
+    // The repository's README, which the docs link to.
+    app.get("/README", fn(req) { web.redirect("https://github.com/IZ737/kiln#readme") })
+    app.on_error(fn(req, status, message) {
+        let r = web.render("error.glaze", { status: status, message: message })
+        return web.Response(status: status, headers: r.headers, body: r.body)
+    })
+    let port = os.env("PORT") ?? "8080"
+    let host = os.env("HOST") ?? "127.0.0.1"
+    try app.listen("${host}:${port}")
+}

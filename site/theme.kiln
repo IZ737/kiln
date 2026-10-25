@@ -1,0 +1,159 @@
+// The site's two themes. A theme is a `SiteTheme`: the Finishes that
+// style each part of the pages, and a `.theme-<name>` rule in site.css with
+// its design tokens. The glazes take their styles from `active_theme()`,
+// so changing that one function and building again restyles the whole
+// site, layout included.
+
+// The one place that chooses the theme.
+fn active_theme() -> SiteTheme {
+    return forge()
+}
+
+struct SiteTheme {
+    // The logo for the theme's header background.
+    logo: String
+    shell: fn() -> ShellFinish
+    nav_link: fn(Bool) -> Ui
+    hero: fn() -> HeroFinish
+    card: fn(Bool) -> CardFinish
+    button: fn(Tone) -> Ui
+}
+
+// The parts every page has.
+struct ShellFinish {
+    body: Ui
+    header: Ui
+    frame: Ui
+    sidebar: Ui
+    // The navigation's groups, and each group's links.
+    nav: Ui
+    nav_group: Ui
+    main: Ui
+    footer: Ui
+}
+
+struct HeroFinish {
+    root: Ui
+    title: Ui
+    lead: Ui
+    actions: Ui
+}
+
+struct CardFinish {
+    root: Ui
+    title: Ui
+}
+
+enum Tone {
+    Primary
+    Quiet
+}
+
+// Forge: charcoal and terracotta, with the navigation in a sidebar on
+// wide screens.
+fn forge() -> SiteTheme {
+    return SiteTheme(
+        logo: "/static/kiln-horizontal-dark.svg",
+        shell: forge_shell,
+        nav_link: forge_nav_link,
+        hero: forge_hero,
+        card: forge_card,
+        button: forge_button,
+    )
+}
+
+fn forge_shell() -> ShellFinish {
+    return ShellFinish(
+        body: ui({ theme: .forge, bg: color.page, fg: color.text, font: font.body, lineHeight: leading.body }),
+        header: ui({ flex: true, items: .center, justify: .between, px: space.lg, py: space.md, bg: color.chrome, borderColor: color.line }),
+        frame: ui({ grid: true, cols: 1, at: { wide: { cols: "16rem minmax(0, 1fr)" } } }),
+        sidebar: ui({ p: space.lg, bg: color.chrome, at: { wide: { minH: "100vh" } } }),
+        nav: ui({ flex: true, direction: .column, gap: space.lg }),
+        nav_group: ui({ flex: true, direction: .column }),
+        main: ui({ px: space.lg, py: space.xl, maxW: size.page, w: .full }),
+        footer: ui({ px: space.lg, py: space.lg, fg: color.muted, textSize: .sm, bg: color.chrome }),
+    )
+}
+
+fn forge_nav_link(current: Bool) -> Ui {
+    let base = ui({ px: space.sm, py: space.xs, rounded: radius.control, fg: color.muted, hover: { fg: color.text, bg: color.raised } })
+    return if current { ui.merge(base, ui({ fg: color.text, bg: color.raised, weight: .semibold })) } else { base }
+}
+
+fn forge_hero() -> HeroFinish {
+    return HeroFinish(
+        root: ui({ py: space.xl, maxW: size.prose }),
+        title: ui({ font: font.display, textSize: .hero, lineHeight: leading.tight, weight: .bold, mt: 0, mb: space.md }),
+        lead: ui({ textSize: .lg, fg: color.muted, mb: space.lg }),
+        actions: ui({ flex: true, wrap: true, gap: space.sm }),
+    )
+}
+
+fn forge_card(featured: Bool) -> CardFinish {
+    return CardFinish(
+        root: ui({ p: space.lg, rounded: radius.card, bg: color.raised, border: true, borderColor: if featured { color.accent } else { color.line } }),
+        title: ui({ font: font.display, textSize: .lg, weight: .semibold, mb: space.xs }),
+    )
+}
+
+fn forge_button(tone: Tone) -> Ui {
+    let base = ui({ px: space.md, py: space.sm, rounded: radius.control, weight: .semibold, transition: motion.quick })
+    return ui.merge(base, match tone {
+        Tone.Primary => ui({ bg: color.accent, fg: color.on_accent, hover: { opacity: 0.9 } })
+        Tone.Quiet => ui({ border: true, borderColor: color.line, fg: color.text, hover: { bg: color.raised } })
+    })
+}
+
+// Paper: off-white and ink, one centred column, with the navigation in a
+// row above the page.
+fn paper() -> SiteTheme {
+    return SiteTheme(
+        logo: "/static/kiln-horizontal.svg",
+        shell: paper_shell,
+        nav_link: paper_nav_link,
+        hero: paper_hero,
+        card: paper_card,
+        button: paper_button,
+    )
+}
+
+fn paper_shell() -> ShellFinish {
+    return ShellFinish(
+        body: ui({ theme: .paper, bg: color.page, fg: color.text, font: font.body, lineHeight: leading.body }),
+        header: ui({ flex: true, direction: .column, items: .center, gap: space.sm, py: space.lg, borderColor: color.line }),
+        frame: ui({ flex: true, direction: .column, items: .center }),
+        sidebar: ui({ w: .full, px: space.md, py: space.sm, bg: color.chrome }),
+        nav: ui({ flex: true, wrap: true, justify: .center, items: .baseline, gap: space.md, maxW: size.page, mx: .auto }),
+        nav_group: ui({ flex: true, wrap: true, items: .baseline, gap: space.sm }),
+        main: ui({ px: space.md, py: space.xl, maxW: size.prose, w: .full }),
+        footer: ui({ py: space.lg, align: .center, fg: color.muted, textSize: .sm }),
+    )
+}
+
+fn paper_nav_link(current: Bool) -> Ui {
+    let base = ui({ px: space.xs, fg: color.muted, underline: false, hover: { fg: color.accent, underline: true } })
+    return if current { ui.merge(base, ui({ fg: color.accent, underline: true })) } else { base }
+}
+
+fn paper_hero() -> HeroFinish {
+    return HeroFinish(
+        root: ui({ py: space.lg, align: .center }),
+        title: ui({ font: font.display, textSize: .hero, lineHeight: leading.tight, weight: .normal, mt: 0, mb: space.sm }),
+        lead: ui({ textSize: .lg, fg: color.muted, mb: space.lg }),
+        actions: ui({ flex: true, justify: .center, gap: space.md }),
+    )
+}
+
+fn paper_card(featured: Bool) -> CardFinish {
+    return CardFinish(
+        root: ui({ py: space.md, borderColor: color.line, bg: if featured { color.chrome } else { .transparent }, px: if featured { space.md } else { 0 } }),
+        title: ui({ font: font.display, textSize: .lg, weight: .normal, mb: space.xs }),
+    )
+}
+
+fn paper_button(tone: Tone) -> Ui {
+    return match tone {
+        Tone.Primary => ui({ fg: color.accent, underline: true, weight: .semibold })
+        Tone.Quiet => ui({ fg: color.text, underline: true })
+    }
+}

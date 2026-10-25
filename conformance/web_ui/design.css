@@ -1,0 +1,14 @@
+:root {
+    --color-surface: #faf9f6;
+    --color-text: #282828;
+    --color-accent: #c65a34;
+    --space-sm: 0.5rem;
+    --space-md: 1rem;
+    --space-lg: 1.5rem;
+    --radius-card: 0.75rem;
+    --font-body: system-ui, sans-serif;
+    --text-lg: 1.25rem;
+    --text-xl: 1.5rem;
+    --breakpoint-tablet: 640px;
+    --breakpoint-desktop: 1024px;
+}

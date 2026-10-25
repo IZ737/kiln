@@ -1,0 +1,18 @@
+{% layout "layout.glaze" title: "Getting started", current: "/start" %}
+<article class="prose">
+<h1>Getting started</h1>
+<p>A Kiln program is a folder of <code>.kiln</code> files, with the glazes and stylesheets its pages use next to them.</p>
+<h2 id="a-server">A server</h2>
+<p>Make a folder <code>hello</code> with this <code>main.kiln</code>:</p>
+<pre><code>{samples().main}</code></pre>
+<p>and this <code>home.glaze</code>:</p>
+<pre><code>{samples().glaze}</code></pre>
+<h2 id="run-it">Run it</h2>
+<pre><code>kiln run hello</code></pre>
+<p>and open <a href="http://127.0.0.1:8080">127.0.0.1:8080</a>. <code>kiln check hello</code> reports every error in the program and its glazes at once, and <code>kiln build hello</code> makes an executable you can copy to a server.</p>
+<h2 id="next">Next</h2>
+<ul>
+<li><a href="/docs/reference/syntax">The language</a>, its <a href="/docs/reference/types">types</a> and its <a href="/docs/reference/stdlib">standard library</a></li>
+<li><a href="/docs/reference/glazes">Glazes</a>: pages, components, layouts and styles</li>
+</ul>
+</article>

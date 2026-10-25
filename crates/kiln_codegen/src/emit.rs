@@ -307,7 +307,7 @@ impl<'a> Gen<'a> {
                 }
             }
             Ty::Opt(_) | Ty::Fn(_) | Ty::Record(_) => Rep::Ptr,
-            Ty::Param(_) | Ty::Var(_) | Ty::Any | Ty::Rest | Ty::Unknown => Rep::Kv,
+            Ty::Param(_) | Ty::Var(_) | Ty::Any | Ty::Rest | Ty::Unknown | Ty::Style(_) => Rep::Kv,
             Ty::Unit | Ty::Never => Rep::Void,
         }
     }
@@ -1601,6 +1601,22 @@ impl<'a> Gen<'a> {
             ("html", "escape" | "safe_url") => {
                 let call = format!("k_rt_html_{name}({})", arg(0));
                 (self.store(&call, ty), false)
+            }
+            ("ui", "merge") => {
+                let call = format!("k_rt_ui_merge({}, {})", arg(0), arg(1));
+                (self.store(&call, ty), false)
+            }
+            ("markdown", "to_html") => {
+                let call = format!("k_rt_markdown_to_html({})", arg(0));
+                (self.store(&call, ty), false)
+            }
+            ("base64", "encode") => {
+                let call = format!("k_rt_base64_encode({})", arg(0));
+                (self.store(&call, ty), false)
+            }
+            ("base64", "decode") => {
+                let call = format!("k_base64_decode({})", arg(0));
+                (self.store(&call, ty), true)
             }
             ("json", "encode") => {
                 let d = self.desc(&tys[0]);

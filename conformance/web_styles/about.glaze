@@ -1,0 +1,2 @@
+{% layout "layout.glaze" title: "About" %}
+<p>Made in Kiln.</p>

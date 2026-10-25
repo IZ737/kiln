@@ -1,0 +1,17 @@
+{% props theme: SiteTheme, posts: List<Post> %}
+{% css "theme.css" %}
+{% let page = theme.page() %}
+<!doctype html>
+<html>
+<head>
+<title>Pots</title>
+</head>
+<body ui={page.root}>
+<main ui={page.list}>
+{% for post in posts %}
+<PostCard theme={theme} post={post} featured={post.title == "Glazes"} />
+{% end %}
+</main>
+<a href="/more" ui={theme.button(Tone.Loud)}>More</a>
+</body>
+</html>

@@ -1,0 +1,88 @@
+### GET / HTTP/1.1
+HTTP/1.1 200 OK
+content-type: text/html; charset=utf-8
+content-length: 347
+connection: close
+
+<!doctype html>
+<html data-k-69k6ea>
+<head data-k-69k6ea>
+<title data-k-69k6ea>Home</title>
+<link rel="stylesheet" href="/_kiln/app-6cb3pr.css"></head>
+<body data-k-69k6ea>
+<h1 data-k-69k6ea class="title">Home</h1>
+<article data-k-710hdw class="card_0Hz07q">
+<h2 data-k-710hdw class="title card-title_0Hz07q">A pot</h2>
+</article>
+</body>
+</html>
+### GET /about HTTP/1.1
+HTTP/1.1 200 OK
+content-type: text/html; charset=utf-8
+content-length: 254
+connection: close
+
+<!doctype html>
+<html data-k-69k6ea>
+<head data-k-69k6ea>
+<title data-k-69k6ea>About</title>
+<link rel="stylesheet" href="/_kiln/app-6cb3pr.css"></head>
+<body data-k-69k6ea>
+<h1 data-k-69k6ea class="title">About</h1>
+<p>Made in Kiln.</p>
+</body>
+</html>
+### GET /_kiln/app-6cb3pr.css HTTP/1.1
+HTTP/1.1 200 OK
+content-type: text/css; charset=utf-8
+cache-control: public, max-age=31536000, immutable
+x-content-type-options: nosniff
+content-length: 412
+connection: close
+
+@layer kiln.global,kiln.modules,kiln.scoped,kiln.ui;@import "/_kiln/site-orgjxb.css" layer(kiln.global);@layer kiln.modules{.card_0Hz07q{padding:1rem}.card-title_0Hz07q{font-weight:700}.card_0Hz07q:hover .card-title_0Hz07q{color:#c65a34}}@layer kiln.scoped{.title[data-k-710hdw]{color:#1f232b}.title h2[data-k-710hdw]{margin:0}.title[data-k-69k6ea]{color:#c65a34}body>h1:hover[data-k-69k6ea]:before{content:"#"}}
+### GET /_kiln/site-orgjxb.css HTTP/1.1
+HTTP/1.1 200 OK
+content-type: text/css; charset=utf-8
+cache-control: public, max-age=31536000, immutable
+x-content-type-options: nosniff
+content-length: 77
+connection: close
+
+@import "/_kiln/reset-jmq9e2.css";body{background:url(/_kiln/dot-t915x7.svg)}
+### GET /_kiln/reset-jmq9e2.css HTTP/1.1
+HTTP/1.1 200 OK
+content-type: text/css; charset=utf-8
+cache-control: public, max-age=31536000, immutable
+x-content-type-options: nosniff
+content-length: 24
+connection: close
+
+*{box-sizing:border-box}
+### GET /_kiln/dot-t915x7.svg HTTP/1.1
+HTTP/1.1 200 OK
+content-type: image/svg+xml
+cache-control: public, max-age=31536000, immutable
+x-content-type-options: nosniff
+content-length: 97
+connection: close
+
+<svg xmlns="http://www.w3.org/2000/svg" width="2" height="2"><circle cx="1" cy="1" r="1"/></svg>
+### GET /static/robots.txt HTTP/1.1
+HTTP/1.1 200 OK
+content-type: text/plain; charset=utf-8
+cache-control: no-cache
+x-content-type-options: nosniff
+content-length: 23
+connection: close
+
+User-agent: *
+Allow: /
+### GET /static/../main.kiln HTTP/1.1
+HTTP/1.1 404 Not Found
+content-type: text/plain; charset=utf-8
+content-length: 9
+connection: close
+
+Not Found
+### GET /quit HTTP/1.1

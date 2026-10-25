@@ -1,0 +1,112 @@
+// Themes: a theme is a value of a struct of Finishes, the functions that
+// style a page's parts, and a `.theme-<name>` rule in theme.css that sets
+// the design tokens. The same glazes and content render in either theme;
+// `active_theme()` chooses one in one place.
+import web, os
+
+struct Post {
+    title: String
+    summary: String
+}
+
+enum Tone {
+    Plain
+    Loud
+}
+
+struct PageFinish {
+    root: Ui
+    list: Ui
+}
+
+struct CardFinish {
+    root: Ui
+    title: Ui
+}
+
+struct SiteTheme {
+    page: fn() -> PageFinish
+    card: fn(Bool) -> CardFinish
+    button: fn(Tone) -> Ui
+}
+
+fn editorial() -> SiteTheme {
+    return SiteTheme(page: editorial_page, card: editorial_card, button: editorial_button)
+}
+
+fn editorial_page() -> PageFinish {
+    return PageFinish(
+        root: ui({ theme: .editorial, bg: color.surface, fg: color.text, font: font.body, p: space.lg }),
+        list: ui({ grid: true, cols: 1, gap: space.lg, at: { wide: { cols: 2 } } }),
+    )
+}
+
+fn editorial_card(featured: Bool) -> CardFinish {
+    return CardFinish(
+        root: ui({ p: space.md, border: true, borderColor: if featured { color.accent } else { color.muted } }),
+        title: ui({ font: font.heading, textSize: .lg, weight: .normal }),
+    )
+}
+
+fn editorial_button(tone: Tone) -> Ui {
+    return match tone {
+        Tone.Plain => ui({ underline: true, fg: color.accent })
+        Tone.Loud => ui({ underline: true, fg: color.accent, weight: .bold })
+    }
+}
+
+fn vibrant() -> SiteTheme {
+    return SiteTheme(page: vibrant_page, card: vibrant_card, button: vibrant_button)
+}
+
+fn vibrant_page() -> PageFinish {
+    return PageFinish(
+        root: ui({ theme: .vibrant, bg: color.surface, fg: color.text, font: font.body, p: space.md }),
+        list: ui({ flex: true, direction: .column, gap: space.md }),
+    )
+}
+
+fn vibrant_card(featured: Bool) -> CardFinish {
+    let base = ui({ p: space.lg, rounded: radius.card, bg: color.muted })
+    return CardFinish(
+        root: if featured { ui.merge(base, ui({ bg: color.accent, fg: color.surface })) } else { base },
+        title: ui({ font: font.heading, textSize: .xl, weight: .black }),
+    )
+}
+
+fn vibrant_button(tone: Tone) -> Ui {
+    let base = ui({ px: space.md, py: space.sm, rounded: .full, bg: color.accent, fg: color.surface })
+    return match tone {
+        Tone.Plain => base
+        Tone.Loud => ui.merge(base, ui({ textSize: .lg, hover: { opacity: 0.8 } }))
+    }
+}
+
+// The one place that chooses the theme.
+fn active_theme() -> SiteTheme {
+    return editorial()
+}
+
+fn posts() -> List<Post> {
+    return [
+        Post(title: "Firing", summary: "Heat work and cones."),
+        Post(title: "Glazes", summary: "Ash, celadon and tenmoku."),
+    ]
+}
+
+fn main() ! {
+    let app = web.app(access_log: false)
+    app.get("/", fn(req) {
+        return web.render("home.glaze", { theme: active_theme(), posts: posts() })
+    })
+    // The same glazes in the other theme.
+    app.get("/vibrant", fn(req) {
+        return web.render("home.glaze", { theme: vibrant(), posts: posts() })
+    })
+    app.get("/quit", fn(req) {
+        os.exit(0)
+        return web.text("bye")
+    })
+    let port = os.env("PORT") ?? "8080"
+    try app.listen("127.0.0.1:${port}")
+}

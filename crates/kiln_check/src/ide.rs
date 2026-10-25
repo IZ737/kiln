@@ -7,7 +7,7 @@
 
 use crate::checker::show_type;
 use crate::types::*;
-use crate::{glaze_checker, module_checker};
+use crate::{glaze_checker, module_checker, Styling};
 use kiln_diagnostics::Span;
 use kiln_syntax::ast::{Glaze, Module};
 use std::collections::HashMap;
@@ -30,6 +30,20 @@ pub enum Ref {
     Module(ModId),
     /// A function of a standard library module.
     ModuleFn(ModId, String),
+    /// A key of a style, with the CSS it sets: `p`, `hover` or `at`.
+    StyleKey {
+        name: String,
+        css: String,
+    },
+    /// A design token, such as `space.md`, with its custom property
+    /// (`--space-md`) and value.
+    Token {
+        name: String,
+        property: String,
+        value: String,
+    },
+    /// A theme, by the name of its class: `theme-dark`.
+    Theme(String),
 }
 
 /// What may be written where the editor asked for completions.
@@ -48,6 +62,24 @@ pub enum Completion {
     Types,
     /// A type after `module.` where a type is written.
     ModuleTypes(ModId),
+    /// Keys, tokens or keywords in a style.
+    Style(Vec<StyleWord>),
+}
+
+/// A word that fits in a style, with what it means in CSS.
+#[derive(Clone, Debug, PartialEq)]
+pub struct StyleWord {
+    pub label: String,
+    pub detail: String,
+    pub kind: StyleWordKind,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum StyleWordKind {
+    Key,
+    Token,
+    Keyword,
+    Theme,
 }
 
 /// Which file of an app to analyze.
@@ -79,12 +111,17 @@ pub struct Analysis {
 }
 
 /// Analyzes one file of an app: the `.kiln` files and glazes of a directory,
-/// as `check_app` takes them. Unlike `check_app`, the files may have syntax
+/// as `check_app_with_css` takes them. Unlike `check_app`, the files may have syntax
 /// errors; whatever the parser recovered is analyzed.
-pub fn analyze_app(modules: &[&Module], glazes: &[(&str, &Glaze)], target: Target) -> Analysis {
+pub fn analyze_app(
+    modules: &[&Module],
+    glazes: &[(&str, &Glaze)],
+    target: Target,
+    styling: &Styling,
+) -> Analysis {
     let mut checker = match target {
-        Target::Module(i) => module_checker(modules, glazes, i, true),
-        Target::Glaze(i) => glaze_checker(modules, glazes, i, true),
+        Target::Module(i) => module_checker(modules, glazes, i, true, &styling.tokens),
+        Target::Glaze(i) => glaze_checker(modules, glazes, i, true, styling),
     };
     checker.zonk_recorded();
     let completion = checker.completion.take().map(|c| match c {

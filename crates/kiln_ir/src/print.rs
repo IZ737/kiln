@@ -70,6 +70,7 @@ impl<'a> Printer<'a> {
             Ty::Never => "Never".into(),
             Ty::Any => "Any".into(),
             Ty::Rest => "...".into(),
+            Ty::Style(_) => "Style".into(),
             Ty::Unknown => "?".into(),
         }
     }

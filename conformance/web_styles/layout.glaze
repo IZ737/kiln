@@ -1,0 +1,16 @@
+{% props title: String %}
+{% css "styles/site.css" %}
+<!doctype html>
+<html>
+<head>
+<title>{title}</title>
+</head>
+<body>
+<h1 class="title">{title}</h1>
+{% slot %}
+</body>
+</html>
+<style>
+.title { color: #C65A34; }
+body > h1:hover::before { content: "#"; }
+</style>

@@ -8,5 +8,6 @@ repository.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+kiln_css.workspace = true
 kiln_diagnostics.workspace = true
 kiln_syntax.workspace = true

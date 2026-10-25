@@ -308,6 +308,18 @@ crate's, in the runtime's Rust part. `safe_url` finds the scheme as
 browsers do, ignoring leading spaces and control characters and tabs or
 line breaks inside it, so `java\tscript:` is not safe either.
 
+## `base64`
+
+| Function | |
+| --- | --- |
+| `base64.encode(data) -> String` | The bytes of `data` in standard Base64, with `=` padding |
+| `base64.decode(text) -> String !` | The bytes `text` encodes; fails when it is not Base64 |
+
+The decoded bytes need not be UTF-8, so a decoded image can be a
+response's body. Programs carry their binary files (see
+[Styles](glazes.md#styles)) this way. The runtime uses the
+[base64](https://github.com/marshallpierce/rust-base64) crate.
+
 ## `json`
 
 JSON is derived from types when the program is compiled; there is no
@@ -359,6 +371,33 @@ escapes must be well formed (a `\u` surrogate needs its other half);
 encoding writes bytes of a string that are not UTF-8 as U+FFFD. Values
 nested past 128 levels in the type being read are rejected; nesting in
 members that are skipped has no limit and cannot overflow the stack.
+
+## `markdown`
+
+| Function | |
+| --- | --- |
+| `markdown.to_html(text) -> String` | The HTML for CommonMark text, with GitHub's tables, strikethrough and task lists |
+
+HTML written in the Markdown is shown as text, links and images keep only
+the URLs `html.safe_url` keeps, and headings get ids from their words
+(`## Getting started` is `<h2 id="getting-started">`), so `#getting-started`
+links to it. The result is safe to place in a glaze with `{raw ...}`:
+
+```kiln
+import markdown, web
+
+fn about(text: String) -> web.Response {
+    return web.render("page.glaze", { body: markdown.to_html(text) })
+}
+```
+
+```glaze
+{% props body: String %}
+<article>{raw body}</article>
+```
+
+The runtime uses the [pulldown-cmark](https://github.com/pulldown-cmark/pulldown-cmark)
+crate.
 
 ## Adding to the standard library
 

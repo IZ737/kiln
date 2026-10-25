@@ -1,0 +1,47 @@
+{% props title: String, current: String = "", description: String = "Kiln is a compiled, garbage-collected language for web servers and sites." %}
+{% css "site.css" %}
+{% css module nav from "nav.module.css" %}
+{% let theme = active_theme() %}
+{% let shell = theme.shell() %}
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content={description}>
+<title>{title} · Kiln</title>
+<link rel="icon" href="/static/favicon.png">
+</head>
+<body ui={shell.body}>
+<a class="skip" href="#content">Skip to the content</a>
+<header ui={shell.header}>
+<a href="/"><img src={theme.logo} alt="Kiln" width="132" height="40"></a>
+<div ui={{ flex: true, items: .center, gap: space.md }}>
+<a class="menu-link" href="#site-nav">Menu</a>
+<a href="https://github.com/IZ737/kiln" ui={theme.button(Tone.Quiet)}>GitHub</a>
+</div>
+</header>
+<div ui={shell.frame}>
+<nav id="site-nav" class="site-nav" ui={shell.sidebar} aria-label="Site">
+<div ui={shell.nav}>
+{% for group in nav_groups() %}
+<div ui={shell.nav_group}>
+<p class={nav.heading}>{group.title}</p>
+<ul class={nav.list} ui={shell.nav_group}>
+{% for link in group.links %}
+<li class={nav.item}><a href={link.href} ui={theme.nav_link(link.href == current)}>{link.label}</a></li>
+{% end %}
+</ul>
+</div>
+{% end %}
+</div>
+</nav>
+<main id="content" ui={shell.main}>
+{% slot %}
+</main>
+</div>
+<footer ui={shell.footer}>
+<p>Kiln is MIT licensed. This site is a Kiln program: its pages are glazes and its styles are Finishes.</p>
+</footer>
+</body>
+</html>

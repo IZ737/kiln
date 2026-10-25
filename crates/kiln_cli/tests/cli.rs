@@ -257,3 +257,153 @@ fn run_reports_a_program_stopped_by_a_signal() {
     assert!(stderr.contains("stopped by signal"), "{stderr}");
     std::fs::remove_dir_all(&dir).unwrap();
 }
+
+#[test]
+fn check_reports_css_errors_in_glazes() {
+    let dir = scratch("css-errors");
+    let app = dir.join("app");
+    std::fs::create_dir_all(&app).unwrap();
+    std::fs::write(
+        app.join("main.kiln"),
+        "import web\n\nfn page() -> web.Response {\n    web.render(\"page.glaze\", {})\n}\n",
+    )
+    .unwrap();
+    std::fs::write(app.join("card.module.css"), ".card { padding: 1px; }\n").unwrap();
+    std::fs::write(dir.join("outside.css"), "a { color: red; }\n").unwrap();
+    std::fs::write(
+        app.join("page.glaze"),
+        "{% css \"missing.css\" %}\n{% css \"../outside.css\" %}\n{% css module card from \"card.module.css\" %}\n<p class={card.nope}>hi</p>\n<style>\na { color: red; }}\n</style>\n",
+    )
+    .unwrap();
+    let out = kiln().args(["check", "--json"]).arg(&app).output().unwrap();
+    let report: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    let found: Vec<_> = report["diagnostics"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|d| {
+            (
+                d["code"].as_str().unwrap().to_string(),
+                d["start"]["line"].as_u64().unwrap(),
+            )
+        })
+        .collect();
+    let codes = |c: &str, l: u64| (c.to_string(), l);
+    assert_eq!(
+        found,
+        [
+            codes("E0312", 1),
+            codes("E0312", 2),
+            codes("E0208", 4),
+            codes("E0312", 7)
+        ],
+        "{report}"
+    );
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
+fn check_reports_bad_tokens_at_their_import() {
+    let dir = scratch("bad-tokens");
+    std::fs::write(
+        dir.join("main.kiln"),
+        "import web\n\nfn page() -> web.Response {\n    web.render(\"page.glaze\", {})\n}\n",
+    )
+    .unwrap();
+    std::fs::write(
+        dir.join("theme.css"),
+        ".theme-light { --color-accent: #c65a34; --color-text: #222; }\n.theme-dark { --color-accent: 2rem; }\n",
+    )
+    .unwrap();
+    std::fs::write(
+        dir.join("page.glaze"),
+        "<p>hi</p>\n{% css \"theme.css\" %}\n",
+    )
+    .unwrap();
+    let out = kiln().args(["check", "--json"]).arg(&dir).output().unwrap();
+    let report: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    let found: Vec<_> = report["diagnostics"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|d| {
+            (
+                d["code"].as_str().unwrap().to_string(),
+                d["start"]["line"].as_u64().unwrap(),
+                d["message"].as_str().unwrap().to_string(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        found,
+        [
+            (
+                "E0222".to_string(),
+                2,
+                "`--color-accent: 2rem` is not a valid `color` value".to_string()
+            ),
+            (
+                "E0222".to_string(),
+                2,
+                "theme `dark` does not set `--color-text`, which theme `light` sets".to_string()
+            ),
+        ],
+        "{report}"
+    );
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
+fn programs_serve_their_files_byte_for_byte() {
+    use std::io::{Read, Write};
+    let program = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../conformance/web_styles");
+    let dir = scratch("assets");
+    let exe = dir.join(if cfg!(windows) { "app.exe" } else { "app" });
+    let out = kiln()
+        .arg("build")
+        .arg(&program)
+        .arg("-o")
+        .arg(&exe)
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let port = std::net::TcpListener::bind("127.0.0.1:0")
+        .unwrap()
+        .local_addr()
+        .unwrap()
+        .port();
+    let mut child = Command::new(&exe)
+        .env("PORT", port.to_string())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .unwrap();
+    let get = |path: &str| -> Vec<u8> {
+        for _ in 0..100 {
+            if let Ok(mut s) = std::net::TcpStream::connect(("127.0.0.1", port)) {
+                write!(
+                    s,
+                    "GET {path} HTTP/1.1\r\nhost: x\r\nconnection: close\r\n\r\n"
+                )
+                .unwrap();
+                let mut response = Vec::new();
+                s.read_to_end(&mut response).unwrap();
+                let body = response.windows(4).position(|w| w == b"\r\n\r\n").unwrap() + 4;
+                return response[body..].to_vec();
+            }
+            std::thread::sleep(std::time::Duration::from_millis(50));
+        }
+        panic!("the server never started");
+    };
+    let gif = get("/static/img/pixel.gif");
+    let _ = child.kill();
+    let _ = child.wait();
+    assert_eq!(
+        gif,
+        std::fs::read(program.join("static/img/pixel.gif")).unwrap()
+    );
+    std::fs::remove_dir_all(&dir).unwrap();
+}

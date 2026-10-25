@@ -1,0 +1,11 @@
+{% props title: String, featured: Bool = false %}
+{% let card = active_theme().card(featured) %}
+<section class="feature" ui={card.root}>
+<h3 ui={card.title}>{title}</h3>
+{% slot %}
+</section>
+<style>
+.feature p {
+    margin: 0;
+}
+</style>

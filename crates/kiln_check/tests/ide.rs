@@ -4,7 +4,7 @@ use kiln_check::ide::{analyze_app, Analysis, Completion, Ref, Target, COMPLETION
 
 fn analyze(src: &str) -> Analysis {
     let module = kiln_syntax::parse(src).module;
-    analyze_app(&[&module], &[], Target::Module(0))
+    analyze_app(&[&module], &[], Target::Module(0), &Default::default())
 }
 
 /// What the name at the first `needle` refers to.
@@ -56,7 +56,7 @@ fn says_what_fits_at_the_marker() {
         let src = SRC.replace("    let app", &format!("    {line}\n    let app"));
         let src = src.replace('|', COMPLETION_MARKER);
         let module = kiln_syntax::parse(&src).module;
-        analyze_app(&[&module], &[], Target::Module(0)).completion
+        analyze_app(&[&module], &[], Target::Module(0), &Default::default()).completion
     };
     match at("post.|") {
         Some(Completion::Members(ty)) => assert_eq!(analyze(SRC).show(&ty), "Post"),

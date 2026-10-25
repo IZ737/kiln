@@ -360,3 +360,14 @@ fn fill_gives_a_named_slot_its_content() {
         [codes::UNCLOSED_GLAZE_TAG]
     );
 }
+
+#[test]
+fn css_tags_import_stylesheets_and_css_modules() {
+    let g = ok("{% css \"site.css\" %}\n{% css module card from \"card.module.css\" %}\n<p></p>");
+    assert_eq!(g.css.len(), 2);
+    assert!(g.css[0].module.is_none());
+    assert_eq!(g.css[1].module.as_ref().unwrap().name, "card");
+    // Imports belong at the top level of the glaze.
+    assert!(!error_codes("{% if a %}{% css \"x.css\" %}{% end %}").is_empty());
+    assert!(!error_codes("{% css module from \"x.css\" %}").is_empty());
+}

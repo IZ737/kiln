@@ -20,7 +20,7 @@
 use crate::ValueKind;
 use kiln_diagnostics::{codes, Diagnostic, Span};
 use kiln_syntax::ast::*;
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 
 /// A glaze to compile: its file name (`"post.glaze"`), its text, its parsed
 /// form, and what its checker found each value to be.
@@ -29,7 +29,38 @@ pub struct GlazeInput<'a> {
     pub src: &'a str,
     pub glaze: &'a Glaze,
     pub values: &'a HashMap<Span, ValueKind>,
+    /// The attribute that marks the glaze's elements, when it has a
+    /// scoped `<style>`.
+    pub scope: Option<&'a str>,
+    /// Its CSS Modules, by the name it imports them as: each class as a
+    /// Kiln field name, with the class name it is renamed to.
+    pub modules: Option<&'a HashMap<String, BTreeMap<String, String>>>,
 }
+
+/// What the app's glazes share: the stylesheet built from their CSS, and
+/// the files the program serves.
+#[derive(Default)]
+pub struct App<'a> {
+    /// The path the stylesheet is served at, which every `<head>` links.
+    pub stylesheet: Option<&'a str>,
+    pub assets: &'a [Asset],
+}
+
+/// A file the program serves, compiled into it.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Asset {
+    /// Where it is served, such as `/_kiln/logo-1a2b3c.svg`.
+    pub path: String,
+    pub content_type: &'static str,
+    pub body: Vec<u8>,
+    /// Whether the path changes when the content does, so browsers may
+    /// keep it for good.
+    pub immutable: bool,
+}
+
+/// The function that adds the routes serving the app's files to a
+/// `web.App`. `web.app()` calls it when the program has one.
+pub const ASSETS_FN: &str = "__kiln_assets";
 
 /// The Kiln source made from an app's glazes.
 pub struct GlazeSource {
@@ -129,19 +160,35 @@ const VOID_ELEMENTS: &[&str] = &[
     "wbr",
 ];
 
-/// Compiles the glazes of an app into Kiln source. Returns `None` when
-/// there are none.
-pub fn generate(glazes: &[GlazeInput]) -> Option<GlazeSource> {
-    if glazes.is_empty() {
+/// Compiles the glazes of an app, and the files it serves, into Kiln
+/// source. Returns `None` when there are neither.
+pub fn generate(glazes: &[GlazeInput], app: &App) -> Option<GlazeSource> {
+    if glazes.is_empty() && app.assets.is_empty() {
         return None;
     }
+    static NO_VALUES: std::sync::OnceLock<HashMap<Span, ValueKind>> = std::sync::OnceLock::new();
+    // Scoped `<style>`s are in the app's stylesheet, so they are taken out
+    // of the glazes, and their lines out of the HTML.
+    let mut style_tags = vec![Vec::new(); glazes.len()];
+    let stripped: Vec<Option<Glaze>> = glazes
+        .iter()
+        .zip(&mut style_tags)
+        .map(|(input, tags)| {
+            input.scope?;
+            let mut glaze = input.glaze.clone();
+            strip_styles(&mut glaze.nodes, tags);
+            Some(glaze)
+        })
+        .collect();
     let mut g = Gen {
         text: String::new(),
         map: Vec::new(),
         diagnostics: Vec::new(),
         glaze: 0,
         src: "",
-        values: glazes[0].values,
+        values: NO_VALUES.get_or_init(HashMap::new),
+        scope: None,
+        stylesheet: app.stylesheet,
         pending: String::new(),
         indent: 0,
         temps: 0,
@@ -151,11 +198,17 @@ pub fn generate(glazes: &[GlazeInput]) -> Option<GlazeSource> {
     g.text.push_str(
         "// Generated from the app's glazes.\n\
          import html\n\
+         import web\n\
+         import base64\n\
          \n\
          fn __glaze_no_slot(__out: List<String>) {}\n\
          fn __glaze_text(text: String) -> String { html.escape(text) }\n\
-         fn __glaze_url(url: String) -> String { html.escape(html.safe_url(url)) }\n",
+         fn __glaze_url(url: String) -> String { html.escape(html.safe_url(url)) }\n\
+         fn __glaze_ui(style: Ui) -> String { ui.classes(style) }\n",
     );
+    if !app.assets.is_empty() {
+        g.assets(app.assets);
+    }
     let mut names: HashMap<String, &str> = HashMap::new();
     for (i, input) in glazes.iter().enumerate() {
         if let Some(other) = names.insert(stem(input.file), input.file) {
@@ -175,19 +228,22 @@ pub fn generate(glazes: &[GlazeInput]) -> Option<GlazeSource> {
         g.glaze = i;
         g.src = input.src;
         g.values = input.values;
+        g.scope = input.scope;
         g.temps = 0;
         g.ember_reported = false;
         // A slot's content takes the slot's place in its line.
         let slots = slot_spans(&input.glaze.nodes);
-        let tags: Vec<Span> = input
+        let mut tags: Vec<Span> = input
             .glaze
             .tags
             .iter()
             .filter(|t| !slots.contains(t))
             .copied()
             .collect();
+        tags.append(&mut style_tags[i]);
         g.trims = standalone_tags(input.src, &tags);
-        g.glaze_fns(input);
+        let glaze = stripped[i].as_ref().unwrap_or(input.glaze);
+        g.glaze_fns(&GlazeInput { glaze, ..*input });
     }
     Some(GlazeSource {
         text: g.text,
@@ -204,6 +260,9 @@ struct Gen<'a> {
     glaze: usize,
     src: &'a str,
     values: &'a HashMap<Span, ValueKind>,
+    /// The glaze's scope attribute, and the app's stylesheet.
+    scope: Option<&'a str>,
+    stylesheet: Option<&'a str>,
     /// Static HTML not yet pushed.
     pending: String,
     indent: usize,
@@ -242,6 +301,19 @@ impl<'a> Gen<'a> {
         }
         self.text.push_str(") {\n");
         self.indent = 1;
+        // A module with no classes has nothing to use, so it needs no local.
+        let mut modules: Vec<_> = input.modules.into_iter().flatten().collect();
+        modules.sort();
+        for (name, classes) in modules {
+            if classes.is_empty() {
+                continue;
+            }
+            let fields: Vec<String> = classes
+                .iter()
+                .map(|(field, class)| format!("{field}: {}", kiln_string(class)))
+                .collect();
+            self.line(&format!("let {name} = {{ {} }}", fields.join(", ")));
+        }
         match &glaze.layout {
             Some(layout) => self.layout(layout, &glaze.nodes),
             None => self.nodes(&glaze.nodes),
@@ -273,6 +345,43 @@ impl<'a> Gen<'a> {
         self.segment(start, whole);
     }
 
+    /// `fn __kiln_assets(app: web.App)`, which adds a route for each file.
+    /// Files that are not UTF-8 are carried in Base64 and decoded once,
+    /// when the routes are added.
+    fn assets(&mut self, assets: &[Asset]) {
+        self.text.push_str(&format!(
+            "\nfn __kiln_asset(content_type: String, cache: String, body: String) -> web.Response {{\n\
+             \x20   let headers: Map<String, String> = Map()\n\
+             \x20   headers[\"content-type\"] = content_type\n\
+             \x20   headers[\"cache-control\"] = cache\n\
+             \x20   headers[\"x-content-type-options\"] = \"nosniff\"\n\
+             \x20   return web.Response(status: 200, headers: headers, body: body)\n\
+             }}\n\
+             \nfn {ASSETS_FN}(app: web.App) {{\n"
+        ));
+        for (i, asset) in assets.iter().enumerate() {
+            let body = match std::str::from_utf8(&asset.body) {
+                Ok(text) => kiln_string(text),
+                Err(_) => {
+                    use base64::Engine;
+                    let data = base64::engine::general_purpose::STANDARD.encode(&asset.body);
+                    format!("base64.decode(\"{data}\") catch err {{ \"\" }}")
+                }
+            };
+            let cache = if asset.immutable {
+                "public, max-age=31536000, immutable"
+            } else {
+                "no-cache"
+            };
+            self.text.push_str(&format!(
+                "    let __body{i} = {body}\n    app.get({}, fn(req) {{\n        return __kiln_asset({}, \"{cache}\", __body{i})\n    }})\n",
+                kiln_string(&asset.path),
+                kiln_string(asset.content_type),
+            ));
+        }
+        self.text.push_str("}\n");
+    }
+
     /// Reports a part of an ember, once per glaze.
     fn ember(&mut self, span: Span) {
         if self.ember_reported {
@@ -283,7 +392,7 @@ impl<'a> Gen<'a> {
             self.glaze,
             Diagnostic::error(
                 codes::NOT_COMPILED_YET,
-                "the compiler cannot build embers yet: `{% state %}` and `on:` handlers run in the browser, which comes in phase 6",
+                "the compiler cannot build embers yet: `{% state %}` and `on:` handlers run in the browser, which comes in phase 4",
                 span,
             )
             .with_help("render the glaze without its state and handlers for now"),
@@ -563,16 +672,37 @@ impl<'a> Gen<'a> {
 
     fn element(&mut self, e: &Element) {
         let name = &e.name.name;
+        let lower = name.to_ascii_lowercase();
         self.pending.push('<');
         self.pending.push_str(name);
+        // CSS cannot style a script, so it needs no scope.
+        if let (Some(scope), false) = (self.scope, lower == "script") {
+            self.pending.push(' ');
+            self.pending.push_str(scope);
+        }
+        let style = e.attrs.iter().find_map(|a| match &a.value {
+            AttrValue::Expr(x) if a.name.name == "ui" => Some((x, a.span)),
+            _ => None,
+        });
         for attr in &e.attrs {
-            self.attr(attr);
+            if style.is_none() || !matches!(attr.name.name.as_str(), "ui" | "class") {
+                self.attr(attr);
+            }
+        }
+        if let Some((x, span)) = style {
+            self.styled_class(e, x, span);
         }
         self.pending.push('>');
-        if VOID_ELEMENTS.contains(&name.to_ascii_lowercase().as_str()) {
+        if VOID_ELEMENTS.contains(&lower.as_str()) {
             return;
         }
         self.nodes(&e.children);
+        if let (Some(sheet), "head") = (self.stylesheet, lower.as_str()) {
+            self.pending.push_str(&format!(
+                "<link rel=\"stylesheet\" href=\"{}\">",
+                html_attr(sheet)
+            ));
+        }
         self.pending.push_str("</");
         self.pending.push_str(name);
         self.pending.push('>');
@@ -627,6 +757,36 @@ impl<'a> Gen<'a> {
                 self.pending.push('"');
             }
         }
+    }
+
+    /// The `class` of an element with `ui={...}`: its own classes, then the
+    /// style's.
+    fn styled_class(&mut self, e: &Element, style: &Expr, span: Span) {
+        self.pending.push_str(" class=\"");
+        let class = e.attrs.iter().find(|a| a.name.name == "class");
+        if let Some(class) = class {
+            match &class.value {
+                AttrValue::Text(parts) => {
+                    for part in parts {
+                        match part {
+                            AttrPart::Text(t) => self.pending.push_str(&t.replace('"', "&quot;")),
+                            AttrPart::Expr(x) => self.push_value(x, "__glaze_text"),
+                        }
+                    }
+                }
+                AttrValue::Expr(x) => self.push_value(x, "__glaze_text"),
+                _ => {}
+            }
+            self.pending.push(' ');
+        }
+        self.flush();
+        self.start_line();
+        let start = self.text.len();
+        self.text.push_str("__out.push(__glaze_text(__glaze_ui(");
+        self.copy(style.span, true);
+        self.text.push_str(")))\n");
+        self.segment(start, span);
+        self.pending.push('"');
     }
 
     /// `<Card title={t}>children</Card>` calls `__glaze_card`.
@@ -776,6 +936,48 @@ fn standalone_tags(src: &str, tags: &[Span]) -> Vec<(usize, usize)> {
     out
 }
 
+/// Takes the `<style>` elements out of `nodes`, adding their spans to
+/// `out`.
+fn strip_styles(nodes: &mut Vec<Node>, out: &mut Vec<Span>) {
+    nodes.retain(|n| match n {
+        Node::Element(e) if e.name.name.eq_ignore_ascii_case("style") => {
+            out.push(e.span);
+            false
+        }
+        _ => true,
+    });
+    for n in nodes {
+        match n {
+            Node::Element(e) => strip_styles(&mut e.children, out),
+            Node::Fill { body, .. } => strip_styles(body, out),
+            Node::If {
+                branches,
+                otherwise,
+                ..
+            } => {
+                for b in branches {
+                    strip_styles(&mut b.body, out);
+                }
+                if let Some(o) = otherwise {
+                    strip_styles(o, out);
+                }
+            }
+            Node::For { body, empty, .. } => {
+                strip_styles(body, out);
+                if let Some(e) = empty {
+                    strip_styles(e, out);
+                }
+            }
+            Node::Match { cases, .. } => {
+                for c in cases {
+                    strip_styles(&mut c.body, out);
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
 /// The names of a glaze's slots, `None` for the default one, in order.
 fn slot_names(nodes: &[Node]) -> Vec<Option<String>> {
     let mut out = Vec::new();
@@ -887,6 +1089,13 @@ fn settles_scheme(parts: &[AttrPart]) -> bool {
 }
 
 /// A Kiln string literal with this text.
+/// Text for a double-quoted attribute value.
+fn html_attr(text: &str) -> String {
+    text.replace('&', "&amp;")
+        .replace('"', "&quot;")
+        .replace('<', "&lt;")
+}
+
 fn kiln_string(text: &str) -> String {
     format!("\"{}\"", kiln_string_body(text))
 }
