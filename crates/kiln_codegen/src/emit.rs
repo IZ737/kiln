@@ -1554,7 +1554,9 @@ impl<'a> Gen<'a> {
                 (self.store(&format!("k_io_{name}({})", arg(0)), ty), false)
             }
             ("os", "env" | "exit") => (self.store(&format!("k_os_{name}({})", arg(0)), ty), false),
-            ("web", "app" | "not_found") => (self.store(&format!("k_web_{name}()"), ty), false),
+            ("web", "app" | "not_found") => {
+                (self.store(&format!("(void *)k_web_{name}()"), ty), false)
+            }
             ("web", "text" | "html" | "redirect") => {
                 let call = format!("(void *)k_web_{name}({}, {})", arg(0), arg(1));
                 (self.store(&call, ty), false)
