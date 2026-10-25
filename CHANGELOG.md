@@ -1,6 +1,23 @@
 # Changelog
 
-## Unreleased
+## 0.4.0 (2026-10-25)
+
+Installing and upgrading: kiln installs with one command and keeps itself
+up to date.
+
+- **One-line installers:** `install.sh` for Linux and `install.ps1` for
+  Windows download the latest release (or `--version`), check its
+  checksum, install `kiln` to `~/.kiln/bin` and add it to PATH. See
+  [Install](README.md#install).
+- **`kiln upgrade`:** replaces kiln with the latest release (or
+  `--version`), checking its checksum; `--check` only says whether there
+  is one. It works behind proxies (`HTTPS_PROXY`) and trusts the system's
+  certificates. On Windows it moves the running `kiln.exe` aside to
+  replace it.
+- `kiln --version` reports the release's version; 0.2.0 and 0.3.0 said
+  0.1.0.
+
+## 0.3.0 (2026-10-25)
 
 The end of phase 2: Kiln programs are HTTP APIs that run as native
 binaries. [examples/api](examples/api/main.kiln) is a small JSON API.
@@ -12,15 +29,6 @@ binaries. [examples/api](examples/api/main.kiln) is a small JSON API.
   HTML error page. `web.app(max_body:, max_header:, timeout:, keep_alive:,
   access_log:)` has defaults for production, and the server logs a line
   per request (`info GET /posts/7 200 1.2ms`).
-- **One-line installers:** `install.sh` for Linux and `install.ps1` for
-  Windows download the latest release (or `--version`), check its
-  checksum, install `kiln` to `~/.kiln/bin` and add it to PATH. See
-  [Install](README.md#install).
-- **`kiln upgrade`:** replaces kiln with the latest release (or
-  `--version`), checking its checksum; `--check` only says whether there
-  is one. It works behind proxies (`HTTPS_PROXY`) and trusts the system's
-  certificates. On Windows it moves the running `kiln.exe` aside to
-  replace it.
 
 ## 0.2.0 (2026-10-25)
 
