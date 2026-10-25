@@ -94,8 +94,10 @@ Run `cargo fmt --all`, `cargo clippy --all-targets -- -D warnings` and
   server writes at the cursor. A checker change that resolves a new kind of
   name calls `refer` there too; `tests/lsp.rs` drives the server.
 - `editors/vscode`: the VS Code extension. `syntaxes/` holds the TextMate
-  grammars for Kiln (`source.kiln`) and Glaze (`text.html.glaze`), and
-  `icons/` copies of the brand icons. It stays a thin client: anything
+  grammars for Kiln (`source.kiln`) and Glaze (`text.html.glaze`), `icons/`
+  copies of the brand icons, and `src/extension.js` starts `kiln lsp` and
+  runs `kiln check`, `run` and `build` as tasks (plain JavaScript, no build
+  step). It stays a thin client: anything
   other editors could use belongs in `kiln lsp`. `npm test` there tokenizes
   code with VS Code's TextMate engine; a syntax change updates the
   grammars and their tests too.

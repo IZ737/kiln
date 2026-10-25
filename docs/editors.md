@@ -33,10 +33,13 @@ cargo install --path crates/kiln_cli
 
 ## VS Code
 
-The extension in [editors/vscode](../editors/vscode) highlights `.kiln` and
-`.glaze` files and gives them Kiln's file icons; its README shows how to
-install it. Its TextMate grammars (`editors/vscode/syntaxes`) also work in
-other editors that read them, such as Sublime Text.
+The extension in [editors/vscode](../editors/vscode) starts `kiln lsp` for
+you, highlights `.kiln` and `.glaze` files, gives them Kiln's file icons,
+and adds **Kiln: Check Program**, **Run Program** and **Build Program**
+commands and tasks. It finds `kiln` on your `PATH` or in `~/.kiln/bin`, or
+where the `kiln.path` setting says; its README shows how to install it. Its
+TextMate grammars (`editors/vscode/syntaxes`) also work in other editors
+that read them, such as Sublime Text.
 
 ## Neovim (0.11 and later)
 

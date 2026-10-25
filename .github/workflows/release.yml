@@ -2,9 +2,10 @@ name: Release
 
 # Pushing a tag such as `v0.2.0` builds the standalone kiln for Linux and
 # Windows (x86-64), checks each with the conformance programs on a system
-# with nothing else installed, and publishes them as a GitHub release. Each
-# kiln can build executables for both systems. Set the version in
-# Cargo.toml to the tag's first: the build stops if they differ.
+# with nothing else installed, and publishes them as a GitHub release, with
+# the VS Code extension. Each kiln can build executables for both systems.
+# Set the version in Cargo.toml and editors/vscode/package.json to the
+# tag's first: the build stops if they differ.
 
 on:
   push:
@@ -87,8 +88,35 @@ jobs:
           name: windows
           path: kiln-*-x86_64-windows.zip*
 
+  # The VS Code extension, as a .vsix to install with
+  # `code --install-extension`.
+  vscode:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: editors/vscode
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: The tag matches the extension's version
+        run: |
+          version=$(node -p 'require("./package.json").version')
+          if [ "$version" != "${GITHUB_REF_NAME#v}" ]; then
+            echo "::error::tag $GITHUB_REF_NAME, but editors/vscode/package.json says $version"
+            exit 1
+          fi
+      - run: npm ci
+      - run: npm test
+      - run: npx vsce package -o "kiln-vscode-${GITHUB_REF_NAME}.vsix"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: vscode
+          path: editors/vscode/kiln-vscode-*.vsix
+
   publish:
-    needs: [linux-x86_64, windows-x86_64]
+    needs: [linux-x86_64, windows-x86_64, vscode]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

@@ -51,11 +51,11 @@ compiler/LSP, not from a second parser or type checker in the extension.
    compiler name/type resolution. Add focused protocol tests for
    same-file, cross-file and incomplete/unsaved Kiln programs. Keep
    diagnostics and quick fixes working unchanged.
-3. **Extension integration.** Connect the extension to `kiln lsp`, add
+3. **Extension integration (done).** Connect the extension to `kiln lsp`, add
    binary path configuration and Run / Build / Check commands. Surface
    missing compiler and command failures clearly; don't run arbitrary
    project-defined scripts.
-4. **Polish and validation.** Document installation, settings, supported
+4. **Polish and validation (done).** Document installation, settings, supported
    commands and limitations. Add extension packaging checks and a VS Code
    integration smoke test; run relevant LSP tests on Linux and Windows.
    Ensure other LSP editors continue to work.

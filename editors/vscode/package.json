@@ -1,8 +1,8 @@
 {
   "name": "kiln",
   "displayName": "Kiln",
-  "description": "Kiln and Glaze language support: highlighting, file icons and the Kiln language server.",
-  "version": "0.1.0",
+  "description": "Kiln and Glaze language support: highlighting, file icons, completion, hover, go to definition, and Check, Run and Build commands, from the Kiln language server.",
+  "version": "0.4.0",
   "publisher": "iz737",
   "license": "MIT",
   "icon": "icons/kiln.png",
@@ -14,7 +14,7 @@
   "homepage": "https://github.com/IZ737/kiln/tree/main/editors/vscode",
   "bugs": "https://github.com/IZ737/kiln/issues",
   "engines": {
-    "vscode": "^1.75.0"
+    "vscode": "^1.82.0"
   },
   "categories": [
     "Programming Languages"
@@ -23,6 +23,12 @@
     "kiln",
     "glaze",
     "web"
+  ],
+  "main": "./src/extension.js",
+  "activationEvents": [
+    "onLanguage:kiln",
+    "onLanguage:glaze",
+    "workspaceContains:**/*.kiln"
   ],
   "contributes": {
     "languages": [
@@ -73,13 +79,159 @@
           "source.js": "javascript"
         }
       }
+    ],
+    "commands": [
+      {
+        "command": "kiln.check",
+        "title": "Check Program",
+        "category": "Kiln",
+        "icon": "$(check)"
+      },
+      {
+        "command": "kiln.run",
+        "title": "Run Program",
+        "category": "Kiln",
+        "icon": "$(play)"
+      },
+      {
+        "command": "kiln.build",
+        "title": "Build Program",
+        "category": "Kiln",
+        "icon": "$(package)"
+      },
+      {
+        "command": "kiln.restartServer",
+        "title": "Restart Language Server",
+        "category": "Kiln"
+      },
+      {
+        "command": "kiln.showOutput",
+        "title": "Show Output",
+        "category": "Kiln"
+      }
+    ],
+    "menus": {
+      "editor/title/run": [
+        {
+          "command": "kiln.run",
+          "when": "resourceLangId == kiln",
+          "group": "navigation@0"
+        }
+      ],
+      "explorer/context": [
+        {
+          "command": "kiln.run",
+          "when": "resourceExtname == .kiln",
+          "group": "kiln@1"
+        },
+        {
+          "command": "kiln.check",
+          "when": "resourceExtname == .kiln || resourceExtname == .glaze",
+          "group": "kiln@2"
+        },
+        {
+          "command": "kiln.build",
+          "when": "resourceExtname == .kiln",
+          "group": "kiln@3"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "kiln.check",
+          "when": "editorLangId == kiln || editorLangId == glaze"
+        },
+        {
+          "command": "kiln.run",
+          "when": "editorLangId == kiln || editorLangId == glaze"
+        },
+        {
+          "command": "kiln.build",
+          "when": "editorLangId == kiln || editorLangId == glaze"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "Kiln",
+      "properties": {
+        "kiln.path": {
+          "type": "string",
+          "default": "",
+          "scope": "machine-overridable",
+          "markdownDescription": "The `kiln` executable. Leave empty to use the one on your `PATH`, or else `~/.kiln/bin/kiln`, where the installers put it."
+        },
+        "kiln.trace.server": {
+          "type": "string",
+          "enum": [
+            "off",
+            "messages",
+            "verbose"
+          ],
+          "default": "off",
+          "description": "Log the messages between VS Code and kiln lsp in the Kiln output."
+        }
+      }
+    },
+    "taskDefinitions": [
+      {
+        "type": "kiln",
+        "required": [
+          "command"
+        ],
+        "properties": {
+          "command": {
+            "type": "string",
+            "enum": [
+              "check",
+              "run",
+              "build"
+            ],
+            "description": "The kiln command to run."
+          },
+          "program": {
+            "type": "string",
+            "description": "The program's folder, relative to the workspace folder. Defaults to the workspace folder."
+          }
+        }
+      }
+    ],
+    "problemMatchers": [
+      {
+        "name": "kiln",
+        "owner": "kiln",
+        "source": "kiln",
+        "fileLocation": [
+          "autoDetect",
+          "${workspaceFolder}"
+        ],
+        "pattern": [
+          {
+            "regexp": "^(error|warning)\\[(E\\d+)\\]: (.*)$",
+            "severity": 1,
+            "code": 2,
+            "message": 3
+          },
+          {
+            "regexp": "^\\s*-->\\s+(.*):(\\d+):(\\d+)$",
+            "file": 1,
+            "line": 2,
+            "column": 3
+          }
+        ]
+      }
     ]
   },
   "scripts": {
-    "test": "node --test test/*.test.js"
+    "test": "node --test test/*.test.js",
+    "test:integration": "node test/integration/run.js",
+    "package": "vsce package"
   },
   "devDependencies": {
+    "@vscode/test-electron": "3.1.0",
+    "@vscode/vsce": "4.0.0",
     "vscode-oniguruma": "2.0.1",
     "vscode-textmate": "9.3.2"
+  },
+  "dependencies": {
+    "vscode-languageclient": "9.0.1"
   }
 }

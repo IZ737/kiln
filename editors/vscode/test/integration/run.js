@@ -1,0 +1,48 @@
+// Starts a real VS Code with the extension and runs suite.js in it:
+// `KILN_PATH=path/to/kiln npm run test:integration`. It downloads VS Code
+// the first time, and needs a display (CI runs it under xvfb-run).
+const fs = require("node:fs");
+const os = require("node:os");
+const path = require("node:path");
+const { runTests } = require("@vscode/test-electron");
+
+async function main() {
+  const kiln = process.env.KILN_PATH;
+  if (!kiln || !fs.existsSync(kiln)) {
+    throw new Error("set KILN_PATH to a kiln executable");
+  }
+  const workspace = fs.mkdtempSync(path.join(os.tmpdir(), "kiln-vscode-"));
+  fs.writeFileSync(
+    path.join(workspace, "main.kiln"),
+    `// A blog post.
+struct Post {
+    id: Int
+    title: String
+}
+
+fn main() {
+    let post = Post(id: 1, title: "Hi")
+    print(helper(post))
+}
+`,
+  );
+  fs.writeFileSync(
+    path.join(workspace, "other.kiln"),
+    "// Doubles a post's id.\nfn helper(p: Post) -> Int { p.id * 2 }\n",
+  );
+  fs.writeFileSync(path.join(workspace, "card.glaze"), "{% props post: Post %}\n<h1>{post.title}</h1>\n");
+  await runTests({
+    extensionDevelopmentPath: path.join(__dirname, "..", ".."),
+    extensionTestsPath: path.join(__dirname, "suite.js"),
+    launchArgs: [workspace, "--disable-extensions", "--skip-welcome", "--skip-release-notes"],
+    // kiln is found on the PATH, as for a user who installed it.
+    extensionTestsEnv: {
+      PATH: `${path.dirname(path.resolve(kiln))}${path.delimiter}${process.env.PATH}`,
+    },
+  });
+}
+
+main().catch((err) => {
+  console.error(err);
+  process.exit(1);
+});
