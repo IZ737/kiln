@@ -454,6 +454,23 @@ LSP and benefit other LSP clients. Phase 5 expands refactoring (find
 references and rename), deep Glaze prop/component navigation and the rest
 of the developer workflow. Debugging remains a separate later milestone.
 
+## Integrated testing (Phase 5 and Phase 6)
+
+Kiln's planned `kiln test` command will run **unit**, **integration** and
+**real-browser frontend/end-to-end** test suites through one native tooling
+experience, using Kiln-authored assertions and shared fixtures. The
+compiler/toolchain should own test discovery, isolated app startup,
+results, screenshots and CI output. Browser automation should reuse
+an established browser/protocol implementation rather than inventing
+another browser or requiring a separate Node testing project.
+
+Phase 5 must be able to exercise Glaze pages, forms, navigation and
+API/database interactions in a headless browser; Phase 6 extends the
+same tests to Ember hydration, browser events and reactive state.
+Browser binaries may need downloading/caching and are not bundled into
+Kiln server executables. Detailed scope and acceptance criteria:
+[testing.md](testing.md).
+
 ## Built for coding agents
 
 - Familiar syntax and one way to do each thing, so model priors transfer.
