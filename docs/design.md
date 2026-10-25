@@ -288,7 +288,7 @@ backends. It was built in steps, each on both backends and both targets:
    whether to keep an access log, each with a default that suits
    production.
 
-### Phase 2.5: VS Code developer experience
+### Phase 2.5: VS Code developer experience (done)
 
 Phase 2.5 follows the completed HTTP milestone and precedes phase 3's
 frontend work. It improves the editing and feedback loop without changing
@@ -425,9 +425,9 @@ current implementation.
 `kiln lsp` is a language server (LSP) for any editor. The first version, in
 phase 1, reports the same diagnostics as `kiln check` as you type and offers
 their suggested fixes as quick fixes; [editors.md](editors.md) shows how to
-set it up. Phase 2.5 adds completion, hover types and signatures, go to
-definition and symbol navigation (done), plus a VS Code extension with
-Kiln/Glaze highlighting, icons and commands. These language features stay in the Rust
+set it up. Phase 2.5 added completion, hover types and signatures, go to
+definition and symbol navigation, plus a VS Code extension with
+Kiln/Glaze highlighting, icons and Check/Run/Build commands. These language features stay in the Rust
 LSP and benefit other LSP clients. Phase 5 expands refactoring (find
 references and rename), deep Glaze prop/component navigation and the rest
 of the developer workflow. Debugging remains a separate later milestone.

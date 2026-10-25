@@ -1,5 +1,30 @@
 # Changelog
 
+## 0.5.0 (2026-10-25)
+
+The end of phase 2.5: Kiln has a VS Code extension, and `kiln lsp` knows
+the program, not just its errors.
+
+- **VS Code extension** ([editors/vscode](editors/vscode)), attached to
+  each release as `kiln-vscode-<version>.vsix`. It highlights `.kiln`
+  files and glazes (with the HTML, CSS and JavaScript in glazes), gives
+  them the Kiln icons, starts `kiln lsp`, and has **Kiln: Check**, **Run**
+  and **Build** commands and tasks whose errors go to the Problems panel.
+  It finds `kiln` through the `kiln.path` setting, your PATH or
+  `~/.kiln/bin`.
+- **Completion:** locals, functions, types, constants and keywords; fields
+  and methods after `value.`; functions and types after `module.`;
+  variants after `Type.`. Choosing a standard library module adds its
+  `import`.
+- **Hover** shows the type of a name or expression, or the signature of a
+  function, with its doc comment.
+- **Go to definition** for locals, functions, types, fields, methods,
+  variants and constants, across the files of a program.
+- **Symbols:** the outline of a file, and the program's functions and
+  types by name (**Go to Symbol in Workspace**).
+- These work in any editor with an LSP client, on unsaved and unfinished
+  code; see [docs/editors.md](docs/editors.md).
+
 ## 0.4.0 (2026-10-25)
 
 Installing and upgrading: kiln installs with one command and keeps itself

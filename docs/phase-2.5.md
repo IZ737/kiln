@@ -1,6 +1,6 @@
 # Phase 2.5 — VS Code developer experience
 
-**Status:** In progress. Phase 2 (HTTP) is complete; this milestone sits before
+**Status:** Done (0.5.0). Phase 2 (HTTP) is complete; this milestone sits before
 phase 3 (glazes and server-rendered frontend development).
 
 **Goal:** A developer can install the Kiln VS Code extension and comfortably
