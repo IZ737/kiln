@@ -112,6 +112,79 @@ one app into multiple folders. Phase 5 is complete on this dimension when
 a multi-folder app builds and runs, access control through `pub` is checked,
 and cross-folder editing/navigation works.
 
+### Phase 5: project manifests and Ware dependencies
+
+Phase 5 adds an **optional `kiln.toml`** in the project root. It is a
+declarative TOML manifest for project identity, module/application
+entrypoint, build defaults, optional test settings and local/external
+dependencies. Its purpose is to give `kiln run`, `kiln build`,
+`kiln check`, `kiln test` and future release/publish commands a
+consistent project context. The manifest should be **optional** for
+single-file scripts and simple same-folder programs; for larger
+projects, it identifies the root without requiring one manifest in
+every subfolder.
+
+A **`kiln.lock`** records the fully resolved dependency graph, exact
+versions and integrity/source information for reproducible builds.
+Kiln should generate/update it through dependency operations and
+validate it in locked CI/release workflows. Local modules work with
+no registry and do not need package versions. `kiln.toml` may also
+declare local-path or Git Wares, without requiring the official registry
+to be online.
+
+Indicative `kiln.toml` shape (**planned, exact keys subject to
+implementation**):
+
+```toml
+[package]
+name = "fieldnotes"
+version = "0.1.0"
+kind = "app"
+entry = "main.kiln"
+
+[wares]
+"kiln/ui" = "0.1"
+"example/markdown" = "1.2"
+
+[build]
+target = "linux"
+
+[test]
+browser = true
+```
+
+The `[wares]` entries are conceptual, not published package names;
+`kiln/ui` refers to the planned official accessible component Ware.
+Configuration must not require arbitrary install scripts or contain
+plaintext secrets. Document precedence for manifest defaults versus
+explicit CLI flags and environment overrides. Keep errors for invalid
+TOML, package conflicts, missing local modules and lockfile mismatches
+specific and source-linked; editors should recognize the project root.
+
+Proposed dependency UX: `kiln add` and `kiln remove` update the
+manifest and lockfile consistently, with an explicitly named
+dependency-update command chosen during implementation. **Do not
+overload the existing `kiln upgrade` command**, which already updates
+the installed Kiln compiler. Avoid making developers hand-edit the
+lockfile or write their own dependency scripts.
+
+Support an optional later `[workspace]` model for multiple packages
+in a monorepo, using shared resolution where appropriate, but **do
+not block Phase 5's ordinary multi-folder projects on full workspace
+publishing semantics**.
+
+Keep `kiln-deploy.toml` **separate**: it configures deploy targets,
+infrastructure and release activation; `kiln.toml` describes the
+project/dependencies/build and test defaults, while `kiln.lock`
+pins dependencies. None is a procedural `Kilnfile` or an executable
+configuration DSL.
+
+Acceptance for this part of Phase 5: manifest-free `kiln run hello.kiln`
+continues to work; a multi-folder project builds with optional
+`kiln.toml`; local imports work offline without a Ware registry;
+an app depending on Wares produces/obeys a reproducible `kiln.lock`;
+and manifest plus dependency diagnostics are usable from CLI/LSP.
+
 ## Memory and concurrency
 
 - A concurrent, non-moving, tri-color mark-and-sweep GC, as in Go. Phase 1
@@ -434,9 +507,10 @@ background sync come with it.
 
 ## Ecosystem and application delivery
 
-Planned Wares are versioned source packages with a declarative manifest
-and lockfile; fetching them should not run arbitrary package install
-scripts. Official Wares are intended to be especially auditable and
+Planned Wares are versioned source packages using the optional
+[`kiln.toml` project manifest](#phase-5-project-manifests-and-ware-dependencies)
+and generated `kiln.lock`; fetching them should not run arbitrary package
+install scripts. Official Wares are intended to be especially auditable and
 self-contained. Project templates remain a separate mechanism. A future
 Ware registry and Kiln's own documentation website are important
 dogfooding projects, not just showcase demos.
