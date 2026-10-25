@@ -185,6 +185,67 @@ continues to work; a multi-folder project builds with optional
 an app depending on Wares produces/obeys a reproducible `kiln.lock`;
 and manifest plus dependency diagnostics are usable from CLI/LSP.
 
+### Phase 5: global Ware storage and caching
+
+**Decision:** Wares are stored in **one shared, machine-local cache per
+operating-system user** by default, **not** copied to a per-project
+`ware_modules/`, `node_modules/` or similar directory. Projects keep
+their small declarative `kiln.toml` and exact `kiln.lock` only; resolution
+finds an immutable Ware in the global store using the lockfile's source,
+version and verified content hash. Multiple projects can share the same
+cached package version without having to install it repeatedly. Multiple
+versions of a Ware must coexist safely and each project resolves its own
+dependency graph.
+
+- **Scope and paths:** Choose platform-standard per-user cache locations
+  (Windows: a suitable LocalAppData directory; Linux: the XDG cache
+  location, falling back to the user's home cache directory; macOS:
+  platform-standard cache directory). Make the root inspectable and
+  optionally configurable for CI and constrained/offline machines.
+  A truly **cross-user, machine-wide** cache can be explored later, but
+  needs stricter permissions, ownership and trust boundaries; don't
+  require admin privileges or share writable cache files across users.
+- **Store identity:** Use content-addressed, immutable package content,
+  verified by hashes and registry/source metadata. Download to temporary
+  files and atomically publish only after integrity verification; reject
+  tampered, incomplete or mismatched content. Use safe cross-process
+  coordination so simultaneous builds cannot corrupt a shared cache.
+  Cached source is untrusted until checked; prevent path traversal or
+  archive extraction outside its dedicated content directory.
+- **Project isolation:** The cache never determines the selected
+  dependency version. `kiln.lock` does. Two apps can depend on different
+  versions independently, and installing/removing a Ware in one project
+  must not alter another's lockfile or resolved graph. Unversioned
+  **local path modules** remain live source files and are not copied
+  into the immutable global Ware cache.
+- **Compiled artifacts:** Optionally cache compiled Ware/object outputs
+  separately from immutable source, keyed by content hash **plus** Kiln
+  compiler/runtime version, target triple, feature set, optimization and
+  relevant build configuration. Never reuse incompatible artifacts.
+- **Offline/reproducible builds:** An offline or locked mode such as
+  `kiln build --offline` must use locally available, verified locked
+  Wares without contacting the network; report a missing hash/version
+  clearly rather than silently upgrading or downloading alternatives.
+  CI should be able to prefill and reuse the same cache.
+- **Maintenance UX (proposed commands):** `kiln cache dir`,
+  `kiln cache stats`, `kiln cache verify` and `kiln cache prune`.
+  Cache pruning should preview candidates or make its effect explicit,
+  and avoid deleting data in active use. Stale package contents may be
+  evicted and fetched again later; do not promise to detect every
+  project on the machine or assume an unused version can never be
+  needed for offline builds.
+- **Deployment:** Compiler outputs remain self-contained. Production
+  executables must not need access to the developer's cache, Wares
+  registry or network to load their compiled Ware code at runtime.
+
+**Phase 5 acceptance:** Two unrelated projects locked to the same Ware
+version/hash download it **once** and share verified cached contents;
+one project can pin a different version without affecting the other;
+offline rebuild works after cache priming; integrity corruption is
+detected; concurrent cache access is safe; `kiln cache` offers usable
+inspection and pruning; and no per-project dependency directory is
+needed to run or build an application.
+
 ## Memory and concurrency
 
 - A concurrent, non-moving, tri-color mark-and-sweep GC, as in Go. Phase 1
