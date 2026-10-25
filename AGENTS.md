@@ -2,6 +2,19 @@
 
 Instructions for coding agents (and people) changing this repository.
 
+## Project direction
+
+Read [`docs/vision.md`](docs/vision.md) for Kiln's long-term principles:
+eliminate repetitive full-stack glue, keep deep customization and progressive
+integration, support both directions of language interoperability, and allow
+opt-in performance control without complicating normal GC-managed code.
+
+For implementation choices, distinguish **implemented**, **roadmapped**, and
+**exploratory** ideas. Follow the [roadmap](README.md#roadmap) and
+[`docs/design.md`](docs/design.md) for phase scope and technical rules;
+the vision is not permission to implement future milestones early or treat
+proposed API spellings as current language syntax.
+
 ## Commands
 
 ```sh
