@@ -67,6 +67,9 @@ pub static RT_FNS: &[RtFn] = &[
     f("sql", "Db.__begin", "k_rt_sql_begin", 1, true, None),
     f("sql", "Db.__commit", "k_rt_sql_commit", 1, true, None),
     f("sql", "Db.__rollback", "k_rt_sql_rollback", 1, false, None),
+    f("orm", "__like", "k_rt_orm_like", 2, false, None),
+    f("orm", "__include", "k_rt_orm_include", 7, true, Arg(1)),
+    f("orm", "__insert", "k_rt_orm_insert", 5, true, Ret),
 ];
 
 /// The entry for a library call, if the Rust runtime implements it.

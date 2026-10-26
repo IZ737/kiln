@@ -1,0 +1,24 @@
+1 Ada, 2 Bob
+select posts.id, posts.title, posts.score, posts.published, posts.author_id from posts where posts.published = 1 order by posts.score desc limit $1
+Embers 6
+Glazes 4
+Kilns 2
+top Glazes
+Glazes
+percent 0
+1
+2
+2
+Kilns by Ada (1 comment(s): on Kilns)
+Glazes by Ada (1 comment(s): on Glazes)
+Embers by Bob (1 comment(s): on Embers)
+Ada: Kilns, Glazes
+Bob: Embers, Drafts
+updated 1
+Kilns, again 9
+true
+deleted 1
+3
+1
+3
+Glazes

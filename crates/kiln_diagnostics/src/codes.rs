@@ -58,6 +58,8 @@ pub const UNKNOWN_TOKEN: &str = "E0221";
 pub const BAD_TOKEN: &str = "E0222";
 pub const BROWSER_ONLY: &str = "E0223";
 pub const NOT_SERIALIZABLE: &str = "E0224";
+pub const BAD_MODEL: &str = "E0231";
+pub const BAD_QUERY: &str = "E0232";
 
 pub const UNCLOSED_GLAZE_TAG: &str = "E0301";
 pub const MISMATCHED_CLOSING_TAG: &str = "E0302";
@@ -81,6 +83,20 @@ pub const NO_MAIN: &str = "E0402";
 pub const SERVER_CALL_PLACE: &str = "E0403";
 
 pub static ALL: &[ErrorCode] = &[
+    ErrorCode {
+        code: BAD_MODEL,
+        title: "Not a model",
+        explanation: "A model is one of the program's own structs: its fields are the columns of a table named after it (`Post` to `posts`), and one field, `id` by default, is its key. A field that holds another model, or a list of them, is a relation rather than a column: it needs the key field that links the two, it is loaded only when a query asks for it with `include`, and so it must be optional or a list with a default. Tables, columns and keys that do not follow these conventions are named with `orm.model<T>(...)`.",
+        wrong: "struct Post {\n    title: String\n}\n\nlet posts = try orm.find<Post>(db).all()",
+        right: "struct Post {\n    id: Int\n    title: String\n}\n\nlet posts = try orm.find<Post>(db).all()",
+    },
+    ErrorCode {
+        code: BAD_QUERY,
+        title: "A query the compiler cannot build",
+        explanation: "The conditions of `where` and the keys of `order_by` become SQL when the program is compiled, so they are a restricted language: the model's fields, values, comparisons, `and`, `or`, `not`, arithmetic, and `contains`, `starts_with` and `ends_with` on a text column. Anything else is worked out in Kiln before the query and sent as a value, or written as SQL with `db.query`.",
+        wrong: "orm.find<Post>(db).where(fn(p) { p.title.words().len() > 3 })",
+        right: "orm.find<Post>(db).where(fn(p) { p.title.contains(word) })",
+    },
     ErrorCode {
         code: LOCAL_MODULE,
         title: "Invalid local module",

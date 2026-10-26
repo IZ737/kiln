@@ -109,6 +109,22 @@ pub struct Checker {
     /// Whether to record what names refer to, for the language server.
     pub(crate) recording: bool,
     pub(crate) references: Vec<(Span, Ref)>,
+    /// The models the program uses, by their struct; None for a struct
+    /// that cannot be one, which was reported once.
+    pub(crate) models: HashMap<AdtId, Option<crate::orm::Model>>,
+    /// The models in the order they were first used, for the schema the
+    /// migration tools compare with the database.
+    pub(crate) model_order: Vec<AdtId>,
+    /// What `orm.model<T>(...)` constants say about models.
+    pub(crate) mappings: HashMap<AdtId, crate::orm::Mapping>,
+    /// The query each call of an `orm.Query` method has built, by the
+    /// span of the call.
+    pub(crate) queries: HashMap<Span, crate::orm::QueryPlan>,
+    /// The queries that run, by the span of the call that runs them.
+    pub(crate) query_runs: HashMap<Span, crate::query::Query>,
+    /// Calls of a query that was already reported, so that one mistake
+    /// is one error for the whole chain.
+    pub(crate) bad_queries: HashSet<Span>,
     /// Whether `COMPLETION_MARKER` marks where the editor wants completions,
     /// and what is wanted there once it is found.
     pub(crate) completing: bool,
@@ -142,11 +158,12 @@ fn infers_from_call(e: &Expr) -> bool {
 pub(crate) const BROWSER_MODULES: &[&str] = &["browser", "js"];
 
 /// Modules that need the server: they cannot be used in embers.
-const SERVER_ONLY_MODULES: &[&str] = &["sql", "auth", "fs", "os", "io"];
+const SERVER_ONLY_MODULES: &[&str] = &["sql", "orm", "auth", "fs", "os", "io"];
 
 const STD_MODULES: &[(&str, &str)] = &[
     ("web", include_str!("../std/web.kiln")),
     ("sql", include_str!("../std/sql.kiln")),
+    ("orm", include_str!("../std/orm.kiln")),
     ("auth", include_str!("../std/auth.kiln")),
     ("log", include_str!("../std/log.kiln")),
     ("json", include_str!("../std/json.kiln")),
@@ -197,6 +214,12 @@ impl Checker {
             std_adts: 0,
             recording: false,
             references: Vec::new(),
+            models: HashMap::new(),
+            model_order: Vec::new(),
+            mappings: HashMap::new(),
+            queries: HashMap::new(),
+            query_runs: HashMap::new(),
+            bad_queries: HashSet::new(),
             completing: false,
             completion: None,
         };
@@ -317,6 +340,7 @@ impl Checker {
     /// Constants, function bodies and field defaults.
     pub(crate) fn check_bodies(&mut self, module: &Module) {
         self.refer_declarations(module);
+        self.collect_mappings(module);
         self.check_consts(module);
         for item in &module.items {
             match item {
@@ -877,6 +901,20 @@ impl Checker {
                         ty
                     }
                 };
+                let resolved = self.resolve(&ty);
+                if self.is_query_ty(&resolved) {
+                    self.error(
+                        Diagnostic::error(
+                            codes::BAD_QUERY,
+                            format!(
+                                "`{}` would hold a query that has not run, and the compiler builds a query's SQL where it runs",
+                                name.name
+                            ),
+                            value.span,
+                        )
+                        .with_help("end the chain with `.all()`, `.first()`, `.count()` or `.delete()`"),
+                    );
+                }
                 let keyword = Span::new(span.start as usize, span.start as usize + 3);
                 self.bind(&name.name, name.span, ty, *mutable, Some(keyword));
             }
@@ -1972,6 +2010,9 @@ impl Checker {
                 if let Some(sig) = self.modules[m].fns.get(&name.name).cloned() {
                     let (params, ret, throws) = self.instantiate(&sig, &[], &explicit, e.span);
                     self.check_args(&params, args, e.span, &fn_name, None);
+                    if self.modules[m].name == "orm" {
+                        self.orm_call(&name.name, args, &explicit, e.span);
+                    }
                     return (ret, throws);
                 }
                 if let Some(id) = self.modules[m].types.get(&name.name).copied() {
@@ -2047,6 +2088,9 @@ impl Checker {
                         self.instantiate(sig, &recv_args, &explicit, e.span);
                     let route = self.route_handler_type(id, &name.name, args);
                     self.check_args(&params, args, e.span, &fn_name, route);
+                    if self.is_query_ty(&base_ty) {
+                        self.orm_step(base, &name.name, args, e.span);
+                    }
                     return (ret, throws);
                 }
             }

@@ -165,7 +165,7 @@ pub(crate) fn signature(name: &str) -> Option<(&'static [C], Option<C>)> {
         "fmod" | "fmin" | "fmax" => (&[F64, F64], Some(F64)),
         _ => {
             // The Rust runtime's table: slots in, a slot out.
-            const SLOTS: &[C] = &[I64, I64, I64, I64, I64, I64, I64, I64];
+            const SLOTS: &[C] = &[I64, I64, I64, I64, I64, I64, I64, I64, I64, I64];
             let rf = kiln_ir::rt::rt_symbol(name)?;
             let n = rf.args + usize::from(rf.desc != kiln_ir::rt::DescOf::None);
             return Some((&SLOTS[..n], Some(I64)));

@@ -621,7 +621,7 @@ pub fn dialect_of(db: Kv) -> Dialect {
 // ----- Kiln values -----
 
 /// The parameters of a query: a `List<sql.Value>`.
-unsafe fn params_of(list: Kv) -> Vec<SqlValue> {
+pub unsafe fn params_of(list: Kv) -> Vec<SqlValue> {
     let l = &*ptr::<KList>(list);
     (0..l.len)
         .map(|i| {
@@ -654,6 +654,10 @@ fn value_kv(v: &SqlValue) -> Kv {
 /// The SQL value of a Kiln value of the type `d` describes: optionals are
 /// NULL or their value, times and dates text in ISO 8601, an enum
 /// variant without fields its name, and other values their JSON.
+pub unsafe fn to_sql_value(d: &KDesc, v: Kv) -> SqlValue {
+    to_sql(d, v)
+}
+
 unsafe fn to_sql(d: &KDesc, v: Kv) -> SqlValue {
     match d.kind {
         D_OPT => {
@@ -847,7 +851,12 @@ pub unsafe fn row_kv(d: &KDesc, columns: &[String], row: &[SqlValue]) -> Result<
         let found = columns.iter().position(|c| c == label);
         let v = match found {
             Some(c) => from_sql(part, &row[c], &format!("column `{label}`"))?,
+            // A field the query does not select is left empty: an
+            // optional is none, and a list, map or set is empty. That is
+            // what a model's relations are, until a query loads them.
             None if part.kind == D_OPT => 0,
+            None if part.kind == D_LIST => kv(k_list(0, std::ptr::null())),
+            None if matches!(part.kind, D_MAP | D_SET) => kv(k_json_new_map(part.part(0))),
             None => {
                 return Err(format!(
                     "cannot read the field `{label}`: the query returns no column `{label}` (it returns {})",

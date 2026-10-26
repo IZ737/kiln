@@ -9,10 +9,13 @@ mod checker;
 mod collect;
 mod glaze;
 pub mod ide;
+pub mod orm;
+mod query;
 pub mod style;
 pub mod types;
 
 pub use glaze::ValueKind;
+pub use query::Query;
 
 use kiln_diagnostics::{Diagnostic, Span};
 use kiln_syntax::ast::{Glaze, Module};
@@ -62,6 +65,11 @@ pub struct Program {
     /// How to build each expression in a style, by its span. `Ui` and
     /// style values are `String`s in the types above.
     pub styles: HashMap<Span, style::StyleExpr>,
+    /// The query each `orm` call runs, by the span of the call, with the
+    /// SQL and the values to bind already worked out.
+    pub queries: HashMap<Span, Query>,
+    /// The models the program uses, in the order it first uses them.
+    pub models: Vec<orm::Model>,
 }
 
 /// Type-checks a whole program for compiling.
@@ -146,6 +154,12 @@ fn check_program_for(
         binding_types: checker.binding_types,
         instantiations: checker.instantiations,
         styles: checker.styles,
+        queries: std::mem::take(&mut checker.query_runs),
+        models: checker
+            .model_order
+            .iter()
+            .filter_map(|adt| checker.models.get(adt).cloned().flatten())
+            .collect(),
     }
 }
 

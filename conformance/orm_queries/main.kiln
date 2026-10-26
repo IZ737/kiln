@@ -1,0 +1,127 @@
+// Typed queries: models are structs, conditions are Kiln and become SQL
+// when the program is compiled.
+import sql, orm
+
+struct Author {
+    id: Int
+    name: String
+    posts: List<Post> = []
+}
+
+struct Post {
+    id: Int
+    title: String
+    score: Int
+    published: Bool
+    author_id: Int
+    author: Author? = none
+    comments: List<Comment> = []
+}
+
+struct Comment {
+    id: Int
+    post_id: Int
+    body: String
+}
+
+fn setup(db: sql.Db) ! {
+    try db.exec("create table authors (id integer primary key, name text not null)")
+    try db.exec("create table posts (id integer primary key, title text not null, score integer not null, published integer not null, author_id integer not null)")
+    try db.exec("create table comments (id integer primary key, post_id integer not null, body text not null)")
+}
+
+fn main() ! {
+    let db = try sql.open("sqlite::memory:")
+    try setup(db)
+
+    let ada = try orm.insert<Author>(db, Author(id: 0, name: "Ada"))
+    let bob = try orm.insert<Author>(db, Author(id: 0, name: "Bob"))
+    print("${ada.id} ${ada.name}, ${bob.id} ${bob.name}")
+
+    var n = 1
+    for title in ["Kilns", "Glazes", "Embers", "Drafts"] {
+        let post = try orm.insert<Post>(db, Post(
+            id: 0,
+            title: title,
+            score: n * 2,
+            published: title != "Drafts",
+            author_id: if n > 2 { bob.id } else { ada.id },
+        ))
+        try orm.insert<Comment>(db, Comment(id: 0, post_id: post.id, body: "on ${title}"))
+        n += 1
+    }
+
+    // The SQL the compiler writes.
+    print(orm.find<Post>(db).where(.published).order_by(.score, descending: true).limit(2).sql())
+
+    for post in try orm.find<Post>(db).where(.published).order_by(.score, descending: true).all() {
+        print("${post.title} ${post.score}")
+    }
+
+    let wanted = ada.id
+    let top = try orm.find<Post>(db)
+        .where(fn(p) { p.author_id == wanted and p.score > 2 })
+        .first()
+    match top {
+        some(p) => print("top ${p.title}")
+        none => print("none")
+    }
+
+    // Text searches become `like`, with the pattern bound.
+    let needle = "la"
+    let found = try orm.find<Post>(db).where(fn(p) { p.title.lower().contains(needle) }).all()
+    print(found.map(fn(p) { p.title }).join(", "))
+    let percent = try orm.find<Post>(db).where(fn(p) { p.title.contains("%") }).count()
+    print("percent ${percent}")
+
+    print(try orm.find<Post>(db).where(fn(p) { not p.published }).count())
+    print(try orm.find<Post>(db).where(fn(p) { p.score >= 4 and p.score < 8 }).count())
+    print(try orm.find<Post>(db).where(fn(p) { p.title == "Kilns" or p.title == "Embers" }).count())
+
+    // Relations load when a query asks for them.
+    let posts = try orm.find<Post>(db)
+        .where(.published)
+        .include(.author)
+        .include(.comments)
+        .order_by(.id)
+        .all()
+    for post in posts {
+        let who = match post.author {
+            some(a) => a.name
+            none => "?"
+        }
+        print("${post.title} by ${who} (${post.comments.len()} comment(s): ${post.comments.map(fn(c) { c.body }).join("; ")})")
+    }
+
+    let authors = try orm.find<Author>(db).include(.posts).order_by(.name).all()
+    for author in authors {
+        print("${author.name}: ${author.posts.map(fn(p) { p.title }).join(", ")}")
+    }
+
+    // get, update and delete by key.
+    match try orm.get<Post>(db, 1) {
+        some(p) => {
+            let changed = try orm.update<Post>(db, Post(id: p.id, title: "Kilns, again", score: 9, published: p.published, author_id: p.author_id))
+            print("updated ${changed}")
+        }
+        none => print("missing")
+    }
+    match try orm.get<Post>(db, 1) {
+        some(p) => print("${p.title} ${p.score}")
+        none => print("missing")
+    }
+    print(try orm.get<Post>(db, 404) == none)
+
+    let gone = try orm.find<Post>(db).where(fn(p) { not p.published }).delete()
+    print("deleted ${gone}")
+    print(try orm.find<Post>(db).count())
+    match try orm.get<Comment>(db, 1) {
+        some(c) => print(try orm.delete<Comment>(db, c))
+        none => print("missing")
+    }
+    print(try orm.find<Comment>(db).count())
+
+    // Offsets and limits are bound values.
+    let page = try orm.find<Post>(db).order_by(.id).limit(1).offset(1).all()
+    print(page.map(fn(p) { p.title }).join(","))
+}
