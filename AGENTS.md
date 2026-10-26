@@ -27,9 +27,11 @@ For Phase 4 Embers/WasmGC work, follow [docs/plans/phase-4.md](docs/plans/phase-
 
 For the corrective Phase 4.1 source-model work, follow [docs/plans/phase-4.1.md](docs/plans/phase-4.1.md) **over any contradictory implicit-Ember wording in Phase 4**. `.ember` is the explicit browser-capable component file; `.glaze` stays server-only, and existing WasmGC/SSR/RPC behavior is preserved. Do not treat this planned syntax as already implemented; migrate tests, docs and editor support with the compiler change.
 
-For Phase 5 data/auth/admin work, follow [docs/plans/phase-5.md](docs/plans/phase-5.md), reusing Phase 4 RPC for authenticated ORM-backed calls and shared Ember/SSR validation. Keep SSR-only forms useful and enforce per-record authorization on the server.
+For Phase 4.2 local-module/project work, follow [docs/plans/phase-4.2.md](docs/plans/phase-4.2.md) **before Phase 5**. Organize app code in imported folders with `pub` exports, optional minimal `kiln.toml`, module-aware Glazes/Embers/assets and cross-folder CLI/LSP. Do not pull Wares, registry, lockfile or public `kiln test` into this milestone.
 
-For Phase 6 modules/Wares/testing/tooling/MCP work, follow [docs/plans/phase-6.md](docs/plans/phase-6.md), which divides the ecosystem into five reviewable subphases. Preserve manifest-free programs and the global per-user Ware cache. Syntax in plans is prospective until implemented, tested and documented.
+For Phase 5 data/auth/admin work, follow [docs/plans/phase-5.md](docs/plans/phase-5.md), building on Phase 4.2 local modules and reusing Phase 4 RPC for authenticated ORM-backed calls and shared Ember/SSR validation. Keep SSR-only forms useful and enforce per-record authorization on the server.
+
+For Phase 6 Wares/testing/tooling/MCP work, follow [docs/plans/phase-6.md](docs/plans/phase-6.md), which divides the ecosystem into four reviewable subphases. Local module resolution and a minimal optional manifest arrive in Phase 4.2; Phase 6 extends project dependency metadata. Preserve manifest-free programs and the global per-user Ware cache. Syntax in plans is prospective until implemented, tested and documented.
 
 For Phase 6 testing, read [docs/plans/testing.md](docs/plans/testing.md): the public
 `kiln test` tool must support unit, integration **and real-browser E2E**
