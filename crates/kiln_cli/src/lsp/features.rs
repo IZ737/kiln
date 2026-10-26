@@ -131,7 +131,16 @@ fn file_name(path: &Path) -> String {
 /// A `file://` URI for a path.
 fn path_to_uri(path: &Path) -> String {
     let mut text = path.to_string_lossy().replace('\\', "/");
-    if !text.starts_with('/') {
+    // Windows canonical paths use a verbatim prefix, which is not part
+    // of a file URI. UNC paths put the server in the URI authority.
+    if let Some(unc) = text.strip_prefix("//?/UNC/") {
+        text = format!("//{unc}");
+    } else if let Some(local) = text.strip_prefix("//?/") {
+        text = local.to_owned();
+    }
+    if text.starts_with("//") {
+        text.drain(..2);
+    } else if !text.starts_with('/') {
         text.insert(0, '/');
     }
     let mut uri = String::from("file://");
@@ -1109,4 +1118,21 @@ fn module_completion(sources: &[Source], index: usize, offset: usize) -> Option<
         }
     }
     Some(json!({"isIncomplete":false,"items":items}))
+}
+
+#[cfg(test)]
+mod path_tests {
+    use super::*;
+
+    #[test]
+    fn file_uris_exclude_windows_verbatim_prefixes() {
+        assert_eq!(
+            path_to_uri(Path::new(r"\\?\C:\my app\main.kiln")),
+            "file:///C:/my%20app/main.kiln"
+        );
+        assert_eq!(
+            path_to_uri(Path::new(r"\\?\UNC\server\share\main.kiln")),
+            "file://server/share/main.kiln"
+        );
+    }
 }

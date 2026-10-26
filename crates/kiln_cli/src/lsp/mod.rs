@@ -392,7 +392,24 @@ fn uri_to_path(uri: &str) -> Option<PathBuf> {
     if path.len() > 2 && path.as_bytes()[2] == b':' {
         path.remove(0);
     }
-    Some(PathBuf::from(path))
+    #[cfg(windows)]
+    if !path.starts_with('/') && !path.as_bytes().get(1).is_some_and(|b| *b == b':') {
+        path.insert_str(0, "//");
+    }
+    let path = PathBuf::from(path);
+    Some(canonical_document_path(&path))
+}
+
+/// Match project discovery's filesystem identities, including new editor
+/// buffers whose file (or intermediate directories) has not been saved yet.
+fn canonical_document_path(path: &std::path::Path) -> PathBuf {
+    if let Ok(path) = path.canonicalize() {
+        return path;
+    }
+    match (path.parent(), path.file_name()) {
+        (Some(parent), Some(name)) if parent != path => canonical_document_path(parent).join(name),
+        _ => path.to_path_buf(),
+    }
 }
 
 fn read_message(input: &mut impl BufRead) -> Option<Value> {
@@ -433,6 +450,21 @@ mod tests {
         assert_eq!(position(text, x), json!({"line": 1, "character": 11}));
         assert_eq!(offset_of(text, &json!({"line": 1, "character": 11})), x);
         assert_eq!(position(text, 0), json!({"line": 0, "character": 0}));
+    }
+
+    #[test]
+    fn new_buffers_use_the_existing_ancestors_identity() {
+        let root = std::env::temp_dir().join(format!("kiln-lsp-paths-{}", std::process::id()));
+        std::fs::create_dir_all(&root).unwrap();
+        let unsaved = root.join("new-folder").join("new.kiln");
+        assert_eq!(
+            canonical_document_path(&unsaved),
+            root.canonicalize()
+                .unwrap()
+                .join("new-folder")
+                .join("new.kiln")
+        );
+        std::fs::remove_dir(&root).unwrap();
     }
 
     #[test]

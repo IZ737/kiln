@@ -6,7 +6,7 @@ const { spawn } = require("node:child_process");
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
-const { pathToFileURL } = require("node:url");
+const { pathToFileURL, fileURLToPath } = require("node:url");
 
 const kiln = process.argv[2] && path.resolve(process.argv[2]);
 if (!kiln) {
@@ -112,7 +112,10 @@ async function main() {
     textDocument: doc,
     position: positionOf(MAIN, "helper(post", 2),
   });
-  assert.ok(definition.uri.endsWith("other.kiln"), definition.uri);
+  assert.strictEqual(
+    fs.realpathSync(fileURLToPath(definition.uri)),
+    fs.realpathSync(path.join(dir, "other.kiln")),
+  );
   assert.deepStrictEqual(definition.range.start, { line: 1, character: 3 });
 
   const edited = MAIN.replace("    print(helper(post))", "    print(helper(post))\n    post.");
@@ -130,6 +133,25 @@ async function main() {
   const symbols = await server.request("workspace/symbol", { query: "helper" });
   assert.strictEqual(symbols[0].name, "helper");
   assert.ok(symbols[0].location.uri.endsWith("other.kiln"));
+
+  // A new unsaved file must share the canonical project identity too.
+  const fresh = vscodeUri(path.join(dir, "fresh.kiln"));
+  server.notify("textDocument/didOpen", {
+    textDocument: {
+      uri: fresh, languageId: "kiln", version: 1,
+      text: "fn fresh(p: Post) -> Int { p.id }",
+    },
+  });
+  const unsaved = MAIN.replace("helper(post)", "fresh(post)");
+  server.notify("textDocument/didChange", {
+    textDocument: { uri: main, version: 3 },
+    contentChanges: [{ text: unsaved }],
+  });
+  const freshDefinition = await server.request("textDocument/definition", {
+    textDocument: doc,
+    position: positionOf(unsaved, "fresh(post", 2),
+  });
+  assert.strictEqual(freshDefinition.uri, fresh);
 
   await server.request("shutdown", null);
   server.notify("exit", null);
