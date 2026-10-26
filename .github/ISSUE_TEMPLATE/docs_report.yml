@@ -1,0 +1,27 @@
+name: Documentation improvement
+description: Suggest a clearer explanation, example, or documentation fix
+title: "docs: "
+labels: ["documentation"]
+body:
+  - type: input
+    id: page
+    attributes:
+      label: Page or file
+      description: Link the page or give the repository path.
+      placeholder: "docs/reference/syntax.md"
+    validations:
+      required: true
+  - type: textarea
+    id: issue
+    attributes:
+      label: What is unclear or incorrect?
+      description: Quote a short excerpt if it helps. Mention if the docs confuse planned and implemented behaviour.
+    validations:
+      required: true
+  - type: textarea
+    id: improvement
+    attributes:
+      label: Suggested correction
+      description: A clearer explanation or example, if you have one.
+    validations:
+      required: false

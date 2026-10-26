@@ -1,0 +1,74 @@
+name: Bug report
+description: Report a reproducible Kiln compiler, runtime, CLI, or editor bug
+title: "bug: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for helping improve Kiln! Search existing issues first. For potential vulnerabilities, **do not include exploit details here**; follow [SECURITY.md](https://github.com/IZ737/kiln/blob/main/SECURITY.md).
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Parser or type checker
+        - Native or C code generation
+        - Runtime or HTTP
+        - Glaze or styling
+        - Ember or WasmGC
+        - CLI or build/install
+        - LSP or VS Code
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: What happened?
+      description: Tell us what actually happened and what you expected instead.
+      placeholder: "Expected: … / Actual: …"
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Minimal reproduction
+      description: Include the smallest source file(s), command, and steps needed to reproduce.
+      placeholder: |
+        File: main.kiln
+        Command: kiln run ...
+        Steps: ...
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: output
+    attributes:
+      label: Diagnostics, logs, or output
+      description: Paste relevant output or error codes after removing personal data, tokens, and secrets.
+      render: text
+  - type: input
+    id: version
+    attributes:
+      label: Kiln version or commit
+      description: For a source build, include the Git commit SHA.
+      placeholder: "v0.x.y or commit SHA"
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Operating system and environment
+      placeholder: "Ubuntu x86-64, Windows x86-64, VS Code, browser version, etc."
+    validations:
+      required: true
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checks
+      options:
+        - label: I searched existing issues for this problem.
+          required: true
+        - label: This report does not contain a security vulnerability disclosure or sensitive data.
+          required: true

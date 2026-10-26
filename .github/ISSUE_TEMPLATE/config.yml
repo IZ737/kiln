@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Security vulnerability report
+    url: https://github.com/IZ737/kiln/blob/main/SECURITY.md
+    about: Please read the private reporting instructions; do not disclose vulnerabilities in public issues.
+  - name: Help and usage questions
+    url: https://github.com/IZ737/kiln/blob/main/SUPPORT.md
+    about: Find documentation and guidance for asking questions.

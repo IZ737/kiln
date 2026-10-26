@@ -251,6 +251,18 @@ For errors and quick fixes in your editor, see [docs/guides/editors.md](docs/gui
 | 7 | Production hardening, static site generation (`kiln fire --static`), deployment, performance (precise GC, LLVM release builds), stability | Kiln 1.0: stable and ready for personal production projects |
 | 8+ | Installable PWAs with local-first data that syncs with the server, advanced optimization, interoperability improvements, desktop apps, additional targets, request arenas, self-hosting | Independent milestones after 1.0 |
 
+## Contributing and community
+
+Kiln is open source and welcomes bug reports, documentation improvements,
+tests and focused code contributions. For developer setup, how to propose
+language changes and the pull request process, see
+[CONTRIBUTING.md](CONTRIBUTING.md).
+
+- [Code of Conduct](CODE_OF_CONDUCT.md) — expectations for project spaces
+- [Security policy](SECURITY.md) — private vulnerability reporting
+- [Support](SUPPORT.md) — where to ask questions and report bugs
+- [Governance](GOVERNANCE.md) — maintainer-led decisions and roadmap
+
 ## License
 
 MIT. See [LICENSE](LICENSE).
