@@ -186,6 +186,18 @@ fn drive(name: &str, app: &str, script: &str) {
     drive_backend(name, app, script, None);
 }
 fn drive_backend(name: &str, app: &str, script: &str, backend: Option<&str>) {
+    drive_with(name, app, script, backend, &|_| Vec::new());
+}
+
+/// [`drive_backend`], with `setup` run first in the test's own folder: it
+/// returns the environment the app runs with.
+fn drive_with(
+    name: &str,
+    app: &str,
+    script: &str,
+    backend: Option<&str>,
+    setup: &dyn Fn(&Path) -> Vec<(String, String)>,
+) {
     let Some(node) = node() else { return };
     let dir = std::env::temp_dir().join(format!("kiln-{name}-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
@@ -211,6 +223,7 @@ fn drive_backend(name: &str, app: &str, script: &str, backend: Option<&str>) {
         .port();
     let mut server = Command::new(&exe)
         .env("PORT", port.to_string())
+        .envs(setup(&dir))
         .spawn()
         .unwrap();
     let address = format!("127.0.0.1:{port}");
@@ -261,4 +274,43 @@ fn multi_folder_fieldnotes_works_in_a_real_browser() {
         "fieldnotes.mjs",
         Some("c"),
     );
+}
+
+/// The dogfood app `examples/journal`, in folders, on a database its
+/// committed migrations make: signing up and in, posts with per-record
+/// permissions, and the ember that adds comments through an ORM-backed
+/// `server fn` that knows who is calling, with hostile calls turned away.
+#[test]
+fn journal_works_in_a_real_browser() {
+    for backend in [None, Some("c")] {
+        drive_with(
+            if backend.is_some() {
+                "journal-c"
+            } else {
+                "journal"
+            },
+            "examples/journal",
+            "journal.mjs",
+            backend,
+            &|dir| {
+                let db = dir.join("journal.db");
+                let url = format!("sqlite:{}", db.display());
+                let migrated = Command::new(env!("CARGO_BIN_EXE_kiln"))
+                    .args(["db", "migrate", "--url", &url, "--path"])
+                    .arg(root().join("examples/journal"))
+                    .output()
+                    .unwrap();
+                assert!(
+                    migrated.status.success(),
+                    "{}",
+                    String::from_utf8_lossy(&migrated.stderr)
+                );
+                vec![
+                    ("DATABASE_URL".into(), url),
+                    ("JOURNAL_HTTP".into(), "1".into()),
+                    ("JOURNAL_ADMIN".into(), "ada@example.com".into()),
+                ]
+            },
+        );
+    }
 }

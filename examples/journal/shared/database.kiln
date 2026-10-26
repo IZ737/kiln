@@ -1,0 +1,27 @@
+import sql, auth, web
+
+// The database `DATABASE_URL` names. Opening it again, as a `server fn`
+// does on each call, shares the same connections.
+pub fn database() -> sql.Db ! {
+    let url = if env("DATABASE_URL") == "" { "sqlite:journal.db" } else { env("DATABASE_URL") }
+    return try sql.open(url)
+}
+
+// Sessions kept in the database. Cookies are sent over HTTPS only,
+// unless `JOURNAL_HTTP=1` says the program is served over plain HTTP, as
+// it is on a laptop.
+pub fn sessions(db: sql.Db) -> auth.Sessions ! {
+    return try auth.sessions(db, secure: env("JOURNAL_HTTP") != "1")
+}
+
+// Whether a form came from a page of this site. Browsers send `Origin`
+// with every form they post, so a form another site made is turned away
+// even where no session, and so no token, exists yet, as when signing in.
+pub fn same_origin(req: web.Request) -> Bool {
+    let origin = req.header("origin") ?? ""
+    if origin == "" {
+        return true
+    }
+    let host = req.header("host") ?? ""
+    return origin == "http://${host}" or origin == "https://${host}"
+}

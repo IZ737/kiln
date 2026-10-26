@@ -1,0 +1,13 @@
+{% props heading: String, action: String, title: String, body: String, published: Bool, problems: List<String>, csrf: String %}
+{% layout "shared/layout.glaze" title: heading %}
+<h1>{heading}</h1>
+{% for problem in problems %}
+<p class="problem">{problem}</p>
+{% end %}
+<form method="post" action={action}>
+  <input type="hidden" name="csrf" value={csrf}>
+  <label>Title <input name="title" value={title}></label>
+  <label>Text <textarea name="body" rows="10">{body}</textarea></label>
+  <label><input type="checkbox" name="published" checked={published}> Published</label>
+  <button type="submit">Save</button>
+</form>
