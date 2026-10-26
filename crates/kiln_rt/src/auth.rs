@@ -137,6 +137,18 @@ pub extern "C" fn k_rt_auth_token(n: Kv) -> Kv {
     string(random(n as usize).as_bytes())
 }
 
+/// `auth.sha256(text)`: the SHA-256 digest of the text's bytes, in hex.
+///
+/// # Safety
+///
+/// `text` is a Kiln string.
+#[no_mangle]
+pub unsafe extern "C" fn k_rt_auth_sha256(text: Kv) -> Kv {
+    let digest = Sha256::digest(bytes(text));
+    let hex: String = digest.iter().map(|b| format!("{b:02x}")).collect();
+    string(hex.as_bytes())
+}
+
 /// `auth.sessions(db, ...)`: sessions kept in `db`. It makes the table
 /// when it is not there yet, and nothing else: it never changes a table
 /// that is.

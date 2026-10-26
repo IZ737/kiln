@@ -4,6 +4,7 @@ use kiln_diagnostics::{codes, Diagnostic, Span};
 use kiln_syntax::ast::Item;
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
+use std::sync::Mutex;
 
 #[derive(Debug)]
 pub struct Project {
@@ -11,6 +12,7 @@ pub struct Project {
     pub entry: PathBuf,
     pub files: Vec<PathBuf>,
     overlays: BTreeMap<PathBuf, String>,
+    tests: bool,
 }
 
 fn invalid(message: impl Into<String>) -> std::io::Error {
@@ -84,95 +86,267 @@ pub fn discover_overlay(
     path: &Path,
     overlays: &BTreeMap<PathBuf, String>,
 ) -> std::io::Result<Project> {
+    discover_with(path, overlays, None)
+}
+
+/// A test build: kiln's generated `main`, in a folder of its own that
+/// appears as `__test/` in the project, and whether the root folder (whose
+/// own tests it calls) is part of the build.
+pub struct Harness {
+    pub dir: PathBuf,
+    pub include_root: bool,
+}
+
+/// Discovers a project. In a test build, files named `test_*.kiln` are
+/// part of their folders, and `import test` names kiln's test module.
+pub fn discover_with(
+    path: &Path,
+    overlays: &BTreeMap<PathBuf, String>,
+    harness: Option<&Harness>,
+) -> std::io::Result<Project> {
+    let tests = harness.is_some();
     let root = root(path)?;
-    let manifest = root.join("kiln.toml");
     let mut entry = root.clone();
-    if manifest.is_file() {
-        let text = std::fs::read_to_string(&manifest)?;
+    let manifest = crate::ware::manifest::Manifest::load(&root)
+        .map_err(|(file, (span, message))| invalid_at(&file, span, message))?;
+    if let Some(manifest) = &manifest {
         let bad = |key: &str, message: String| {
-            let start = text.find(key).unwrap_or(0);
             invalid_at(
-                &manifest,
-                Span::new(start, (start + key.len()).min(text.len())),
+                &manifest.path,
+                crate::ware::manifest::key_span(&manifest.text, key),
                 message,
             )
         };
-
-        let value: toml::Table = toml::from_str(&text).map_err(|e: toml::de::Error| {
-            let span = e
-                .span()
-                .map(|r| Span::new(r.start, r.end))
-                .unwrap_or_default();
-            invalid_at(&manifest, span, e.to_string())
-        })?;
-        for key in value.keys() {
-            if key != "package" {
-                return Err(bad(key, format!("unsupported section `{key}`")));
+        if let Some(selected) = &manifest.entry {
+            let selected_path = Path::new(selected);
+            if selected_path.is_absolute()
+                || selected_path
+                    .components()
+                    .any(|c| matches!(c, std::path::Component::ParentDir))
+            {
+                return Err(bad(
+                    "entry",
+                    "entry must be a relative path within the project root".into(),
+                ));
             }
-        }
-        let package = value
-            .get("package")
-            .and_then(toml::Value::as_table)
-            .ok_or_else(|| bad("package", "kiln.toml requires a [package] table".into()))?;
-        for (key, value) in package {
-            if !["name", "kind", "entry"].contains(&key.as_str()) {
-                return Err(bad(key, format!("unsupported package key `{key}`")));
+            let selected = root
+                .join(selected_path)
+                .canonicalize()
+                .map_err(|e| bad("entry", format!("cannot read entry `{selected}`: {e}")))?;
+            if !selected.starts_with(&root)
+                || selected.extension().is_none_or(|e| e != "kiln")
+                || !selected.is_file()
+            {
+                return Err(bad(
+                    "entry",
+                    "entry must be a .kiln file within the project root".into(),
+                ));
             }
-            if value.as_str().is_none() {
-                return Err(bad(key, format!("package.{key} must be a string")));
-            }
+            entry = selected.parent().unwrap().to_path_buf();
         }
-        if package
-            .get("kind")
-            .and_then(toml::Value::as_str)
-            .is_some_and(|s| s != "app")
-        {
-            return Err(bad("kind", "package.kind must be `app`".into()));
-        }
-        let selected = package
-            .get("entry")
-            .and_then(toml::Value::as_str)
-            .ok_or_else(|| bad("package", "package.entry is required".into()))?;
-        let selected_path = Path::new(selected);
-        if selected_path.is_absolute()
-            || selected_path
-                .components()
-                .any(|c| matches!(c, std::path::Component::ParentDir))
-        {
-            return Err(bad(
-                "entry",
-                "entry must be a relative path within the project root".into(),
-            ));
-        }
-        let selected = root
-            .join(selected_path)
-            .canonicalize()
-            .map_err(|e| bad("entry", format!("cannot read entry `{selected}`: {e}")))?;
-        if !selected.starts_with(&root)
-            || selected.extension().is_none_or(|e| e != "kiln")
-            || !selected.is_file()
-        {
-            return Err(bad(
-                "entry",
-                "entry must be a .kiln file within the project root".into(),
-            ));
-        }
-        entry = selected.parent().unwrap().to_path_buf();
     }
+    let mut packages = Packages::default();
+    if let Some(manifest) = &manifest {
+        let graph = crate::ware::prepare(&root, manifest).map_err(|message| {
+            invalid_at(
+                &manifest.path,
+                crate::ware::manifest::key_span(&manifest.text, "dependencies"),
+                message,
+            )
+        })?;
+        if let Some(graph) = graph {
+            packages = mount(&root, &graph);
+        }
+    }
+    if tests {
+        let (name, dir) = crate::ware::builtin_test().map_err(invalid)?;
+        add_mount(root.join(name.mount()), dir);
+        packages.wares.insert(
+            name.module_key(),
+            WarePackage {
+                deps: BTreeMap::new(),
+                cached: true,
+            },
+        );
+        packages.root.insert("test".into(), name.module_key());
+    }
+    PACKAGES.lock().unwrap().insert(root.clone(), packages);
     if path.is_file() {
         entry = path.canonicalize()?.parent().unwrap().to_path_buf();
+    }
+    if let Some(h) = harness {
+        entry = root.join("__test");
+        add_mount(entry.clone(), h.dir.clone());
     }
     let mut project = Project {
         root,
         entry: entry.clone(),
         files: Vec::new(),
         overlays: overlays.clone(),
+        tests,
     };
     let mut visiting = Vec::new();
     let mut visited = BTreeSet::new();
     project.visit(&entry, &mut visiting, &mut visited)?;
+    if harness.is_some_and(|h| h.include_root) {
+        let root = project.root.clone();
+        project.visit(&root, &mut visiting, &mut visited)?;
+    }
     project.files.sort();
     Ok(project)
+}
+
+/// Where each Ware's source appears in a build: its folder under
+/// `__ware/` in the project, which reads from the real folder.
+static MOUNTS: Mutex<BTreeMap<PathBuf, PathBuf>> = Mutex::new(BTreeMap::new());
+/// Each project's dependency names, by root.
+static PACKAGES: Mutex<BTreeMap<PathBuf, Packages>> = Mutex::new(BTreeMap::new());
+
+#[derive(Clone, Debug, Default)]
+pub struct Packages {
+    /// The project's dependencies: import name to module key.
+    pub root: BTreeMap<String, String>,
+    /// Each Ware, by module key (`__ware.kiln.ui`).
+    pub wares: BTreeMap<String, WarePackage>,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct WarePackage {
+    pub deps: BTreeMap<String, String>,
+    pub cached: bool,
+}
+
+fn add_mount(virtual_dir: PathBuf, real: PathBuf) {
+    MOUNTS.lock().unwrap().insert(virtual_dir, real);
+}
+
+fn mount(root: &Path, graph: &crate::ware::Graph) -> Packages {
+    let mut packages = Packages::default();
+    for (alias, name) in &graph.root {
+        packages.root.insert(alias.clone(), name.module_key());
+    }
+    for (name, ware) in &graph.wares {
+        add_mount(root.join(name.mount()), ware.dir.clone());
+        packages.wares.insert(
+            name.module_key(),
+            WarePackage {
+                deps: ware
+                    .deps
+                    .iter()
+                    .map(|(a, n)| (a.clone(), n.module_key()))
+                    .collect(),
+                cached: ware.cached,
+            },
+        );
+    }
+    packages
+}
+
+pub fn packages(root: &Path) -> Packages {
+    PACKAGES
+        .lock()
+        .unwrap()
+        .get(root)
+        .cloned()
+        .unwrap_or_default()
+}
+
+/// The file or folder a path in a build stands for: a Ware's source is
+/// read from the cache or its local folder.
+pub fn real(path: &Path) -> PathBuf {
+    let mounts = MOUNTS.lock().unwrap();
+    for (virtual_dir, real) in mounts.iter().rev() {
+        if let Ok(rest) = path.strip_prefix(virtual_dir) {
+            return if rest.as_os_str().is_empty() {
+                real.clone()
+            } else {
+                real.join(rest)
+            };
+        }
+    }
+    path.to_path_buf()
+}
+
+/// The path a person should see for a file in a build.
+pub fn shown(name: &str) -> String {
+    real(Path::new(name)).display().to_string()
+}
+
+/// Reads a source file of a build.
+pub fn read(path: &Path) -> std::io::Result<String> {
+    std::fs::read_to_string(real(path))
+}
+
+/// Whether a file in a build is a cached Ware's, which must not be edited.
+pub fn is_cached_ware(root: &Path, path: &Path) -> bool {
+    let Ok(rest) = path.strip_prefix(root) else {
+        return false;
+    };
+    let parts: Vec<String> = rest
+        .components()
+        .take(3)
+        .map(|c| c.as_os_str().to_string_lossy().into_owned())
+        .collect();
+    parts.len() == 3
+        && parts[0] == "__ware"
+        && packages(root)
+            .wares
+            .get(&format!("__ware.{}.{}", parts[1], parts[2]))
+            .is_some_and(|w| w.cached)
+}
+
+/// The module a written import names, seen from a module (`owner`): a
+/// dependency's name maps to its Ware, and a Ware's own folders are
+/// relative to the Ware.
+pub fn translate(root: &Path, owner: &str, full: &str) -> String {
+    let packages = PACKAGES.lock().unwrap();
+    let Some(packages) = packages.get(root) else {
+        return full.to_string();
+    };
+    translate_in(packages, owner, full)
+}
+
+pub fn translate_in(packages: &Packages, owner: &str, full: &str) -> String {
+    resolve_import(packages, owner, full).0
+}
+
+/// [`translate_in`], also saying whether the first name was a dependency's.
+pub fn resolve_import(packages: &Packages, owner: &str, full: &str) -> (String, bool) {
+    let (prefix, deps) = match ware_of(owner) {
+        Some(key) => (key.clone(), packages.wares.get(&key).map(|w| &w.deps)),
+        None => (String::new(), Some(&packages.root)),
+    };
+    let (first, rest) = match full.split_once('.') {
+        Some((f, r)) => (f, Some(r)),
+        None => (full, None),
+    };
+    if let Some(dep) = deps.and_then(|d| d.get(first)) {
+        return (
+            match rest {
+                Some(r) => format!("{dep}.{r}"),
+                None => dep.clone(),
+            },
+            true,
+        );
+    }
+    if prefix.is_empty() {
+        (full.to_string(), false)
+    } else {
+        (format!("{prefix}.{full}"), false)
+    }
+}
+
+/// The Ware a module belongs to: `__ware.kiln.ui` for `__ware.kiln.ui.forms`.
+pub fn ware_of(owner: &str) -> Option<String> {
+    let parts: Vec<&str> = owner.split('.').collect();
+    (parts.len() >= 3 && parts[0] == "__ware").then(|| parts[..3].join("."))
+}
+
+fn is_test_file(path: &Path) -> bool {
+    path.extension().is_some_and(|e| e == "kiln")
+        && path
+            .file_name()
+            .is_some_and(|n| n.to_string_lossy().starts_with("test_"))
 }
 
 impl Project {
@@ -202,25 +376,29 @@ impl Project {
         visiting.push(dir.to_path_buf());
         let mut files = Vec::new();
         let mut names = BTreeMap::new();
-        let mut entries = std::fs::read_dir(dir)?.collect::<Result<Vec<_>, _>>()?;
+        let real_dir = real(dir);
+        let mut entries = std::fs::read_dir(&real_dir)?.collect::<Result<Vec<_>, _>>()?;
         entries.sort_by_key(|e| e.file_name());
         for entry in entries {
             let name = entry.file_name().to_string_lossy().into_owned();
             if let Some(previous) = names.insert(name.to_lowercase(), name.clone()) {
                 return Err(invalid(format!(
                     "case collision in {}: `{previous}` and `{name}`",
-                    dir.display()
+                    real_dir.display()
                 )));
             }
-            let path = entry.path();
+            let path = dir.join(&name);
             if path.extension().is_some_and(|e| e == "kiln") || crate::is_glaze(&path) {
                 if entry.file_type()?.is_symlink() {
                     return Err(invalid(format!(
                         "source symlinks are not supported: {}",
-                        path.display()
+                        entry.path().display()
                     )));
                 }
-                if path.is_file() {
+                if is_test_file(&path) && !self.tests {
+                    continue;
+                }
+                if entry.path().is_file() {
                     files.push(path);
                 }
             }
@@ -228,7 +406,7 @@ impl Project {
         files.extend(
             self.overlays
                 .keys()
-                .filter(|p| p.parent() == Some(dir))
+                .filter(|p| p.parent() == Some(dir) && (self.tests || !is_test_file(p)))
                 .cloned(),
         );
         files.sort();
@@ -236,9 +414,19 @@ impl Project {
         if files.is_empty() {
             return Err(invalid(format!(
                 "module {} contains no Kiln source",
-                dir.display()
+                real_dir.display()
             )));
         }
+        let owner = dir
+            .strip_prefix(&self.root)
+            .unwrap_or(Path::new(""))
+            .to_string_lossy()
+            .replace(['/', '\\'], ".");
+        let packages = packages(&self.root);
+        let package_root = match ware_of(&owner) {
+            Some(key) => self.root.join(key.replace('.', "/")),
+            None => self.root.clone(),
+        };
         let mut imports = BTreeMap::new();
         for file in &files {
             if crate::is_glaze(file) {
@@ -246,7 +434,7 @@ impl Project {
             }
             let text = match self.overlays.get(file) {
                 Some(text) => text.clone(),
-                None => std::fs::read_to_string(file)?,
+                None => read(file)?,
             };
             for item in kiln_syntax::parse(&text).module.items {
                 if let Item::Import(import) = item {
@@ -257,31 +445,51 @@ impl Project {
                             .map(|i| i.name.as_str())
                             .collect::<Vec<_>>()
                             .join(".");
-                        if kiln_check::std_source(&name).is_some() || name.starts_with("npm.") {
-                            if self.root.join(name.replace('.', "/")).is_dir() {
+                        let (key, dependency) = resolve_import(&packages, &owner, &name);
+                        if !dependency
+                            && (kiln_check::std_source(&name).is_some() || name.starts_with("npm."))
+                        {
+                            if package_root.join(name.replace('.', "/")).is_dir() {
                                 return Err(invalid(format!("local folder `{name}` conflicts with a reserved standard module; rename the folder")));
                             }
                             continue;
                         }
+                        if path[0].name.starts_with("__") {
+                            return Err(invalid_at(
+                                file,
+                                span,
+                                "module names starting with `__` are reserved",
+                            ));
+                        }
+                        if dependency && package_root.join(&path[0].name).is_dir() {
+                            return Err(invalid_at(file, span, format!("the dependency `{}` and the folder `{}/` have the same name; rename one", path[0].name, path[0].name)));
+                        }
                         let mut target = self.root.clone();
-                        for part in &path {
-                            if part.name.is_empty()
-                                || part.name.contains(['/', '\\'])
-                                || part.name == ".."
-                            {
+                        let parts: Vec<&str> = key.split('.').collect();
+                        // A Ware's root is mounted by kiln; its folders are checked.
+                        let mounted = if key.starts_with("__ware.") { 3 } else { 0 };
+                        for (i, part) in parts.iter().enumerate() {
+                            if part.is_empty() || part.contains(['/', '\\']) || *part == ".." {
                                 return Err(invalid("invalid module path"));
                             }
-                            let exact = std::fs::read_dir(&target)?
+                            if i < mounted {
+                                target.push(part);
+                                continue;
+                            }
+                            let exact = std::fs::read_dir(real(&target))?
                                 .filter_map(Result::ok)
-                                .any(|e| e.file_name().to_string_lossy() == part.name);
-                            target.push(&part.name);
+                                .any(|e| e.file_name().to_string_lossy() == *part);
+                            target.push(part);
                             if !exact {
                                 return Err(invalid_at(file, span, format!("no module `{name}` (paths are case-sensitive); create its folder or correct the import")));
                             }
-                            if std::fs::symlink_metadata(&target)?.file_type().is_symlink() {
+                            if std::fs::symlink_metadata(real(&target))?
+                                .file_type()
+                                .is_symlink()
+                            {
                                 return Err(invalid(format!(
                                     "module symlinks are not supported: {}",
-                                    target.display()
+                                    real(&target).display()
                                 )));
                             }
                         }

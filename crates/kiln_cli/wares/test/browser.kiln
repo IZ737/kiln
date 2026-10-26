@@ -1,0 +1,171 @@
+// The browser, for tests under `tests/browser/`: a real Chromium that
+// `kiln test` drives. Each page is a fresh browser context, so cookies and
+// storage start empty. Finding an element waits for it (up to the test's
+// timeout), so a test reads the way a person uses the page.
+import json
+
+// A tab of the browser, showing the app under test.
+pub struct Page {
+    id: String
+}
+
+// Elements of a page, found by what a person sees: a role and accessible
+// name, a label, text, or as a last resort a CSS selector.
+pub struct Locator {
+    page: String
+    by: String
+    value: String
+    name: String
+}
+
+// Opens a page, `width` by `height` CSS pixels.
+pub fn page(width: Int = 1280, height: Int = 800, at: String = "") -> Page {
+    Page(id: tell("page", at, ["width", "${width}", "height", "${height}"]))
+}
+
+impl Page {
+    // Goes to `path`, relative to the app's address, and waits for the
+    // page to load. The app is started on first use.
+    pub fn goto(self, path: String, at: String = "") {
+        tell("goto", at, ["page", self.id, "path", path])
+    }
+    pub fn reload(self, at: String = "") {
+        tell("reload", at, ["page", self.id])
+    }
+    // The address shown, without the app's origin: `/posts/1`.
+    pub fn path(self, at: String = "") -> String {
+        tell("path", at, ["page", self.id])
+    }
+    pub fn title(self, at: String = "") -> String {
+        tell("title", at, ["page", self.id])
+    }
+    // The page's text, as it is shown.
+    pub fn text(self, at: String = "") -> String {
+        tell("page_text", at, ["page", self.id])
+    }
+    // Presses a key where the focus is: `Tab`, `Enter`, `Escape`, `a`.
+    pub fn press(self, key: String, at: String = "") {
+        tell("press", at, ["page", self.id, "key", key])
+    }
+    // Types text where the focus is.
+    pub fn type_text(self, text: String, at: String = "") {
+        tell("type", at, ["page", self.id, "text", text])
+    }
+    // The focused element, as its role and accessible name: `button "Save"`.
+    pub fn focused(self, at: String = "") -> String {
+        tell("focused", at, ["page", self.id])
+    }
+    // Errors the page met: uncaught exceptions, console errors and failed
+    // requests.
+    pub fn errors(self, at: String = "") -> List<String> {
+        json.decode<List<String>>(tell("errors", at, ["page", self.id])) catch err { [] }
+    }
+    // Resizes the page, to test another layout.
+    pub fn viewport(self, width: Int, height: Int, at: String = "") {
+        tell("viewport", at, ["page", self.id, "width", "${width}", "height", "${height}"])
+    }
+    // Waits until the address contains `part`.
+    pub fn wait_for_path(self, part: String, at: String = "") {
+        tell("wait_path", at, ["page", self.id, "part", part])
+    }
+    // Saves a screenshot in the test's results; returns its path.
+    pub fn screenshot(self, name: String, at: String = "") -> String {
+        tell("screenshot", at, ["page", self.id, "name", name])
+    }
+
+    // An element with an ARIA role (`button`, `link`, `textbox`,
+    // `checkbox`, `heading`...) and, if given, its accessible name.
+    pub fn role(self, role: String, name: String = "") -> Locator {
+        Locator(page: self.id, by: "role", value: role, name: name)
+    }
+    // The form control a `<label>` (or `aria-label`) names.
+    pub fn label(self, text: String) -> Locator {
+        Locator(page: self.id, by: "label", value: text, name: "")
+    }
+    // The smallest element whose text contains `text`.
+    pub fn by_text(self, text: String) -> Locator {
+        Locator(page: self.id, by: "text", value: text, name: "")
+    }
+    // An element with `data-testid="id"`.
+    pub fn test_id(self, id: String) -> Locator {
+        Locator(page: self.id, by: "testid", value: id, name: "")
+    }
+    pub fn css(self, selector: String) -> Locator {
+        Locator(page: self.id, by: "css", value: selector, name: "")
+    }
+}
+
+impl Locator {
+    fn act(self, op: String, at: String, more: List<String>) -> String {
+        var pairs = ["page", self.page, "by", self.by, "value", self.value, "name", self.name]
+        pairs = pairs.concat(more)
+        tell(op, at, pairs)
+    }
+    // Clicks the element, as a mouse does, once it is visible.
+    pub fn click(self, at: String = "") {
+        self.act("click", at, [])
+    }
+    // Replaces the text of an input or text area, as typing does.
+    pub fn fill(self, text: String, at: String = "") {
+        self.act("fill", at, ["text", text])
+    }
+    // Chooses an option of a select, by its value or text.
+    pub fn select(self, option: String, at: String = "") {
+        self.act("select", at, ["text", option])
+    }
+    pub fn check(self, at: String = "") {
+        self.act("check", at, ["checked", "true"])
+    }
+    pub fn uncheck(self, at: String = "") {
+        self.act("check", at, ["checked", "false"])
+    }
+    pub fn focus(self, at: String = "") {
+        self.act("focus", at, [])
+    }
+    // Focuses the element and presses a key.
+    pub fn press(self, key: String, at: String = "") {
+        self.act("press_on", at, ["key", key])
+    }
+    // The element's text, as shown.
+    pub fn text(self, at: String = "") -> String {
+        self.act("text", at, [])
+    }
+    // An input's current value.
+    pub fn value(self, at: String = "") -> String {
+        self.act("value", at, [])
+    }
+    pub fn attribute(self, name: String, at: String = "") -> String? {
+        // The runner answers with JSON: a string, or null.
+        json.decode<String?>(self.act("attribute", at, ["attribute", name])) catch err { none }
+    }
+    // A computed CSS property, such as `color` or `display`.
+    pub fn style(self, property: String, at: String = "") -> String {
+        self.act("style", at, ["property", property])
+    }
+    // How many elements match, without waiting.
+    pub fn count(self, at: String = "") -> Int {
+        self.act("count", at, []).to_int() ?? 0
+    }
+    pub fn is_visible(self, at: String = "") -> Bool {
+        self.act("visible", at, []) == "true"
+    }
+    pub fn is_focused(self, at: String = "") -> Bool {
+        self.act("is_focused", at, []) == "true"
+    }
+    pub fn is_checked(self, at: String = "") -> Bool {
+        self.act("is_checked", at, []) == "true"
+    }
+    // Waits until the element is visible.
+    pub fn wait(self, at: String = "") {
+        self.act("wait", at, [])
+    }
+    // Waits until the element's text contains `text`, failing the test
+    // if it never does.
+    pub fn expect_text(self, text: String, at: String = "") {
+        self.act("expect_text", at, ["text", text])
+    }
+    // Waits until no element matches.
+    pub fn expect_gone(self, at: String = "") {
+        self.act("expect_gone", at, [])
+    }
+}

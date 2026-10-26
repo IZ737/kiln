@@ -8,6 +8,7 @@ mod npm;
 mod project;
 mod styles;
 mod upgrade;
+mod ware;
 
 use clap::{Parser, Subcommand};
 use kiln_diagnostics::{codes, Diagnostic, SourceFile, Span};
@@ -21,6 +22,12 @@ use std::process::ExitCode;
 struct Cli {
     #[command(subcommand)]
     command: Command,
+    /// Use kiln.lock as it is: fail instead of updating it.
+    #[arg(long, global = true)]
+    locked: bool,
+    /// Make no network requests: Wares come from kiln.lock and the cache.
+    #[arg(long, global = true)]
+    offline: bool,
 }
 
 /// The code generators `build` and `run` can use.
@@ -102,15 +109,111 @@ enum Command {
         /// An error code such as E0106.
         code: String,
     },
-    /// Add an npm package for embers to call, such as `npm:nanoid@5.0.9`.
-    /// Its files are kept in the program's folder under `npm/`, and
-    /// `npm.lock` records their checksums and the Kiln bindings.
+    /// Add a Ware, such as `kiln/ui` or `kiln/ui@0.1`, to kiln.toml and
+    /// kiln.lock; or an npm package for embers to call, such as
+    /// `npm:nanoid@5.0.9`, whose files are kept under `npm/` with `npm.lock`.
     Add {
-        /// The package: `npm:name@version`.
+        /// `publisher/name[@version]`, or `npm:name@version`.
         package: String,
         /// The program's folder. Defaults to the current directory.
         #[arg(default_value = ".")]
         dir: PathBuf,
+        /// A version requirement, such as `0.2` or `>=1.1, <2`.
+        #[arg(long)]
+        version: Option<String>,
+        /// A Ware in a local folder, whose source is used as it is.
+        #[arg(long)]
+        path: Option<PathBuf>,
+        /// A Ware in a Git repository.
+        #[arg(long)]
+        git: Option<String>,
+        /// With `--git`: a commit (40 hex digits).
+        #[arg(long)]
+        rev: Option<String>,
+        /// With `--git`: a branch, locked at its current commit.
+        #[arg(long)]
+        branch: Option<String>,
+        /// With `--git`: a tag, locked at its commit.
+        #[arg(long)]
+        tag: Option<String>,
+        /// The registry, if not the one kiln.toml names.
+        #[arg(long)]
+        registry: Option<String>,
+        /// The name to import it by. Defaults to the Ware's own name.
+        #[arg(long = "as")]
+        alias: Option<String>,
+        /// Accept Wares that need capabilities without asking.
+        #[arg(long)]
+        allow_capabilities: bool,
+    },
+    /// Remove a Ware from kiln.toml and kiln.lock.
+    Remove {
+        /// The name it is imported by, or `publisher/name`.
+        ware: String,
+        #[arg(default_value = ".")]
+        dir: PathBuf,
+    },
+    /// Choose the newest releases kiln.toml allows and write kiln.lock.
+    /// (`kiln upgrade` upgrades kiln itself.)
+    Update {
+        /// Only these Wares; defaults to all.
+        wares: Vec<String>,
+        #[arg(long, default_value = ".")]
+        dir: PathBuf,
+        /// Accept Wares that gain capabilities without asking.
+        #[arg(long)]
+        allow_capabilities: bool,
+    },
+    /// Show the Wares kiln.lock holds, and why each is there.
+    Tree {
+        #[arg(default_value = ".")]
+        dir: PathBuf,
+        /// Show the dependency chains that bring in this Ware.
+        #[arg(long)]
+        why: Option<String>,
+    },
+    /// Download every locked Ware into the cache, for offline builds.
+    Fetch {
+        #[arg(default_value = ".")]
+        dir: PathBuf,
+    },
+    /// Publish the Ware in a folder to a registry.
+    Publish {
+        #[arg(default_value = ".")]
+        dir: PathBuf,
+        /// The registry. Defaults to the one kiln.toml names.
+        #[arg(long)]
+        registry: Option<String>,
+        /// Show what would be published, and send nothing.
+        #[arg(long)]
+        dry_run: bool,
+    },
+    /// Save a registry's publish token, read from standard input.
+    Login {
+        #[arg(long)]
+        registry: String,
+    },
+    /// Stop new resolutions from choosing a release (`publisher/name@1.2.3`).
+    /// Lockfiles that already hold it keep working.
+    Yank {
+        release: String,
+        #[arg(long)]
+        registry: Option<String>,
+        /// Make the release choosable again.
+        #[arg(long)]
+        undo: bool,
+        #[arg(long, default_value = ".")]
+        dir: PathBuf,
+    },
+    /// Look after the per-user Ware cache.
+    Cache {
+        #[command(subcommand)]
+        action: CacheCommand,
+    },
+    /// Check a locked Ware's source against kiln.lock and its capabilities.
+    Ware {
+        #[command(subcommand)]
+        action: WareCommand,
     },
     /// Replace this kiln with the latest release, or the one you name.
     Upgrade {
@@ -141,6 +244,36 @@ enum Command {
     /// Other commands start it in the background once an hour.
     #[command(hide = true)]
     UpdateCheck,
+}
+
+#[derive(Subcommand)]
+enum CacheCommand {
+    /// Print where the cache is.
+    Dir,
+    /// How much it holds.
+    Stats,
+    /// Check every cached Ware against its checksum.
+    Verify,
+    /// Remove Wares not used for a while, and leftovers of interrupted
+    /// downloads.
+    Prune {
+        /// Show what would be removed.
+        #[arg(long)]
+        dry_run: bool,
+        /// Remove Wares unused for this many days.
+        #[arg(long, default_value_t = 30)]
+        older_than: u64,
+    },
+}
+
+#[derive(Subcommand)]
+enum WareCommand {
+    /// Check a locked Ware: its checksum, and its declared capabilities.
+    Verify {
+        ware: String,
+        #[arg(long, default_value = ".")]
+        dir: PathBuf,
+    },
 }
 
 #[derive(Subcommand)]
@@ -178,7 +311,14 @@ enum DbCommand {
 }
 
 fn main() -> ExitCode {
-    let command = Cli::parse().command;
+    kiln_diagnostics::set_path_display(project::shown);
+    let cli = Cli::parse();
+    ware::set_mode(ware::Mode {
+        locked: cli.locked,
+        offline: cli.offline,
+        ..Default::default()
+    });
+    let command = cli.command;
     // The language server talks to an editor, `upgrade` says itself what
     // is available, and JSON output is for programs.
     let notice = !matches!(
@@ -240,16 +380,77 @@ fn dispatch(command: Command) -> ExitCode {
         Command::Lsp => ExitCode::from(lsp::run() as u8),
         Command::Parse { file } => parse(&file),
         Command::Explain { code } => explain(&code),
-        Command::Add { package, dir } => match npm::add(&package, &dir) {
-            Ok(summary) => {
-                println!("{summary}");
-                ExitCode::SUCCESS
-            }
-            Err(err) => {
-                eprintln!("error: {err}");
-                ExitCode::FAILURE
-            }
-        },
+        Command::Add {
+            package,
+            dir,
+            version,
+            path,
+            git,
+            rev,
+            branch,
+            tag,
+            registry,
+            alias,
+            allow_capabilities,
+        } => report(if package.starts_with("npm:") {
+            npm::add(&package, &dir)
+        } else {
+            ware::commands::add(
+                &package,
+                &dir,
+                ware::commands::AddOptions {
+                    version,
+                    path,
+                    git,
+                    rev,
+                    branch,
+                    tag,
+                    registry,
+                    alias,
+                },
+                allow_capabilities,
+            )
+        }),
+        Command::Remove { ware: w, dir } => report(ware::commands::remove(&w, &dir)),
+        Command::Update {
+            wares,
+            dir,
+            allow_capabilities,
+        } => report(ware::commands::update(&wares, &dir, allow_capabilities)),
+        Command::Tree { dir, why } => report(ware::commands::tree(&dir, why.as_deref())),
+        Command::Fetch { dir } => report(ware::commands::fetch(&dir)),
+        Command::Publish {
+            dir,
+            registry,
+            dry_run,
+        } => report(ware::commands::publish(&dir, registry.as_deref(), dry_run)),
+        Command::Login { registry } => report(ware::commands::login(&registry)),
+        Command::Yank {
+            release,
+            registry,
+            undo,
+            dir,
+        } => report(ware::commands::yank(
+            &release,
+            registry.as_deref(),
+            &dir,
+            undo,
+        )),
+        Command::Cache { action } => report(ware::commands::cache_command(match action {
+            CacheCommand::Dir => ware::commands::CacheAction::Dir,
+            CacheCommand::Stats => ware::commands::CacheAction::Stats,
+            CacheCommand::Verify => ware::commands::CacheAction::Verify,
+            CacheCommand::Prune {
+                dry_run,
+                older_than,
+            } => ware::commands::CacheAction::Prune {
+                dry_run,
+                days: older_than,
+            },
+        })),
+        Command::Ware {
+            action: WareCommand::Verify { ware: w, dir },
+        } => report(ware::commands::verify_ware(&w, &dir)),
         Command::Upgrade {
             version,
             check,
@@ -276,6 +477,20 @@ fn dispatch(command: Command) -> ExitCode {
             db::run(action, &path, url)
         }
         Command::UpdateCheck => notice::update_check(),
+    }
+}
+
+/// Prints a command's summary, or its error.
+fn report(result: Result<String, String>) -> ExitCode {
+    match result {
+        Ok(summary) => {
+            println!("{summary}");
+            ExitCode::SUCCESS
+        }
+        Err(err) => {
+            eprintln!("error: {err}");
+            ExitCode::FAILURE
+        }
     }
 }
 
@@ -359,7 +574,7 @@ fn check(paths: Vec<PathBuf>, json: bool) -> ExitCode {
         let texts = project
             .files
             .iter()
-            .map(|p| std::fs::read_to_string(p).map(|text| (p.clone(), text)))
+            .map(|p| project::read(p).map(|text| (p.clone(), text)))
             .collect::<Result<Vec<_>, _>>();
         let app = match texts {
             Ok(texts) => check_project_sources_entry(&project.root, &project.entry, texts).0,
@@ -654,8 +869,8 @@ fn check_program_of(path: &Path) -> Result<(kiln_check::Program, PathBuf), Strin
     })?;
     let mut texts = Vec::new();
     for file in &project.files {
-        let text = std::fs::read_to_string(file)
-            .map_err(|err| format!("cannot read {}: {err}", file.display()))?;
+        let text =
+            project::read(file).map_err(|err| format!("cannot read {}: {err}", file.display()))?;
         texts.push((file.clone(), text));
     }
     let bound = project::bind::bind_entry(&project.root, &project.entry, &texts);
@@ -762,7 +977,7 @@ fn build(
     };
     let mut texts = Vec::new();
     for path in &files {
-        let text = std::fs::read_to_string(path).map_err(|err| {
+        let text = project::read(path).map_err(|err| {
             eprintln!("error: cannot read {}: {err}", path.display());
             ExitCode::from(2)
         })?;
@@ -1298,6 +1513,34 @@ fn display_symbols(text: &str, names: &BTreeMap<String, String>) -> String {
     for (name, display) in names {
         out = out.replace(name, display);
     }
+    ware_names(&out)
+}
+
+/// `__ware.kiln.ui.Button` as `kiln/ui.Button`, as people write Wares.
+fn ware_names(text: &str) -> String {
+    let mut out = String::new();
+    let mut rest = text;
+    while let Some(i) = rest.find("__ware.") {
+        out.push_str(&rest[..i]);
+        let after = &rest[i + "__ware.".len()..];
+        let mut parts = after.splitn(3, '.');
+        match (parts.next(), parts.next()) {
+            (Some(p), Some(n))
+                if !p.is_empty() && p.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') =>
+            {
+                let len = n
+                    .find(|c: char| !(c.is_ascii_alphanumeric() || c == '_'))
+                    .unwrap_or(n.len());
+                out.push_str(&format!("{p}/{}", &n[..len]));
+                rest = &after[p.len() + 1 + len..];
+            }
+            _ => {
+                out.push_str("__ware.");
+                rest = after;
+            }
+        }
+    }
+    out.push_str(rest);
     out
 }
 fn render_original(diag: &Diagnostic, file: &SourceFile, info: &AppInfo) -> String {

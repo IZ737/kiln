@@ -243,7 +243,7 @@ pub fn static_files(dir: &Path) -> Result<Vec<Asset>, String> {
         }
         Ok(())
     }
-    let dir = dir.join("static");
+    let dir = crate::project::real(&dir.join("static"));
     let mut out = Vec::new();
     if dir.is_dir() {
         walk(&dir, "/static", &mut out)?;
@@ -269,17 +269,35 @@ impl Loader {
         if Path::new(name).is_absolute() {
             return Err(format!("`{name}` must be a path relative to the glaze"));
         }
-        let path = base.join(name);
-        let full = path
+        // The folder a file must stay in: the program's, or the Ware's
+        // whose component refers to it.
+        let path = crate::ware::resolve::normalize(&base.join(name));
+        let bound = match base.strip_prefix(&self.root).ok().and_then(|rest| {
+            let parts: Vec<_> = rest.components().take(3).collect();
+            (parts.len() == 3 && parts[0].as_os_str() == "__ware")
+                .then(|| parts.iter().collect::<PathBuf>())
+        }) {
+            Some(ware) => self.root.join(ware),
+            None => self.root.clone(),
+        };
+        if !path.starts_with(&bound)
+            || (bound == self.root && path.starts_with(self.root.join("__ware")))
+        {
+            return Err(format!("`{name}` is outside the program's folder"));
+        }
+        let full = crate::project::real(&path)
             .canonicalize()
             .map_err(|_| format!("there is no file `{name}`"))?;
-        if !full.starts_with(&self.root) {
+        let real_bound = crate::project::real(&bound)
+            .canonicalize()
+            .unwrap_or_else(|_| bound.clone());
+        if !full.starts_with(&real_bound) {
             return Err(format!("`{name}` is outside the program's folder"));
         }
         if !full.is_file() {
             return Err(format!("`{name}` is not a file"));
         }
-        Ok(full)
+        Ok(path)
     }
 
     fn global_file(&mut self, name: &str) -> Result<(), String> {
@@ -342,7 +360,8 @@ impl Loader {
         if let Some(u) = self.by_file.get(&path) {
             return Ok(format!("{u}{suffix}"));
         }
-        let body = std::fs::read(&path).map_err(|e| format!("cannot read `{url}`: {e}"))?;
+        let body = std::fs::read(crate::project::real(&path))
+            .map_err(|e| format!("cannot read `{url}`: {e}"))?;
         let served = self.add(&path, content_type(&path), body);
         Ok(format!("{served}{suffix}"))
     }
@@ -388,7 +407,7 @@ impl Loader {
 }
 
 fn read_text(path: &Path) -> Result<String, String> {
-    std::fs::read_to_string(path).map_err(|e| format!("cannot read {}: {e}", path.display()))
+    crate::project::read(path).map_err(|e| format!("cannot read {}: {e}", path.display()))
 }
 
 fn css_error(file: &str, e: kiln_css::CssError) -> String {

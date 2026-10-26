@@ -219,7 +219,7 @@ impl Server {
             if open.contains_key(&p) {
                 continue;
             }
-            if let Ok(text) = std::fs::read_to_string(&p) {
+            if let Ok(text) = crate::project::read(&p) {
                 sources.push(features::Source {
                     path: p,
                     uri: None,

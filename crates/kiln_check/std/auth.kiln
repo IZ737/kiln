@@ -74,3 +74,7 @@ fn hash_password(password: String) -> String ! {}
 fn verify_password(password: String, hash: String) -> Bool {}
 // A value no one can guess, for a link in an email or an API key.
 fn token(bytes: Int = 32) -> String {}
+// The SHA-256 digest of text's bytes, as 64 lower-case hex digits: for
+// checksums, and for API keys stored hashed. Passwords need
+// `hash_password`, which is slow on purpose.
+fn sha256(text: String) -> String {}

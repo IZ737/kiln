@@ -287,7 +287,9 @@ impl GlazeParser<'_> {
             Some('<') => match self.peek_at(1) {
                 Some('/') => !self.tag_name(self.pos + 2).is_empty(),
                 Some('!' | '?' | '%') => true,
-                Some(c) => c.is_ascii_alphabetic(),
+                // `__ware.` starts a Ware's component, as the compiler
+                // names it inside a build.
+                Some(c) => c.is_ascii_alphabetic() || self.rest()[1..].starts_with("__ware."),
                 None => false,
             },
             _ => false,

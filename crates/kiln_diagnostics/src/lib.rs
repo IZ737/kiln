@@ -166,6 +166,8 @@ impl Diagnostic {
     ///   = help: ...
     /// ```
     pub fn render(&self, file: &SourceFile) -> String {
+        let shown = display_path(&file.name);
+        let file = &SourceFile::new(shown, file.text.clone());
         let mut out = String::new();
         let severity = match self.severity {
             Severity::Error => "error",
@@ -212,7 +214,7 @@ impl Diagnostic {
             "code": self.code,
             "severity": self.severity,
             "message": self.message,
-            "file": file.name,
+            "file": display_path(&file.name),
             "start": file.line_col(self.span.start),
             "end": file.line_col(self.span.end),
             "span": self.span,
@@ -260,5 +262,21 @@ mod tests {
         assert_eq!(json["code"], "E0101");
         assert_eq!(json["start"]["column"], 5);
         assert!(json["explanation"].is_string());
+    }
+}
+
+static PATH_DISPLAY: std::sync::OnceLock<fn(&str) -> String> = std::sync::OnceLock::new();
+
+/// Sets how file names are shown in diagnostics: a compiler can build
+/// files under names of its own (such as a dependency's source mounted in
+/// a project) and show where they really are.
+pub fn set_path_display(display: fn(&str) -> String) {
+    let _ = PATH_DISPLAY.set(display);
+}
+
+fn display_path(name: &str) -> String {
+    match PATH_DISPLAY.get() {
+        Some(display) => display(name),
+        None => name.to_string(),
     }
 }

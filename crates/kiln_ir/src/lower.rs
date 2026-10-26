@@ -39,8 +39,16 @@ pub fn lower(
                 && matches!(&program.adts[id].kind, AdtKind::Struct(f) if f.is_empty())
         })
         .collect();
+    // A type from a folder module carries its module in its name; a value
+    // is shown with the name its source gave it.
+    let mut adts = program.adts.clone();
+    for adt in &mut adts {
+        if let Some(name) = source_name(&adt.name) {
+            adt.name = name;
+        }
+    }
     Ok(Program {
-        adts: program.adts.clone(),
+        adts,
         std_adts: program.std_adts,
         builtin,
         prims: l.prims,
@@ -2652,4 +2660,12 @@ fn type_expr_name(t: &ast::TypeExpr) -> Option<&str> {
         }
         _ => None,
     }
+}
+
+/// `Post` for `KilnModule_5_posts_symbol_Post`, the name a folder
+/// module's type has inside a program.
+pub fn source_name(name: &str) -> Option<String> {
+    let rest = name.strip_prefix("KilnModule_")?;
+    let at = rest.rfind("_symbol_")?;
+    Some(rest[at + "_symbol_".len()..].to_string())
 }

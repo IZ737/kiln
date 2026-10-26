@@ -86,6 +86,7 @@ pub static RT_FNS: &[RtFn] = &[
         None,
     ),
     f("auth", "token", "k_rt_auth_token", 1, false, None),
+    f("auth", "sha256", "k_rt_auth_sha256", 1, false, None),
     f(
         "auth",
         "Sessions.sign_in",
