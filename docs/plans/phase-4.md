@@ -2,6 +2,8 @@
 
 **Status:** Planned implementation and acceptance specification. Syntax snippets here describe **targets**, not functions that currently compile. The existing Glaze parser recognizes `{% state %}`, `on:...` and hydration hints, but compiling interactive Embers remains future work.
 
+**Post-implementation correction (2026-10-26):** Phase 4 landed with *implicit* Embers (a `.glaze` containing state/handlers). That behavior is currently implemented, but it does not match the later decision for explicit `.ember` files. [Phase 4.1](phase-4.1.md) is the authoritative follow-up for component file kinds; it supersedes conflicting implicit classification language below, not the WasmGC, RPC, hydration or interop design. Do not infer that `.ember` currently compiles from this plan.
+
 **Goal:** Complete Kiln's browser-interactivity and typed client/server language capabilities **before** the database and authentication framework. Phase 3's compiled Glazes and styles and the existing HTTP/JSON runtime suffice for browser WasmGC, selective hydration, reactive state, and checked `server fn` RPC. Phase 5 will add persistent data, sessions and authorization on top of that boundary.
 
 **Done when:** A native Kiln server runs a genuine **database-free, interactive website** with ordinary SSR content, selective WasmGC islands, typed state/events, and a browser calling a **pure or ephemeral-state server function** through generated RPC. Invalid/oversized/cross-origin calls are rejected. No ORM, database, user accounts, authentication framework or handwritten application JavaScript/RPC is required.
@@ -138,7 +140,7 @@ An SSR page selectively hydrates a component:
 
 - Provide browser-targeted typed modules (initially `browser`) for representative DOM events, clipboard, storage, fetch and element references; expand to history/location, files, canvas, observers and other standards as needed. Wrap host APIs rather than reimplementing browser behavior.
 - Browser-only modules and functions are rejected when called from server-only code or during SSR evaluation. Browser effects belong in client lifecycle/tasks/event handlers. Browser permissions, secure-context requirements, same-origin and CSP rules continue to apply.
-- Ordinary Glazes remain server-rendered with no bridge if they contain no Embers. Interactive components use the separately chosen `.ember` source model; their exact grammar and state notation must be reconciled across this plan before implementation.
+- Current Phase 4 implementation recognizes Embers implicitly within `.glaze` files; the agreed explicit `.ember` file model and the removal of implicit promotion are specified and scheduled in [Phase 4.1](phase-4.1.md). Until that lands, the `.ember` suffix is not a supported source kind. Ordinary static Glazes continue to render without a browser bridge.
 
 ### 8.2 npm packages with automatically generated bindings
 
