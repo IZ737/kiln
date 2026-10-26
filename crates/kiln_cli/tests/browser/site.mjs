@@ -80,7 +80,7 @@ try {
   );
   await versioned.click();
   await eventually("the versioned command keeps shell quotes", async () =>
-    (await page.evaluate(() => navigator.clipboard.readText())).endsWith('--version v0.9.0 --dir "$HOME/.kiln"'),
+    (await page.evaluate(() => navigator.clipboard.readText())).endsWith('--version v0.9.1 --dir "$HOME/.kiln"'),
   );
 
   check("the site logged nothing", logs.length === 0, logs.join("\n"));

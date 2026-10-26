@@ -4,8 +4,8 @@
 <p>Kiln is one executable that needs nothing else installed. The installers download the latest release, check its SHA-256 checksum and put <code>kiln</code> in <code>~/.kiln/bin</code>, on your PATH.</p>
 <h2 id="linux">Linux</h2>
 <Copy text="curl --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/IZ737/kiln/main/install.sh | sh" client:visible />
-<p>The default location belongs to your user and needs no administrator permissions. To select version 0.9.0 and that location explicitly:</p>
-<Copy text={"curl --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/IZ737/kiln/main/install.sh | sh -s -- --version v0.9.0 --dir \"$HOME/.kiln\""} client:visible />
+<p>The default location belongs to your user and needs no administrator permissions. To select version 0.9.1 and that location explicitly:</p>
+<Copy text={"curl --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/IZ737/kiln/main/install.sh | sh -s -- --version v0.9.1 --dir \"$HOME/.kiln\""} client:visible />
 <p>Choose a directory you can write to. In a restricted cloud workspace, use <code>--dir /workspace/.kiln --no-modify-path</code>, then run <code>export PATH=&quot;/workspace/.kiln/bin:$PATH&quot;</code> in your shell. <code>/opt/kiln</code> usually requires administrator permissions.</p>
 <h2 id="windows">Windows</h2>
 <p>In PowerShell:</p>

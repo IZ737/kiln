@@ -144,7 +144,7 @@ the folder from your user PATH).
 To install a particular release, or somewhere else:
 
 ```sh
-curl --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/IZ737/kiln/main/install.sh | sh -s -- --version v0.9.0 --dir "$HOME/.kiln"
+curl --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/IZ737/kiln/main/install.sh | sh -s -- --version v0.9.1 --dir "$HOME/.kiln"
 ```
 
 ```powershell
