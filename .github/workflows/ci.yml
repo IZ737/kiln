@@ -31,7 +31,7 @@ jobs:
       - run: cargo clippy --all-targets -- -D warnings
       # Node.js runs the WebAssembly builds of the conformance programs, and
       # Playwright's Chromium the tests in a real browser (tests/browser.rs).
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
       - name: Playwright and Chromium, for the browser tests
@@ -84,7 +84,7 @@ jobs:
         working-directory: editors/vscode
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
       - run: npm ci
