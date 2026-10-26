@@ -98,6 +98,23 @@ async function run() {
   });
   await vscode.commands.executeCommand("kiln.check", mainUri);
   assert.strictEqual(await finished, 0);
+
+  // Ember file association and language features, through the real client.
+  const emberUri = vscode.Uri.joinPath(vscode.workspace.workspaceFolders[0].uri, "counter.ember");
+  const emberDoc = await vscode.workspace.openTextDocument(emberUri);
+  await vscode.window.showTextDocument(emberDoc);
+  assert.strictEqual(emberDoc.languageId, "ember");
+  const emberHovers = await until("Ember hover", async () => {
+    const result = await vscode.commands.executeCommand("vscode.executeHoverProvider", emberUri, positionOf(emberDoc, "post.title", 6));
+    return result?.length ? result : false;
+  });
+  const emberText = emberHovers.flatMap(h => h.contents).map(c => typeof c === "string" ? c : c.value).join("\n");
+  assert.match(emberText, /Post.title: String/);
+  const pageUri = vscode.Uri.joinPath(vscode.workspace.workspaceFolders[0].uri, "page.glaze");
+  const pageDoc = await vscode.workspace.openTextDocument(pageUri);
+  const componentDefinitions = await vscode.commands.executeCommand("vscode.executeDefinitionProvider", pageUri, positionOf(pageDoc, "Counter", 2));
+  assert.ok(componentDefinitions.some(d => (d.targetUri ?? d.uri).fsPath === emberUri.fsPath));
+
 }
 
 module.exports = { run };

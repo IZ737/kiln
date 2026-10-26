@@ -233,7 +233,7 @@ fn add_keeps_the_browser_module_and_records_it() {
     // A program's embers call it, and the build serves its modules.
     std::fs::write(dir.join("main.kiln"), PROGRAM).unwrap();
     std::fs::write(dir.join("index.glaze"), INDEX).unwrap();
-    std::fs::write(dir.join("demo.glaze"), DEMO).unwrap();
+    std::fs::write(dir.join("demo.ember"), DEMO).unwrap();
     let exe = dir.join("app");
     let out = kiln(
         &["build", dir.to_str().unwrap(), "-o", exe.to_str().unwrap()],

@@ -519,6 +519,11 @@ app.mount("/admin", admin.site(db, models: [Post, User, Comment]))
 
 ## Glazes and embers
 
+`.glaze` declares a server-only component; `.ember` declares a browser-capable
+component that renders initial HTML on the server and hydrates selectively.
+Only `.ember` permits reactive state and event handlers. Both use the same
+markup grammar. See the [implemented source contract](reference/glazes.md#embers).
+
 Glazes (`.glaze`) are templates compiled to typed functions, with
 context-aware escaping, typed props, layouts, components and reverse routing.
 Phase 3 implements server-side Glaze rendering without a browser runtime.

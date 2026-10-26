@@ -1,0 +1,9 @@
+{
+  "name": "Ember",
+  "scopeName": "text.html.ember",
+  "patterns": [
+    {
+      "include": "text.html.glaze"
+    }
+  ]
+}

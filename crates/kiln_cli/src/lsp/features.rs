@@ -39,7 +39,10 @@ impl<'a> Program<'a> {
             .iter()
             .map(|s| {
                 if crate::is_glaze(&s.path) {
-                    Parsed::Glaze(Box::new(kiln_syntax::glaze::parse_glaze(&s.text).glaze))
+                    Parsed::Glaze(Box::new(
+                        kiln_syntax::glaze::parse_component(&s.text, &s.path.to_string_lossy())
+                            .glaze,
+                    ))
                 } else {
                     Parsed::Kiln(kiln_syntax::parse(&s.text).module)
                 }
@@ -203,6 +206,7 @@ fn describe_style(target: &Ref) -> Option<String> {
 /// How a name's declaration reads.
 fn describe(a: &Analysis, target: &Ref, text: &str) -> String {
     match target {
+        Ref::Component(file) => format!("component {file}"),
         Ref::Local(def) => {
             let name = &text[def.start as usize..def.end as usize];
             match a.binding_types.get(def) {
@@ -381,13 +385,24 @@ fn find_decl(
         };
         return Some((DeclIn::File(index), decl));
     }
+    if let Ref::Component(file) = target {
+        let i = program
+            .sources
+            .iter()
+            .position(|s| file_name(&s.path) == *file)?;
+        let name = match &program.parsed[i] {
+            Parsed::Glaze(g) => g.props.as_ref().map(|p| p.span).unwrap_or(Span::new(0, 0)),
+            _ => return None,
+        };
+        return Some((DeclIn::File(i), Decl { name, item: name }));
+    }
     let is_std = match target {
         Ref::Type(id) | Ref::Field(id, _) | Ref::Method(id, _) | Ref::Variant(id, _) => {
             *id < a.std_adts
         }
         Ref::Fn(name) => !program.modules().any(|(_, m)| declares_fn(m, name)),
         Ref::Module(_) | Ref::ModuleFn(..) => true,
-        Ref::Const(_) | Ref::Local(_) => false,
+        Ref::Const(_) | Ref::Local(_) | Ref::Component(_) => false,
         Ref::StyleKey { .. } | Ref::Token { .. } | Ref::Theme(_) => return None,
     };
     if !is_std {
@@ -519,7 +534,14 @@ pub(super) fn completion(sources: &[Source], index: usize, offset: usize) -> Val
             .char_indices()
             .find(|(_, c)| !is_name(*c))
             .map_or(text.len() - offset, |(i, _)| i);
-    let marked = format!("{}{COMPLETION_MARKER}{}", &text[..start], &text[end..]);
+    let marker = if crate::is_glaze(&sources[index].path)
+        && (text[..start].ends_with('<') || text[..start].ends_with("</"))
+    {
+        kiln_check::ide::COMPONENT_COMPLETION_MARKER
+    } else {
+        COMPLETION_MARKER
+    };
+    let marked = format!("{}{marker}{}", &text[..start], &text[end..]);
     let mut marked_sources: Vec<Source> = sources
         .iter()
         .map(|s| Source {
@@ -580,6 +602,11 @@ fn adt_kind(a: &Analysis, id: usize) -> u32 {
 fn items(a: &Analysis, completion: &Completion, glaze: bool) -> Vec<Value> {
     let mut out = Vec::new();
     match completion {
+        Completion::Components(components) => {
+            for (tag, file) in components {
+                out.push(item(tag, STRUCT, file.clone(), 0));
+            }
+        }
         Completion::Names(locals) => {
             for (name, ty) in locals {
                 out.push(item(name, VARIABLE, a.show(ty), 0));
@@ -735,7 +762,7 @@ fn symbol(name: &str, kind: u32, span: Span, name_span: Span) -> Symbol {
 /// The declarations of a file, from what parsed.
 fn symbols(path: &Path, text: &str) -> Vec<Symbol> {
     if crate::is_glaze(path) {
-        let glaze = kiln_syntax::glaze::parse_glaze(text).glaze;
+        let glaze = kiln_syntax::glaze::parse_component(text, &path.to_string_lossy()).glaze;
         let props = glaze.props.iter().flat_map(|p| &p.params);
         let props = props.map(|p| symbol(&p.name.name, SYM_FIELD, p.span, p.name.span));
         let states = glaze.states.iter();

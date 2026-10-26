@@ -96,17 +96,17 @@ fn declarations() {
 }
 
 #[test]
-fn embers_hold_state_or_handle_events() {
+fn template_contents_do_not_declare_embers() {
     let g = ok("{% state n = 0 %}\n<p>{n}</p>");
     assert_eq!(g.states.len(), 1);
-    assert!(g.is_ember());
+    assert!(!g.is_ember());
     let g = ok("<button on:click={\n    count += 1\n    log.info(\"clicked\")\n}>+</button>");
     let button = element(&g.nodes[0]);
     let AttrValue::Handler(block) = &button.attrs[0].value else {
         panic!("expected a handler");
     };
     assert_eq!(block.stmts.len(), 2);
-    assert!(g.is_ember());
+    assert!(!g.is_ember());
 }
 
 #[test]
@@ -370,4 +370,22 @@ fn css_tags_import_stylesheets_and_css_modules() {
     // Imports belong at the top level of the glaze.
     assert!(!error_codes("{% if a %}{% css \"x.css\" %}{% end %}").is_empty());
     assert!(!error_codes("{% css module from \"x.css\" %}").is_empty());
+}
+
+#[test]
+fn source_suffix_declares_kind_without_changing_spans() {
+    use kiln_syntax::glaze::parse_component;
+    for src in [
+        "<p>static</p>",
+        "{% state n = 0 %}<button on:click={ n += 1 }>{n}</button>",
+    ] {
+        let server = parse_component(src, "counter.glaze");
+        let client = parse_component(src, "counter.ember");
+        assert!(server.diagnostics.is_empty());
+        assert!(client.diagnostics.is_empty());
+        assert!(!server.glaze.is_ember());
+        assert!(client.glaze.is_ember());
+        assert_eq!(server.glaze.nodes, client.glaze.nodes);
+        assert_eq!(server.glaze.states, client.glaze.states);
+    }
 }

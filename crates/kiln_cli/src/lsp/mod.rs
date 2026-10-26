@@ -179,7 +179,9 @@ impl Server {
     fn program(&self, uri: &str) -> Option<(Vec<features::Source>, usize)> {
         let doc = self.docs.get(uri)?;
         let Some(path) = uri_to_path(uri) else {
-            let name = if uri.ends_with(".glaze") {
+            let name = if uri.ends_with(".ember") {
+                "untitled.ember"
+            } else if uri.ends_with(".glaze") {
                 "untitled.glaze"
             } else {
                 "untitled.kiln"

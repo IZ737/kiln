@@ -64,8 +64,10 @@ async function startClient() {
       documentSelector: [
         { scheme: "file", language: "kiln" },
         { scheme: "file", language: "glaze" },
+        { scheme: "file", language: "ember" },
         { scheme: "untitled", language: "kiln" },
         { scheme: "untitled", language: "glaze" },
+        { scheme: "untitled", language: "ember" },
       ],
       outputChannel: output,
     },

@@ -1,0 +1,4 @@
+{% props title: String %}
+{% css "site.css" %}
+<!doctype html>
+<html><head><title>{title}</title></head><body>{% slot %}</body></html>

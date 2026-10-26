@@ -353,12 +353,21 @@ pub enum PatternKind {
 
 // ----- Glazes (`.glaze` templates and components) -----
 
-/// A parsed `.glaze` file.
+/// The source suffix declares whether a component can run in the browser.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub enum ComponentKind {
+    #[default]
+    Glaze,
+    Ember,
+}
+
+/// A parsed `.glaze` or `.ember` file.
 #[derive(Clone, Debug, PartialEq, Default)]
 pub struct Glaze {
+    pub kind: ComponentKind,
     /// `{% props post: Post, user: User? = none %}`
     pub props: Option<Props>,
-    /// `{% state likes = post.likes %}`. A glaze with state is an ember.
+    /// `{% state likes = post.likes %}` (valid only in an Ember).
     pub states: Vec<LocalDecl>,
     /// `{% layout "base.glaze" title: post.title %}`
     pub layout: Option<Layout>,
@@ -371,34 +380,9 @@ pub struct Glaze {
 }
 
 impl Glaze {
-    /// Whether this glaze runs in the browser: it holds state or handles
-    /// events.
+    /// Whether the source file explicitly declares an Ember.
     pub fn is_ember(&self) -> bool {
-        fn handles_events(nodes: &[Node]) -> bool {
-            nodes.iter().any(|n| match n {
-                Node::Element(e) => {
-                    e.attrs
-                        .iter()
-                        .any(|a| matches!(a.value, AttrValue::Handler(_)))
-                        || handles_events(&e.children)
-                }
-                Node::If {
-                    branches,
-                    otherwise,
-                    ..
-                } => {
-                    branches.iter().any(|b| handles_events(&b.body))
-                        || otherwise.as_deref().is_some_and(handles_events)
-                }
-                Node::For { body, empty, .. } => {
-                    handles_events(body) || empty.as_deref().is_some_and(handles_events)
-                }
-                Node::Match { cases, .. } => cases.iter().any(|c| handles_events(&c.body)),
-                Node::Fill { body, .. } => handles_events(body),
-                _ => false,
-            })
-        }
-        !self.states.is_empty() || handles_events(&self.nodes)
+        self.kind == ComponentKind::Ember
     }
 }
 

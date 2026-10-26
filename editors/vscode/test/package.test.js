@@ -136,3 +136,12 @@ test("the word pattern finds names as VS Code compiles it", () => {
   assert.deepStrictEqual(words("let café_2 = x.len"), ["let", "café_2", "x", "len"]);
   assert.deepStrictEqual(words("sleep(250ms) + 1_000"), ["sleep", "250ms", "1_000"]);
 });
+
+test("Ember is a first-class language with its own icon and grammar", () => {
+  const manifest = require("../package.json");
+  const language = manifest.contributes.languages.find(l => l.id === "ember");
+  assert.deepEqual(language.extensions, [".ember"]);
+  assert.ok(manifest.activationEvents.includes("onLanguage:ember"));
+  assert.ok(manifest.contributes.grammars.some(g => g.language === "ember"));
+  assert.ok(language.icon.light.includes("ember-wasm"));
+});

@@ -39,16 +39,20 @@ fn check_page(page: &str) -> (Vec<Diagnostic>, Vec<Diagnostic>) {
 }
 
 fn check_with(main: &str, page: &str) -> (Vec<Diagnostic>, Vec<Diagnostic>) {
+    check_named(main, page, "page.glaze")
+}
+
+fn check_named(main: &str, page: &str, name: &str) -> (Vec<Diagnostic>, Vec<Diagnostic>) {
     let module = kiln_syntax::parse(main);
     assert!(module.diagnostics.is_empty(), "{:#?}", module.diagnostics);
     let parsed: Vec<_> = [
         ("base.glaze", LAYOUT),
         ("post_card.glaze", CARD),
-        ("page.glaze", page),
+        (name, page),
     ]
     .iter()
     .map(|(name, src)| {
-        let r = kiln_syntax::glaze::parse_glaze(src);
+        let r = kiln_syntax::glaze::parse_component(src, name);
         assert!(r.diagnostics.is_empty(), "{name}: {:#?}", r.diagnostics);
         (*name, r.glaze)
     })
@@ -208,15 +212,15 @@ fn embers_run_in_the_browser() {
 <button on:click={
     likes = like_post(post.id) catch { likes }
 }>{likes}</button>";
-    page_ok(ember);
+    ember_ok(ember);
     // Server functions can fail, so handlers must catch.
     let uncaught = ember.replace(" catch { likes }", "");
-    assert_eq!(page_errors(&uncaught), [codes::MISSING_TRY]);
+    assert_eq!(ember_errors(&uncaught), [codes::MISSING_TRY]);
     // Props cannot be reassigned; state can.
     let assign_prop = ember.replace("likes = like_post", "post = post\n    likes = like_post");
-    assert_eq!(page_errors(&assign_prop), [codes::ASSIGN_TO_IMMUTABLE]);
+    assert_eq!(ember_errors(&assign_prop), [codes::ASSIGN_TO_IMMUTABLE]);
     let server_only = format!("{ember}\n{{% let n = sql.open(\"x\") catch {{ return }} %}}");
-    assert!(page_errors(&server_only).contains(&codes::SERVER_ONLY));
+    assert!(ember_errors(&server_only).contains(&codes::SERVER_ONLY));
 }
 
 #[test]
@@ -227,12 +231,12 @@ fn browser_modules_are_only_for_handlers() {
     browser.set_title(\"Hi\")
     shown = js.global(\"document\").get(\"title\").as_string() catch err { err.message }
 }>{shown}</button>";
-    page_ok(ember);
+    ember_ok(ember);
     // The server renders the ember, and has no browser.
     let outside = format!("{ember}\n<p>{{browser.title()}}</p>");
-    assert_eq!(page_errors(&outside), [codes::BROWSER_ONLY]);
+    assert_eq!(ember_errors(&outside), [codes::BROWSER_ONLY]);
     let main = APP.replace("fn main() ! {", "fn main() ! {\n    browser.log(\"hi\")");
-    assert!(check_with(&main, ember)
+    assert!(check_ember(&main, ember)
         .0
         .iter()
         .any(|d| d.code == codes::UNDEFINED_NAME || d.code == codes::BROWSER_ONLY));
@@ -240,8 +244,8 @@ fn browser_modules_are_only_for_handlers() {
 
 #[test]
 fn handlers_take_known_modifiers() {
-    page_ok("{% props post: Post, title: String %}\n{% state n = 0 %}\n<form on:submit.prevent.latest={ n = 1 }><button on:click.stop={ n = 2 }>{n}</button></form>");
-    let (_, diags) = check_page("{% props post: Post, title: String %}\n{% state n = 0 %}\n<button on:click.Prevent={ n = 1 }>{n}</button>");
+    ember_ok("{% props post: Post, title: String %}\n{% state n = 0 %}\n<form on:submit.prevent.latest={ n = 1 }><button on:click.stop={ n = 2 }>{n}</button></form>");
+    let (_, diags) = check_ember(APP, "{% props post: Post, title: String %}\n{% state n = 0 %}\n<button on:click.Prevent={ n = 1 }>{n}</button>");
     assert_eq!(
         diags.iter().map(|d| d.code).collect::<Vec<_>>(),
         [codes::UNKNOWN_MODIFIER]
@@ -256,22 +260,22 @@ fn handlers_take_known_modifiers() {
 fn what_crosses_to_the_browser_is_plain_data() {
     // An ember's state and props travel as JSON.
     assert_eq!(
-        page_errors(
+        ember_errors(
             "{% state f = fn(x: Int) -> Int { x } %}\n<button on:click={ f = f }>x</button>"
         ),
         [codes::NOT_SERIALIZABLE]
     );
     assert_eq!(
-        page_errors("{% props pick: fn() -> Int %}\n{% state n = 0 %}\n<button on:click={ n = 1 }>{n}</button>"),
+        ember_errors("{% props pick: fn() -> Int %}\n{% state n = 0 %}\n<button on:click={ n = 1 }>{n}</button>"),
         [codes::NOT_SERIALIZABLE]
     );
     // Structs of plain data are fine; a handle inside one is not.
-    page_ok("{% props post: Post, title: String %}\n{% state p = post %}\n<button on:click={ p = post }>{p.title}</button>");
+    ember_ok("{% props post: Post, title: String %}\n{% state p = post %}\n<button on:click={ p = post }>{p.title}</button>");
     let main = APP.replace(
         "server fn like_post(id: Int) -> Int ! {",
         "server fn run(task: fn() -> Int) -> Int { task() }\nstruct Wrap { req: web.Request }\nserver fn wrap(w: Wrap) {}\nserver fn like_post(id: Int) -> Int ! {",
     );
-    let codes: Vec<_> = check_with(&main, PROPS).0.iter().map(|d| d.code).collect();
+    let codes: Vec<_> = check_ember(&main, PROPS).0.iter().map(|d| d.code).collect();
     assert_eq!(codes, [codes::NOT_SERIALIZABLE, codes::NOT_SERIALIZABLE]);
 }
 
@@ -320,7 +324,7 @@ fn glaze_codes(glazes: &[(&str, &str)]) -> Vec<Vec<&'static str>> {
     let parsed: Vec<_> = glazes
         .iter()
         .map(|(n, src)| {
-            let r = kiln_syntax::glaze::parse_glaze(src);
+            let r = kiln_syntax::glaze::parse_component(src, n);
             assert!(r.diagnostics.is_empty(), "{n}: {:#?}", r.diagnostics);
             (*n, r.glaze)
         })
@@ -379,4 +383,16 @@ fn glazes_cannot_render_themselves_without_end() {
     // Inside a block that ends, a component may render itself.
     let tree = "{% props post: Post %}{% for t in post.tags %}<Tree post={post} />{% end %}";
     assert_eq!(glaze_codes(&[("tree.glaze", tree)]), [Vec::<&str>::new()]);
+}
+
+fn check_ember(main: &str, src: &str) -> (Vec<Diagnostic>, Vec<Diagnostic>) {
+    check_named(&main.replace("page.glaze", "page.ember"), src, "page.ember")
+}
+fn ember_ok(src: &str) {
+    let (main, diags) = check_ember(APP, src);
+    assert!(main.is_empty(), "{main:#?}");
+    assert!(diags.is_empty(), "{diags:#?}");
+}
+fn ember_errors(src: &str) -> Vec<&'static str> {
+    check_ember(APP, src).1.iter().map(|d| d.code).collect()
 }

@@ -71,12 +71,36 @@ pub const ENDLESS_GLAZE: &str = "E0310";
 pub const MISPLACED_FILL: &str = "E0311";
 pub const BAD_CSS: &str = "E0312";
 pub const UNKNOWN_MODIFIER: &str = "E0313";
+pub const EMBER_REQUIRED: &str = "E0314";
+pub const AMBIGUOUS_COMPONENT: &str = "E0315";
+pub const EMBER_LAYOUT: &str = "E0316";
 
 pub const NOT_COMPILED_YET: &str = "E0401";
 pub const NO_MAIN: &str = "E0402";
 pub const SERVER_CALL_PLACE: &str = "E0403";
 
 pub static ALL: &[ErrorCode] = &[
+    ErrorCode {
+        code: EMBER_REQUIRED,
+        title: "an Ember component is required",
+        explanation: "Only `.ember` files may declare reactive state or event handlers. Hydration hints require an Ember target. Rename an interactive `.glaze` file to `.ember`, or remove the hydration hint from a server-only component. File renames cannot be expressed as a source-text replacement.",
+        wrong: "{# counter.ember #}\n{% state count = 0 %}",
+        right: "{# counter.ember #}\n{% state count = 0 %}",
+    },
+    ErrorCode {
+        code: AMBIGUOUS_COMPONENT,
+        title: "ambiguous component name",
+        explanation: "A component tag must resolve to exactly one file. A same-folder pair such as counter.ember and counter.ember is ambiguous. Rename one component and update its tags.",
+        wrong: "{# both counter.ember and counter.ember exist #}\n<Counter />",
+        right: "{# counter.ember and summary.glaze #}\n<Counter /><Summary />",
+    },
+    ErrorCode {
+        code: EMBER_LAYOUT,
+        title: "Ember used as a page layout",
+        explanation: "Layouts are server-side .glaze files. An Ember cannot declare a page layout. Place the Ember inside a Glaze page that uses the layout instead.",
+        wrong: "{# counter.ember #}\n{% layout \"base.glaze\" %}",
+        right: "{# page.glaze #}\n{% layout \"base.glaze\" %}\n<Counter />",
+    },
     ErrorCode {
         code: UNEXPECTED_CHAR,
         title: "unexpected character",
@@ -332,7 +356,7 @@ pub static ALL: &[ErrorCode] = &[
     ErrorCode {
         code: UNKNOWN_GLAZE,
         title: "unknown glaze or component",
-        explanation: "Components, layouts and `web.render` refer to `.glaze` files in the same directory. A component tag uses the file name in PascalCase: `<LikeButton>` is `like_button.glaze`. A layout must contain `{% slot %}`.",
+        explanation: "Components, layouts and `web.render` refer to `.glaze` files in the same directory. A component tag uses the file name in PascalCase: `<LikeButton>` is `like_button.ember`. A layout must contain `{% slot %}`.",
         wrong: "web.render(\"home.glaze\", { posts })   // the file is index.glaze",
         right: "web.render(\"index.glaze\", { posts })",
     },

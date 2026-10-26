@@ -11,8 +11,8 @@ fn compile(glazes: &[(&str, &str)]) -> (String, kiln_ir::glaze::GlazeSource) {
     let module = kiln_syntax::parse(APP).module;
     let parsed: Vec<Glaze> = glazes
         .iter()
-        .map(|(_, src)| {
-            let r = kiln_syntax::glaze::parse_glaze(src);
+        .map(|(name, src)| {
+            let r = kiln_syntax::glaze::parse_component(src, name);
             assert!(r.diagnostics.is_empty(), "{:#?}", r.diagnostics);
             r.glaze
         })
@@ -92,11 +92,11 @@ fn copied_code_maps_back_to_the_glaze() {
 /// Compiles an ember for the server and for the browser.
 fn ember(page: &str) -> (GlazeSource, GlazeSource) {
     let module = kiln_syntax::parse(APP).module;
-    let glaze = kiln_syntax::glaze::parse_glaze(page).glaze;
-    let checked = kiln_check::check_app(&[&module], &[("page.glaze", &glaze)]);
+    let glaze = kiln_syntax::glaze::parse_component(page, "page.ember").glaze;
+    let checked = kiln_check::check_app(&[&module], &[("page.ember", &glaze)]);
     assert!(checked.glazes[0].is_empty(), "{:#?}", checked.glazes[0]);
     let input = [GlazeInput {
-        file: "page.glaze",
+        file: "page.ember",
         src: page,
         glaze: &glaze,
         values: &checked.glaze_values[0],
