@@ -19,7 +19,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Latest release through a pipe, as the README shows
         run: cat install.sh | sh
       - name: A login shell finds kiln on PATH
@@ -44,7 +44,7 @@ jobs:
     timeout-minutes: 30
     container: alpine:3.20
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - run: sh install.sh
       - run: sh -lc 'kiln run examples/hello'
 
@@ -52,7 +52,7 @@ jobs:
     runs-on: macos-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       # There is no macOS build yet: the installer must say so and fail.
       - run: |
           if sh install.sh 2> err.txt; then exit 1; fi
@@ -71,7 +71,7 @@ jobs:
       run:
         shell: ${{ matrix.shell }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Latest release through iex, as the README shows
         run: |
           Get-Content -Raw install.ps1 | Invoke-Expression
