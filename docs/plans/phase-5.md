@@ -1,12 +1,12 @@
 # Phase 5 — Data, models, forms, authentication and admin
 
-**Status:** Planned; design and implementation contract, **not documentation of currently implemented APIs**. Phase 3 (currently in active development) supplies compiled Glazes/styling; Phase 4 will supply WasmGC Embers and typed RPC. The `sql`/`auth` standard-library files are checkable placeholders; `Request.form`, `App.mount`, `orm`, `form`, `validate`, `session` and `admin` still need implementation.
+**Status:** Planned; design and implementation contract, **not documentation of currently implemented APIs**. Phase 3 supplies compiled Glazes/styling; Phase 4 supplies WasmGC Embers and typed RPC; Phase 4.1 formalizes explicit `.ember` files and **Phase 4.2 supplies multi-folder projects before Phase 5**. The `sql`/`auth` standard-library files are checkable placeholders; `Request.form`, `App.mount`, `orm`, `form`, `validate`, `session` and `admin` still need implementation.
 
 **Goal:** A developer can use **an existing SQL database or a fresh SQLite file** with typed Kiln models, reviewed migrations, validated forms, secure identity and a customizable SSR admin. **Integrate Phase 4 Embers and RPC** with that same persistence/auth/validation model, rather than creating separate client and server APIs.
 
-**End-to-end completion gate:** Build and run a realistic database-backed application with working sign-in, sessions, role/record permissions, validation, migrations, generated CRUD admin, custom Glazes and an **authenticated Ember invoking an ORM-backed `server fn` through Phase 4 RPC**. It must work as a native standalone Kiln executable on supported Linux and Windows. SQLite needs no separate database service; PostgreSQL and MySQL use external database servers. Both C and native compiler backends remain tested where supported.
+**End-to-end completion gate:** Build and run a realistic **multi-folder** database-backed application that organizes routes, models and authentication into Phase 4.2 local modules. It must include working sign-in, sessions, role/record permissions, validation, migrations, generated CRUD admin, custom Glazes and an **authenticated Ember invoking an ORM-backed `server fn` through Phase 4 RPC**. It must work as a native standalone Kiln executable on supported Linux and Windows. SQLite needs no separate database service; PostgreSQL and MySQL use external database servers. Both C and native compiler backends remain tested where supported.
 
-This plan refines the existing [design overview](../design.md#orm), [product vision](../vision.md#data-forms-and-authentication), [language rules](../reference/types.md), [standard library placeholders](../../crates/kiln_check/std/) and [Phase 3 Glaze plan](phase-3.md), following the [Phase 4 Ember/RPC plan](phase-4.md). The [roadmap](../../README.md#roadmap) remains the source of phase sequencing.
+This plan refines the existing [design overview](../design.md#orm), [product vision](../vision.md#data-forms-and-authentication), [language rules](../reference/types.md), [standard library placeholders](../../crates/kiln_check/std/) and [Phase 3 Glaze plan](phase-3.md), following the [Phase 4 Ember/RPC plan](phase-4.md), [Phase 4.1 explicit Ember files](phase-4.1.md) and [Phase 4.2 local modules](phase-4.2.md). The [roadmap](../../README.md#roadmap) remains the source of phase sequencing.
 
 **Reading rule:** All snippets below are **target API illustrations**, not executable examples of today's Kiln. Exact signatures and compiler lowering may change during implementation; public documentation only claims an API after code, tests and conformance land.
 
@@ -23,7 +23,7 @@ This plan refines the existing [design overview](../design.md#orm), [product vis
 9. **Authorization belongs on the server.** Hiding a button never grants security. Admin routes, reads, writes, actions and object selection enforce policies before performing work.
 10. **Secure defaults beat easy-to-misconfigure convenience.** Parameterized SQL, bounded input, signed opaque session IDs, protected cookies, Argon2id, CSRF protection, constant-time comparison where relevant, safe redirects, and explicit production secrets.
 11. **Use maintained native implementations.** Rust libraries/drivers in the runtime are pragmatic starting points, not immovable architecture. Keep drivers, password hashing and session stores replaceable without changing Kiln application APIs.
-12. **Respect phase boundaries.** Phase 5 builds on **Phase 4 Embers/WasmGC and typed RPC**, while preserving normal SSR forms and web routes. No Ware registry, `kiln.toml`, general module system or public `kiln test` command is necessary. Reuse the existing browser/server typed transport and extend its request identity/policy hooks.
+12. **Respect phase boundaries.** Phase 5 builds on **Phase 4/4.1 Embers/WasmGC, typed RPC and Phase 4.2 folder modules with an optional minimal `kiln.toml`**. Preserve SSR forms and web routes. Do not reimplement module resolution or require Wares, a registry, dependency `kiln.lock` or public `kiln test`. Reuse the browser/server transport and extend request identity/policy hooks.
 
 ## 2. Intended developer experience
 
@@ -349,7 +349,7 @@ app.mount("/admin", admin.site(db, models: [Post, User, Comment], authorize: pol
 
 ## 13. PR-sized implementation steps and review gates
 
-Each step must include tests and docs; do not reimplement Phase 4 Ember reactivity or expand into Phase 6 ecosystem tooling. Reuse Ember RPC for integration coverage.
+Each step must include tests and docs; do not reimplement Phase 4 Ember reactivity, Phase 4.1 file kinds or Phase 4.2 module resolution, or expand into Phase 6 ecosystem tooling. Reuse Ember RPC for integration coverage.
 
 ### Step 1 — SQLite SQL foundation
 
@@ -397,7 +397,7 @@ Each step must include tests and docs; do not reimplement Phase 4 Ember reactivi
 
 ### Step 8 — Integrated dogfooding, docs and cross-target gates
 
-- Build a substantial **database-backed Kiln application** with users, posts, comments, foreign keys, public read routes, edit forms, login, per-record authorization, schema import, committed migrations and custom admin.
+- Build a substantial **multi-folder, database-backed Kiln application** with route/model/auth modules from Phase 4.2, users, posts, comments, foreign keys, public read routes, edit forms, login, per-record authorization, schema import, committed migrations and custom admin.
 - Include an authenticated Ember form calling an ORM-backed `server fn` over the Phase 4 RPC transport, with shared type-checked validation and hostile request regressions.
 - Dogfood both a new SQLite app and a representative pre-existing imported database; exercise Postgres/MySQL profiles.
 - Expand conformance/CI and LSP smoke tests, audit docs/API consistency, inspect native self-contained deployment, measure baseline performance and binary size.
@@ -434,14 +434,14 @@ Never equate passing tests with a guarantee of no bugs; the suite is an increasi
 - [ ] Secure local auth and durable sessions work with HTTP handlers; identity is request-bound, cookies are safe, logins rate-limited, passwords hashed with Argon2id, and authorizations enforced on every privileged server action.
 - [ ] A functional generated admin provides list/search/filter/create/edit/delete for several models, explicit protection, safe field defaults and per-model/field/page customization using Glazes.
 - [ ] An authenticated Ember invokes an ORM-backed typed `server fn` via Phase 4 RPC, with tested session identity, CSRF, per-record authorization and shared validation.
-- [ ] Real SQLite and imported-schema dogfood apps run on Linux and Windows; C/native checks and Postgres/MySQL CI suites pass; diagnostics and LSP understand model/query/form fields.
+- [ ] Real **multi-folder** SQLite and imported-schema dogfood apps run on Linux and Windows using Phase 4.2 local modules; C/native checks and Postgres/MySQL CI suites pass; diagnostics and LSP understand model/query/form fields.
 - [ ] API/reference documentation distinguishes implemented features from planned syntax, includes migration/auth threat-model guidance and teaches both raw SQL and ORM workflows.
-- [ ] Phase 5 needs no Wares, project manifest, external reactive framework or Node toolchain. Existing Phase 4 Embers/RPC are reused, while SSR-only CRUD and admin remain usable without client scripts.
+- [ ] Phase 5 needs no Wares, **mandatory** project manifest, external reactive framework or Node toolchain. Existing Phase 4 Embers/RPC are reused, while SSR-only CRUD and admin remain usable without client scripts.
 
 ## 16. Explicitly deferred or optional
 
-- **Phase 4 prerequisite:** Embers, WasmGC, hydration, generated typed RPC and browser interoperability are already available; Phase 5 adds durable data and authenticated authorization.
-- **Phase 6:** General multi-folder modules, `kiln.toml`/`kiln.lock`, Wares and registry, official `kiln/ui` component Ware, global cache, formatter/hot reload, public integrated `kiln test` runner and broader agent tooling.
+- **Earlier prerequisites:** Phase 4 provides Embers/WasmGC and typed RPC; Phase 4.1 explicit `.ember` files; **Phase 4.2 local folder modules and an optional minimal `kiln.toml`**. Phase 5 adds durable data and authenticated authorization.
+- **Phase 6:** Extended manifest dependency fields and `kiln.lock`, Wares and registry, official `kiln/ui` component Ware, global cache, formatter/hot reload, public integrated `kiln test` runner and broader agent tooling.
 - **Phase 7:** One-command deploy, advanced observability/optimization, SSG, stability commitments, broad cross-architecture compiler/runtime specialization.
 - **Separate opt-in extension work:** OIDC/OAuth 2 providers, JWT/API token issuance, WebAuthn/passkeys/MFA, distributed rate limiting, streaming cloud uploads, cross-region migrations and advanced enterprise DB features. Keep extension points; **do not claim any of these exists until tested and documented**.
 - **Non-goals:** Inventing an ORM-only SQL dialect; implicit database queries when reading a normal field; auto-generating production migrations at startup; storing passwords or sessions insecurely to simplify demos; forcing one canonical user schema; enforcing Wares adoption; inventing a second template language for admin.
