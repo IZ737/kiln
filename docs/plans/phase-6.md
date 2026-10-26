@@ -1,20 +1,20 @@
-# Phase 6 — Projects, Wares, testing, tooling and agent integration
+# Phase 6 — Wares, testing, tooling and agent integration
 
-**Status:** Planned specification. This is an implementation contract and reviewable proposal for API details; **Phase 6 commands and syntax are not claimed to be implemented** unless later marked in reference documentation. The preceding [Phase 4 plan](phase-4.md) covers Embers and typed RPC; [Phase 5](phase-5.md) covers data, forms, auth and admin.
+**Status:** Planned specification. This is an implementation contract and reviewable proposal for API details; **Phase 6 commands and syntax are not claimed to be implemented** unless later marked in reference documentation. The preceding [Phase 4 plan](phase-4.md) covers Embers and typed RPC, [Phase 4.1](phase-4.1.md) explicit `.ember` files, **[Phase 4.2](phase-4.2.md) local multi-folder modules and optional minimal project metadata**, and [Phase 5](phase-5.md) data/forms/auth/admin.
 
-**Goal:** Take Kiln from a capable full-stack language to a coherent **day-to-day development and package ecosystem**: multi-folder application structure, optional project metadata, reproducible third-party Wares in a safe shared cache, a first useful official UI Ware, one integrated unit/integration/real-browser test command, polished editor/formatter/live-reload workflows, and an agent-friendly tooling interface.
+**Goal:** Build on Phase 4.2's **already-available multi-folder project/module foundation** and Phase 5's data framework to deliver a practical package and developer ecosystem: reproducible third-party Wares in a safe shared cache, an official UI Ware, a public unit/integration/real-browser test command, formatter/dev workflows, deeper editor refactoring and agent-friendly tooling. General local-module semantics and the basic optional project manifest are **not** Phase 6 deliverables.
 
-**End-to-end gate:** A developer can create a multi-folder Kiln app, import local modules, add a versioned UI Ware from a **locally hosted registry**, commit a reproducible lockfile, build without a network connection after cache priming, run Kiln-authored unit/database/real-browser tests, edit safely with formatter/LSP/live reload, and use a structured local MCP tool interface—**without writing Node scripts, per-project dependency installation directories or custom glue**. Its native release output remains self-contained.
+**End-to-end gate:** A developer can take an existing Phase 4.2 multi-folder Kiln app and add a versioned UI Ware from a **locally hosted registry**, commit a reproducible lockfile, build without a network connection after cache priming, run Kiln-authored unit/database/real-browser tests, edit safely with formatter/LSP/live reload, and use a structured local MCP tool interface—**without writing Node scripts, per-project dependency installation directories or custom glue**. Its native release output remains self-contained.
 
-This implements previously agreed direction in the [design overview](../design.md#programs-and-folders), [vision](../vision.md#7-wares-templates-and-a-real-ecosystem) and [integrated testing plan](testing.md). Phase 4's [Embers/RPC plan](phase-4.md) and Phase 5's [data/auth/admin plan](phase-5.md) together make full-stack acceptance tests possible. Phase 6 builds the ecosystem around both.
+This implements previously agreed direction in the [design overview](../design.md#programs-and-folders), [vision](../vision.md#7-wares-templates-and-a-real-ecosystem) and [integrated testing plan](testing.md). Phase 4's [Embers/RPC plan](phase-4.md), [Phase 4.2 local modules](phase-4.2.md) and Phase 5's [data/auth/admin plan](phase-5.md) together make full-stack acceptance tests possible. Phase 6 packages and tests that foundation without reimplementing it.
 
-> **Design status:** The broad capabilities, separation from other phases, per-user global Ware storage, manifest-free scripts, and built-in real-browser testing are established. The exact file layouts, names, command flags, registry endpoints, security policy format and test API in this document are **proposals to validate during Phase 6**, not promises of current Kiln syntax.
+> **Design status:** Local folder modules, their import/visibility model and minimal optional `kiln.toml` belong to the **planned Phase 4.2** implementation. Phase 6 designs Ware dependencies, lockfiles, registry/security policies, public testing and deeper tools. Proposed command flags, external Ware manifest fields, registry endpoints and test APIs here are not claims of currently executable syntax.
 
 ## 1. Scope and governing decisions
 
-1. **One-folder programs stay simple.** All `.kiln` files in one folder share a namespace. A single file or folder runs with no `kiln.toml`, lockfile or registry.
-2. **Subfolders are local modules.** `pub` defines their external interface. Local modules must compile, type-check and work offline independently of Wares.
-3. **Manifest is declarative and optional.** `kiln.toml` describes project identity, optional entrypoint, build/test defaults and dependencies. `kiln-deploy.toml` stays separate (Phase 7).
+1. **Phase 4.2 is the foundation.** Local folder modules, `pub`, source-root discovery and a minimal optional `kiln.toml` are prerequisites; preserve them, do not reimplement them.
+2. **Manifest grows incrementally.** Phase 6 extends the existing optional `kiln.toml` with dependency/publishing/build/test fields and uses `kiln.lock` for external Wares; simple scripts and local modules remain manifest-free. `kiln-deploy.toml` stays separate (Phase 7).
+3. **Compatible imports.** Wares reuse the Phase 4.2 module/export model with explicit package identity, not a new local module system.
 4. **One lockfile, deterministic dependency graph.** `kiln.lock` pins exact immutable versions, source identities, hashes and transitive edges. Build/release can require locked resolution.
 5. **Global, per-user Ware cache, not `node_modules`.** Immutable source is stored once by content hash and shared across projects; versions and dependency choices belong to each project.
 6. **Wares have no install-time execution hooks.** Fetching, resolving and checking a dependency does not run arbitrary package-provided shell commands.
@@ -27,15 +27,14 @@ This implements previously agreed direction in the [design overview](../design.m
 13. **No premature compatibility freeze.** Kiln is pre-1.0; capture the correct developer contracts now, then evolve internals behind conformance and end-to-end tests.
 14. **No forced cloud service.** Local modules, path/Git Wares, and a local or static registry must remain useful even if the eventual public registry is unavailable.
 
-## 2. Organize Phase 6 as five deliverable subphases
+## 2. Organize Phase 6 as four deliverable subphases
 
 | Subphase | Main deliverable | Independent gate |
 | --- | --- | --- |
-| **6.1 — Project foundation** | Local folder modules, visibility, optional `kiln.toml` and cross-module compiler/LSP | A multi-folder program builds/runs; one-file programs remain manifest-free |
-| **6.2 — Ware ecosystem** | Resolver, `kiln.lock`, global cache, local/Git/registry sources, publish/verify tooling, first official accessible UI Ware | Two apps resolve reproducibly, offline, from a trusted local registry with shared cached contents |
-| **6.3 — Integrated testing** | `kiln test` unit/integration/real-browser including Embers, fixtures, reporting and CI | Real browser submits a form, exercises an Ember and typed RPC, and validates results, focus and reactive state |
-| **6.4 — Developer workflow** | Formatter, live rebuild/restart, deeper LSP and editor integration | Safe format/watch/refactor cycle across Kiln, Glaze, CSS and imported Wares |
-| **6.5 — Agent experience and dogfooding** | Compiler MCP, machine-readable tool contracts, docs/agent guide, full project example | A human or agent can inspect/check/test a full multi-folder app without hidden deployment or shell behaviour |
+| **6.1 — Ware ecosystem** | Resolver, `kiln.lock`, global cache, local/Git/registry sources, publish/verify tooling, first official accessible UI Ware | Two apps resolve reproducibly, offline, from a trusted local registry with shared cached contents |
+| **6.2 — Integrated testing** | `kiln test` unit/integration/real-browser including Embers, fixtures, reporting and CI | Real browser submits a form, exercises an Ember and typed RPC, and validates results, focus and reactive state |
+| **6.3 — Developer workflow** | Formatter, live rebuild/restart, deeper LSP and editor integration | Safe format/watch/refactor cycle across Kiln, Glaze, CSS and imported Wares |
+| **6.4 — Agent experience and dogfooding** | Compiler MCP, machine-readable tool contracts, docs/agent guide, full project example | A human or agent can inspect/check/test a full multi-folder app without hidden deployment or shell behaviour |
 
 Treat subphase numbers as **planning subdivisions**, not new language versions; each should break into reviewable PRs. The public registry's large-scale hosting, social/discovery features and organizational billing are not Phase 6 blockers.
 
@@ -95,73 +94,9 @@ fn main() ! {
 }
 ~~~
 
-Files inside `posts/` share their folder's namespace, and `import posts` references public exports. Nested modules may be addressed with `import posts.search` if the design needs deeper packages. **Final import spelling is a design choice to confirm in the first 6.1 PR**, but avoid duplicate syntaxes for the same operation.
+Files inside `posts/` share their folder's namespace, and `import posts` references public exports. Nested modules may be addressed with `import posts.search` if the design needs deeper packages. **The local-module import spelling and visibility contract are defined in Phase 4.2**; Phase 6 must reuse those semantics for Wares, not redefine them.
 
-## 4. Phase 6.1 — Local module semantics
-
-### Directory model and root discovery
-
-- Preserve the existing rule: all `.kiln` files directly in a folder form **one compilation module/namespace**, and existing Glaze lookup from that folder remains valid.
-- For `kiln run .`, root resolution uses an explicit argument first, then the nearest applicable `kiln.toml` when present, otherwise the specified/source folder. Avoid accidentally choosing an unrelated parent manifest.
-- A nested folder becomes a local module by being imported, not by requiring its own manifest or package registration.
-- Resolve import paths relative to the project root, with a deterministic rule for same-folder vs root paths. Define how a folder's optional module entry and Glazes are discovered. No implicit filesystem traversal of unrelated folders.
-- Normalize paths and reject ambiguous capitalization/collisions consistently across Windows and case-sensitive filesystems. Canonicalize only inside allowed roots; guard symlink loops and traversal.
-- Standard-library module names are reserved or have an explicit unambiguous shadow/alias rule. Avoid a local `web/` accidentally changing `import web` semantics.
-- Local module dependency cycles are diagnosed with the entire path; no infinite compiler recursion. Decide whether type-only cycles are representable, but do not make value initialization order implicit.
-- The compiler builds a graph once, shares type information and supports incremental invalidation; do not recompile the entire world for every changed leaf without a reason.
-
-### Visibility and type identity
-
-- `pub fn`, `pub struct`, `pub enum`, `pub const` expose declarations; unmarked declarations remain private to their module. Field/method visibility must be specified consistently with Kiln's existing `pub` syntax and ordinary struct initialization.
-- Nested public API types cannot leak a private type accidentally; diagnose inaccessible types in exported signatures.
-- Cross-module type identity includes the defining module/package, not just the type's text name. Prevent unrelated `models.User` from silently matching `accounts.User`.
-- Respect separate imports per source file (even when declarations in the same folder share a namespace). Determine the name-resolution environment for public declarations independently of whichever file imported a dependency.
-- Distinguish inaccessible-private, missing-module and missing-export diagnostics, with suggestions and precise source locations.
-- Make module initialization/order explicit if eventually introduced. For Phase 6, prefer top-level constants and ordinary functions over general package startup hooks.
-
-### Components and assets across modules
-
-- Specify how an app references a `.glaze` component exposed by another local module without breaking current same-folder component lookup.
-- Generated CSS/Finishes/assets use the same dependency graph; namespace hashed/scoped assets so identical filenames don't collide.
-- Components can use the public types they declare; ordinary Glaze scope/type checking continues to report errors mapped to their original files.
-- A module import should not silently mount HTTP routes, database migrations or admin pages; caller explicitly registers them.
-
-**6.1 module gate:** two local modules with their own Glazes/CSS compile on native and C backends; private access, cyclic imports, ambiguous names and missing imports produce precise errors; LSP finds cross-module definitions; the unchanged simple folder example still works.
-
-## 5. Phase 6.1 — `kiln.toml` project contract
-
-Indicative manifest (**proposed**):
-
-~~~toml
-[package]
-name = "fieldnotes"
-version = "0.1.0"
-kind = "app"
-entry = "main.kiln"
-
-[wares]
-"kiln/ui" = "0.1"
-"example/markdown" = { git = "https://example.com/repo.git", rev = "0123456789abcdef" }
-"local/widgets" = { path = "./vendor/widgets" }
-
-[build]
-target = "linux"
-
-[test]
-browser = true
-~~~
-
-- Parse real TOML with location-aware diagnostics; reject unknown critical keys, conflicting sources and invalid versions. Schema versioning or explicit format revisions must permit future evolution.
-- Explicit CLI options win over manifest defaults; documented environment variables may provide credentials or opt-in settings but do not silently rewrite pinned dependencies. No plaintext secret fields in project manifests/lockfiles.
-- A manifest is optional for scripts, single-folder projects **and basic multi-folder local projects**. It becomes necessary when an app wants declarative **external** Ware dependency management or publishing identity.
-- `entry` resolves to a known project file; no ambiguous fallback when several `main` functions exist. Source conventions should not accidentally treat test entrypoints as release entrypoints.
-- `[package] kind = "app"` vs `"ware"` distinguishes executable entry and distributable reusable source. Packages can export multiple public modules without shipping an executable.
-- Keep ordinary project files free of auto-generated per-module manifests. Future `[workspace]` for multi-package monorepos is optional, not a Phase 6 completion blocker.
-- `kiln-deploy.toml` stays outside the package contract. Do not implicitly migrate or deploy from `kiln build`.
-
-**6.1 manifest gate:** documented precedence, errors and root discovery; manifest-free programs regressions pass; a multi-folder manifest can choose an entry; malformed TOML and invalid dependency specs identify the offending line.
-
-## 6. Phase 6.2 — Ware identity, imports and packaging
+## 4. Phase 6.1 — Ware identity, imports and packaging
 
 ### Package identity and namespaces
 
@@ -200,7 +135,7 @@ kiln build --offline --locked
 
 Exact flags and import naming remain proposed. `kiln add/remove/update` must modify manifest and lockfile together atomically; a failed resolve cannot leave the two inconsistent.
 
-## 7. Phase 6.2 — Lockfile, cache and offline builds
+## 5. Phase 6.1 — Lockfile, cache and offline builds
 
 ### Lockfile guarantees
 
@@ -234,7 +169,7 @@ kiln cache prune
 
 **Cache gate:** two unrelated apps using one hash share one cached copy; a second pinned version coexists; an offline build succeeds after priming and fails clearly when required content is missing; corrupted archives and parallel fetches cannot yield a silently compromised build.
 
-## 8. Phase 6.2 — Ware registry and publication
+## 6. Phase 6.1 — Ware registry and publication
 
 ### Bootstrap strategy
 
@@ -285,7 +220,7 @@ kiln ware verify kiln/ui
 
 **Registry gate:** a Kiln-authored local server can publish a Ware and serve a second project; publish conflicts, mismatched hashes, unauthorized accounts, revoked/yanked versions, policy violations and offline/locked consumers have conformance/integration tests.
 
-## 9. Phase 6.2 — First official Ware: accessible Kiln UI
+## 7. Phase 6.1 — First official Ware: accessible Kiln UI
 
 The flagship first Ware is a **source-first collection** of reusable Glaze/CSS/Ui/Finish components. `kiln/ui` is a **working package identity** pending final namespace ownership and version selection.
 
@@ -312,7 +247,7 @@ The flagship first Ware is a **source-first collection** of reusable Glaze/CSS/U
 
 **UI gate:** a real Phase 5 form/admin page can use this Ware (or copied source), compile for native Linux/Windows, render a consistent accessible page with two different Phase 3 themes, and remain editable without dependency lock-in.
 
-## 10. Phase 6.3 — One `kiln test` runner
+## 8. Phase 6.2 — One `kiln test` runner
 
 Detailed requirements remain in [testing.md](testing.md); this section fixes its dependencies, delivery order and full Phase 6 gate.
 
@@ -365,9 +300,9 @@ kiln test --list
 - Test forms, cookie sessions, CSRF, permission checks and responsive Glaze/Finish themes with **real** browser semantics.
 - Interactive Ember state, hydration and typed server RPC must be supported by the Phase 6 public runner from its first release.
 
-**6.3 gate:** one command runs (a) a pure function test, (b) an isolated SQL/HTTP/auth integration test and (c) a headless browser scenario creating a record via form and an Ember server function, checking reactive updates, validation, keyboard focus, navigation, content, CSS and login/logout. Failures produce screenshots/logs, meaningful exit codes and machine-readable summaries on Linux and Windows.
+**6.2 gate:** one command runs (a) a pure function test, (b) an isolated SQL/HTTP/auth integration test and (c) a headless browser scenario creating a record via form and an Ember server function, checking reactive updates, validation, keyboard focus, navigation, content, CSS and login/logout. Failures produce screenshots/logs, meaningful exit codes and machine-readable summaries on Linux and Windows.
 
-## 11. Phase 6.4 — Formatter, live reload and editor workflows
+## 9. Phase 6.3 — Formatter, live reload and editor workflows
 
 ### `kiln fmt`
 
@@ -393,9 +328,9 @@ kiln test --list
 - Formatter integration, test discovery/run status, error code actions, quick import fixes, manifest/lockfile validation, dependency tree view as feasible. VS Code should orchestrate CLI/LSP, **not fork language semantics in TypeScript**.
 - Refactor/format changes must be previewable where risky. Editor does not secretly add a Ware to resolve an ambiguous import.
 
-**6.4 gate:** a multi-folder app with a Ware survives format/check/watch cycles and cross-module rename; a broken source edit reports diagnostics while the last-known-good server remains available; Linux/Windows smoke tests pass.
+**6.3 gate:** a multi-folder app with a Ware survives format/check/watch cycles and cross-module rename; a broken source edit reports diagnostics while the last-known-good server remains available; Linux/Windows smoke tests pass.
 
-## 12. Phase 6.5 — Agents, MCP and documentation
+## 10. Phase 6.4 — Agents, MCP and documentation
 
 ### Compiler/tooling MCP
 
@@ -431,9 +366,9 @@ Proposed `kiln mcp` runs a local Model Context Protocol server giving an agent s
 - Drive a full `kiln test` suite including real browser tests and deliberately failing tests; exercise LSP/formatter/dev watch while changing imports and Glazes.
 - Have an agent use `kiln mcp` to get project graph, check and run authorized tests. Inspect outputs, error reports and permissions.
 
-**6.5 gate:** A newcomer (human or agent) can follow one documented path from an empty Kiln install to a multi-folder website with a package, authenticated form, deterministic build and browser-tested behaviour.
+**6.4 gate:** A newcomer (human or agent) can follow one documented path from an empty Kiln install to a multi-folder website with a package, authenticated form, deterministic build and browser-tested behaviour.
 
-## 13. Testing, CI and security matrix
+## 11. Testing, CI and security matrix
 
 | Area | Must succeed | Must fail safely |
 | --- | --- | --- |
@@ -452,10 +387,10 @@ Proposed `kiln mcp` runs a local Model Context Protocol server giving an agent s
 
 CI must test native Linux/Windows and the C backend where supported, plus cross-module project conformance, locked/offline builds, registry/local protocol fixtures, malformed/untrusted metadata, and pinned real-browser tests. Use disposable servers and databases, including negative authentication tests. No test should require arbitrary external public service availability.
 
-## 14. Definition of done
+## 12. Definition of done
 
-- [ ] Existing single-file/single-folder examples still compile and run with **no manifest**, while a multi-folder Kiln project has deterministic module resolution, `pub` visibility, typed cross-folder imports and source-linked errors.
-- [ ] Optional `kiln.toml`, a well-defined project root and `kiln.lock` support exact repeatable dependency graphs with local/Git/registry Wares.
+- [ ] Phase 4.2's manifest-free programs, deterministic folder imports, `pub` visibility, source-linked module errors and cross-folder compiler/LSP behavior remain passing regression prerequisites.
+- [ ] The **Phase 4.2 optional `kiln.toml`** gains backward-compatible Ware/dependency fields, while `kiln.lock` supplies exact repeatable graphs for local/Git/registry Wares.
 - [ ] Package name/source identities, SemVer constraints, transitive resolution, namespace collisions and locked/offline behaviour are documented and have regressions.
 - [ ] Immutable **per-user global Ware source cache** works with integrity verification, concurrency safety, optional compiled-object caching, inspect/verify/prune CLI and no project-local dependency tree.
 - [ ] A **locally hosted registry**, preferably built in Kiln, can accept authenticated immutable Ware releases and serve clients using a documented protocol with hash, yank and trust/permission metadata.
@@ -467,16 +402,16 @@ CI must test native Linux/Windows and the C backend where supported, plus cross-
 - [ ] A full dogfood project demonstrates the local registry, UI Ware, locked offline rebuild, auth/forms/Glazes, editor workflow and browser suite.
 - [ ] Every implemented feature has reference docs, conformance/CI checks, clear unsupported-case diagnostics and no regression to compiler backends or standalone target deployment.
 
-## 15. Explicit deferrals and non-goals
+## 13. Explicit deferrals and non-goals
 
-- **Earlier foundations:** Phase 4 supplies Embers/WasmGC, reactive hydration, generated RPC and state; Phase 5 supplies persistence/auth/forms/admin. Phase 6 integrates and tests both.
+- **Earlier foundations:** Phase 4 supplies Embers/WasmGC, reactive hydration, generated RPC and state; **Phase 4.2 supplies local folder modules and an optional minimal project manifest**; Phase 5 supplies persistence/auth/forms/admin. Phase 6 integrates and tests them without moving module development back into this phase.
 - **Phase 7:** One-command deploy/release, static site export, broad stability/performance hardening, arbitrary code optimization or a mandatory new native backend.
 - **Later registry scaling:** Commercial hosting, public social discovery, web search/rankings, organization billing, cross-user global cache, complete security auditing/review infrastructure at industrial scale.
 - **Later tooling:** Full debugger/DAP and variable inspection, deep time-travel debugging, arbitrary live-patching of native code, self-hosting of all compiler internals.
 - **Optional later work:** Full multi-package workspace publishing, global dependency feature unification, a universal WASI/container sandbox, all-language FFI bindings, automatic use of arbitrary npm modules.
 - **Non-goals:** Mandatory manifests for scripts; checked-in downloaded Wares; install-time shell scripts; a Node/JS testing repository; a custom browser implementation; automatic publishing/deploying from `build`; pretending metadata labels enforce OS-level permissions.
 
-## 16. Review principles
+## 14. Review principles
 
 - Adding a local module must be as unsurprising as adding a folder.
 - One app must never be able to corrupt another app's locked dependency selection.
@@ -486,4 +421,4 @@ CI must test native Linux/Windows and the C backend where supported, plus cross-
 - AI tooling should expose the same intelligible operations and errors a human developer sees, with **more explicit**, not fewer, safety boundaries.
 - Phase 6 should **reduce tooling glue without replacing sound existing tools purely for novelty**.
 
-**In one sentence:** **Phase 6 makes Kiln a practical ecosystem: organize an application, reuse trusted source, build reproducibly, test from function to browser, and develop confidently in one coherent toolchain.**
+**In one sentence:** **Phase 6 makes the already-multi-folder Kiln platform a practical ecosystem: reuse trusted Wares, build reproducibly, test from function to browser, and develop confidently in one coherent toolchain.**
