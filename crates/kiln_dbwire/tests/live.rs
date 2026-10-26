@@ -22,7 +22,7 @@ fn round_trip(c: &mut dyn Client, p: fn(usize) -> String, key: &str) {
         &[],
     )
     .unwrap();
-    c.exec("create table kiln_wire_child (id integer primary key, parent bigint not null references kiln_wire(id))", &[]).unwrap();
+    c.exec("create table kiln_wire_child (id integer primary key, parent bigint not null, foreign key (parent) references kiln_wire(id))", &[]).unwrap();
     let insert = format!(
         "insert into kiln_wire (name, score, n, ok, data) values ({}, {}, {}, {}, {})",
         p(1),
