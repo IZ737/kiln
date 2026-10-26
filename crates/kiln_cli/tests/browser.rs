@@ -130,23 +130,36 @@ fn wasm_programs_run_in_a_real_browser() {
 /// pages that work without JavaScript or WasmGC.
 #[test]
 fn embers_work_in_a_real_browser() {
+    drive(
+        "embers",
+        "crates/kiln_cli/tests/browser/embers",
+        "embers.mjs",
+    );
+}
+
+/// The documentation site's embers: the search box and the copy buttons.
+#[test]
+fn the_sites_embers_work_in_a_real_browser() {
+    drive("site", "site", "site.mjs");
+}
+
+/// Builds the app in `app`, runs it, and drives it in Chromium with the
+/// script `script` in `tests/browser`, which prints the checks that
+/// failed.
+fn drive(name: &str, app: &str, script: &str) {
     let Some(node) = node() else { return };
-    let dir = std::env::temp_dir().join(format!("kiln-embers-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("kiln-{name}-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
-    let exe = dir.join(if cfg!(windows) {
-        "embers.exe"
-    } else {
-        "embers"
-    });
+    let exe = dir.join(format!("{name}{}", std::env::consts::EXE_SUFFIX));
     let built = Command::new(env!("CARGO_BIN_EXE_kiln"))
         .args(["build", "-o"])
         .arg(&exe)
-        .arg(root().join("crates/kiln_cli/tests/browser/embers"))
+        .arg(root().join(app))
         .output()
         .unwrap();
     assert!(
         built.status.success(),
-        "the embers app does not build:\n{}",
+        "{app} does not build:\n{}",
         String::from_utf8_lossy(&built.stderr)
     );
     let port = std::net::TcpListener::bind("127.0.0.1:0")
@@ -161,14 +174,11 @@ fn embers_work_in_a_real_browser() {
     let address = format!("127.0.0.1:{port}");
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
     while std::net::TcpStream::connect(&address).is_err() {
-        assert!(
-            std::time::Instant::now() < deadline,
-            "the embers app never listened"
-        );
+        assert!(std::time::Instant::now() < deadline, "{app} never listened");
         std::thread::sleep(std::time::Duration::from_millis(20));
     }
     let out = Command::new(&node)
-        .arg(root().join("crates/kiln_cli/tests/browser/embers.mjs"))
+        .arg(root().join("crates/kiln_cli/tests/browser").join(script))
         .arg(format!("http://{address}"))
         .output()
         .unwrap();
@@ -186,7 +196,7 @@ fn embers_work_in_a_real_browser() {
             String::from_utf8_lossy(&out.stdout)
         )
     });
-    eprintln!("embers: {}", result["metrics"]);
+    eprintln!("{name}: {}", result["metrics"]);
     let failures: Vec<&str> = result["failures"]
         .as_array()
         .unwrap()

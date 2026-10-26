@@ -119,7 +119,9 @@ fn main() {
 }
 ```
 
-`fs`, `os` and `io` need the server, so embers cannot use them.
+`fs`, `os` and `io` need the server, so embers cannot use them; the
+browser's modules are [`browser`](#browser), [`js`](#js) and
+[npm packages](#npm-packages).
 
 ## `web`
 
@@ -398,6 +400,98 @@ fn about(text: String) -> web.Response {
 
 The runtime uses the [pulldown-cmark](https://github.com/pulldown-cmark/pulldown-cmark)
 crate.
+
+## `browser`
+
+The browser, for embers. Only an ember's `on:` handlers can use it (E0223
+elsewhere), and they need no `import`.
+
+| Function | |
+| --- | --- |
+| `browser.log(message)`, `browser.warn(message)` | Writes to the browser's console |
+| `browser.title() -> String`, `browser.set_title(title)` | The page's title |
+| `browser.location() -> String`, `browser.navigate(url)` | The page's address, and going to another (an address that would run script is refused) |
+| `browser.now() -> Float` | Milliseconds since the page started loading |
+| `browser.confirm(message) -> Bool` | Asks the user with the browser's dialog |
+| `browser.get_item(key) -> String?`, `browser.set_item(key, value) !`, `browser.remove_item(key)` | The site's local storage |
+| `browser.element(selector) -> js.Value?` | The first element that matches a CSS selector |
+| `browser.focus(selector)` | Moves the focus to the first element that matches |
+| `browser.fetch(url) -> String !` | GETs a URL and gives its text; an answer other than 2xx is an error. Waits |
+| `browser.copy(text) !` | Puts text on the clipboard. Waits |
+
+A function that waits is called like a `server fn`: as a statement of its
+own in a handler, whose later statements run when it is done.
+
+```glaze
+{% props text: String %}
+{% state copied = false %}
+<button on:click={
+    browser.copy(text) catch err { return }
+    copied = true
+}>{% if copied %}Copied{% else %}Copy{% end %}</button>
+```
+
+## `js`
+
+JavaScript values, for what `browser` and npm bindings cannot reach. A
+`js.Value` is a handle on a value that stays in the browser; it cannot be
+state, a prop or a `server fn` argument (E0224). Turning one into a Kiln
+value is checked, and fails with an error rather than guessing.
+
+| Function | |
+| --- | --- |
+| `js.global(name) -> js.Value` | `globalThis[name]`, such as `js.global("document")` |
+| `js.string(text)`, `js.float(n)`, `js.bool(b)`, `js.null()` | JavaScript values of Kiln ones |
+| `value.get(name) -> js.Value`, `value.set(name, v)` | A property (`undefined` when there is none) |
+| `value.call(method, args = []) -> js.Value !` | Calls a method; an exception is an error |
+| `value.as_string() !`, `as_float() !`, `as_int() !`, `as_bool() !` | Checked conversions; `as_int` needs a whole number in `Int`'s range |
+| `value.is_nullish() -> Bool`, `value.type_of() -> String` | `null` or `undefined`, and `typeof` |
+
+```kiln
+let doc = js.global("document")
+let title = doc.get("title").as_string() catch err { "?" }
+let n = doc.as_float() catch err { 0.0 }   // err.message: "expected a number, found an object"
+```
+
+## npm packages
+
+`kiln add npm:<package>@<version>` adds a browser library for embers:
+
+```sh
+kiln add npm:nanoid@5.0.9
+```
+
+It downloads the package from the registry (`KILN_NPM_REGISTRY`, or
+npm's), checks the tarball against the registry's sha512 integrity and runs
+none of its scripts. It keeps, in `npm/<package>/`, only the package's
+browser ES module and the files it imports, its TypeScript declarations,
+`package.json` and its licence, and writes `npm.lock` with the SHA-256 of
+each. A build refuses a file that changed. A package that imports other
+packages, uses Node.js modules (`node:fs`) or is CommonJS only is refused,
+with why.
+
+The declarations become a module named after the package
+(`canvas-confetti` is `canvas_confetti`, `@scope/name` is `scope_name`),
+which ember handlers use without an import. `string` is `String`,
+`number` is `Float`, `boolean` is `Bool`, `any` and `unknown` are
+`js.Value`, `T | null`, `T | undefined` and optional parameters are
+optional, and arrays of strings, numbers and booleans are lists; names
+become snake case. Every
+call can fail, as JavaScript can throw. A function that returns a
+`Promise` waits, like a `server fn`. A constant is a function with no
+arguments. Functions and constants Kiln cannot map yet (callbacks,
+overloads, other types) are left out, and `kiln add` and the checker say
+why; classes and interfaces are not bound yet, and `js.Value` reaches
+them.
+
+```glaze
+{% state id = "" %}
+<button on:click={ id = nanoid.nanoid(10.0) catch err { err.message } }>New id</button>
+<code>{id}</code>
+```
+
+The build serves the files at `/_kiln/npm/<package>@<version>/`, and the
+page loads them with the embers.
 
 ## Adding to the standard library
 

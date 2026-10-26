@@ -294,7 +294,7 @@
     "attributes": {
       "patterns": [
         {
-          "match": "\\b(on)(:)([A-Za-z][A-Za-z0-9-]*)",
+          "match": "\\b(on)(:)([A-Za-z][A-Za-z0-9-]*)((?:\\.[A-Za-z]+)*)",
           "captures": {
             "1": {
               "name": "entity.other.attribute-name.event.glaze"
@@ -304,6 +304,9 @@
             },
             "3": {
               "name": "entity.other.attribute-name.event.glaze"
+            },
+            "4": {
+              "name": "storage.modifier.event.glaze"
             }
           }
         },

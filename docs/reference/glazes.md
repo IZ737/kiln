@@ -85,9 +85,8 @@ glaze must be named in quotes, so the compiler knows which one it is.
 - A glaze that always renders itself again, through its layout or
   components outside `if`, `for` and `match` blocks, is E0310. Inside a
   block that ends, a component can render itself, as for a tree.
-- Embers are not compiled yet (E0401): building a glaze with
-  `{% state %}`, an `on:` handler or a `client:` hint needs phase 4.
-  See the [Phase 4 Embers plan](../plans/phase-4.md).
+- A glaze with `{% state %}` or an `on:` handler is an ember: the server
+  renders it, and the browser takes it over (see [Embers](#embers)).
 
 ## Tags
 
@@ -99,7 +98,7 @@ glaze must be named in quotes, so the compiler knows which one it is.
 | `{% fill name %} ... {% end %}` | Content for `{% slot name %}`: directly inside a component tag, or at the top level of a page with a layout |
 | `{% css "site.css" %}` | Use a global stylesheet. At the top level |
 | `{% css module name from "card.module.css" %}` | Use a CSS Module: `name.card` is its renamed class. At the top level |
-| `{% state name = value %}` | Browser-side state; makes the glaze an ember. At the top level |
+| `{% state name = value %}`, `{% state name: Type = value %}` | Browser-side state; makes the glaze an ember. At the top level |
 | `{% let name = value %}` | A local value |
 | `{% if c %} ... {% else if d %} ... {% else %} ... {% end %}` | Conditional |
 | `{% for x in xs where c %} ... {% empty %} ... {% end %}` | Loop; `where` and `empty` are optional |
@@ -319,21 +318,79 @@ and building again changes the site, layout included.
   | `disabled={busy}` | A value |
   | `hidden`, `client:visible` | A flag |
   | `on:click={ count += 1 }` | An event handler: statements run in the browser |
+  | `on:submit.prevent.latest={ ... }` | A handler with modifiers |
+  | `key={item.id}` | In a loop: which item an element is, kept across updates |
 
 ## Embers
 
-A glaze with `{% state %}` or an `on:` handler is an ember: it renders on the
-server, then hydrates in the browser as WebAssembly. Hints such as
-`client:visible` on the component tag choose when it hydrates.
+A glaze with `{% state %}` or an `on:` handler is an ember. The server
+renders it like any glaze, inside a `<kiln-island>` element that carries
+its props and state as JSON, and the browser takes it over with the
+program's WebAssembly (WasmGC): after each event its handlers run, it
+renders again, and the page's DOM is updated to match, keeping focus,
+typed text and keyed items. A page with no ember loads no script.
 
 ```glaze
 {% props post: Post %}
 {% state likes = post.likes %}
+{% state saving = false %}
 
-<button on:click={
-    likes = like_post(post.id) catch { likes }
-}>♥ {likes}</button>
+<button on:click.latest={
+    saving = true
+    likes = like_post(post.id) catch err { likes }
+    saving = false
+}>♥ {likes}{% if saving %}…{% end %}</button>
 ```
+
+- **State.** `{% state name = value %}` declares a value the browser
+  can change. The server computes the first value, so it may call a
+  `server fn` or use server modules; the browser gets it as JSON. Props
+  cannot be reassigned (E0207); state can. Props and state must have a
+  JSON form: functions, styles and handles such as `web.Request` or
+  `js.Value` are E0224.
+- **Handlers.** `on:<event>={ statements }` runs in the browser when the
+  element gets the event (`click`, `input`, `change`, `submit`, `keydown`
+  and so on). `event` is an `ember.Event`: its `kind`, the element's
+  `value` and `checked`, the `key` pressed, and a form's fields as `form`.
+  A form's `submit` never reloads the page.
+- **Modifiers.** `.prevent` stops the browser's own action, `.stop`
+  keeps the event from outer handlers, and `.latest` lets a new event
+  replace a call that is still waiting. Others are E0313.
+- **Server functions.** A handler statement that calls a `server fn` is a
+  typed call to the server (`POST /_kiln/rpc/<name>`): the statements
+  after it run when the reply comes. The call can fail (the network, or the
+  function's own error), so it takes a `catch` (E0210). It must be a
+  statement of its own, such as `x = f(...) catch err { ... }` (E0403).
+  While a call is waiting, its element has `aria-busy` and
+  `data-k-pending`, and the same event on it is ignored unless the handler
+  is `.latest`, which cancels the older call. Calls time out after 30
+  seconds and end when the page goes.
+- **Server checks.** The routes accept only JSON from the page's own origin
+  (`Origin` and `Sec-Fetch-Site`), up to 1 MiB, from a build of the same
+  functions (the `x-kiln-rpc` header), and decode the arguments as
+  untrusted input (400 when they do not fit). A program that defines
+  `fn rpc_guard(req: web.Request, name: String) -> web.Response?` has it
+  called first: a response it returns is the answer.
+- **Hydration hints**, on the component's tag: `client:load` (the
+  default), `client:idle` when the browser is idle, `client:visible` when
+  the ember is on screen, and `client:only`, which the server does not
+  render.
+- **Lists.** `key={item.id}` on the elements of a `{% for %}` keeps each
+  item's DOM, and the state of embers inside it, when items move.
+- **Nesting and slots.** An ember inside an ember keeps its own state. A
+  component's slot content stays the caller's: an ember can show and hide
+  it, but does not render it again.
+- **Browser code.** Handlers can use the [`browser`, `js`](stdlib.md#browser)
+  and [npm](stdlib.md#npm-packages) modules; they need no import. Anywhere
+  else these are E0223, since the server has no browser.
+- **Without WebAssembly** (an old browser), the page stays as the server
+  rendered it, with working links and forms, and `<html>` gets
+  `data-k-embers="unsupported"` so CSS can hide controls that need it.
+- An ember cannot have a layout (E0401): use it as a component in a page
+  that has one. An ember that the browser adds (inside another ember's
+  `{% if %}`, say) starts from its state's first values, so their code runs
+  in the browser; one whose state calls a `server fn` can only be started
+  by the server.
 
 ## Habits from other template languages
 

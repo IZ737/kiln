@@ -1,0 +1,9 @@
+{% props text: String %}
+{% state copied = false %}
+<div class="copy">
+<pre><code>{text}</code></pre>
+<button type="button" class="copy-button" on:click={
+    browser.copy(text) catch err { return }
+    copied = true
+}>{% if copied %}Copied{% else %}Copy{% end %}</button>
+</div>

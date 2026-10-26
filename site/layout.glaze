@@ -17,6 +17,7 @@
 <header ui={shell.header}>
 <a href="/"><img src={theme.logo} alt="Kiln" width="132" height="40"></a>
 <div ui={{ flex: true, items: .center, gap: space.md }}>
+<Search client:idle />
 <a class="menu-link" href="#site-nav">Menu</a>
 <a href="https://github.com/IZ737/kiln" ui={theme.button(Tone.Quiet)}>GitHub</a>
 </div>

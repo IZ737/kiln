@@ -140,5 +140,12 @@ files, and its `.kiln` files see the props of its glazes.
   [Typed styles](glazes.md#typed-styles).
 - An ember (a glaze with `{% state %}` or an `on:` handler) runs in the
   browser: `sql` and `auth` are server-only (E0218). Call a `server fn`
-  instead. Handlers cannot fail, so errors from a `server fn` are handled with
-  `catch`. Props cannot be reassigned; state can.
+  instead. Handlers cannot fail, and a `server fn` called from one can (the
+  network may), so the call takes a `catch`. Props cannot be reassigned;
+  state can.
+- What crosses between the server and the browser has a JSON form: an
+  ember's props and state, and a `server fn`'s parameters and result.
+  Functions, `Ui` styles and handles such as `web.Request` or `js.Value`
+  are E0224.
+- `browser`, `js` and npm package modules exist only in the browser: only
+  an ember's handlers can use them (E0223).

@@ -120,8 +120,18 @@ Run `cargo fmt --all`, `cargo clippy --all-targets -- -D warnings` and
   (`desc` in `emit.rs`) for runtime code that works on any type, such as
   JSON in `kiln_rt`. The two backends must behave the same: the
   conformance tests run every program with both.
+- `crates/kiln_wasm`: the WasmGC backend, for embers and `--target wasm`.
+  `emit.rs` writes an IR program as WebAssembly text (`emit/browser.rs`
+  for the `ember`, `browser` and `js` modules), which `wat` assembles and
+  `wasmparser` validates. `runtime/kiln.wat` and `runtime/kiln.js` are its
+  runtime (strings are JavaScript strings), and `runtime/ember.js` is the
+  bridge a page with embers loads: hydration, events, the DOM morph and
+  calls. The glaze compiler makes an ember's browser code with
+  `kiln_ir::glaze::generate_client`; `tests/browser.rs` in `kiln_cli`
+  drives it in Chromium (`tests/browser/*.mjs`, with Playwright).
 - `crates/kiln_cli`: the `kiln` binary (`check`, `build`, `run`, `lsp`,
-  `parse`, `explain`, `upgrade`). `lsp/mod.rs` is the language server; it
+  `parse`, `explain`, `add`, `upgrade`). `npm.rs` is `kiln add npm:...`,
+  `npm.lock` and the Kiln bindings made from TypeScript declarations. `lsp/mod.rs` is the language server; it
   reuses `check_sources` from `main.rs`, so editors and `kiln check` report
   the same errors. `lsp/features.rs` answers hover, definition, completion
   and symbol requests from `kiln_check::ide`, where the checker records what
