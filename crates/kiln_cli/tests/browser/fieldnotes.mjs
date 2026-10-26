@@ -1,0 +1,32 @@
+import { createRequire } from "node:module";
+const { chromium } = createRequire(import.meta.url)("playwright");
+const browser = await chromium.launch();
+const base = process.argv[2];
+const failures = [];
+const check = (ok, message) => { if (!ok) failures.push(message); };
+try {
+  const page = await browser.newPage();
+  const errors = [];
+  page.on("pageerror", e => errors.push(String(e)));
+  const requests = [];
+  page.on("request", r => requests.push(r.url()));
+  await page.goto(base + "/accounts");
+  check((await page.locator("h1").textContent()) === "Accounts", "accounts owns its index.glaze");
+  check(!(await page.content()).includes("<script"), "SSR page must have no script");
+  check(!requests.some(u => /\.(js|wasm)(\?|$)/.test(u)), "SSR page must load no browser assets");
+  check((await page.locator(".shared-label").textContent()) === "Shared note label", "explicit qualified component resolves");
+  check((await (await page.request.get(base + "/static/posts/label.txt")).text()) === "posts asset\n", "posts static asset resolves");
+  check((await (await page.request.get(base + "/static/accounts/label.txt")).text()) === "accounts asset\n", "accounts static asset has its own URL");
+  await page.goto(base);
+  await page.waitForSelector("kiln-island[data-k-ready]");
+  check((await page.locator("h1").textContent()) === "Fieldnotes", "posts owns its index.glaze");
+  check((await page.locator("form").evaluate(e => getComputedStyle(e).display)) === "grid", "module-local CSS loads");
+  await page.locator("#title").fill("Cross-folder note");
+  await page.getByRole("button", { name: "Save note" }).click();
+  await page.waitForFunction(() => document.querySelector("#message").textContent === "Saved: Cross-folder note");
+  await page.locator("#title").fill("");
+  await page.getByRole("button", { name: "Save note" }).click();
+  await page.waitForFunction(() => document.querySelector("#message").textContent.includes("A title is required"));
+  check(errors.length === 0, errors.join("\n"));
+} finally { await browser.close(); }
+console.log(JSON.stringify({ failures, metrics: {} }));

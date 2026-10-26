@@ -166,3 +166,8 @@ test("Ember uses the shared template grammar and embedded Kiln", async () => {
   assert.deepEqual(ember.lines.map(line => line.map(t => ({text: t.text, scopes: t.scopes.filter(s => s !== "text.html.ember")}))),
     glaze.lines.map(line => line.map(t => ({text: t.text, scopes: t.scopes.filter(s => s !== "text.html.glaze")}))));
 });
+
+test("qualified folder component tags", async () => {
+  const { lines } = await tokenize("text.html.glaze", "<posts.search.Result title=\"Found\" />");
+  assertScope(lines, 0, "posts.search.Result", "support.class.component.glaze");
+});

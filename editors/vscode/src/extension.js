@@ -95,7 +95,15 @@ async function restartClient() {
 /// files.
 function programOf(uri) {
   if (uri && uri.scheme === "file") {
-    return fs.statSync(uri.fsPath).isDirectory() ? uri.fsPath : path.dirname(uri.fsPath);
+    const dir = fs.statSync(uri.fsPath).isDirectory() ? uri.fsPath : path.dirname(uri.fsPath);
+    const boundary = vscode.workspace.getWorkspaceFolder(uri)?.uri.fsPath;
+    const candidates = [];
+    for (let current = dir; ; current = path.dirname(current)) {
+      if (fs.existsSync(path.join(current, "kiln.toml")) || fs.existsSync(path.join(current, "main.kiln"))) candidates.push(current);
+      if (current === boundary || path.dirname(current) === current) break;
+      if (!boundary) break;
+    }
+    return candidates.at(-1) ?? dir;
   }
   return undefined;
 }
@@ -133,7 +141,7 @@ async function runCommand(command, uri) {
   // kiln reads the files from disk, so unsaved changes in the program
   // must be saved first.
   for (const doc of vscode.workspace.textDocuments) {
-    if (doc.isDirty && doc.uri.scheme === "file" && path.dirname(doc.uri.fsPath) === dir) {
+    if (doc.isDirty && doc.uri.scheme === "file" && !path.relative(dir, doc.uri.fsPath).startsWith("..")) {
       await doc.save();
     }
   }

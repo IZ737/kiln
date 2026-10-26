@@ -1,6 +1,8 @@
 # Phase 4.2 — Multi-folder projects and local modules
 
-**Status:** Planned, after [Phase 4.1](phase-4.1.md) and before [Phase 5](phase-5.md). This is an **implementation contract**, not a claim that cross-folder imports or a project manifest are already supported.
+**Status:** Implemented after [Phase 4.1](phase-4.1.md), before [Phase 5](phase-5.md).
+The [project reference](../reference/projects.md) documents the shipped syntax,
+root/entry precedence, strict initial manifest schema and component paths.
 
 **Goal:** Make Kiln practical for ordinary multi-folder applications *before* adding a database/ORM/admin framework. A developer can put routes, domain logic, types, server Glazes and browser Embers in different folders, import local modules, check and run the application from one root, and get useful cross-module diagnostics/editor navigation—with no Wares, registry, lockfile or Node project.
 
@@ -64,7 +66,7 @@ kind = "app"
 entry = "main.kiln"
 ~~~
 
-These examples are **target Phase 4.2 syntax** until conformance tests prove support. A `[wares]` section, `kiln.lock`, registry source, `kiln add` and multi-package workspaces are expressly *not* required or implemented by this milestone.
+These examples are implemented and covered by module conformance tests. A `[wares]` section, `kiln.lock`, registry source, `kiln add` and multi-package workspaces are expressly *not* required or implemented by this milestone.
 
 ## 3. Project-root and module resolution
 
@@ -127,14 +129,33 @@ These examples are **target Phase 4.2 syntax** until conformance tests prove sup
 
 ## 9. Definition of done and exclusions
 
-- [ ] One-file/one-folder programs regressions pass unchanged.
-- [ ] Multi-folder modules compile, check, run and import nested modules with precise, deterministic errors and `pub` visibility.
-- [ ] Optional `kiln.toml` can select an entrypoint but is unnecessary for local imports or simple scripts.
-- [ ] Glazes, Embers, scoped CSS/assets, browser target, server RPC and component source maps work across module boundaries.
-- [ ] Project-aware LSP, cross-folder definitions/completion/diagnostics and CLI paths work.
-- [ ] Multi-folder HTTP + SSR/Ember E2E dogfood and Linux/Windows native/C/wasm conformance pass.
-- [ ] Docs and roadmap correctly describe Phase 4.2 vs Phase 5/6 ownership.
+- [x] One-file/one-folder programs regressions pass unchanged.
+- [x] Multi-folder modules compile, check, run and import nested modules with precise, deterministic errors and `pub` visibility.
+- [x] Optional `kiln.toml` can select an entrypoint but is unnecessary for local imports or simple scripts.
+- [x] Glazes, Embers, scoped CSS/assets, browser target, server RPC and component source maps work across module boundaries.
+- [x] Project-aware LSP, cross-folder definitions/completion/diagnostics and CLI paths work.
+- [x] Multi-folder HTTP + SSR/Ember E2E dogfood and Linux/Windows native/C/wasm conformance pass.
+- [x] Docs and roadmap correctly describe Phase 4.2 vs Phase 5/6 ownership.
 
 **Explicit exclusions:** SQL/ORM/auth/admin (Phase 5); Wares/registry/lockfile/cache, fully developed manifest dependency schema, official component Ware, public `kiln test`, formatter/live rebuild, advanced refactoring and compiler MCP (Phase 6); deploy/SSG (Phase 7).
 
 **Exit gate:** A developer can organize and run a small full-stack Kiln app into sensible folders *before* adding a database, without configuring a dependency manager. Phase 5 must build on this rather than inventing a competing module/project system.
+
+## Verification
+
+- `conformance/modules`: public APIs, private helpers, distinct nominal types,
+  nested imports, generics, methods and enums on native Linux, C, Wasm and
+  Windows (Wine smoke execution).
+- `crates/kiln_cli/tests/modules.rs`: negative visibility and inferred-type
+  cases, method access, cycles/case/reserved names, lexical imports, manifest
+  precedence/validation, source maps, reachability and optional-manifest
+  Fieldnotes builds for C/Linux/Windows.
+- `crates/kiln_cli/tests/fieldnotes` and `tests/browser/fieldnotes.mjs`: real
+  Chromium SSR, hydration, typed RPC success/validation, qualified components,
+  module-local CSS/static files and a script-free route, on native and C.
+- LSP cross-folder definition/hover/completion tests, the existing editor suite,
+  qualified-tag grammar tests, repository tests, formatting and Clippy.
+
+Windows execution here is a Wine smoke test; native Windows CI remains the
+platform-specific gate. Phase 5 data/auth/admin and Phase 6 dependency/testing
+features remain outside this implementation.

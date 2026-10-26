@@ -495,7 +495,11 @@ pub struct Element {
 impl Element {
     /// Capitalized tags such as `<LikeButton>` are components.
     pub fn is_component(&self) -> bool {
-        self.name.name.starts_with(|c: char| c.is_ascii_uppercase())
+        self.name
+            .name
+            .rsplit('.')
+            .next()
+            .is_some_and(|name| name.starts_with(|c: char| c.is_ascii_uppercase()))
     }
 }
 

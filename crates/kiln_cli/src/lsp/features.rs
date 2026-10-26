@@ -62,7 +62,18 @@ impl<'a> Program<'a> {
     /// of what the parser recovered from broken code.
     fn analyze(&self, index: usize) -> Option<Analysis> {
         let modules: Vec<(usize, &Module)> = self.modules().collect();
-        let names: Vec<String> = self.sources.iter().map(|s| file_name(&s.path)).collect();
+        let root = crate::project::common_root(self.sources.iter().map(|s| s.path.as_path()));
+        let names: Vec<String> = self
+            .sources
+            .iter()
+            .map(|s| {
+                s.path
+                    .strip_prefix(&root)
+                    .unwrap_or(&s.path)
+                    .to_string_lossy()
+                    .replace('\\', "/")
+            })
+            .collect();
         let glazes: Vec<(usize, &str, &Glaze)> = self
             .parsed
             .iter()
@@ -83,7 +94,7 @@ impl<'a> Program<'a> {
             .iter()
             .map(|(name, glaze)| crate::styles::GlazeFile { name, glaze })
             .collect();
-        let styling = crate::styles::load(&self.dir(index), &glaze_files).styling;
+        let styling = crate::styles::load(&root, &glaze_files).styling;
         // The checker expects code that parsed; recovered trees can break
         // its assumptions, and a failed request must not stop the server.
         std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
@@ -136,7 +147,7 @@ fn path_to_uri(path: &Path) -> String {
 
 // ----- hover -----
 
-pub(super) fn hover(sources: &[Source], index: usize, offset: usize) -> Value {
+fn hover_bound(sources: &[Source], index: usize, offset: usize) -> Value {
     let program = Program::parse(sources);
     let Some(analysis) = program.analyze(index) else {
         return Value::Null;
@@ -292,7 +303,7 @@ struct Decl {
     item: Span,
 }
 
-pub(super) fn definition(sources: &[Source], index: usize, offset: usize) -> Value {
+fn definition_bound(sources: &[Source], index: usize, offset: usize) -> Value {
     let program = Program::parse(sources);
     let Some(analysis) = program.analyze(index) else {
         return Value::Null;
@@ -389,7 +400,7 @@ fn find_decl(
         let i = program
             .sources
             .iter()
-            .position(|s| file_name(&s.path) == *file)?;
+            .position(|s| s.path.ends_with(file))?;
         let name = match &program.parsed[i] {
             Parsed::Glaze(g) => g.props.as_ref().map(|p| p.span).unwrap_or(Span::new(0, 0)),
             _ => return None,
@@ -519,7 +530,7 @@ const STRUCT: u32 = 22;
 
 /// The completions at `offset`: the name being typed there is replaced by
 /// `COMPLETION_MARKER`, and the checker says what fits in its place.
-pub(super) fn completion(sources: &[Source], index: usize, offset: usize) -> Value {
+fn completion_bound(sources: &[Source], index: usize, offset: usize) -> Value {
     let text = &sources[index].text;
     let offset = offset.min(text.len());
     let is_name = |c: char| c.is_alphanumeric() || c == '_';
@@ -921,4 +932,181 @@ fn collect_sources(dir: &Path, out: &mut Vec<PathBuf>, depth: usize) {
             out.push(path);
         }
     }
+}
+
+// Folder binding is shared with the compiler. Translate request offsets into
+// resolved source and response ranges back to the user's original documents.
+pub(super) fn hover(sources: &[Source], index: usize, offset: usize) -> Value {
+    bound_request(sources, index, offset, hover_bound)
+}
+pub(super) fn definition(sources: &[Source], index: usize, offset: usize) -> Value {
+    bound_request(sources, index, offset, definition_bound)
+}
+pub(super) fn completion(sources: &[Source], index: usize, offset: usize) -> Value {
+    if let Some(result) = module_completion(sources, index, offset) {
+        return result;
+    }
+    bound_request(sources, index, offset, completion_bound)
+}
+fn bound_request(
+    sources: &[Source],
+    index: usize,
+    offset: usize,
+    request: fn(&[Source], usize, usize) -> Value,
+) -> Value {
+    let root = crate::project::common_root(sources.iter().map(|s| s.path.as_path()));
+    let texts = sources
+        .iter()
+        .map(|s| (s.path.clone(), s.text.clone()))
+        .collect::<Vec<_>>();
+    let bound = crate::project::bind::bind(&root, &texts);
+    let transformed = bound
+        .texts
+        .iter()
+        .zip(sources)
+        .map(|((p, t), s)| Source {
+            path: p.clone(),
+            text: t.clone(),
+            uri: s.uri.clone(),
+        })
+        .collect::<Vec<_>>();
+    let mut result = request(&transformed, index, bound.maps[index].generated(offset));
+    fn remap(
+        value: &mut Value,
+        index: usize,
+        original: &[Source],
+        resolved: &[Source],
+        maps: &[crate::project::bind::SourceMap],
+    ) {
+        match value {
+            Value::Object(object) => {
+                if let Some(uri) = object.get("uri").and_then(Value::as_str) {
+                    if !original
+                        .iter()
+                        .any(|s| s.uri.as_deref() == Some(uri) || path_to_uri(&s.path) == uri)
+                    {
+                        return;
+                    }
+                }
+                let target = object
+                    .get("uri")
+                    .and_then(Value::as_str)
+                    .and_then(|uri| {
+                        original.iter().position(|s| {
+                            s.uri.as_deref() == Some(uri) || path_to_uri(&s.path) == uri
+                        })
+                    })
+                    .unwrap_or(index);
+                for (key, child) in object {
+                    if key == "range" && child.get("start").is_some() {
+                        let start = super::offset_of(&resolved[target].text, &child["start"]);
+                        let end = super::offset_of(&resolved[target].text, &child["end"]);
+                        let span = maps[target].original(Span::new(start, end));
+                        *child = range(
+                            &original[target].text,
+                            span.start as usize,
+                            span.end as usize,
+                        );
+                    } else {
+                        remap(child, target, original, resolved, maps);
+                    }
+                }
+            }
+            Value::Array(items) => {
+                for item in items {
+                    remap(item, index, original, resolved, maps);
+                }
+            }
+            Value::String(text) => {
+                for (source, map) in original.iter().zip(maps) {
+                    for edit in &map.edits {
+                        if edit.text.starts_with("__kiln_module_")
+                            || edit.text.starts_with("KilnModule_")
+                        {
+                            *text = text.replace(
+                                &edit.text,
+                                &source.text[edit.span.start as usize..edit.span.end as usize],
+                            );
+                        }
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    // Do not offer private implementation names from other modules.
+    if let Some(items) = result.get_mut("items").and_then(Value::as_array_mut) {
+        let own = sources[index].path.parent();
+        items.retain(|item| {
+            let label = item["label"].as_str().unwrap_or_default();
+            if !(label.starts_with("__kiln_module_") || label.starts_with("KilnModule_")) {
+                return true;
+            }
+            sources
+                .iter()
+                .zip(&bound.maps)
+                .any(|(s, m)| s.path.parent() == own && m.edits.iter().any(|e| e.text == label))
+        });
+    }
+    remap(&mut result, index, sources, &transformed, &bound.maps);
+    result
+}
+fn module_completion(sources: &[Source], index: usize, offset: usize) -> Option<Value> {
+    let text = &sources[index].text;
+    let before = &text[..offset];
+    let line = before.rsplit('\n').next().unwrap_or("").trim_start();
+    let root = crate::project::common_root(sources.iter().map(|s| s.path.as_path()));
+    if line.starts_with("import ") {
+        let mut paths = Vec::new();
+        let _ = crate::collect_sources(&root, &mut paths);
+        let modules: std::collections::BTreeSet<_> = paths
+            .iter()
+            .filter_map(|p| p.parent()?.strip_prefix(&root).ok())
+            .filter(|p| !p.as_os_str().is_empty())
+            .map(|p| p.to_string_lossy().replace(['/', '\\'], "."))
+            .collect();
+        return Some(
+            json!({"isIncomplete":false,"items":modules.into_iter().map(|m|json!({"label":m,"kind":MODULE})).collect::<Vec<_>>()}),
+        );
+    }
+    let word = before
+        .rsplit(|c: char| !c.is_alphanumeric() && c != '_' && c != '.')
+        .next()?;
+    let (alias, _) = word.rsplit_once('.')?;
+    let parsed = kiln_syntax::parse(text);
+    let module = parsed.module.items.iter().find_map(|i| {
+        if let Item::Import(i) = i {
+            i.paths
+                .iter()
+                .find(|p| p.last().is_some_and(|p| p.name == alias))
+                .map(|p| {
+                    p.iter()
+                        .map(|p| p.name.as_str())
+                        .collect::<Vec<_>>()
+                        .join("/")
+                })
+        } else {
+            None
+        }
+    })?;
+    let dir = root.join(module);
+    if !sources.iter().any(|s| s.path.parent() == Some(&dir)) {
+        return None;
+    }
+    let mut items = Vec::new();
+    for source in sources.iter().filter(|s| s.path.parent() == Some(&dir)) {
+        for item in kiln_syntax::parse(&source.text).module.items {
+            let (name, public, kind) = match item {
+                Item::Fn(f) => (f.name, f.is_pub, FUNCTION),
+                Item::Struct(s) => (s.name, s.is_pub, STRUCT),
+                Item::Enum(e) => (e.name, e.is_pub, ENUM),
+                Item::Const(c) => (c.name, c.is_pub, CONSTANT),
+                _ => continue,
+            };
+            if public {
+                items.push(json!({"label":name.name,"kind":kind}));
+            }
+        }
+    }
+    Some(json!({"isIncomplete":false,"items":items}))
 }

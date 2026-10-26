@@ -1,0 +1,10 @@
+import web
+
+pub fn routes(app: web.App) {
+    app.get("/", fn(req) { return web.render("index.glaze", {}) })
+}
+
+server fn save(title: String) -> String ! {
+    if title == "" { throw web.error(422, "A title is required") }
+    return "Saved: ${title}"
+}

@@ -1,0 +1,2 @@
+pub struct Post { title: String }
+pub fn title(post: Post) -> String { return "User: ${post.title}" }

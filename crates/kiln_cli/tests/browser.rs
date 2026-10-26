@@ -147,16 +147,22 @@ fn the_sites_embers_work_in_a_real_browser() {
 /// script `script` in `tests/browser`, which prints the checks that
 /// failed.
 fn drive(name: &str, app: &str, script: &str) {
+    drive_backend(name, app, script, None);
+}
+fn drive_backend(name: &str, app: &str, script: &str, backend: Option<&str>) {
     let Some(node) = node() else { return };
     let dir = std::env::temp_dir().join(format!("kiln-{name}-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     let exe = dir.join(format!("{name}{}", std::env::consts::EXE_SUFFIX));
-    let built = Command::new(env!("CARGO_BIN_EXE_kiln"))
+    let mut command = Command::new(env!("CARGO_BIN_EXE_kiln"));
+    command
         .args(["build", "-o"])
         .arg(&exe)
-        .arg(root().join(app))
-        .output()
-        .unwrap();
+        .arg(root().join(app));
+    if let Some(backend) = backend {
+        command.args(["--backend", backend]);
+    }
+    let built = command.output().unwrap();
     assert!(
         built.status.success(),
         "{app} does not build:\n{}",
@@ -204,4 +210,19 @@ fn drive(name: &str, app: &str, script: &str) {
         .filter_map(|f| f.as_str())
         .collect();
     assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
+#[test]
+fn multi_folder_fieldnotes_works_in_a_real_browser() {
+    drive(
+        "fieldnotes",
+        "crates/kiln_cli/tests/fieldnotes",
+        "fieldnotes.mjs",
+    );
+    drive_backend(
+        "fieldnotes-c",
+        "crates/kiln_cli/tests/fieldnotes",
+        "fieldnotes.mjs",
+        Some("c"),
+    );
 }

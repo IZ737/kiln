@@ -1,0 +1,5 @@
+<!doctype html>
+<html><head><title>Accounts</title></head><body>
+<h1>Accounts</h1><p>A server-only page.</p><a href="/">Notes</a>
+<posts.Label />
+</body></html>

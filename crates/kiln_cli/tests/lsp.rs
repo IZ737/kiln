@@ -671,3 +671,50 @@ fn ember_files_support_language_features_and_component_navigation() {
     assert!(!symbols.as_array().unwrap().is_empty());
     client.finish();
 }
+
+#[test]
+fn navigates_and_completes_folder_exports() {
+    let dir = std::env::temp_dir().join(format!("kiln-lsp-folders-{}", std::process::id()));
+    std::fs::create_dir_all(dir.join("posts")).unwrap();
+    let main = "import posts\nfn main() { print(posts.title()) }\n";
+    let api = "pub fn title() -> String { return \"Hello\" }\nfn hidden() {}\n";
+    std::fs::write(dir.join("main.kiln"), main).unwrap();
+    std::fs::write(dir.join("posts/api.kiln"), api).unwrap();
+    let uri = format!("file://{}/main.kiln", dir.display());
+    let target = format!("file://{}/posts/api.kiln", dir.display());
+    let mut c = Client::start();
+    c.request(
+        "initialize",
+        json!({"rootUri": format!("file://{}",dir.display())}),
+    );
+    c.open(&uri, main);
+    let def = c.at(
+        "textDocument/definition",
+        &uri,
+        "import posts\nfn main() { print(posts.tit|le()) }\n",
+    );
+    assert_eq!(def["uri"], target);
+    assert_eq!(def["range"]["start"], json!({"line":0,"character":7}));
+    let hover = c.at(
+        "textDocument/hover",
+        &uri,
+        "import posts\nfn main() { print(posts.tit|le()) }\n",
+    );
+    assert!(hover.to_string().contains("String"));
+    assert!(!hover.to_string().contains("__kiln_module"));
+    let completions = c.at(
+        "textDocument/completion",
+        &uri,
+        "import posts\nfn main() { posts.| }\n",
+    );
+    let labels: Vec<_> = completions["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|i| i["label"].as_str())
+        .collect();
+    assert!(labels.contains(&"title"));
+    assert!(!labels.contains(&"hidden"));
+    c.finish();
+    let _ = std::fs::remove_dir_all(dir);
+}

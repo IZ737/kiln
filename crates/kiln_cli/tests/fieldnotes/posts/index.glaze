@@ -1,0 +1,7 @@
+{% css "post.css" %}
+<!doctype html>
+<html><head><title>Fieldnotes</title></head><body>
+<h1>Fieldnotes</h1>
+<Editor />
+<a href="/accounts">Accounts</a>
+</body></html>

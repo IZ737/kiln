@@ -2,8 +2,10 @@
 
 `kiln lsp` is a language server (LSP) that talks over standard input and
 output. A file is understood together with the other `.kiln`, `.glaze` and `.ember`
-files in its directory, so glazes see your types and pages see your glazes'
-props, and the editor's unsaved text is used for every open file. It gives:
+files in its module and the folders it imports, so glazes see local types and
+pages see their components' props. Project discovery respects workspace bounds
+and optional manifests; the editor's unsaved text is used for open files.
+See [projects](../reference/projects.md) for module paths and visibility. It gives:
 
 - **Diagnostics**: the same errors as `kiln check`, while you type, with
   each error's suggested fix as a quick fix.
