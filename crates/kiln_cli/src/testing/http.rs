@@ -111,7 +111,7 @@ pub fn send(
     })
 }
 
-fn dechunk(mut data: &[u8]) -> Vec<u8> {
+pub fn dechunk(mut data: &[u8]) -> Vec<u8> {
     let mut out = Vec::new();
     loop {
         let Some(end) = data.windows(2).position(|w| w == b"\r\n") else {

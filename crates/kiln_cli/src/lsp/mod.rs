@@ -47,6 +47,12 @@ pub fn run() -> i32 {
         let result = server.handle(&method, &params);
         if let Some(id) = id {
             let response = match result {
+                // A request the server refuses, with why.
+                Some(Value::Object(o)) if o.contains_key("__refused") => json!({
+                    "jsonrpc": "2.0",
+                    "id": id,
+                    "error": {"code": -32803, "message": o["__refused"]},
+                }),
                 Some(result) => json!({"jsonrpc": "2.0", "id": id, "result": result}),
                 None => json!({
                     "jsonrpc": "2.0",
@@ -85,6 +91,9 @@ impl Server {
                         "completionProvider": {"triggerCharacters": ["."]},
                         "documentSymbolProvider": true,
                         "workspaceSymbolProvider": true,
+                        "referencesProvider": true,
+                        "renameProvider": true,
+                        "documentFormattingProvider": true,
                     },
                     "serverInfo": {"name": "kiln", "version": env!("CARGO_PKG_VERSION")},
                 }))
@@ -143,6 +152,35 @@ impl Server {
                     "textDocument/hover" => features::hover(&sources, index, offset),
                     "textDocument/definition" => features::definition(&sources, index, offset),
                     _ => features::completion(&sources, index, offset),
+                })
+            }
+            "textDocument/references" => {
+                let Some((sources, index)) = self.program(&uri) else {
+                    return Some(json!([]));
+                };
+                let offset = offset_of(&sources[index].text, &params["position"]);
+                let mut found = features::references(&sources, index, offset);
+                if params["context"]["includeDeclaration"] == false {
+                    if let Some(items) = found.as_array_mut() {
+                        let definition = features::definition(&sources, index, offset);
+                        items.retain(|l| *l != definition);
+                    }
+                }
+                Some(found)
+            }
+            "textDocument/rename" => Some(self.rename(&uri, params)),
+            "textDocument/formatting" => {
+                let Some(doc) = self.docs.get(&uri) else {
+                    return Some(json!([]));
+                };
+                let path = uri_to_path(&uri).unwrap_or_else(|| PathBuf::from(&uri));
+                Some(match crate::fmt::format_file(&path, &doc.text) {
+                    Ok(out) if out != doc.text => json!([{
+                        "range": range(&doc.text, 0, doc.text.len()),
+                        "newText": out,
+                    }]),
+                    Ok(_) => json!([]),
+                    Err(e) => json!({ "__refused": format!("kiln fmt: {e}") }),
                 })
             }
             "textDocument/documentSymbol" => Some(match self.docs.get(&uri) {
@@ -257,6 +295,51 @@ impl Server {
                 publish(u, &doc.diagnostics, &doc.text);
             }
         }
+    }
+
+    /// Renames a name of the program everywhere it is used. Names of the
+    /// standard library and of Wares in kiln's cache cannot be renamed.
+    fn rename(&self, uri: &str, params: &Value) -> Value {
+        let new_name = params["newName"].as_str().unwrap_or_default();
+        let valid = new_name.starts_with(|c: char| c.is_alphabetic() || c == '_')
+            && new_name.chars().all(|c| c.is_alphanumeric() || c == '_')
+            && kiln_syntax::token::TokenKind::keyword(new_name).is_none()
+            && !new_name.starts_with("__");
+        if !valid {
+            return json!({ "__refused": format!("`{new_name}` is not a name") });
+        }
+        let Some((sources, index)) = self.program(uri) else {
+            return Value::Null;
+        };
+        let offset = offset_of(&sources[index].text, &params["position"]);
+        let found = features::references(&sources, index, offset);
+        let Some(locations) = found.as_array().filter(|l| !l.is_empty()) else {
+            return json!({ "__refused": "there is nothing here this project can rename" });
+        };
+        let mut changes: HashMap<String, Vec<Value>> = HashMap::new();
+        for l in locations {
+            let target_uri = l["uri"].as_str().unwrap_or_default();
+            let Some(source) = sources.iter().find(|s| {
+                s.uri.as_deref() == Some(target_uri)
+                    || uri_to_path(target_uri).is_some_and(|p| p == s.path)
+            }) else {
+                continue;
+            };
+            let root = crate::project::editor_root(&source.path, &self.roots);
+            if crate::project::is_cached_ware(&root, &source.path) {
+                return json!({ "__refused": "this name is declared or used in a Ware from kiln's cache, which is not yours to change" });
+            }
+            let start = offset_of(&source.text, &l["range"]["start"]);
+            let end = offset_of(&source.text, &l["range"]["end"]);
+            // `posts.title`: only the name after the module changes.
+            let written = &source.text[start..end];
+            let from = written.rfind('.').map_or(start, |d| start + d + 1);
+            changes.entry(target_uri.to_string()).or_default().push(json!({
+                "range": range(&source.text, from, end),
+                "newText": new_name,
+            }));
+        }
+        json!({ "changes": changes })
     }
 
     fn code_actions(&self, uri: &str, params: &Value) -> Value {

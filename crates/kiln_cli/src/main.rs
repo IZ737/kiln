@@ -2,6 +2,7 @@
 //! `upgrade`.
 
 mod db;
+mod dev;
 mod fmt;
 mod lsp;
 mod notice;
@@ -162,6 +163,24 @@ enum Command {
         /// if there are any.
         #[arg(long)]
         check: bool,
+    },
+    /// Run a program's server while you work on it: kiln builds again and
+    /// restarts it when a file changes, keeps the last good build running
+    /// when a build fails, and reloads open pages.
+    Dev {
+        /// The program's folder. Defaults to the current directory.
+        #[arg(default_value = ".")]
+        dir: PathBuf,
+        /// The port pages are served on.
+        #[arg(long, default_value_t = 8080)]
+        port: u16,
+        /// The address to listen on. Only this machine can reach the
+        /// default.
+        #[arg(long, default_value = "127.0.0.1")]
+        host: String,
+        /// How to generate code, as for `kiln build`.
+        #[arg(long, value_enum)]
+        backend: Option<Backend>,
     },
     /// Run the language server, for editors, over standard input and output.
     Lsp,
@@ -427,6 +446,19 @@ fn dispatch(command: Command) -> ExitCode {
     match command {
         Command::Check { paths, json } => check(paths, json),
         Command::Fmt { paths, check } => fmt::run(paths, check),
+        Command::Dev {
+            dir,
+            port,
+            host,
+            backend,
+        } => {
+            let target = Target::host();
+            let backend = Backend::or_default(backend, target);
+            let builder = move |p: &project::Project, out: &Path| {
+                build_project(p, out, Emit::default(), backend, target).is_ok()
+            };
+            dev::run(dev::Options { dir, host, port }, &builder)
+        }
         Command::Test {
             dir,
             unit,
