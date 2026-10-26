@@ -1,0 +1,22 @@
+<a href="about:invalid#kiln-unsafe-url">hex</a>
+<a href="about:invalid#kiln-unsafe-url">decimal</a>
+<a href="java&#x73;{suffix}">unquoted</a>
+<a href="java&amp;#115cript:alert(1)">no semicolon</a>
+<a href="about:invalid#kiln-unsafe-url">named</a>
+<a href="about:invalid#kiln-unsafe-url">controls</a>
+<a href="&amp;#1;JaVa
+Script:alert(1)">unsupported control entity</a>
+<a href="about:invalid#kiln-unsafe-url">colon</a>
+<a href="about:invalid#kiln-unsafe-url">expression</a>
+<a href="/posts/42">relative</a>
+<a href="https://example.com/42">https</a>
+<a href="?q=42&amp;page=1">query</a>
+<a href="/posts/42">encoded relative</a>
+<a href="https://example.com/42">encoded https</a>
+<a href="java&amp;#xcript:alert(1)">split entity</a>
+<a href="about:invalid#kiln-unsafe-url">dynamic stays literal</a>
+<a href="java&amp;#x73;cript:alert(1)">dynamic entity</a>
+<a href="about:invalid#kiln-unsafe-url">multiple entities</a>
+<a href="&amp;#x6a;avacript:alert(1)">decode once</a>
+<a href="about:invalid#kiln-unsafe-url">leading control</a>
+<a href="javascript:alert(1)">static</a>

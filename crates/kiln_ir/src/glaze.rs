@@ -1339,9 +1339,21 @@ impl<'a> Gen<'a> {
             AttrValue::Text(parts) => {
                 self.pending.push_str(&format!(" {name}=\""));
                 if is_url && !settles_scheme(parts) {
-                    // The values decide what kind of URL it is, so the whole
-                    // URL is checked.
-                    let value = self.text_value(parts);
+                    // Decode only authored text, before joining it with values.
+                    // Validate that URL, then escape it once for HTML. Decoding
+                    // after joining would interpret untrusted values as HTML.
+                    // References the decoder leaves unchanged are escaped too,
+                    // so the browser cannot decode them into a scheme later.
+                    let decoded: Vec<_> = parts
+                        .iter()
+                        .map(|part| match part {
+                            AttrPart::Text(t) => {
+                                AttrPart::Text(html_escape::decode_html_entities(t).into_owned())
+                            }
+                            AttrPart::Expr(e) => AttrPart::Expr(e.clone()),
+                        })
+                        .collect();
+                    let value = self.text_value(&decoded);
                     self.line(&format!("__out.push(__glaze_url({value}))"));
                 } else {
                     for part in parts {
@@ -1926,21 +1938,28 @@ fn is_blank(node: &Node) -> bool {
 /// URL an attribute holds, as `/posts/{id}` or `https://x/{p}` do, so the
 /// values cannot make it a `javascript:` URL.
 fn settles_scheme(parts: &[AttrPart]) -> bool {
+    // Fully static URLs are authored HTML, not an untrusted value.
+    if !parts.iter().any(|p| matches!(p, AttrPart::Expr(_))) {
+        return true;
+    }
     let Some(AttrPart::Text(prefix)) = parts.first() else {
         return false;
     };
     let mut seen = false;
-    for c in prefix.trim_start().chars() {
+    for c in prefix.trim_start_matches(|c| c <= '\u{20}').chars() {
         match c {
             '\t' | '\n' | '\r' => {}
+            // A character reference could supply a scheme character or a
+            // control character the browser ignores. Check the decoded URL.
+            '&' => return false,
             ':' => return true,
             'a'..='z' | 'A'..='Z' => seen = true,
             '0'..='9' | '+' | '-' | '.' if seen => {}
             _ => return true,
         }
     }
-    // All text, or a value could still finish the scheme.
-    parts.len() == 1
+    // A value could still finish the scheme.
+    false
 }
 
 /// A Kiln string literal with this text.
@@ -1988,6 +2007,10 @@ mod tests {
         assert!(settles_scheme(&[text("?q="), value.clone()]));
         assert!(!settles_scheme(&[value.clone(), text("/x")]));
         assert!(!settles_scheme(&[text("java"), value.clone()]));
+        assert!(!settles_scheme(&[text("java&#x73;"), value.clone()]));
+        assert!(!settles_scheme(&[text("JaVa&Tab;S"), value.clone()]));
+        assert!(!settles_scheme(&[text("\u{1}java"), value.clone()]));
+        assert!(settles_scheme(&[text("/posts/&amp;"), value.clone()]));
         assert!(settles_scheme(&[text("javascript:x")]));
     }
 

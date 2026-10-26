@@ -28,6 +28,42 @@ fn root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")
 }
 
+#[test]
+fn glaze_urls_cannot_assemble_executable_schemes() {
+    let Some(node) = node() else { return };
+    for backend in ["c", "native"] {
+        if backend == "native" && kiln_native::unavailable(kiln_native::Target::host()).is_some() {
+            continue;
+        }
+        let rendered = Command::new(env!("CARGO_BIN_EXE_kiln"))
+            .args(["run", "--backend", backend])
+            .arg(root().join("conformance/glaze_url_safety"))
+            .output()
+            .unwrap();
+        assert!(
+            rendered.status.success(),
+            "{}",
+            String::from_utf8_lossy(&rendered.stderr)
+        );
+        let html = std::env::temp_dir().join(format!(
+            "kiln-glaze-urls-{}-{backend}.html",
+            std::process::id()
+        ));
+        std::fs::write(&html, rendered.stdout).unwrap();
+        let out = Command::new(&node)
+            .arg(root().join("crates/kiln_cli/tests/browser/glaze_urls.mjs"))
+            .arg(&html)
+            .output()
+            .unwrap();
+        let _ = std::fs::remove_file(&html);
+        assert!(
+            out.status.success(),
+            "{backend}: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+    }
+}
+
 /// Programs from `conformance/` that need nothing but the browser: their
 /// WebAssembly build runs in Chromium and prints what the native one does.
 #[test]

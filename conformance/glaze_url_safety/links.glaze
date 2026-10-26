@@ -1,0 +1,22 @@
+{% props suffix: String, id: String, value: String, encoded: String %}
+<a href="java&#x73;{suffix}">hex</a>
+<a href='java&#115;{suffix}'>decimal</a>
+<a href=java&#x73;{suffix}>unquoted</a>
+<a href="java&#115{suffix}">no semicolon</a>
+<a href="JaVa&Tab;S{suffix}">named</a>
+<a href="&#32;JaVa&#xA;S{suffix}">controls</a>
+<a href="&#1;JaVa&#xA;S{suffix}">unsupported control entity</a>
+<a href="javascript&colon;{id}">colon</a>
+<a href="{value}">expression</a>
+<a href="/posts/{id}">relative</a>
+<a href="https://example.com/{id}">https</a>
+<a href="?q={id}&amp;page=1">query</a>
+<a href="&#47;posts/{id}">encoded relative</a>
+<a href="https&colon;//example.com/{id}">encoded https</a>
+<a href="java&#x{suffix}">split entity</a>
+<a href="{value}&colon;">dynamic stays literal</a>
+<a href="{encoded}">dynamic entity</a>
+<a href="&#106;&#97;va&#115;{suffix}">multiple entities</a>
+<a href="&#38;#x6a;ava{suffix}">decode once</a>
+<a href="java{suffix}">leading control</a>
+<a href="javascript:alert(1)">static</a>

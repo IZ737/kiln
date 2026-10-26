@@ -68,6 +68,10 @@ glaze must be named in quotes, so the compiler knows which one it is.
   `https`, `mailto` or `tel`; anything else, such as `javascript:...`,
   becomes `about:invalid#kiln-unsafe-url`. A value after a fixed start,
   as in `href="/posts/{post.id}"`, is only escaped.
+  HTML character references in a static prefix cannot hide a scheme:
+  `href="java&#x73;{suffix}"` checks the decoded prefix with the value.
+  Only authored text is decoded; character references supplied by a value
+  remain literal text.
 - **Some attributes take no values** (E0309): `on...` attributes such as
   `onclick` run JavaScript, `srcdoc` is a whole page, and `style` is CSS,
   which accepts only `Int` and `Float` values (`style="width: {pct}%"`).
