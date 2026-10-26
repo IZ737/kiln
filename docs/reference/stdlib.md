@@ -4,9 +4,9 @@ The standard library's signatures are Kiln files in
 [`crates/kiln_check/std/`](../../crates/kiln_check/std). The prelude is visible
 everywhere; every other module is imported by name (`import fs`). This page
 lists the modules the compiler can build into native programs today. The
-others (`sql`, `auth`), and the parts of `web` not listed here,
-type-check, and building a program that uses them reports E0401 until their
-phase arrives.
+parts of `web` not listed here type-check, and building a program that uses
+them reports E0401 until their phase arrives. `sql` and `orm` have a page
+of their own: [databases, models and migrations](data.md).
 
 ## Prelude
 
@@ -321,6 +321,103 @@ several handlers is safe: today's single-core scheduler only switches
 tasks where they wait, and a later one will run tasks on several cores.
 Keep shared values immutable; `Mutex`, `Atomic` and channels will come for
 the rest.
+
+## `auth`
+
+Passwords, sessions kept in the database, and the identity of a request.
+A password is stored as an Argon2id hash, never in a form it can be read
+back from. A session is a long random value the browser keeps in a
+cookie, and the database holds only its digest, so a copy of the table is
+not a set of usable sessions.
+
+```kiln
+import web, sql, orm, auth
+
+struct Account {
+    id: Int
+    email: String
+    password: String
+    role: String
+}
+
+fn main() ! {
+    let db = try sql.open(env("DATABASE_URL"))
+    let sessions = try auth.sessions(db)
+    let app = web.app()
+
+    app.post("/sign-in", fn(req) {
+        let form = try req.form<{ email: String, password: String }>()
+        let found = try orm.find<Account>(db).where(fn(a) { a.email == form.email }).first()
+        if found is some(account) and auth.verify_password(form.password, account.password) {
+            let home = web.redirect("/", status: 303)
+            return try sessions.sign_in(home, account.id.to_string(), roles: [account.role])
+        }
+        // The same answer either way, so the form cannot be used to find
+        // out which addresses have accounts.
+        return web.render("sign-in.glaze", { wrong: true }, status: 401)
+    })
+
+    app.get("/notes", fn(req) {
+        let who = try sessions.require(req)
+        let notes = try orm.find<Note>(db).where(fn(n) { n.author == who.subject }).all()
+        return web.render("notes.glaze", { notes, csrf: try sessions.csrf(req) })
+    })
+
+    try app.listen(":8080")
+}
+```
+
+| Function | |
+| --- | --- |
+| `auth.hash_password(password) -> String !` | The hash to store; a different one every time |
+| `auth.verify_password(password, hash) -> Bool` | Whether the password is the one the hash was made from |
+| `auth.token(bytes: Int = 32) -> String` | A value no one can guess, for a link in an email or an API key |
+| `auth.sessions(db, cookie: "kiln_session", idle: 12h, lifetime: 720h, secure: true) -> Sessions !` | Sessions in `db` |
+
+`auth.sessions` makes its table, `kiln_sessions`, when it is not there
+yet, and never changes it when it is; the migrations of
+[`kiln db`](data.md#migrations) do not describe it, because it is the runtime's and
+not one of the program's models. `idle` is how long a session may sit
+unused and `lifetime` how long it may last at all; `0s` is no limit.
+Keep `secure` on, so the cookie is only ever sent over HTTPS.
+
+| Method | |
+| --- | --- |
+| `sessions.sign_in(res, subject, roles: []) -> web.Response !` | A new session, and its cookie on `res` |
+| `sessions.sign_out(req, res) -> web.Response !` | Ends this request's session and clears its cookie |
+| `sessions.sign_out_all(subject) -> Int !` | Ends every session of a subject, after a password change |
+| `sessions.current(req) -> Identity?` ! | Who the request is from, or `none` |
+| `sessions.require(req) -> Identity !` | The same, or an error the server answers 401 with |
+| `sessions.csrf(req) -> String !` | The token a form on this page must send back |
+| `sessions.check(req, token) !` | Lets the request through only with this session's token, and otherwise fails with 403 |
+| `sessions.sweep() -> Int !` | Deletes the sessions that are over |
+
+An `Identity` has `subject` (what `sign_in` was given, usually a user's
+key as text), `roles` and `started`. Identity is a request's, never the
+program's: a server answers many requests at the same time, so there is no
+ambient signed-in user.
+
+**Forms that only this site can post.** Put `sessions.csrf(req)` in a
+hidden field of every form that changes something, and call
+`sessions.check(req, form.csrf)` in the handler before the change. Signing
+in starts a session of its own and leaves any old one behind, so a session
+someone else put in the browser cannot become a signed-in one, and
+`sign_out_all` ends the sessions a changed password should not keep.
+
+**Who an ember's call is from.** A `server fn` whose first parameter is a
+`web.Request` is given the request it was called by, and the browser sends
+the rest:
+
+```kiln
+server fn publish(req: web.Request, id: Int) -> Bool ! {
+    let who = try sessions.require(req)
+    ...
+}
+```
+
+```glaze
+<button on:click={ done = publish(post.id) catch err { false } }>Publish</button>
+```
 
 ## `validate`
 

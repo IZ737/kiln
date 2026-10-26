@@ -13,6 +13,7 @@ are not yet executable. Check their status notes before relying on a feature.
 - [Kiln syntax](reference/syntax.md) — source files, declarations and expressions
 - [Projects and modules](reference/projects.md) — local imports, visibility, roots and manifests
 - [Glazes](reference/glazes.md) — template/component syntax and type checking
+- [Databases, models and migrations](reference/data.md) — `sql`, `orm` and `kiln db`
 - [Type rules](reference/types.md) — inference, records, optionals and more
 - [Standard library](reference/stdlib.md) — available modules and APIs
 

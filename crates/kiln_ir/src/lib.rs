@@ -400,6 +400,20 @@ impl Expr {
             _ => self,
         }
     }
+
+    /// The type a runtime function is told this value has, for a value
+    /// passed as `Any`. It is the type under the coercion to `Any`, which
+    /// is not always the innermost one: a record's field is held as `Any`
+    /// and read back with a coercion to its own type, so
+    /// `((form.email as String) as Any)` describes a `String`.
+    pub fn described(&self) -> &Ty {
+        match &self.kind {
+            ExprKind::Coerce(inner) if !matches!(inner.ty, Ty::Any | Ty::Unknown) => {
+                inner.described()
+            }
+            _ => &self.ty,
+        }
+    }
 }
 
 impl Program {

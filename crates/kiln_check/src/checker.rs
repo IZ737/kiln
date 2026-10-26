@@ -475,6 +475,17 @@ impl Checker {
         }
     }
 
+    /// Whether `ty` is `web.Request`, the type a `server fn` takes to be
+    /// given the request it was called by.
+    pub(crate) fn is_request(&self, ty: &Ty) -> bool {
+        let want = self
+            .modules
+            .iter()
+            .find(|m| m.name == "web")
+            .and_then(|m| m.types.get("Request").copied());
+        matches!((ty, want), (Ty::Adt(id, _), Some(w)) if *id == w)
+    }
+
     pub(crate) fn list_of(&self, elem: Ty) -> Ty {
         Ty::Adt(self.global_types["List"], vec![elem])
     }
@@ -814,7 +825,10 @@ impl Checker {
             if let Some(default) = &p.default {
                 self.check(default, &ty);
             }
-            if f.is_server {
+            // A `server fn` whose first parameter is a `web.Request` is
+            // given the request it was called by: the browser does not
+            // send it, so it does not have to cross.
+            if f.is_server && !(i == 0 && self.is_request(&ty)) {
                 let what = format!("the parameter `{}` of a `server fn`", p.name.name);
                 self.must_cross(&ty, &what, p.span);
             }
@@ -2046,9 +2060,16 @@ impl Checker {
             if self.local(name).is_none() {
                 if let Some(sig) = self.global_fns.get(name).cloned() {
                     self.refer(callee.span, Ref::Fn(name.clone()));
-                    let (params, ret, mut throws) = self.instantiate(&sig, &[], &explicit, e.span);
+                    let (mut params, ret, mut throws) =
+                        self.instantiate(&sig, &[], &explicit, e.span);
+                    // A handler's call to a `server fn` goes over the
+                    // network, and the server gives it the request.
+                    let rpc = self.in_handler && self.server_fns.contains(name);
+                    if rpc && params.first().is_some_and(|p| self.is_request(&p.ty)) {
+                        params.remove(0);
+                    }
                     self.check_args(&params, args, e.span, &fn_name, None);
-                    if self.in_handler && throws.is_none() && self.server_fns.contains(name) {
+                    if rpc && throws.is_none() {
                         throws = Some(self.error_ty());
                     }
                     return (ret, throws);

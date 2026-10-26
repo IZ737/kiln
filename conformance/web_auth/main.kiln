@@ -1,0 +1,90 @@
+// Passwords and sessions: an Argon2id hash a password verifies against,
+// and sessions in the database that a request's cookie finds.
+import sql, orm, auth, web
+
+struct Account {
+    id: Int
+    email: String
+    password: String
+    role: String
+}
+
+// The token a browser would keep, out of the cookie a response set.
+fn sent(res: web.Response) -> String {
+    let header = res.headers.get("set-cookie") ?? ""
+    // `kiln_session=<token>; Path=/; ...`
+    let rest = header.slice(header.index_of("=") ?? 0, header.len())
+    let value = rest.slice(1, rest.index_of(";") ?? rest.len())
+    value
+}
+
+fn visiting(cookie: String) -> web.Request {
+    var headers: Map<String, String> = Map()
+    headers["cookie"] = "kiln_session=${cookie}"
+    web.Request(method: "GET", path: "/", query_string: "", headers: headers, body: "")
+}
+
+fn main() ! {
+    let db = try sql.open("sqlite::memory:")
+    try db.exec("create table accounts (id integer primary key, email text not null, password text not null, role text not null)")
+
+    // A password is stored as a hash, which is not the password and is
+    // different every time.
+    let hash = try auth.hash_password("open sesame")
+    print(hash.starts_with("$argon2id$"))
+    print(hash.contains("open sesame"))
+    print(hash == (try auth.hash_password("open sesame")))
+    print(auth.verify_password("open sesame", hash))
+    print(auth.verify_password("Open sesame", hash))
+    print(auth.verify_password("open sesame", "not a hash"))
+    let ada = try orm.insert<Account>(db, Account(id: 0, email: "ada@example.com", password: hash, role: "writer"))
+
+    // Signing in puts a session in the database and its cookie on the
+    // response, with the flags that keep it to this site.
+    let sessions = try auth.sessions(db, secure: true)
+    let welcome = try sessions.sign_in(web.text("welcome"), ada.id.to_string(), roles: ["writer", "editor"])
+    let cookie = welcome.headers.get("set-cookie") ?? ""
+    print(cookie.contains("HttpOnly"))
+    print(cookie.contains("SameSite=Lax"))
+    print(cookie.contains("Secure"))
+    print(try db.scalar<Int>("select count(*) from kiln_sessions"))
+    // The database holds a digest, not the value the browser keeps.
+    let token = sent(welcome)
+    print(token.len())
+    print(try db.scalar<Int>("select count(*) from kiln_sessions where id = $1", token))
+
+    // A request with the cookie is that account's.
+    let req = visiting(token)
+    let who = try sessions.require(req)
+    print("${who.subject} ${who.roles.join("/")}")
+    print(try sessions.current(req) is some(x))
+    print(try sessions.current(visiting("made up")) is some(y))
+
+    // A form can only be posted with this session's token.
+    let csrf = try sessions.csrf(req)
+    print(csrf.len())
+    try sessions.check(req, csrf)
+    print("the form was accepted")
+    sessions.check(req, "not the token") catch err {
+        print(err.message)
+    }
+    sessions.check(visiting("made up"), csrf) catch err {
+        print(err.message)
+    }
+
+    // Signing out ends the session and clears the cookie.
+    let bye = try sessions.sign_out(req, web.text("bye"))
+    print((bye.headers.get("set-cookie") ?? "").contains("Max-Age=0"))
+    print(try sessions.current(req) is some(z))
+    print(try db.scalar<Int>("select count(*) from kiln_sessions"))
+
+    // Every session of an account can be ended at once.
+    let one = try sessions.sign_in(web.text(""), ada.id.to_string())
+    let two = try sessions.sign_in(web.text(""), ada.id.to_string())
+    print(try db.scalar<Int>("select count(*) from kiln_sessions"))
+    print(try sessions.sign_out_all(ada.id.to_string()))
+    print(try db.scalar<Int>("select count(*) from kiln_sessions"))
+    // Nothing is over yet, so sweeping finds nothing to delete.
+    let fresh = try sessions.sign_in(web.text(""), ada.id.to_string())
+    print(try sessions.sweep())
+}

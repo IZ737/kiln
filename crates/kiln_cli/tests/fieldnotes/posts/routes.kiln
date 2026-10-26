@@ -4,7 +4,9 @@ pub fn routes(app: web.App) {
     app.get("/", fn(req) { return web.render("index.glaze", {}) })
 }
 
-server fn save(title: String) -> String ! {
+// The first parameter is the request the browser called with, which the
+// server gives it: the ember calls `save(title)`.
+server fn save(req: web.Request, title: String) -> String ! {
     if title == "" { throw web.error(422, "A title is required") }
-    return "Saved: ${title}"
+    return "Saved: ${title} (${req.method})"
 }

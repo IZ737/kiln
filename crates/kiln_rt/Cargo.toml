@@ -36,3 +36,8 @@ serde_json = { version = "1", features = ["float_roundtrip"] }
 # The `sql` module: SQLite, compiled into every program that opens a
 # database, so it needs no library on the system.
 rusqlite = { version = "0.41", features = ["bundled"] }
+# `auth`: Argon2id password hashes, session ids the system's random
+# numbers make, and their SHA-256 digests.
+argon2 = "0.6"
+getrandom = { version = "0.4", features = ["std"] }
+sha2 = "0.11"

@@ -23,7 +23,7 @@ try {
   check((await page.locator("form").evaluate(e => getComputedStyle(e).display)) === "grid", "module-local CSS loads");
   await page.locator("#title").fill("Cross-folder note");
   await page.getByRole("button", { name: "Save note" }).click();
-  await page.waitForFunction(() => document.querySelector("#message").textContent === "Saved: Cross-folder note");
+  await page.waitForFunction(() => document.querySelector("#message").textContent === "Saved: Cross-folder note (POST)");
   await page.locator("#title").fill("");
   await page.getByRole("button", { name: "Save note" }).click();
   await page.waitForFunction(() => document.querySelector("#message").textContent.includes("A title is required"));

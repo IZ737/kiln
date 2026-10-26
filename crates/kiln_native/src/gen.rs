@@ -1812,7 +1812,7 @@ impl Fx<'_, '_, '_> {
                     return self.rt_call(rf, args, &e.ty);
                 }
                 let vals: Vec<Value> = args.iter().map(|a| self.expr(a)).collect();
-                let tys: Vec<Ty> = args.iter().map(|a| a.uncoerced().ty.clone()).collect();
+                let tys: Vec<Ty> = args.iter().map(|a| a.described().clone()).collect();
                 self.lib_call(module, name, &vals, &tys, &e.ty, e.span)
             }
             ExprKind::Print(v) => {
@@ -2500,7 +2500,7 @@ impl Fx<'_, '_, '_> {
         let described = match rf.desc {
             kiln_ir::rt::DescOf::None => None,
             kiln_ir::rt::DescOf::Ret => Some(ty.clone()),
-            kiln_ir::rt::DescOf::Arg(i) => args.get(i).map(|a| a.uncoerced().ty.clone()),
+            kiln_ir::rt::DescOf::Arg(i) => args.get(i).map(|a| a.described().clone()),
         };
         if let Some(t) = described {
             let d = self.g.desc(&t);
