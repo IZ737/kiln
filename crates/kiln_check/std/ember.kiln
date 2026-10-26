@@ -30,7 +30,3 @@ struct Reply {
 // Calls the `server fn` named `name` with its arguments as a JSON object,
 // and then `done` with the answer. Embers call server functions this way.
 fn call(name: String, args: String, done: fn(Reply)) {}
-
-// Reports an error a handler did not catch: the ember shows it on the
-// page's console and marks itself with `data-k-error`.
-fn fail(error: Error) {}

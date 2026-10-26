@@ -1,0 +1,35 @@
+// JavaScript values, for what the typed modules and npm bindings cannot
+// reach. Their use is visibly foreign: a `js.Value` is a handle on a
+// JavaScript value, which stays in the browser, and turning one into a
+// Kiln value is checked. Only `on:` handlers use them.
+
+struct Value {}
+
+// `globalThis[name]`, such as `js.global("document")`.
+fn global(name: String) -> Value {}
+
+// JavaScript values of Kiln ones.
+fn string(text: String) -> Value {}
+fn float(number: Float) -> Value {}
+fn bool(value: Bool) -> Value {}
+fn null() -> Value {}
+
+impl Value {
+    // A property, which is `undefined` when there is none.
+    fn get(self, name: String) -> Value {}
+    fn set(self, name: String, value: Value) {}
+    // Calls a method with arguments. An exception it throws is an error.
+    fn call(self, method: String, args: List<Value> = []) -> Value ! {}
+
+    // Checked conversions: each fails when the value is not of its type.
+    // A number is an Int when it is a whole number in Int's range.
+    fn as_string(self) -> String ! {}
+    fn as_float(self) -> Float ! {}
+    fn as_int(self) -> Int ! {}
+    fn as_bool(self) -> Bool ! {}
+
+    // Whether it is `null` or `undefined`.
+    fn is_nullish(self) -> Bool {}
+    // JavaScript's `typeof`: "string", "number", "object", ...
+    fn type_of(self) -> String {}
+}

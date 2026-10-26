@@ -55,6 +55,8 @@ pub const UNKNOWN_GLAZE: &str = "E0219";
 pub const BAD_STYLE: &str = "E0220";
 pub const UNKNOWN_TOKEN: &str = "E0221";
 pub const BAD_TOKEN: &str = "E0222";
+pub const BROWSER_ONLY: &str = "E0223";
+pub const NOT_SERIALIZABLE: &str = "E0224";
 
 pub const UNCLOSED_GLAZE_TAG: &str = "E0301";
 pub const MISMATCHED_CLOSING_TAG: &str = "E0302";
@@ -311,6 +313,20 @@ pub static ALL: &[ErrorCode] = &[
         explanation: "An ember (a glaze with `{% state %}` or an `on:` handler) runs in the browser, which has no database and no secrets. Modules such as `sql` work only on the server. Move the work into a `server fn` in a `.kiln` file and call it from the ember: the call becomes a typed request to the server.",
         wrong: "{% state posts = sql.open(url).query<Post>(\"select * from posts\") %}",
         right: "// main.kiln\nserver fn recent_posts() -> List<Post> ! { ... }\n\n// feed.glaze\n{% state posts = recent_posts() catch { [] } %}",
+    },
+    ErrorCode {
+        code: BROWSER_ONLY,
+        title: "browser-only module used outside a handler",
+        explanation: "`browser`, `js` and npm packages run in the browser, so only an ember's `on:` handlers can use them: a glaze's HTML is rendered on the server too, and `.kiln` functions run on the server. Call them from a handler, and keep what they give in `{% state %}` to show it.",
+        wrong: "<p>{browser.title()}</p>",
+        right: "{% state title = \"\" %}\n<button on:click={ title = browser.title() }>Title</button>\n<p>{title}</p>",
+    },
+    ErrorCode {
+        code: NOT_SERIALIZABLE,
+        title: "value cannot cross between server and browser",
+        explanation: "An ember's props and state, and the parameters and results of a `server fn`, travel as JSON between the server and the browser. Functions, `js.Value` handles, styles and server handles such as `web.Request` have no JSON form, so they cannot be among them. Pass plain data (numbers, strings, lists, maps, structs and enums of them) and do the rest on its side.",
+        wrong: "server fn run(task: fn() -> Int) -> Int { task() }",
+        right: "server fn run(task: String) -> Int { ... }",
     },
     ErrorCode {
         code: UNKNOWN_GLAZE,

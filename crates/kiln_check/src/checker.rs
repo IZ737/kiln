@@ -75,6 +75,9 @@ pub struct Checker {
     /// Whether the code being checked is an `on:` handler, where a call to
     /// a `server fn` goes over the network and so can fail.
     pub(crate) in_handler: bool,
+    /// Whether this is the code of a page's embers, all of which runs in
+    /// the browser.
+    pub(crate) browser_program: bool,
     /// The program's `server fn`s, by name.
     pub(crate) server_fns: HashSet<String>,
     /// Each `{% state %}` of the glaze being checked, with its type as Kiln
@@ -135,6 +138,9 @@ fn infers_from_call(e: &Expr) -> bool {
     }
 }
 
+/// Modules that run only in the browser: only handlers can use them.
+pub(crate) const BROWSER_MODULES: &[&str] = &["browser", "js"];
+
 /// Modules that need the server: they cannot be used in embers.
 const SERVER_ONLY_MODULES: &[&str] = &["sql", "auth", "fs", "os", "io"];
 
@@ -152,6 +158,8 @@ const STD_MODULES: &[(&str, &str)] = &[
     ("base64", include_str!("../std/base64.kiln")),
     ("markdown", include_str!("../std/markdown.kiln")),
     ("ember", include_str!("../std/ember.kiln")),
+    ("js", include_str!("../std/js.kiln")),
+    ("browser", include_str!("../std/browser.kiln")),
 ];
 const PRELUDE: &str = include_str!("../std/prelude.kiln");
 
@@ -176,6 +184,7 @@ impl Checker {
             glazes: None,
             in_ember: false,
             in_handler: false,
+            browser_program: false,
             server_fns: HashSet::new(),
             glaze_states: Vec::new(),
             glaze_values: HashMap::new(),
@@ -205,6 +214,21 @@ impl Checker {
                 ..Default::default()
             });
             checker.declare_types(module, Scope::Module(id));
+        }
+        // An npm package's bindings are a module too.
+        let foreign = crate::foreign_modules();
+        let mut modules = modules;
+        for f in &foreign {
+            let id = checker.modules.len();
+            checker.modules.push(ModuleDef {
+                name: f.name.clone(),
+                foreign: true,
+                unsupported: f.unsupported.iter().cloned().collect(),
+                ..Default::default()
+            });
+            let module = parse_std(&f.name, &f.source);
+            checker.declare_types(&module, Scope::Module(id));
+            modules.push((f.name.clone(), module));
         }
         for (id, (_, module)) in modules.iter().enumerate() {
             checker.define_items(module, Scope::Module(id));
@@ -1507,8 +1531,24 @@ impl Checker {
         }
     }
 
-    /// Reports a server-only module used in browser code.
+    /// Reports a server-only module used in browser code, and a browser
+    /// one used outside a handler.
     fn use_module(&mut self, m: ModId, span: Span) {
+        let name = &self.modules[m].name;
+        if !self.in_handler
+            && !self.browser_program
+            && (BROWSER_MODULES.contains(&name.as_str()) || self.modules[m].foreign)
+        {
+            let message = format!(
+                "`{name}` runs only in the browser, so only an ember's `on:` handlers can use it"
+            );
+            self.error(
+                Diagnostic::error(codes::BROWSER_ONLY, message, span).with_help(
+                    "call it from a handler, and keep what it gives in `{% state %}` to show it",
+                ),
+            );
+            return;
+        }
         let name = &self.modules[m].name;
         if self.in_ember && SERVER_ONLY_MODULES.contains(&name.as_str()) {
             let message =
@@ -1564,7 +1604,19 @@ impl Checker {
             format!("the module `{}` has no `{}`", module.name, name.name),
             name.span,
         );
-        if let Some(s) = similar(&name.name, candidates.iter().map(String::as_str)) {
+        if let Some(why) = module.unsupported.get(&name.name) {
+            diag = Diagnostic::error(
+                codes::NO_SUCH_MEMBER,
+                format!(
+                    "the npm package `{}` exports `{}`, but Kiln cannot call it: {why}",
+                    module.name, name.name
+                ),
+                name.span,
+            )
+            .with_help(
+                "use `js.global(...)` and `js.Value` for it, or a package with simpler types",
+            );
+        } else if let Some(s) = similar(&name.name, candidates.iter().map(String::as_str)) {
             diag = diag.with_suggestion(format!("did you mean `{s}`?"), name.span, s);
         }
         self.error(diag);

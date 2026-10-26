@@ -40,7 +40,8 @@ function load() {
         WebAssembly.compileStreaming && res.headers.get("content-type") === "application/wasm"
           ? await WebAssembly.compileStreaming(res)
           : await WebAssembly.compile(await res.arrayBuffer());
-      const exports = await instantiate(module, { k: emberImports() });
+      await loadPackages();
+      const exports = await instantiate(module, { b: emberImports(), n: npmImports() });
       exports.init();
       ember = exports;
       return exports;
@@ -451,9 +452,112 @@ function busy(el, on) {
 
 const TIMEOUT = 30000;
 
+/** Records an error for the Kiln code, which then fails with it. */
+function failWith(err) {
+  pendingError = err instanceof Error ? `${err.name}: ${err.message}` : String(err);
+}
+
+function describe(v) {
+  if (v === undefined || v === null) return String(v);
+  if (Array.isArray(v)) return "an array";
+  return typeof v === "object" ? "an object" : `a ${typeof v}`;
+}
+
+/** The imports of module `b`: the bridge, `browser` and `js`. */
 function emberImports() {
   return {
     ember_call: (name, args, done) => call(name, args, done),
+    browser_log: (m) => console.log(m),
+    browser_warn: (m) => console.warn(m),
+    browser_title: () => document.title,
+    browser_set_title: (t) => {
+      document.title = t;
+    },
+    browser_location: () => location.href,
+    browser_navigate: (url) => {
+      if (isSafeUrl(url)) location.assign(url);
+      else console.warn(`kiln: not going to ${JSON.stringify(url)}, which could run script`);
+    },
+    browser_now: () => performance.now(),
+    browser_confirm: (m) => (confirm(m) ? 1 : 0),
+    browser_get_item: (k) => {
+      try {
+        return localStorage.getItem(k);
+      } catch {
+        return null;
+      }
+    },
+    browser_set_item: (k, v) => {
+      try {
+        localStorage.setItem(k, v);
+      } catch (err) {
+        failWith(err);
+      }
+    },
+    browser_remove_item: (k) => {
+      try {
+        localStorage.removeItem(k);
+      } catch {
+        // Storage is off: there is nothing to remove.
+      }
+    },
+    browser_element: (selector) => {
+      try {
+        return document.querySelector(selector);
+      } catch {
+        return null;
+      }
+    },
+    browser_focus: (selector) => {
+      try {
+        document.querySelector(selector)?.focus();
+      } catch {
+        // Not a selector: nothing matches.
+      }
+    },
+    js_global: (name) => globalThis[name],
+    js_identity: (v) => v,
+    js_float: (n) => n,
+    js_bool: (b) => b !== 0,
+    js_null: () => null,
+    js_get: (v, name) => (v == null ? undefined : v[name]),
+    js_set: (v, name, value) => {
+      if (v != null) v[name] = value;
+    },
+    js_call: (v, method, args) => {
+      try {
+        if (v == null || typeof v[method] !== "function") {
+          throw new TypeError(`${describe(v)} has no method ${JSON.stringify(method)}`);
+        }
+        return v[method](...args);
+      } catch (err) {
+        failWith(err);
+        return undefined;
+      }
+    },
+    js_as_string: (v) => {
+      if (typeof v === "string") return v;
+      failWith(`expected a string, found ${describe(v)}`);
+      return "";
+    },
+    js_as_float: (v) => {
+      if (typeof v === "number") return v;
+      failWith(`expected a number, found ${describe(v)}`);
+      return 0;
+    },
+    js_as_int: (v) => {
+      if (typeof v === "number" && Number.isInteger(v) && Number.isSafeInteger(v)) return BigInt(v);
+      if (typeof v === "bigint" && v >= I64_MIN && v <= I64_MAX) return v;
+      failWith(`expected a whole number in Int's range, found ${typeof v === "number" ? v : describe(v)}`);
+      return 0n;
+    },
+    js_as_bool: (v) => {
+      if (typeof v === "boolean") return v ? 1 : 0;
+      failWith(`expected a boolean, found ${describe(v)}`);
+      return 0;
+    },
+    js_is_nullish: (v) => (v == null ? 1 : 0),
+    js_type_of: (v) => (v === null ? "null" : typeof v),
   };
 }
 
@@ -468,32 +572,16 @@ function call(name, args, done) {
   calls.set(type, controller);
   island.controllers.add(controller);
   markPending(el, island);
-  fetch(`/_kiln/rpc/${name}`, {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      accept: "application/json",
-      "x-kiln-rpc": KILN_RPC,
-    },
-    body: args,
-    signal: controller.signal,
-    credentials: "same-origin",
-  })
-    .then(async (res) => {
-      const text = await res.text();
-      if (res.ok) return [true, text];
-      let message = null;
-      try {
-        message = JSON.parse(text).error;
-      } catch {
-        // Not JSON: a proxy's page, say.
-      }
-      return [false, typeof message === "string" ? message : `the server answered ${res.status}`];
-    })
+  // Whatever the call is waiting for, cancelling it ends the wait.
+  const cancelled = new Promise((_, reject) => {
+    controller.signal.addEventListener("abort", () => reject(new Error("cancelled")));
+  });
+  Promise.race([send(name, args, controller.signal), cancelled])
     .catch(() => {
       const why = controller.signal.reason;
       if (controller.signal.aborted && why !== "timeout") return null;
-      return [false, why === "timeout" ? "the server did not answer in time" : "the server cannot be reached"];
+      if (why === "timeout") return [false, "the call did not finish in time"];
+      return [false, "the server cannot be reached"];
     })
     .then((reply) => {
       clearTimeout(timer);
@@ -516,6 +604,95 @@ function call(name, args, done) {
       }
       invalidate(island);
     });
+}
+
+/** Sends a call: to the server, or to the browser or an npm package.
+ *  Gives `[true, '{"ok": result}']` or `[false, message]`. */
+async function send(name, args, signal) {
+  const local = WAITS[name];
+  if (local) return local(JSON.parse(args), signal);
+  const dot = name.indexOf(".");
+  if (dot > 0 && name.slice(0, dot) in npm) {
+    const f = npm[name.slice(0, dot)][name.slice(dot + 1)];
+    try {
+      return [true, JSON.stringify({ ok: await f(...Object.values(JSON.parse(args))) })];
+    } catch (err) {
+      return [false, err instanceof Error ? `${err.name}: ${err.message}` : String(err)];
+    }
+  }
+  const res = await fetch(`/_kiln/rpc/${name}`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      accept: "application/json",
+      "x-kiln-rpc": KILN_RPC,
+    },
+    body: args,
+    signal,
+    credentials: "same-origin",
+  });
+  const text = await res.text();
+  if (res.ok) return [true, text];
+  let message = null;
+  try {
+    message = JSON.parse(text).error;
+  } catch {
+    // Not JSON: a proxy's page, say.
+  }
+  return [false, typeof message === "string" ? message : `the server answered ${res.status}`];
+}
+
+/** The functions of `browser` that handlers wait for. */
+const WAITS = {
+  "browser.fetch": async ({ url }, signal) => {
+    let res;
+    try {
+      res = await fetch(url, { signal, credentials: "same-origin" });
+    } catch (err) {
+      if (signal.aborted) throw err;
+      return [false, `cannot fetch ${url}`];
+    }
+    if (!res.ok) return [false, `${url} answered ${res.status}`];
+    return [true, JSON.stringify({ ok: await res.text() })];
+  },
+  "browser.copy": async ({ text }) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      return [true, '{"ok":true}'];
+    } catch (err) {
+      return [false, `cannot copy: ${err?.message ?? err}`];
+    }
+  },
+};
+
+// ----- npm packages -----
+
+/** The npm packages the embers use, by their Kiln names, once loaded. */
+const npm = {};
+
+async function loadPackages() {
+  for (const [name, url] of Object.entries(KILN_NPM)) npm[name] = await import(url);
+}
+
+/** The imports of module `n`: each package function the embers call,
+ *  which takes its arguments as a JSON array and gives its result as
+ *  `{"ok": result}`, or fails. */
+function npmImports() {
+  return {
+    call: (pkg, name, args) => {
+      try {
+        const result = npm[pkg][name](...Object.values(JSON.parse(args)));
+        if (result instanceof Promise) {
+          failWith(`${pkg}.${name} returned a promise`);
+          return "";
+        }
+        return JSON.stringify({ ok: result });
+      } catch (err) {
+        failWith(err);
+        return "";
+      }
+    },
+  };
 }
 
 // ----- start -----

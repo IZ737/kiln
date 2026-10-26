@@ -5,7 +5,7 @@ GET /plain HTTP/1.1
 POST /_kiln/rpc/add HTTP/1.1
 Host: localhost
 Origin: http://localhost
-X-Kiln-Rpc: m3w6fj
+X-Kiln-Rpc: ydu1mv
 Content-Type: application/json
 Accept: application/json
 
@@ -14,7 +14,7 @@ Accept: application/json
 POST /_kiln/rpc/add HTTP/1.1
 Host: localhost
 Origin: http://localhost
-X-Kiln-Rpc: m3w6fj
+X-Kiln-Rpc: ydu1mv
 Content-Type: application/json
 Accept: application/json
 
@@ -23,7 +23,7 @@ Accept: application/json
 POST /_kiln/rpc/greet HTTP/1.1
 Host: localhost
 Origin: http://localhost
-X-Kiln-Rpc: m3w6fj
+X-Kiln-Rpc: ydu1mv
 Content-Type: application/json
 Accept: application/json
 
@@ -32,7 +32,7 @@ Accept: application/json
 POST /_kiln/rpc/reset HTTP/1.1
 Host: localhost
 Origin: http://localhost
-X-Kiln-Rpc: m3w6fj
+X-Kiln-Rpc: ydu1mv
 Content-Type: application/json
 Accept: application/json
 
@@ -41,7 +41,7 @@ Accept: application/json
 POST /_kiln/rpc/greet HTTP/1.1
 Host: localhost
 Origin: http://localhost
-X-Kiln-Rpc: m3w6fj
+X-Kiln-Rpc: ydu1mv
 Content-Type: application/json
 Accept: application/json
 
@@ -50,7 +50,7 @@ Accept: application/json
 POST /_kiln/rpc/greet HTTP/1.1
 Host: localhost
 Origin: http://localhost
-X-Kiln-Rpc: m3w6fj
+X-Kiln-Rpc: ydu1mv
 Content-Type: application/json
 Accept: application/json
 
@@ -59,7 +59,7 @@ Accept: application/json
 POST /_kiln/rpc/add HTTP/1.1
 Host: localhost
 Origin: http://localhost
-X-Kiln-Rpc: m3w6fj
+X-Kiln-Rpc: ydu1mv
 Content-Type: application/json
 Accept: application/json
 
@@ -68,7 +68,7 @@ Accept: application/json
 POST /_kiln/rpc/add HTTP/1.1
 Host: localhost
 Origin: http://localhost
-X-Kiln-Rpc: m3w6fj
+X-Kiln-Rpc: ydu1mv
 Content-Type: application/json
 Accept: application/json
 
@@ -77,7 +77,7 @@ Accept: application/json
 POST /_kiln/rpc/add HTTP/1.1
 Host: localhost
 Origin: http://localhost
-X-Kiln-Rpc: m3w6fj
+X-Kiln-Rpc: ydu1mv
 Content-Type: application/json
 Accept: application/json
 
@@ -103,7 +103,7 @@ Accept: application/json
 POST /_kiln/rpc/add HTTP/1.1
 Host: localhost
 Origin: https://evil.example
-X-Kiln-Rpc: m3w6fj
+X-Kiln-Rpc: ydu1mv
 Content-Type: application/json
 Accept: application/json
 
@@ -111,7 +111,7 @@ Accept: application/json
 ###
 POST /_kiln/rpc/add HTTP/1.1
 Host: localhost
-X-Kiln-Rpc: m3w6fj
+X-Kiln-Rpc: ydu1mv
 Content-Type: application/json
 Accept: application/json
 
@@ -120,7 +120,7 @@ Accept: application/json
 POST /_kiln/rpc/add HTTP/1.1
 Host: localhost
 Origin: http://localhost
-X-Kiln-Rpc: m3w6fj
+X-Kiln-Rpc: ydu1mv
 Content-Type: application/json
 Accept: application/json
 Sec-Fetch-Site: cross-site
@@ -130,7 +130,7 @@ Sec-Fetch-Site: cross-site
 POST /_kiln/rpc/add HTTP/1.1
 Host: localhost
 Origin: http://localhost
-X-Kiln-Rpc: m3w6fj
+X-Kiln-Rpc: ydu1mv
 Content-Type: application/x-www-form-urlencoded
 Accept: application/json
 
@@ -139,7 +139,7 @@ a=1
 POST /_kiln/rpc/secret HTTP/1.1
 Host: localhost
 Origin: http://localhost
-X-Kiln-Rpc: m3w6fj
+X-Kiln-Rpc: ydu1mv
 Content-Type: application/json
 Accept: application/json
 

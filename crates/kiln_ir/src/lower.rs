@@ -1796,6 +1796,7 @@ impl<'a> Lowerer<'a> {
                 E::Bool(b) => Some(ExprKind::Bool(*b)),
                 E::Duration(text) => duration_ns(text).map(ExprKind::Int),
                 E::None => Some(ExprKind::None),
+                E::List(items) if items.is_empty() => Some(ExprKind::List(Vec::new())),
                 E::Str(pieces) => match pieces.as_slice() {
                     [] => Some(ExprKind::Str(String::new())),
                     [ast::StrPiece::Text(t)] => Some(ExprKind::Str(t.clone())),
@@ -2017,12 +2018,12 @@ impl Lowerer<'_> {
 /// Modules whose functions become [`ExprKind::Lib`] calls, for the
 /// backend to build.
 const LIB_MODULES: &[&str] = &[
-    "time", "fs", "os", "io", "web", "json", "html", "base64", "markdown", "ember",
+    "time", "fs", "os", "io", "web", "json", "html", "base64", "markdown", "ember", "js", "browser",
 ];
 
 /// Types of those modules whose methods are [`ExprKind::Lib`] calls too,
 /// named `Type.method`, with the receiver as the first argument.
-const LIB_TYPES: &[(&str, &str)] = &[("web", "App"), ("web", "Request")];
+const LIB_TYPES: &[(&str, &str)] = &[("web", "App"), ("web", "Request"), ("js", "Value")];
 
 /// The type of a library call: its declared return type, with a generic
 /// one's type arguments at this call filled in (`json.decode<Post>` has type

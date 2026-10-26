@@ -211,6 +211,29 @@ try {
   await page.click("#child .inc");
   await eventually("the new child counts", async () => (await text(page, "#child .count")) === "101");
 
+  // Typed browser APIs, and `js.Value` with checked conversions.
+  await page.click("#tools .title");
+  await eventually("browser.title reads the title", async () => (await text(page, "#tools .title-out")) === "Changed");
+  check("browser.set_title sets it", (await page.title()) === "Changed");
+  await page.click("#tools .store");
+  await eventually("local storage keeps a value", async () => (await text(page, "#tools .stored")) === "kept");
+  await page.click("#tools .js");
+  await eventually("js.Value reads a property", async () => (await text(page, "#tools .heading")) === "Changed");
+  check(
+    "a bad conversion fails safely",
+    (await text(page, "#tools .bad")) === "expected a number, found an object",
+    await text(page, "#tools .bad"),
+  );
+  check(
+    "a method call works, and a missing method is an error",
+    (await text(page, "#tools .upper")) === 'ABC TypeError: an object has no method "noSuchMethod"',
+    await text(page, "#tools .upper"),
+  );
+  await page.click("#tools .fetch");
+  await eventually("browser.fetch waits for the text", async () => (await text(page, "#tools .fetched")).includes("No embers here."));
+  await page.click("#tools .fetch-missing");
+  await eventually("a failed fetch is an error", async () => (await text(page, "#tools .fetched")) === "/missing answered 404");
+
   check("the page logged nothing", logs.length === 0, logs.join("\n"));
   check("the module is served as application/wasm", wasm.every((w) => w.type === "application/wasm"), JSON.stringify(wasm));
   check("the module is fetched once", wasm.length === 1, JSON.stringify(wasm));

@@ -1,0 +1,43 @@
+// The browser, for embers. These functions run only in the browser, so
+// only `on:` handlers call them.
+
+// Writes to the browser's console.
+fn log(message: String) {}
+fn warn(message: String) {}
+
+// The page's title.
+fn title() -> String {}
+fn set_title(title: String) {}
+
+// The page's address, and going to another one. An address that would run
+// script is refused.
+fn location() -> String {}
+fn navigate(url: String) {}
+
+// Milliseconds since the page started loading.
+fn now() -> Float {}
+
+// Asks the user, with the browser's own dialog.
+fn confirm(message: String) -> Bool {}
+
+// The site's local storage, which keeps strings in this browser.
+fn get_item(key: String) -> String? {}
+fn set_item(key: String, value: String) ! {}
+fn remove_item(key: String) {}
+
+// The first element that matches a CSS selector, as a JavaScript value.
+fn element(selector: String) -> js.Value? {}
+
+// Moves the focus to the first element that matches a CSS selector.
+fn focus(selector: String) {}
+
+// These wait for the browser: like a call of a `server fn`, a handler
+// calls them as a statement of its own, and the statements after it run
+// when they are done.
+
+// Fetches a URL with GET and gives its text. An answer other than 2xx is
+// an error.
+fn fetch(url: String) -> String ! {}
+
+// Puts text on the clipboard.
+fn copy(text: String) ! {}

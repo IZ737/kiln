@@ -71,6 +71,14 @@ impl Checker {
 
     pub(crate) fn check_glaze(&mut self, file: &str, glaze: &Glaze) {
         self.in_ember = glaze.is_ember();
+        // An ember's handlers see the browser's modules without imports.
+        if self.in_ember {
+            for (id, m) in self.modules.iter().enumerate() {
+                if m.foreign || crate::checker::BROWSER_MODULES.contains(&m.name.as_str()) {
+                    self.imports.entry(m.name.clone()).or_insert(id);
+                }
+            }
+        }
         self.enter_fn(Ty::Unit, None, None);
         self.push_scope();
         if let Some(props) = &glaze.props {

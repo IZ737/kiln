@@ -86,9 +86,25 @@
   (import "k" "base64_decode" (func $k_base64_decode (param externref) (result externref)))
   ;; The message of the last JavaScript function that failed, or null.
   (import "k" "take_error" (func $k_take_error_js (result externref)))
+  (import "k" "js_array" (func $k_js_array (result externref)))
+  (import "k" "js_push" (func $k_js_push (param externref externref)))
   (import "k" "log" (func $k_log (param externref externref externref)))
 
   ;; ----- definitions -----
+
+  ;; A list of JavaScript values (strings or `js.Value`s, in slots) as a
+  ;; JavaScript array.
+  (func $k_list_to_js (param $l (ref null $List)) (result externref)
+    (local $a externref) (local $i i32)
+    (local.set $a (call $k_js_array))
+    (block $done
+      (loop $next
+        (br_if $done (i32.ge_s (local.get $i) (struct.get $List 0 (local.get $l))))
+        (call $k_js_push (local.get $a)
+          (extern.convert_any (array.get $Slots (struct.get $List 1 (local.get $l)) (local.get $i))))
+        (local.set $i (i32.add (local.get $i) (i32.const 1)))
+        (br $next)))
+    (local.get $a))
 
   ;; A failing call sets $failed and stores the error; the caller checks
   ;; the flag at `try` or `catch`. $lib_error is the message of a library

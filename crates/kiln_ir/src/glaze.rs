@@ -59,9 +59,13 @@ pub struct App<'a> {
     pub rpc_guard: bool,
 }
 
-/// A `server fn`, as its declaration writes it.
+/// A `server fn`, as its declaration writes it, or another function a
+/// handler's code calls through the bridge and waits for: one of
+/// `browser`'s, or an npm package's that returns a promise, which have a
+/// `module`.
 #[derive(Clone, Debug, PartialEq)]
 pub struct ServerFn {
+    pub module: Option<String>,
     pub name: String,
     /// Each parameter's name, type, and default value if it has one.
     pub params: Vec<(String, String, Option<String>)>,
@@ -246,14 +250,19 @@ fn generate_for(glazes: &[GlazeInput], app: &App, client: bool) -> GlazeSource {
             .map(|g| g.file.to_string())
             .collect(),
         is_ember: false,
-        server_fns: app.server_fns,
+        server_fns: app.server_fns.to_vec(),
     };
+    if client {
+        g.server_fns.extend(browser_waits());
+    }
     if client {
         g.text.push_str(
             "// Generated from the app's glazes, for the browser.\n\
              import html\n\
              import json\n\
              import ember\n\
+             import browser\n\
+             import js\n\
              \n\
              fn __glaze_no_slot(__out: List<String>, __h: List<fn(ember.Event)>) {}\n",
         );
@@ -374,7 +383,9 @@ struct Gen<'a> {
     embers: std::collections::HashSet<String>,
     /// Whether the glaze being compiled is an ember.
     is_ember: bool,
-    server_fns: &'a [ServerFn],
+    /// The functions handlers wait for: the `server fn`s, and in the
+    /// browser the others too.
+    server_fns: Vec<ServerFn>,
 }
 
 impl<'a> Gen<'a> {
@@ -732,15 +743,15 @@ impl<'a> Gen<'a> {
     /// For each `server fn`, `__rpc_<name>`, which reads its result from
     /// the server's reply, failing when the call failed.
     fn server_proxies(&mut self) {
-        for f in self.server_fns {
+        for f in &self.server_fns {
             let ret = f.ret.as_deref().unwrap_or("()");
             let returns = f.ret.is_some();
             let mut text = format!(
-                "\nfn __rpc_{}(reply: ember.Reply){} ! {{\n\
+                "\nfn {}(reply: ember.Reply){} ! {{\n\
                  \x20   if not reply.ok {{\n\
                  \x20       throw Error(message: reply.text)\n\
                  \x20   }}\n",
-                f.name,
+                f.proxy(),
                 if returns {
                     format!(" -> {ret}")
                 } else {
@@ -1476,6 +1487,22 @@ impl<'a> Gen<'a> {
                     let v = self.temp_value(&arg.value);
                     fields.push(format!("{name}: {v}"));
                 }
+                // A JavaScript function takes its arguments by position,
+                // so each one is sent, the ones left out as `none`.
+                if f.module.is_some() {
+                    for (n, _, default) in &f.params {
+                        if !fields.iter().any(|x| x.starts_with(&format!("{n}: "))) {
+                            fields.push(format!("{n}: {}", default.as_deref().unwrap_or("none")));
+                        }
+                    }
+                    let order: Vec<&str> = f.params.iter().map(|(n, _, _)| n.as_str()).collect();
+                    fields.sort_by_key(|x| {
+                        order
+                            .iter()
+                            .position(|n| x.starts_with(&format!("{n}: ")))
+                            .unwrap_or(usize::MAX)
+                    });
+                }
                 let encoded = if fields.is_empty() {
                     "\"{}\"".to_string()
                 } else {
@@ -1485,12 +1512,12 @@ impl<'a> Gen<'a> {
                 let start = self.text.len();
                 self.text.push_str(&format!(
                     "ember.call({}, {encoded}, fn(__reply: ember.Reply) {{\n",
-                    kiln_string(&f.name)
+                    kiln_string(&f.remote())
                 ));
                 self.indent += 1;
                 self.start_line();
                 self.copy(Span::new(span.start as usize, call.start as usize), false);
-                self.text.push_str(&format!("__rpc_{}(__reply)", f.name));
+                self.text.push_str(&format!("{}(__reply)", f.proxy()));
                 self.copy(Span::new(call.end as usize, span.end as usize), false);
                 self.text.push('\n');
                 self.handler_stmts(&stmts[i + 1..]);
@@ -1507,7 +1534,7 @@ impl<'a> Gen<'a> {
 
     /// The call of a `server fn` that a statement's value is, if it is
     /// one: `f(...)`, or `f(...) catch err { ... }`.
-    fn rpc_call<'s>(&self, stmt: &'s Stmt) -> Option<(Span, &'a ServerFn, &'s [Arg])> {
+    fn rpc_call<'s>(&self, stmt: &'s Stmt) -> Option<(Span, ServerFn, &'s [Arg])> {
         let value = match stmt {
             Stmt::Let { value, .. } | Stmt::Assign { value, .. } => value,
             Stmt::Expr(e) => e,
@@ -1520,11 +1547,19 @@ impl<'a> Gen<'a> {
         let ExprKind::Call { callee, args, .. } = &call.kind else {
             return None;
         };
-        let ExprKind::Ident(name) = &callee.kind else {
-            return None;
+        let (module, name) = match &callee.kind {
+            ExprKind::Ident(name) => (None, name),
+            ExprKind::Field { expr, name } => match &expr.kind {
+                ExprKind::Ident(m) => (Some(m), &name.name),
+                _ => return None,
+            },
+            _ => return None,
         };
-        let f = self.server_fns.iter().find(|f| &f.name == name)?;
-        Some((call.span, f, args))
+        let f = self
+            .server_fns
+            .iter()
+            .find(|f| &f.name == name && f.module.as_ref() == module)?;
+        Some((call.span, f.clone(), args))
     }
 
     /// `{% layout "base.glaze" title: t %}` wraps the glaze's nodes in a call
@@ -1586,6 +1621,36 @@ impl<'a> Gen<'a> {
             self.text.push('}');
         }
     }
+}
+
+impl ServerFn {
+    /// The name the bridge calls it by: `add`, or `browser.fetch`.
+    fn remote(&self) -> String {
+        match &self.module {
+            Some(m) => format!("{m}.{}", self.name),
+            None => self.name.clone(),
+        }
+    }
+
+    /// The function that reads its reply: `__rpc_add`.
+    fn proxy(&self) -> String {
+        match &self.module {
+            Some(m) => format!("__rpc_{m}__{}", self.name),
+            None => format!("__rpc_{}", self.name),
+        }
+    }
+}
+
+/// The functions of `browser` that wait for the browser.
+fn browser_waits() -> Vec<ServerFn> {
+    let f = |name: &str, param: &str, ret: Option<&str>| ServerFn {
+        module: Some("browser".into()),
+        name: name.into(),
+        params: vec![(param.into(), "String".into(), None)],
+        ret: ret.map(String::from),
+        throws: true,
+    };
+    vec![f("fetch", "url", Some("String")), f("copy", "text", None)]
 }
 
 /// The span of a statement.

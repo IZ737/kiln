@@ -81,6 +81,7 @@ pub(crate) struct Gen<'a> {
     counter: usize,
     f: FnState,
     ui: Option<AdtId>,
+    js_value: Option<AdtId>,
     /// For each function: whether it is compiled, and the function it is
     /// first reached from.
     pub reached: Vec<bool>,
@@ -104,6 +105,11 @@ const RUNTIME_STRINGS: &[&str] = &[
 impl<'a> Gen<'a> {
     pub fn new(p: &'a Program) -> Self {
         let ui = (0..p.std_adts).find(|&id| p.adts[id].name == "Ui" && p.builtin[id]);
+        // `js.Value` is a JavaScript value, held as a string is.
+        let js_value = (0..p.std_adts).find(|&id| {
+            p.adts[id].name == "Value"
+                && matches!(&p.adts[id].kind, AdtKind::Struct(f) if f.is_empty())
+        });
         Gen {
             p,
             prims: p.prims,
@@ -120,6 +126,7 @@ impl<'a> Gen<'a> {
             counter: 0,
             f: FnState::default(),
             ui,
+            js_value,
             reached: vec![false; p.funcs.len()],
             via: vec![None; p.funcs.len()],
             used_globals: vec![false; p.globals.len()],
@@ -445,7 +452,9 @@ impl<'a> Gen<'a> {
     }
 
     fn is_string(&self, ty: &Ty) -> bool {
-        self.is_adt(ty, self.prims.string) || self.ui.is_some_and(|u| self.is_adt(ty, u))
+        self.is_adt(ty, self.prims.string)
+            || self.ui.is_some_and(|u| self.is_adt(ty, u))
+            || self.js_value.is_some_and(|v| self.is_adt(ty, v))
     }
 
     pub fn wt(&self, ty: &Ty) -> Wt {
@@ -1954,7 +1963,7 @@ impl<'a> Gen<'a> {
                 self.line("end");
                 self.lib_failed();
             }
-            ("ember" | "browser" | "js" | "npm", _) => {
+            ("ember" | "browser" | "js", _) => {
                 browser::lib_call(self, module, name, args, ty, span)
             }
             ("fs" | "os" | "io" | "web" | "sql" | "auth", _) => {

@@ -640,11 +640,8 @@ fn build(
         if !parsed.diagnostics.is_empty() {
             return Err(report(parsed.diagnostics));
         }
-        let program = kiln_check::check_program_with_tokens(
-            &parsed.module,
-            &glaze_refs,
-            &styles.styling.tokens,
-        );
+        let program =
+            kiln_check::check_browser_program(&parsed.module, &glaze_refs, &styles.styling.tokens);
         if !program.diagnostics.is_empty() {
             return Err(report(program.diagnostics));
         }
@@ -660,7 +657,7 @@ fn build(
         // Calls stay valid while the functions' signatures do.
         rpc_version = kiln_css::short_hash(format!("{server_fns:?}").as_bytes());
         let wasm_url = format!("/_kiln/ember-{}.wasm", kiln_css::short_hash(&module.wasm));
-        let js = kiln_wasm::browser_script(&wasm_url, &rpc_version);
+        let js = kiln_wasm::browser_script(&wasm_url, &rpc_version, &[]);
         let js_url = format!("/_kiln/ember-{}.js", kiln_css::short_hash(js.as_bytes()));
         assets.push(kiln_ir::glaze::Asset {
             path: wasm_url,
@@ -943,6 +940,7 @@ fn server_fns_of(
             continue;
         }
         fns.push(kiln_ir::glaze::ServerFn {
+            module: None,
             name: f.name.name.clone(),
             params: f
                 .params

@@ -97,6 +97,10 @@ pub struct ModuleDef {
     pub name: String,
     pub fns: HashMap<String, FnSig>,
     pub types: HashMap<String, AdtId>,
+    /// An npm package's bindings, which run only in the browser.
+    pub foreign: bool,
+    /// The exports of an npm package that Kiln cannot call, with why.
+    pub unsupported: HashMap<String, String>,
 }
 
 /// Replaces type parameters by name.

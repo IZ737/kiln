@@ -20,6 +20,7 @@
 <Counter name="inner" start={5} />
 </Panel>
 <Host />
+<Tools />
 <div class="spacer"></div>
 <Counter name="far" client:visible />
 </body>

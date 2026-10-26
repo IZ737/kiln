@@ -844,6 +844,10 @@ export function kilnImports() {
       pendingError = null;
       return e;
     },
+    js_array: () => [],
+    js_push: (a, v) => {
+      a.push(v);
+    },
     log: (level, message, data) => io.err(`${level} ${message}${data === "" ? "" : " " + data}`),
     ...jsonImports(),
   };
