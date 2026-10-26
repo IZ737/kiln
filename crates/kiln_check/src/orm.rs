@@ -110,7 +110,17 @@ pub struct Mapping {
 
 /// `Post` to `posts`, `BlogPost` to `blog_posts`.
 pub fn table_name(name: &str) -> String {
-    plural(&snake_case(name))
+    plural(&snake_case(declared_name(name)))
+}
+
+/// The name as the program writes it. A type of a folder module is
+/// renamed before it is checked, so that the files of a project share one
+/// namespace; a table is named after what the code calls the struct.
+pub fn declared_name(name: &str) -> &str {
+    match name.rsplit_once("_symbol_") {
+        Some((_, name)) => name,
+        None => name,
+    }
 }
 
 pub fn snake_case(name: &str) -> String {
@@ -339,7 +349,7 @@ pub fn model_of(
     }
     Ok(Model {
         adt,
-        name: def.name.clone(),
+        name: declared_name(&def.name).to_string(),
         table,
         key,
         columns,
@@ -373,7 +383,7 @@ fn relation_of(
     };
     let needed = match kind {
         RelationKind::BelongsTo => format!("{}_id", f.name),
-        RelationKind::HasMany => format!("{}_id", snake_case(&adts[owner].name)),
+        RelationKind::HasMany => format!("{}_id", snake_case(declared_name(&adts[owner].name))),
     };
     match kind {
         RelationKind::BelongsTo => {
