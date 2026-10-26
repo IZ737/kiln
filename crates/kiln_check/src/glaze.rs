@@ -383,10 +383,10 @@ impl Checker {
             AttrValue::Expr(e) => {
                 let ty = self.infer(e, &Expect::Value(None));
                 let kind = self.record_value(e.span, &ty);
+                self.check_attr_value(&attr.name, kind, e.span);
                 // `disabled={busy}`: a boolean adds or leaves out the attribute.
                 if kind != ValueKind::Bool {
                     self.displayable(&ty, e.span);
-                    self.check_attr_value(&attr.name, kind, e.span);
                 }
             }
             AttrValue::Handler(block) => {

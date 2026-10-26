@@ -1,0 +1,5 @@
+import web
+
+fn main() {
+    print(web.render("links.glaze", { suffix: "cript:alert(1)", id: "42", value: "javascript:alert(1)", encoded: "java&#x73;cript:alert(1)" }).body)
+}

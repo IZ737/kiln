@@ -281,6 +281,13 @@ fn what_crosses_to_the_browser_is_plain_data() {
 
 #[test]
 fn values_cannot_go_where_browsers_run_code() {
+    for attr in ["onclick", "ONCLICK", "srcdoc", "style"] {
+        assert_eq!(
+            page_errors(&format!("{PROPS}<p {attr}={{true}}>x</p>")),
+            [codes::UNSAFE_ATTRIBUTE]
+        );
+    }
+    page_ok(&format!("{PROPS}<button disabled={{true}}>x</button>"));
     assert_eq!(
         page_errors(&format!(
             "{PROPS}<p style=\"color: {{title}}\" onclick=\"go({{post.id}})\">x</p><iframe srcdoc={{title}}></iframe>"
