@@ -555,6 +555,17 @@ impl Browser {
         Ok(out)
     }
 
+    /// [`Browser::resolve`], again while the page is between documents.
+    fn settled(&self, page: &Page, loc: &Locator, until: Instant) -> Result<Vec<String>, String> {
+        loop {
+            match self.resolve(page, loc) {
+                Ok(found) => return Ok(found),
+                Err(e) if Instant::now() >= until => return Err(e),
+                Err(_) => std::thread::sleep(Duration::from_millis(50)),
+            }
+        }
+    }
+
     /// Waits for the one element a locator names to be ready for `need`.
     fn element(&self, page: &Page, loc: &Locator, need: Need, until: Instant) -> Result<String, String> {
         let mut last = format!("no element matches {}", loc.describe());
@@ -657,7 +668,9 @@ impl Browser {
                 } else {
                     String::new()
                 };
-                (code, upper as i64, Some(k.to_string()))
+                // Only letters and digits have a key code of their own.
+                let vk = if c.is_ascii_alphanumeric() { upper as i64 } else { 0 };
+                (code, vk, Some(k.to_string()))
             }
             other => return Err(format!("`{other}` is not a key kiln knows: use a character, or Enter, Tab, Escape, Backspace, Delete, Space, Home, End, PageUp, PageDown or an arrow key")),
         };
@@ -733,14 +746,14 @@ impl Browser {
             "title" => self.retrying(page, "document.title", until),
             "page_text" => self.retrying(page, "document.body ? document.body.innerText : ''", until),
             "wait_path" => {
-                let part = s("part");
+                let want = s("part");
                 loop {
-                    let now = self.retrying(page, "location.pathname + location.search + location.hash", until)?;
-                    if now.contains(&part) {
+                    let now = self.retrying(page, "location.pathname", until)?;
+                    if now == want {
                         return Ok(now);
                     }
                     if Instant::now() >= until {
-                        return Err(format!("the address never contained {part}; it is {now}"));
+                        return Err(format!("the page never went to {want}; it is at {now}"));
                     }
                     std::thread::sleep(Duration::from_millis(50));
                 }
@@ -821,9 +834,9 @@ impl Browser {
                 let el = self.element(page, &loc, Need::Present, until)?;
                 Ok(text_of(self.on(page, &el, "function(p) { return getComputedStyle(this).getPropertyValue(p) }", &[json!(s("property"))])?))
             }
-            "count" => Ok(self.resolve(page, &loc)?.len().to_string()),
+            "count" => Ok(self.settled(page, &loc, until)?.len().to_string()),
             "visible" => {
-                let found = self.resolve(page, &loc)?;
+                let found = self.settled(page, &loc, until)?;
                 for el in found {
                     if self.on(page, &el, READY, &[json!("visible")])? == json!("") {
                         return Ok("true".into());
@@ -984,7 +997,9 @@ const FIND: &str = r##"function(by, value) {
   if (by === "label") {
     const out = new Set();
     for (const l of document.querySelectorAll("label")) {
-      if (norm(l.textContent).replace(/\s*\*$/, "") === value && l.control) out.add(l.control);
+      const copy = l.cloneNode(true);
+      copy.querySelectorAll("input, textarea, select, [aria-hidden=true]").forEach((c) => c.remove());
+      if (norm(copy.textContent) === value && l.control) out.add(l.control);
     }
     for (const el of document.querySelectorAll("[aria-label]")) {
       if (norm(el.getAttribute("aria-label")) === value) out.add(el);
@@ -1136,7 +1151,9 @@ fn record(v: &Value, events: &Events) {
                 .collect();
             page.errors.push(format!("console.error: {}", text.join(" ")));
         }
-        "Log.entryAdded" if p["entry"]["level"] == "error" => page.errors.push(format!(
+        // A response with an error status is the app's answer, which a
+        // test checks itself; a request that failed is recorded below.
+        "Log.entryAdded" if p["entry"]["level"] == "error" && p["entry"]["source"] != "network" => page.errors.push(format!(
             "{}: {}",
             p["entry"]["source"].as_str().unwrap_or("log"),
             p["entry"]["text"].as_str().unwrap_or("")

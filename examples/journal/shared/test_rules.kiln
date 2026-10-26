@@ -1,0 +1,24 @@
+import test, time, auth
+
+fn test_a_post_needs_a_title_and_text() {
+    let checked = post_problems("", "")
+    test.is_false(checked.valid)
+    test.equal(checked.messages(), ["title is required", "body is required"])
+    test.is_true(post_problems("Hello", "World").valid)
+}
+
+fn test_titles_have_a_limit() {
+    test.is_false(post_problems("x".repeat(121), "body").valid)
+}
+
+fn test_only_the_writer_or_an_editor_may_edit() {
+    let post = Post(id: 1, user_id: 7, title: "t", body: "b")
+    let writer = auth.Identity(subject: "7", roles: [], started: time.now())
+    let other = auth.Identity(subject: "8", roles: [], started: time.now())
+    let editor = auth.Identity(subject: "8", roles: ["editor"], started: time.now())
+    test.is_true(may_edit(writer, post))
+    test.is_false(may_edit(other, post))
+    test.is_true(may_edit(editor, post))
+    test.is_false(may_read(none, post))
+    test.is_true(may_read(none, Post(id: 1, user_id: 7, title: "t", body: "b", published: true)))
+}

@@ -64,9 +64,10 @@ impl Page {
     pub fn viewport(self, width: Int, height: Int, at: String = "@caller") {
         tell("viewport", at, ["page", self.id, "width", "${width}", "height", "${height}"])
     }
-    // Waits until the address contains `part`.
-    pub fn wait_for_path(self, part: String, at: String = "@caller") {
-        tell("wait_path", at, ["page", self.id, "part", part])
+    // Waits until the page is at `path` (its query and fragment aside),
+    // as after a form sends the browser elsewhere.
+    pub fn wait_for_path(self, path: String, at: String = "@caller") {
+        tell("wait_path", at, ["page", self.id, "part", path])
     }
     // Saves a screenshot in the test's results; returns its path.
     pub fn screenshot(self, name: String, at: String = "@caller") -> String {

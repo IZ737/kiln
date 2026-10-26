@@ -82,6 +82,8 @@ pub struct Options {
     pub timeout: Duration,
     pub retries: u32,
     pub headed: bool,
+    /// `[test] env`: given to the tests and to the app.
+    pub env: BTreeMap<String, String>,
 }
 
 /// Builds a project into an executable.
@@ -518,6 +520,7 @@ impl Shared<'_> {
             infrastructure: None,
         };
         let child = Command::new(&self.exe)
+            .envs(&self.options.env)
             .env("KILN_TEST", &case.id)
             .env("KILN_TEST_TMP", &tmp)
             .current_dir(&self.root)
@@ -747,6 +750,7 @@ impl Env<'_, '_> {
         })?;
         let database = self.database()?;
         let mut child = Command::new(&exe)
+            .envs(&self.shared.options.env)
             .env("KILN_LISTEN", "127.0.0.1:0")
             .env("DATABASE_URL", &database)
             .env("KILN_TEST_TMP", &self.tmp)

@@ -1,0 +1,42 @@
+import test
+
+fn sign_up(name: String, email: String) -> test.Response {
+    let form: Map<String, String> = Map()
+    form["name"] = name
+    form["email"] = email
+    form["password"] = "correct horse battery"
+    test.post_form("/sign-up", form)
+}
+
+fn test_signing_up_signs_in() {
+    let res = sign_up("Ada", "ada@example.com")
+    test.equal(res.status, 302)
+    test.equal(res.header("location") ?? "", "/")
+    let home = test.get("/")
+    test.contains(home.body, "Sign out")
+    test.contains(home.body, "href=\"/posts/new\"")
+}
+
+fn test_an_email_signs_up_once() {
+    test.equal(sign_up("Ada", "ada@example.com").status, 302)
+    let again = sign_up("Ada again", "ada@example.com")
+    test.equal(again.status, 422)
+}
+
+fn test_strangers_cannot_write() {
+    let res = test.get("/posts/new")
+    test.not_equal(res.status, 200)
+}
+
+fn test_each_test_has_its_own_database() {
+    // The account made by another test is not here.
+    test.equal(sign_up("Ada", "ada@example.com").status, 302)
+}
+
+fn test_forms_from_other_sites_are_refused() {
+    let headers: Map<String, String> = Map()
+    headers["content-type"] = "application/x-www-form-urlencoded"
+    headers["origin"] = "https://evil.example"
+    let res = test.request("POST", "/sign-up", body: "name=Eve&email=eve%40example.com&password=correct+horse+battery", headers: headers)
+    test.equal(res.status, 403)
+}

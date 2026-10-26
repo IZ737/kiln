@@ -445,10 +445,11 @@ fn dispatch(command: Command) -> ExitCode {
                     kinds.push(kind);
                 }
             }
-            let configured = project::root(&dir)
+            let config = project::root(&dir)
                 .ok()
                 .and_then(|r| ware::manifest::Manifest::load(&r).ok().flatten())
-                .and_then(|m| m.test.timeout);
+                .map(|m| m.test)
+                .unwrap_or_default();
             let options = testing::Options {
                 path: dir,
                 kinds,
@@ -460,9 +461,10 @@ fn dispatch(command: Command) -> ExitCode {
                 jobs: jobs.unwrap_or_else(|| {
                     std::thread::available_parallelism().map_or(2, |n| n.get())
                 }),
-                timeout: std::time::Duration::from_secs(timeout.or(configured).unwrap_or(60)),
+                timeout: std::time::Duration::from_secs(timeout.or(config.timeout).unwrap_or(60)),
                 retries,
                 headed,
+                env: config.env,
             };
             let target = Target::host();
             let backend = Backend::or_default(backend, target);
@@ -1389,7 +1391,7 @@ fn build_project(
             ExitCode::from(2)
         })
     };
-    kiln_ir::set_caller_location(Some(caller_locations(&kiln_files, &offsets, &info)));
+    kiln_ir::set_caller_location(Some(caller_locations(&kiln_files, &offsets, &info, &dir)));
     let ir = kiln_ir::lower(&parsed.module, &program);
     kiln_ir::set_caller_location(None);
     let ir = ir.map_err(report)?;
@@ -1421,11 +1423,12 @@ fn build_project(
 }
 
 /// How a call is shown to a person, as `path:line:column` in its original
-/// file, from its offset in the program's text.
+/// file (relative to the project), from its offset in the program's text.
 fn caller_locations(
     kiln_files: &[&SourceFile],
     offsets: &[u32],
     info: &AppInfo,
+    root: &Path,
 ) -> Box<dyn Fn(u32) -> String + Send> {
     let files: Vec<(u32, SourceFile, Option<(SourceFile, project::bind::SourceMap)>)> = kiln_files
         .iter()
@@ -1433,7 +1436,7 @@ fn caller_locations(
         .map(|(f, &o)| ((*f).clone(), o, info.source_maps.get(&f.name).cloned()))
         .map(|(f, o, m)| (o, f, m))
         .collect();
-    let cwd = std::env::current_dir().unwrap_or_default();
+    let root = project::real(root);
     Box::new(move |offset| {
         let Some(i) = files.iter().rposition(|(o, _, _)| *o <= offset) else {
             return String::new();
@@ -1446,8 +1449,8 @@ fn caller_locations(
         };
         let at = file.line_col(local);
         let path = PathBuf::from(project::shown(&file.name));
-        let path = path.strip_prefix(&cwd).unwrap_or(&path);
-        format!("{}:{}:{}", path.display(), at.line, at.column)
+        let path = path.strip_prefix(&root).unwrap_or(&path);
+        format!("{}:{}:{}", path.display().to_string().replace('\\', "/"), at.line, at.column)
     })
 }
 
