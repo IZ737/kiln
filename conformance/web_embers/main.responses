@@ -61,6 +61,13 @@ connection: close
 
 {"ok":"Hello, Kiln!"}
 ### POST /_kiln/rpc/reset HTTP/1.1
+HTTP/1.1 403 Forbidden
+content-type: application/json
+content-length: 29
+connection: close
+
+{"error":"only admins reset"}
+### POST /_kiln/rpc/reset HTTP/1.1
 HTTP/1.1 200 OK
 content-type: application/json
 content-length: 11

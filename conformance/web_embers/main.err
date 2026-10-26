@@ -4,6 +4,7 @@ info GET /plain 200 TIME
 info POST /_kiln/rpc/add 200 TIME
 info POST /_kiln/rpc/add 200 TIME
 info POST /_kiln/rpc/greet 200 TIME
+info POST /_kiln/rpc/reset 403 TIME
 info POST /_kiln/rpc/reset 200 TIME
 info POST /_kiln/rpc/greet 422 TIME
 error POST /_kiln/rpc/greet failed: the database password is hunter2

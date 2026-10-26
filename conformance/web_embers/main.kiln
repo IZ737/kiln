@@ -22,6 +22,14 @@ server fn reset() {
     print("reset")
 }
 
+// Every call of a `server fn` passes this first: an error it throws is
+// the answer.
+fn rpc_guard(req: web.Request, name: String) ! {
+    if name == "reset" and (req.headers["x-admin"] ?? "") != "yes" {
+        throw web.error(403, "only admins reset")
+    }
+}
+
 // Not a `server fn`, so the browser cannot call it.
 fn secret() -> String {
     "hidden"

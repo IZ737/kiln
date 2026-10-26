@@ -38,6 +38,16 @@ Accept: application/json
 
 {}
 ###
+POST /_kiln/rpc/reset HTTP/1.1
+Host: localhost
+Origin: http://localhost
+X-Kiln-Rpc: ydu1mv
+Content-Type: application/json
+Accept: application/json
+X-Admin: yes
+
+{}
+###
 POST /_kiln/rpc/greet HTTP/1.1
 Host: localhost
 Origin: http://localhost

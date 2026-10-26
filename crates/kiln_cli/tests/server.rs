@@ -111,6 +111,31 @@ fn malformed_and_hostile_requests_are_refused() {
     }
 }
 
+/// A call of a `server fn` with arguments over 1 MiB is turned away
+/// before they are read as JSON.
+#[test]
+fn server_calls_have_a_size_limit() {
+    for backend in backends() {
+        let server = Server::start(&program("web_embers"), backend);
+        let call = |body: &str| {
+            let mut c = server.connect();
+            let head = format!(
+                "POST /_kiln/rpc/greet HTTP/1.1\r\nhost: localhost\r\norigin: http://localhost\r\nx-kiln-rpc: ydu1mv\r\ncontent-type: application/json\r\ncontent-length: {}\r\n\r\n",
+                body.len()
+            );
+            c.write_all(head.as_bytes()).unwrap();
+            c.write_all(body.as_bytes()).unwrap();
+            read_response(&mut c)
+        };
+        let (status, _, body) = call(r#"{"name": "Kiln"}"#);
+        assert_eq!(status, "HTTP/1.1 200 OK", "{backend}: {body}");
+        let big = format!(r#"{{"name": "{}"}}"#, "x".repeat(1_100_000));
+        let (status, _, _) = call(&big);
+        assert_eq!(status, "HTTP/1.1 413 Content Too Large", "{backend}");
+        server.stop();
+    }
+}
+
 fn program(name: &str) -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../../conformance")
