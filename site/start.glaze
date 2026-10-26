@@ -1,18 +1,37 @@
 {% layout "layout.glaze" title: "Getting started", current: "/start" %}
 <article class="prose">
 <h1>Getting started</h1>
-<p>A Kiln program is a folder of <code>.kiln</code> files, with the glazes and stylesheets its pages use next to them.</p>
+<p>With Kiln 0.9.0 or later, build a server-rendered page, add an interactive Ember and call a typed server function. Local modules keep shared code in separate folders. No Node project or dependency installation is needed.</p>
+<h2 id="files">Files and modules</h2>
+<p>Create this folder tree. A folder is a module; its <code>.kiln</code> files share declarations. Import child modules explicitly and export their functions with <code>pub</code>.</p>
+<pre><code>hello/
+  main.kiln
+  home.glaze
+  counter.ember
+  greetings/
+    message.kiln</code></pre>
 <h2 id="a-server">A server</h2>
-<p>Make a folder <code>hello</code> with this <code>main.kiln</code>:</p>
-<pre><code>{samples().main}</code></pre>
-<p>and this <code>home.glaze</code>:</p>
-<pre><code>{samples().glaze}</code></pre>
+<p>Put this in <code>hello/main.kiln</code>. The <code>server fn</code> is callable from an Ember; Kiln generates the browser/server transport and checks its arguments and result.</p>
+<pre><code data-file="main.kiln">{samples().main}</code></pre>
+<p>Put the exported helper in <code>hello/greetings/message.kiln</code>:</p>
+<pre><code data-file="greetings/message.kiln">{samples().module}</code></pre>
+<h2 id="a-page">A server-rendered page</h2>
+<p>Put this in <code>hello/home.glaze</code>. Glazes are server-only pages or components. Their props and styles are checked, and text is escaped by default.</p>
+<pre><code data-file="home.glaze">{samples().glaze}</code></pre>
+<h2 id="an-ember">An interactive Ember</h2>
+<p>Put this in <code>hello/counter.ember</code>. State and <code>on:</code> handlers belong in <code>.ember</code> files. The <code>Counter</code> tag resolves the filename; <code>client:visible</code> hydrates it when it becomes visible.</p>
+<pre><code data-file="counter.ember">{samples().ember}</code></pre>
+<p>The count changes in the browser. “Ask the server” calls <code>greet</code> and shows its result. Embers run as WasmGC in a compatible modern browser. A page without Embers loads no Ember JavaScript or WebAssembly.</p>
 <h2 id="run-it">Run it</h2>
-<pre><code>kiln run hello</code></pre>
-<p>and open <a href="http://127.0.0.1:8080">127.0.0.1:8080</a>. <code>kiln check hello</code> reports every error in the program and its glazes at once, and <code>kiln build hello</code> makes an executable you can copy to a server.</p>
+<pre><code>kiln check hello
+kiln run hello</code></pre>
+<p>Open <a href="http://127.0.0.1:8080">127.0.0.1:8080</a> and try both buttons. <code>kiln build hello</code> makes a native executable; <code>kiln build hello --target windows -o hello.exe</code> builds for Windows.</p>
+<p>This project needs no manifest. An optional <code>kiln.toml</code> can select an entry file; see <a href="/docs/reference/projects">projects and local modules</a> for the exact schema, visibility, component paths and module assets.</p>
 <h2 id="next">Next</h2>
 <ul>
 <li><a href="/docs/reference/syntax">The language</a>, its <a href="/docs/reference/types">types</a> and its <a href="/docs/reference/stdlib">standard library</a></li>
-<li><a href="/docs/reference/glazes">Glazes</a>: pages, components, layouts and styles</li>
+<li><a href="/docs/reference/glazes">Glazes and Embers</a>: pages, components, layouts, styling, state and RPC</li>
+<li><a href="/docs/reference/projects">Projects and modules</a>: organize an application across folders</li>
 </ul>
+<p>SQL, ORM, sessions/auth, Wares and the public <code>kiln test</code> command are planned. Follow the current references for working APIs.</p>
 </article>

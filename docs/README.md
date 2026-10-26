@@ -35,7 +35,7 @@ APIs. **Proposed syntax in a plan is not automatically implemented syntax.**
 - [Phase 3 — Glazes, native styling, Finishes and themes](plans/phase-3.md)
 - [Phase 4 — Embers, WasmGC, reactive UI and typed server functions](plans/phase-4.md)
 - [Phase 4.1 — Explicit `.ember` files and server/client component boundaries](plans/phase-4.1.md) (complete; included in v0.9.0)
-- [Phase 4.2 — Multi-folder projects and local modules](plans/phase-4.2.md) (implemented)
+- [Phase 4.2 — Multi-folder projects and local modules](plans/phase-4.2.md) (complete; included in v0.9.0)
 - [Phase 5 — SQL, ORM, migrations, forms, authentication and admin](plans/phase-5.md)
 - [Phase 6 — Wares, testing, tooling and agent integration](plans/phase-6.md)
 - [Moving the runtime to Rust](plans/runtime-rust.md)

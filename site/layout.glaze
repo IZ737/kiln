@@ -42,7 +42,7 @@
 </main>
 </div>
 <footer ui={shell.footer}>
-<p>Kiln is MIT licensed. This site is a Kiln program: its pages are glazes and its styles are Finishes.</p>
+<p>Kiln is MIT licensed. This site is a Kiln program: its pages are Glazes, its search and copy controls are Embers, and its styles are Finishes.</p>
 </footer>
 </body>
 </html>

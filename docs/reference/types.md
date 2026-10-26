@@ -1,6 +1,6 @@
 # Kiln type rules
 
-These are the rules `kiln check` enforces in phase 0. Every rule here has a
+These are the rules the current `kiln check` enforces. Every rule here has a
 test in `crates/kiln_check/tests/check.rs`. Run `kiln explain <code>` for
 the details of any error.
 

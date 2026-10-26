@@ -3,11 +3,12 @@
 {% let hero = theme.hero() %}
 <section ui={hero.root}>
 <h1 ui={hero.title}>Web servers and sites, without the glue.</h1>
-<p ui={hero.lead}>Kiln is a compiled, garbage-collected language with the web built in: routing, templates, styles and a fast server, checked together and built into one executable.</p>
+<p ui={hero.lead}>Kiln is a compiled, garbage-collected language with the web built in: routing, server-rendered templates, typed styles and interactive WebAssembly components, checked together and built into one executable.</p>
 <div ui={hero.actions}>
 <a href="/install" ui={theme.button(Tone.Primary)}>Install Kiln</a>
 <a href="/start" ui={theme.button(Tone.Quiet)}>Getting started</a>
 </div>
+<p>Current release: Kiln 0.9.0. Explicit Embers and local folder modules are available now; SQL, auth and Wares are planned.</p>
 </section>
 <div class="features">
 <Feature title="One executable" featured={true}>
@@ -15,6 +16,12 @@
 </Feature>
 <Feature title="Glazes">
 <p>Templates and components that the compiler checks against your types, escape by default and render to HTML on the server.</p>
+</Feature>
+<Feature title="Embers and typed RPC">
+<p>Use explicit <code>.ember</code> files for reactive state and events. Kiln hydrates them as WasmGC and generates checked calls to <code>server fn</code>s.</p>
+</Feature>
+<Feature title="Local modules">
+<p>Organize code in folders with explicit imports and <code>pub</code> exports. Components, styles and assets keep their module context; a manifest is optional.</p>
 </Feature>
 <Feature title="Typed styles">
 <p>Write styles as checked records, with design tokens from your CSS, and keep plain CSS and CSS Modules when you want them.</p>

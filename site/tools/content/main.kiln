@@ -29,6 +29,8 @@ fn sources() -> List<Source> {
         Source(path: "plans/phase-2.5", section: "Plans"),
         Source(path: "plans/phase-3", section: "Plans"),
         Source(path: "plans/phase-4", section: "Plans"),
+        Source(path: "plans/phase-4.1", section: "Plans"),
+        Source(path: "plans/phase-4.2", section: "Plans"),
         Source(path: "plans/phase-5", section: "Plans"),
         Source(path: "plans/phase-6", section: "Plans"),
         Source(path: "plans/runtime-rust", section: "Plans"),
@@ -70,6 +72,9 @@ fn link(dir: String, target: String, pages: List<String>) -> String {
     let hash = target.index_of("#") ?? target.len()
     let path = resolve(dir, target.slice(0, hash))
     let fragment = target.slice(hash, target.len())
+    if path == "docs/README.md" {
+        return "/docs/${fragment}"
+    }
     if path == "README.md" or pages.contains(path) {
         return target
     }

@@ -1,18 +1,20 @@
 # Glaze syntax reference
 
 Glazes (`.glaze` files) are server-only templates and components: HTML with Kiln code in
-it. This is the syntax the phase 0 parser accepts; every form here is covered
+it. This is the syntax the current parser accepts; every form here is covered
 by a test in `crates/kiln_syntax/tests/glaze.rs`. Code inside braces is
 ordinary Kiln, as in [syntax.md](syntax.md).
 
 `kiln check` type-checks glazes together with the `.kiln` files in the same
 directory: see [types.md](types.md#glazes) for the rules.
 
-**Phase 3 plan:** [compiled Glazes, native typed `ui`, Finishes, local CSS,
-CSS Modules, design tokens and themes](../plans/phase-3.md). That plan contains
-*target syntax* and implementation steps not yet part of this syntax
-reference. This page documents the currently recognized forms, and
-[Rendering](#rendering) what the compiler makes of them.
+Compiled Glazes, typed `ui` styles, Finishes, CSS Modules, design tokens and
+themes are implemented. Browser-capable components use explicit `.ember` files
+and support reactive state, WasmGC hydration and typed server calls. Local
+[folder modules](projects.md) keep their own components, styles and assets.
+This page documents the current syntax; [Rendering](#rendering) describes the
+compiled output. Implementation history is in the [Phase 3](../plans/phase-3.md),
+[Phase 4.1](../plans/phase-4.1.md) and [Phase 4.2](../plans/phase-4.2.md) plans.
 
 ## A page
 

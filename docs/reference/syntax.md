@@ -1,13 +1,14 @@
 # Kiln syntax reference
 
-This is the syntax the phase 0 parser accepts. It is the source of truth
+This is the syntax the current Kiln parser accepts. It is the source of truth
 for the grammar until a formal specification exists; every example here is
 also covered by a test in `crates/kiln_syntax/tests/`.
 
 ## Files and lines
 
-- Source files end in `.kiln`. Templates and components (glazes) end in
-  `.glaze`; see [glazes.md](glazes.md).
+- Source files end in `.kiln`. Server-only pages and components end in
+  `.glaze`; browser-capable components end in `.ember`. See
+  [glazes.md](glazes.md).
 - A newline ends a statement. There are no semicolons.
 - Newlines are ignored inside `( )`, `[ ]` and record literals `{ name: value }`,
   so long calls can span lines.

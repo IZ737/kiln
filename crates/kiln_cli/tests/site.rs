@@ -138,7 +138,51 @@ fn every_page_and_file_is_served() {
     }
     // The landing page, install and getting started, and every page of
     // docs/ that the generator carries.
-    assert!(pages >= 18, "only {pages} pages: {seen:?}");
+    assert!(pages >= 21, "only {pages} pages: {seen:?}");
+    for path in ["/docs/plans/phase-4.1", "/docs/plans/phase-4.2"] {
+        assert!(seen.contains(path), "missing current milestone page {path}");
+    }
+
+    // Copy the actual tutorial as a reader would, then compile and serve it.
+    // This catches stale sample syntax, missing files and unexported imports.
+    let tutorial = server.get("/start").body;
+    let app = dir.join("hello");
+    for file in [
+        "main.kiln",
+        "greetings/message.kiln",
+        "home.glaze",
+        "counter.ember",
+    ] {
+        let marker = format!("<code data-file=\"{file}\">");
+        let code = tutorial
+            .split_once(&marker)
+            .unwrap_or_else(|| panic!("tutorial has no {file}"))
+            .1
+            .split_once("</code>")
+            .unwrap()
+            .0;
+        let code = code
+            .replace("&lt;", "<")
+            .replace("&gt;", ">")
+            .replace("&quot;", "\"")
+            .replace("&#39;", "'")
+            .replace("&amp;", "&");
+        let path = app.join(file);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(path, code).unwrap();
+    }
+    let tutorial_exe = build(&app, &dir);
+    let tutorial_server = Server::start(&tutorial_exe);
+    let greeting = tutorial_server.get("/hello/Ada");
+    assert_eq!(greeting.status, 200);
+    assert_eq!(greeting.body, "Hello, Ada!");
+    let home = tutorial_server.get("/");
+    assert_eq!(home.status, 200);
+    assert!(home.body.contains("Hello from Kiln"));
+    assert!(home.body.contains("Count: 0"));
+    assert!(home.body.contains("Ask the server"));
+    assert!(home.body.contains("<kiln-island"));
+    tutorial_server.stop();
     // Without WebAssembly the search box is a form that loads /search.
     let found = server.get("/search?q=glaze");
     assert_eq!(found.status, 200);

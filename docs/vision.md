@@ -648,17 +648,23 @@ is modest.
 
 - Web-first, convention-driven, tightly integrated but deeply configurable.
 - Garbage-collected and native by default; no mandatory manual memory model.
-- Glazes plus future Embers, with native CSS support and progressive adoption.
+- Server-only Glazes and browser-capable Embers, with native CSS support and progressive adoption.
 - Wares as extension packages, with provenance and disciplined installs.
 - Strong tooling, agent accessibility and real-project dogfooding.
 - Full-stack Kiln should reduce hand-written frontend/backend boundaries.
 - Both **Kiln calling external code** and **external code calling Kiln**
   matter for eventual adoption.
 
+### Implemented foundation
+
+Native Linux and Windows compilation, server-rendered Glazes, typed styles and
+themes, explicit WasmGC Embers, typed server RPC, browser/npm bindings, local
+folder modules and project-aware editor support are implemented. See the
+[language reference](README.md#language-reference) for their current scope.
+
 ### Designed but not yet implemented end to end
 
-Integrated ORM/auth/admin/jobs, Glaze rendering, Embers on WasmGC, generated
-RPC, broad npm interop, full Wares/registry, `kiln fire` release workflow,
+Integrated ORM/auth/admin/jobs, broader npm interop, full Wares/registry, `kiln fire` release workflow,
 `kiln deploy`/`kiln release`, optimized LLVM builds, and much of the planned
 developer tooling. Existing parser/type-checker support for a construct is
 not the same as a working native runtime implementation; consult current

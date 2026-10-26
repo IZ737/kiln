@@ -73,6 +73,16 @@ try {
   const copied = await page.evaluate(() => navigator.clipboard.readText());
   check("the command is on the clipboard", copied.startsWith("curl --proto '=https'"), copied);
 
+  const versioned = page.locator(".copy-button").nth(1);
+  await versioned.scrollIntoViewIfNeeded();
+  await eventually("the versioned install command hydrates", async () =>
+    (await versioned.evaluate((el) => el.closest("kiln-island")?.hasAttribute("data-k-ready"))) === true,
+  );
+  await versioned.click();
+  await eventually("the versioned command keeps shell quotes", async () =>
+    (await page.evaluate(() => navigator.clipboard.readText())).endsWith('--version v0.9.0 --dir "$HOME/.kiln"'),
+  );
+
   check("the site logged nothing", logs.length === 0, logs.join("\n"));
 } catch (e) {
   failures.push(`the test stopped: ${e.stack}`);

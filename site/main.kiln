@@ -107,21 +107,39 @@ fn show_doc(path: String) -> web.Response ! {
 }
 
 // The code on the getting started page.
-fn samples() -> { main: String, glaze: String } {
+fn samples() -> { main: String, glaze: String, ember: String, module: String } {
     return {
         main: [
-            "import web",
+            "import web, os, greetings",
+            "",
+            "server fn greet(name: String) -> String {",
+            "    return greetings.message(name)",
+            "}",
             "",
             "fn main() ! {",
             "    let app = web.app()",
-            "    app.get(\"/\", fn(req) { web.render(\"home.glaze\", { name: \"kiln\" }) })",
-            "    app.get(\"/hello/{name}\", fn(req, name) { web.text(\"Hello, \${name}!\") })",
-            "    try app.listen(\"127.0.0.1:8080\")",
+            "    app.get(\"/\", fn(req) { web.render(\"home.glaze\", { name: \"Kiln\" }) })",
+            "    app.get(\"/hello/{name}\", fn(req, name) { web.text(greetings.message(name)) })",
+            "    let port = os.env(\"PORT\") ?? \"8080\"",
+            "    try app.listen(\"127.0.0.1:\${port}\")",
             "}",
         ].join("\n"),
         glaze: [
             "{% props name: String %}",
             "<h1 ui={{ fg: .current, weight: .bold }}>Hello from {name}</h1>",
+            "<Counter client:visible />",
+        ].join("\n"),
+        ember: [
+            "{% state count = 0 %}",
+            "{% state message = \"\" %}",
+            "<button type=\"button\" on:click={ count += 1 }>Count: {count}</button>",
+            "<button type=\"button\" on:click={ message = greet(\"Kiln\") catch err { err.message } }>Ask the server</button>",
+            "<p>{message}</p>",
+        ].join("\n"),
+        module: [
+            "pub fn message(name: String) -> String {",
+            "    return \"Hello, \${name}!\"",
+            "}",
         ].join("\n"),
     }
 }

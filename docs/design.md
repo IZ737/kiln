@@ -8,6 +8,14 @@ hatches, interoperability and adoption strategy are in
 controls phase sequencing; aspirational ideas in the vision are not
 automatically commitments for 1.0.
 
+**Implementation status (v0.9.0):** native Linux/Windows builds, HTTP routing,
+JSON, server-rendered Glazes, typed styles/themes, explicit WasmGC Embers,
+typed RPC, browser/npm interop and local folder modules are implemented.
+SQL/ORM, sessions/auth/admin, Wares, public `kiln test`, hot reload and the
+`kiln fire`/deployment workflow remain planned. The goals and examples below
+include future design; use the [current references](README.md#language-reference)
+for supported syntax and APIs.
+
 ## Core principle
 
 Most web development today is gluing together problems that were solved
