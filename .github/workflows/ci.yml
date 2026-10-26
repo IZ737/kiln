@@ -90,7 +90,7 @@ jobs:
       - run: npm ci
       - run: npm test
       - run: npx vsce package
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: kiln-vscode
           path: editors/vscode/*.vsix
@@ -128,7 +128,7 @@ jobs:
       - run: sh scripts/install-ci-deps.sh musl-tools gcc-mingw-w64-x86-64
         timeout-minutes: 10
       - run: cargo build --release --target x86_64-pc-windows-gnu -p kiln_cli
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: kiln-windows
           path: target/x86_64-pc-windows-gnu/release/kiln.exe
