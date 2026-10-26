@@ -141,7 +141,11 @@ fn embers_render_as_islands() {
         client.text
     );
     assert!(client.text.contains(":prevent"));
-    assert!(client
-        .text
-        .contains("let __s = json.decode<{ n: Int }>(__state)"));
+    assert!(
+        client
+            .text
+            .contains("let __s = if __state != \"\" { json.decode<{ n: Int }>(__state)"),
+        "{}",
+        client.text
+    );
 }

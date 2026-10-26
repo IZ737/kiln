@@ -381,6 +381,75 @@ impl Checker {
         matches!(ty, Ty::Adt(id, _) if Some(id) == self.global_types.get("Ui") && *id < self.std_adts)
     }
 
+    /// Why a value of `ty` cannot travel as JSON between the server and
+    /// the browser, if it cannot.
+    pub(crate) fn unserializable(&self, ty: &Ty) -> Option<String> {
+        self.unserializable_in(&self.zonk(ty), &mut HashSet::new())
+    }
+
+    fn unserializable_in(&self, ty: &Ty, seen: &mut HashSet<AdtId>) -> Option<String> {
+        match ty {
+            Ty::Fn(_) => Some("a function".into()),
+            Ty::Style(_) => Some("a style".into()),
+            Ty::Opt(inner) => self.unserializable_in(inner, seen),
+            Ty::Record(fields) => fields
+                .iter()
+                .find_map(|(_, t)| self.unserializable_in(t, seen)),
+            Ty::Adt(id, args) => {
+                if self.is_ui(ty) {
+                    return Some("a style (`Ui`)".into());
+                }
+                if let Some(why) = args.iter().find_map(|a| self.unserializable_in(a, seen)) {
+                    return Some(why);
+                }
+                if !seen.insert(*id) {
+                    return None;
+                }
+                let prelude = self.global_types.values().any(|g| g == id);
+                if *id < self.std_adts && !prelude {
+                    // A module's type: a handle such as `web.Request` or
+                    // `js.Value`, which has no JSON form.
+                    let module = self
+                        .modules
+                        .iter()
+                        .find(|m| m.types.values().any(|t| t == id))
+                        .map_or(String::new(), |m| format!("{}.", m.name));
+                    return Some(format!("`{module}{}`, a handle", self.adts[*id].name));
+                }
+                if *id < self.std_adts {
+                    return None;
+                }
+                match &self.adts[*id].kind {
+                    AdtKind::Struct(fields) => fields
+                        .iter()
+                        .find_map(|f| self.unserializable_in(&f.ty, seen)),
+                    AdtKind::Enum(variants) => variants.iter().find_map(|v| {
+                        v.fields
+                            .iter()
+                            .find_map(|(_, t)| self.unserializable_in(t, seen))
+                    }),
+                }
+            }
+            _ => None,
+        }
+    }
+
+    /// Reports E0224 when a value of `ty` must cross to the browser and
+    /// cannot. `what` names it: "the prop `count`".
+    pub(crate) fn must_cross(&mut self, ty: &Ty, what: &str, span: Span) {
+        if let Some(why) = self.unserializable(ty) {
+            let shown = self.show(ty);
+            self.error(
+                Diagnostic::error(
+                    codes::NOT_SERIALIZABLE,
+                    format!("{what} is `{shown}`, which contains {why}: it cannot travel as JSON between the server and the browser"),
+                    span,
+                )
+                .with_help("use plain data: numbers, strings, lists, maps, and structs and enums of them"),
+            );
+        }
+    }
+
     pub(crate) fn list_of(&self, elem: Ty) -> Ty {
         Ty::Adt(self.global_types["List"], vec![elem])
     }
@@ -720,7 +789,14 @@ impl Checker {
             if let Some(default) = &p.default {
                 self.check(default, &ty);
             }
+            if f.is_server {
+                let what = format!("the parameter `{}` of a `server fn`", p.name.name);
+                self.must_cross(&ty, &what, p.span);
+            }
             self.bind(&p.name.name, p.name.span, ty, false, None);
+        }
+        if let (true, Some(t)) = (f.is_server, &f.ret) {
+            self.must_cross(&ret, "what a `server fn` returns", t.span);
         }
         let outer_params = std::mem::replace(&mut self.type_params, generics);
         self.check_body(&f.body, &ret);

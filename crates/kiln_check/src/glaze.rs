@@ -88,6 +88,10 @@ impl Checker {
                 if let Some(default) = &p.default {
                     self.check(default, &ty);
                 }
+                if self.in_ember {
+                    let what = format!("the ember prop `{}`", p.name.name);
+                    self.must_cross(&ty, &what, p.span);
+                }
                 self.bind(&p.name.name, p.name.span, ty, false, None);
             }
         }
@@ -120,6 +124,8 @@ impl Checker {
         }
         for state in &glaze.states {
             let ty = self.local_value(state);
+            let what = format!("the state `{}`", state.name.name);
+            self.must_cross(&ty, &what, state.name.span);
             let shown = self.show(&ty);
             self.glaze_states.push((state.name.name.clone(), shown));
             self.bind(&state.name.name, state.name.span, ty, true, None);
@@ -293,7 +299,10 @@ impl Checker {
                     self.check_attr_value(&attr.name, kind, e.span);
                 }
             }
-            AttrValue::Handler(block) => self.check_handler(block),
+            AttrValue::Handler(block) => {
+                self.check_modifiers(&attr.name);
+                self.check_handler(block)
+            }
         }
     }
 
@@ -357,6 +366,28 @@ impl Checker {
 
     /// `on:click={ ... }`: statements that run in the browser and cannot
     /// fail, so errors must be handled with `catch`.
+    /// Reports the modifiers of `on:click.prevent` that are not ones.
+    fn check_modifiers(&mut self, name: &Ident) {
+        const MODIFIERS: &[&str] = &["prevent", "stop", "latest"];
+        let mut at = name.span.start as usize;
+        for (i, part) in name.name.split('.').enumerate() {
+            if i > 0 && !MODIFIERS.contains(&part) {
+                let span = Span::new(at, at + part.len());
+                let mut diag = Diagnostic::error(
+                    codes::UNKNOWN_MODIFIER,
+                    format!("`.{part}` is not an event modifier: expected `.prevent`, `.stop` or `.latest`"),
+                    span,
+                );
+                let lower = part.to_ascii_lowercase();
+                if let Some(m) = MODIFIERS.iter().find(|m| lower.starts_with(*m)) {
+                    diag = diag.with_suggestion(format!("use `.{m}`"), span, m.to_string());
+                }
+                self.error(diag);
+            }
+            at += part.len() + 1;
+        }
+    }
+
     fn check_handler(&mut self, block: &Block) {
         self.enter_fn(Ty::Unit, None, None);
         self.push_scope();

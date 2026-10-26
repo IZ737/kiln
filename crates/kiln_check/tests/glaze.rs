@@ -220,6 +220,62 @@ fn embers_run_in_the_browser() {
 }
 
 #[test]
+fn browser_modules_are_only_for_handlers() {
+    let ember = "{% props post: Post, title: String %}
+{% state shown = \"\" %}
+<button on:click={
+    browser.set_title(\"Hi\")
+    shown = js.global(\"document\").get(\"title\").as_string() catch err { err.message }
+}>{shown}</button>";
+    page_ok(ember);
+    // The server renders the ember, and has no browser.
+    let outside = format!("{ember}\n<p>{{browser.title()}}</p>");
+    assert_eq!(page_errors(&outside), [codes::BROWSER_ONLY]);
+    let main = APP.replace("fn main() ! {", "fn main() ! {\n    browser.log(\"hi\")");
+    assert!(check_with(&main, ember)
+        .0
+        .iter()
+        .any(|d| d.code == codes::UNDEFINED_NAME || d.code == codes::BROWSER_ONLY));
+}
+
+#[test]
+fn handlers_take_known_modifiers() {
+    page_ok("{% props post: Post, title: String %}\n{% state n = 0 %}\n<form on:submit.prevent.latest={ n = 1 }><button on:click.stop={ n = 2 }>{n}</button></form>");
+    let (_, diags) = check_page("{% props post: Post, title: String %}\n{% state n = 0 %}\n<button on:click.Prevent={ n = 1 }>{n}</button>");
+    assert_eq!(
+        diags.iter().map(|d| d.code).collect::<Vec<_>>(),
+        [codes::UNKNOWN_MODIFIER]
+    );
+    assert_eq!(
+        diags[0].suggestion.as_ref().map(|s| s.replacement.as_str()),
+        Some("prevent")
+    );
+}
+
+#[test]
+fn what_crosses_to_the_browser_is_plain_data() {
+    // An ember's state and props travel as JSON.
+    assert_eq!(
+        page_errors(
+            "{% state f = fn(x: Int) -> Int { x } %}\n<button on:click={ f = f }>x</button>"
+        ),
+        [codes::NOT_SERIALIZABLE]
+    );
+    assert_eq!(
+        page_errors("{% props pick: fn() -> Int %}\n{% state n = 0 %}\n<button on:click={ n = 1 }>{n}</button>"),
+        [codes::NOT_SERIALIZABLE]
+    );
+    // Structs of plain data are fine; a handle inside one is not.
+    page_ok("{% props post: Post, title: String %}\n{% state p = post %}\n<button on:click={ p = post }>{p.title}</button>");
+    let main = APP.replace(
+        "server fn like_post(id: Int) -> Int ! {",
+        "server fn run(task: fn() -> Int) -> Int { task() }\nstruct Wrap { req: web.Request }\nserver fn wrap(w: Wrap) {}\nserver fn like_post(id: Int) -> Int ! {",
+    );
+    let codes: Vec<_> = check_with(&main, PROPS).0.iter().map(|d| d.code).collect();
+    assert_eq!(codes, [codes::NOT_SERIALIZABLE, codes::NOT_SERIALIZABLE]);
+}
+
+#[test]
 fn values_cannot_go_where_browsers_run_code() {
     assert_eq!(
         page_errors(&format!(

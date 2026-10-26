@@ -250,6 +250,7 @@ fn generate_for(glazes: &[GlazeInput], app: &App, client: bool) -> GlazeSource {
             .map(|g| g.file.to_string())
             .collect(),
         is_ember: false,
+        state_types: HashMap::new(),
         server_fns: app.server_fns.to_vec(),
     };
     if client {
@@ -333,6 +334,7 @@ fn generate_for(glazes: &[GlazeInput], app: &App, client: bool) -> GlazeSource {
         }
         g.glaze = i;
         g.src = input.src;
+        g.state_types = input.states.iter().cloned().collect();
         g.values = input.values;
         g.scope = input.scope;
         g.temps = 0;
@@ -387,6 +389,8 @@ struct Gen<'a> {
     embers: std::collections::HashSet<String>,
     /// Whether the glaze being compiled is an ember.
     is_ember: bool,
+    /// The type of each state of the glaze being compiled, as written.
+    state_types: HashMap<String, String>,
     /// The functions handlers wait for: the `server fn`s, and in the
     /// browser the others too.
     server_fns: Vec<ServerFn>,
@@ -530,7 +534,20 @@ impl<'a> Gen<'a> {
                 self.copy(ty.span, false);
             }
             self.text.push_str(" = ");
-            self.copy(state.value.span, true);
+            let value = &self.src[state.value.span.start as usize..state.value.span.end as usize];
+            let shown = self.state_types.get(&state.name.name).cloned();
+            match shown {
+                // The server computes a state that calls a `server fn`,
+                // and gives the browser its value; the browser cannot.
+                Some(ty) if self.client && calls_any(value, &self.server_fns) => {
+                    self.text.truncate(self.text.len() - 3);
+                    self.text.push_str(&format!(
+                        ": {ty} = panic(\"the state `{}` calls a server fn, so only the server can start this ember\")",
+                        state.name.name
+                    ));
+                }
+                _ => self.copy(state.value.span, true),
+            }
             self.text.push('\n');
             self.segment(start, state.span);
         }
@@ -595,23 +612,33 @@ impl<'a> Gen<'a> {
                 true,
             );
         }
-        self.states(glaze, false);
         if !glaze.states.is_empty() {
+            // The state is the server's, as JSON, or else (an ember the
+            // browser adds) from the initial values.
             let fields: Vec<String> = input
                 .states
                 .iter()
                 .map(|(n, t)| format!("{n}: {t}"))
                 .collect();
-            self.line("if __state != \"\" {");
+            let record = format!("{{ {} }}", fields.join(", "));
+            self.line(&format!("let __start = fn() -> {record} {{"));
+            self.indent += 1;
+            self.states(glaze, false);
+            let values: Vec<String> = input
+                .states
+                .iter()
+                .map(|(n, _)| format!("{n}: {n}"))
+                .collect();
+            self.line(&format!("return {{ {} }}", values.join(", ")));
+            self.indent -= 1;
+            self.line("}");
             self.line(&format!(
-                "    let __s = json.decode<{{ {} }}>(__state) catch __e {{ panic(\"the state of `{}` does not decode: ${{__e.message}}\") }}",
-                fields.join(", "),
+                "let __s = if __state != \"\" {{ json.decode<{record}>(__state) catch __e {{ panic(\"the state of `{}` does not decode: ${{__e.message}}\") }} }} else {{ __start() }}",
                 input.file
             ));
-            for (n, _) in input.states {
-                self.line(&format!("    {n} = __s.{n}"));
+            for (n, t) in input.states {
+                self.line(&format!("var {n}: {t} = __s.{n}"));
             }
-            self.line("}");
         }
         self.line("var __h: List<fn(ember.Event)> = []");
         self.line("return ember.Island(");
@@ -1643,6 +1670,17 @@ impl ServerFn {
             None => format!("__rpc_{}", self.name),
         }
     }
+}
+
+/// Whether the code `text` calls one of `fns`, by name.
+fn calls_any(text: &str, fns: &[ServerFn]) -> bool {
+    fns.iter().filter(|f| f.module.is_none()).any(|f| {
+        text.match_indices(&f.name).any(|(at, _)| {
+            let before = text[..at].chars().next_back();
+            let after = text[at + f.name.len()..].trim_start().starts_with('(');
+            after && !before.is_some_and(|c| c.is_alphanumeric() || c == '_' || c == '.')
+        })
+    })
 }
 
 /// The functions of `browser` that wait for the browser.

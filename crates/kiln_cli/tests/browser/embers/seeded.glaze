@@ -1,0 +1,5 @@
+{% state sum = add(40, 2) %}
+<div id="seeded">
+    <button on:click={ sum = sum + 1 }>More</button>
+    <span class="sum">{sum}</span>
+</div>

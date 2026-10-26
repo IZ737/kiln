@@ -70,6 +70,7 @@ pub const UNSAFE_ATTRIBUTE: &str = "E0309";
 pub const ENDLESS_GLAZE: &str = "E0310";
 pub const MISPLACED_FILL: &str = "E0311";
 pub const BAD_CSS: &str = "E0312";
+pub const UNKNOWN_MODIFIER: &str = "E0313";
 
 pub const NOT_COMPILED_YET: &str = "E0401";
 pub const NO_MAIN: &str = "E0402";
@@ -439,6 +440,13 @@ pub static ALL: &[ErrorCode] = &[
         explanation: "A glaze's `<style>`, or a stylesheet it imports with `{% css %}`, is read as CSS when the program is checked. The file must exist inside the program's folder, and the CSS must parse. Files that CSS refers to with `url(...)` or `@import` must exist too, inside the folder. A CSS Module or `<style>` cannot `@import`: import the stylesheet with `{% css %}` instead.",
         wrong: "{% css \"../shared/site.css\" %}",
         right: "{% css \"site.css\" %}",
+    },
+    ErrorCode {
+        code: UNKNOWN_MODIFIER,
+        title: "unknown event modifier",
+        explanation: "An `on:` handler's event can be followed by modifiers: `.prevent` stops the browser's own action (a form's submit always does), `.stop` keeps the event from reaching outer handlers, and `.latest` lets a new event replace a call that is still waiting instead of being ignored. Other names are not modifiers.",
+        wrong: "<form on:submit.preventDefault={ save() }>",
+        right: "<form on:submit.prevent={ save() }>",
     },
     ErrorCode {
         code: NOT_COMPILED_YET,

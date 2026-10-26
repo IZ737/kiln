@@ -21,6 +21,7 @@
 </Panel>
 <Host />
 <Tools />
+<Seeded />
 <div class="spacer"></div>
 <Counter name="far" client:visible />
 </body>

@@ -212,6 +212,10 @@ try {
   await eventually("the new child counts", async () => (await text(page, "#child .count")) === "101");
 
   // Typed browser APIs, and `js.Value` with checked conversions.
+  check("a state the server computes with a server fn is given to the browser", (await text(page, "#seeded .sum")) === "42", await text(page, "#seeded .sum"));
+  await page.click("#seeded button");
+  await eventually("the seeded state changes", async () => (await text(page, "#seeded .sum")) === "43");
+
   await page.click("#tools .title");
   await eventually("browser.title reads the title", async () => (await text(page, "#tools .title-out")) === "Changed");
   check("browser.set_title sets it", (await page.title()) === "Changed");
