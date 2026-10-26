@@ -171,10 +171,12 @@ underlying HTML.
 
 ### Embers: interactivity when and where needed
 
-Interactive Glazes become **Embers**, eventually compiled to browser
-WebAssembly using WasmGC. A static or mostly server-rendered page should
-not pay for a full client application just because one control is
-interactive.
+Kiln's browser-capable components are **Embers**, compiled to browser
+WebAssembly using WasmGC. The planned explicit `.ember` source suffix,
+separate from server-only `.glaze`, is specified in [Phase 4.1](plans/phase-4.1.md);
+the Phase 4 implementation currently infers Embers from interactive Glazes.
+A static or mostly server-rendered page should not pay for a full client
+application just because one control is interactive.
 
 The intended experience includes reactive state, lifecycle/event handling,
 typed server functions, generated client/server RPC and ergonomic error
