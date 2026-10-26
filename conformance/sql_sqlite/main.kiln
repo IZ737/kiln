@@ -1,0 +1,97 @@
+// SQLite through the `sql` module: typed rows, placeholders, NULLs,
+// errors and transactions, in a database in memory.
+import sql, time
+
+struct Post {
+    id: Int
+    title: String
+    score: Float
+    published: Bool
+    summary: String?
+}
+
+fn main() ! {
+    let db = try sql.open("sqlite::memory:")
+    print(db.dialect())
+    try db.exec("create table posts (id integer primary key, title text not null unique, score real not null, published integer not null, summary text)")
+
+    let first = try db.insert("insert into posts (title, score, published, summary) values ($1, $2, $3, $4)", "Hello", 4.5, true, "the first")
+    let nothing: String? = none
+    let second = try db.insert("insert into posts (title, score, published, summary) values ($1, $2, $3, $4)", "Second", 2.0, false, nothing)
+    print("ids ${first} ${second}")
+
+    for p in try db.query<Post>("select * from posts order by id") {
+        print("${p.id} ${p.title} ${p.score} ${p.published} ${p.summary ?? "-"}")
+    }
+
+    let count = try db.scalar<Int>("select count(*) from posts where published = $1", true)
+    print("published: ${count}")
+
+    let found = try db.one<Post>("select * from posts where title = $1", "Second")
+    match found {
+        some(p) => print(p.title)
+        none => print("missing")
+    }
+    let missing = try db.one<Post>("select * from posts where title = $1", "Nope")
+    print(missing == none)
+
+    // A record reads the columns it names.
+    let titles = try db.query<{ title: String, score: Float }>("select title, score from posts where score > $1", 1.0)
+    print(titles.map(fn(t) { t.title }).join(", "))
+
+    // Values are bound, never written into the query.
+    let hostile = "x'); drop table posts; --"
+    let changed = try db.exec("update posts set summary = $1 where id = $2", hostile, first)
+    print("changed ${changed}")
+    print(try db.scalar<String>("select summary from posts where id = $1", first))
+    print(try db.scalar<Int>("select count(*) from posts"))
+
+    // Errors say what kind they are.
+    let dup = db.insert("insert into posts (title, score, published) values ($1, $2, $3)", "Hello", 1.0, true) catch err {
+        print("${sql.error_kind(err)}: ${err.message}")
+        0
+    }
+    print(dup)
+    db.exec("select nonsense from") catch err {
+        print(sql.error_kind(err))
+        0
+    }
+    db.query<Post>("select id from posts") catch err {
+        print(err.message)
+        []
+    }
+    db.scalar<Int>("select id from posts where id = $3", 1) catch err {
+        print(err.message)
+        0
+    }
+    db.scalar<String>("select summary from posts where id = $1", second) catch err {
+        print(err.message)
+        ""
+    }
+
+    // A transaction commits when its body returns...
+    let total = try db.transaction(fn(tx) {
+        try tx.exec("update posts set score = score + 1")
+        return try tx.scalar<Float>("select sum(score) from posts")
+    })
+    print("total ${total}")
+    // ...and rolls back when it fails.
+    db.transaction(fn(tx) {
+        try tx.exec("delete from posts")
+        throw "changed my mind"
+    }) catch err {
+        print("rolled back: ${err.message}")
+    }
+    print(try db.scalar<Int>("select count(*) from posts"))
+
+    // Times and dates are stored as ISO 8601 text.
+    try db.exec("create table events (at text not null, day text not null)")
+    try db.exec("insert into events values ($1, $2)", time.unix(1_800_000_000), Date(year: 2026, month: 10, day: 26))
+    let event = try db.one<{ at: time.Instant, day: Date }>("select at, day from events")
+    print(try db.scalar<String>("select at from events"))
+    if event is some(e) {
+        print(e.at.unix())
+        print(e.day.month)
+    }
+    print(sql.error_kind(Error(message: "not from a database")) == "")
+}

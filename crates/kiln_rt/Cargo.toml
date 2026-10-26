@@ -33,3 +33,6 @@ pulldown-cmark = { version = "0.13", default-features = false, features = ["html
 html-escape = "0.3"
 # `float_roundtrip` reads every float exactly, as `strtod` does.
 serde_json = { version = "1", features = ["float_roundtrip"] }
+# The `sql` module: SQLite, compiled into every program that opens a
+# database, so it needs no library on the system.
+rusqlite = { version = "0.41", features = ["bundled"] }

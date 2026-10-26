@@ -1,0 +1,24 @@
+sqlite
+ids 1 2
+1 Hello 4.5 true the first
+2 Second 2.0 false -
+published: 1
+Second
+true
+Hello, Second
+changed 1
+x'); drop table posts; --
+2
+unique: UNIQUE constraint failed: posts.title (sql unique)
+0
+syntax
+cannot read the field `title`: the query returns no column `title` (it returns `id`) (sql decode)
+the query uses $3 but 1 value(s) were given (sql syntax)
+cannot read column `summary`: it is NULL, so its Kiln type should be optional (`String?`) (sql decode)
+total 8.5
+rolled back: changed my mind
+2
+2027-01-15T08:00:00Z
+1800000000
+10
+true

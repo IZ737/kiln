@@ -111,6 +111,9 @@ struct Lowerer<'a> {
     pending: Vec<PendingCopy>,
     /// Standard library modules parsed for their default arguments.
     std_asts: HashMap<String, ast::Module>,
+    /// Functions the lowering makes itself, such as the one each type of
+    /// transaction runs through, by what they are for.
+    helpers: HashMap<String, FuncId>,
 }
 
 impl<'a> Lowerer<'a> {
@@ -142,6 +145,7 @@ impl<'a> Lowerer<'a> {
             main: 0,
             instances: HashMap::new(),
             std_asts: HashMap::new(),
+            helpers: HashMap::new(),
             copies: HashMap::new(),
             pending: Vec::new(),
         }
@@ -1715,6 +1719,14 @@ impl<'a> Lowerer<'a> {
         rt: &Ty,
         span: Span,
     ) -> (Expr, Option<Ty>) {
+        if type_name == "Db" {
+            if name == "transaction" {
+                return self.sql_transaction(recv, sig, args, rt, span);
+            }
+            if let Some(k) = sig.params.iter().position(|p| p.ty == Ty::Rest) {
+                return self.sql_call(recv, sig, name, k, args, rt, span);
+            }
+        }
         let (prelude, recv, mut vals) = self.arrange(&sig.params, &[], Some(recv), args);
         let module = LIB_TYPES
             .iter()
@@ -1740,6 +1752,195 @@ impl<'a> Lowerer<'a> {
         );
         let call = coerce_value(call, rt);
         (with_prelude(prelude, call), sig.throws.clone())
+    }
+
+    /// A query method of `sql.Db`, whose arguments after the first `k`
+    /// fill the query's placeholders: they are passed as one
+    /// `List<sql.Value>`.
+    #[allow(clippy::too_many_arguments)]
+    fn sql_call(
+        &mut self,
+        recv: Expr,
+        sig: &FnSig,
+        name: &str,
+        k: usize,
+        args: &[ast::Arg],
+        rt: &Ty,
+        span: Span,
+    ) -> (Expr, Option<Ty>) {
+        let split = k.min(args.len());
+        let (prelude, recv, vals) = self.arrange(&sig.params[..k], &[], Some(recv), &args[..split]);
+        let list = self.sql_params(&args[split..], span);
+        let mut all = vec![recv.expect("the receiver is kept")];
+        all.extend(vals);
+        all.push(list);
+        let call = mk(
+            ExprKind::Lib {
+                module: "sql".into(),
+                name: format!("Db.{name}"),
+                args: all,
+            },
+            lib_ret(sig, self.p.instantiations.get(&span)),
+            span,
+        );
+        let call = coerce_value(call, rt);
+        (with_prelude(prelude, call), sig.throws.clone())
+    }
+
+    /// The type `module.name` of the standard library.
+    fn std_type(&self, module: &str, name: &str) -> Ty {
+        let id = self.p.modules[module].types[name];
+        Ty::Adt(id, Vec::new())
+    }
+
+    /// Query arguments as a `List<sql.Value>`, each turned into a
+    /// `sql.Value` by the runtime from its type.
+    fn sql_params(&mut self, args: &[ast::Arg], span: Span) -> Expr {
+        let value_ty = self.std_type("sql", "Value");
+        let mut items = Vec::new();
+        for a in args {
+            let v = self.expr(&a.value);
+            if v.ty == value_ty {
+                items.push(v);
+                continue;
+            }
+            let vspan = v.span;
+            items.push(mk(
+                ExprKind::Lib {
+                    module: "sql".into(),
+                    name: "__value".into(),
+                    args: vec![coerce(v, &Ty::Any)],
+                },
+                value_ty.clone(),
+                vspan,
+            ));
+        }
+        let list = Ty::Adt(self.prims.list, vec![value_ty]);
+        mk(ExprKind::List(items), list, span)
+    }
+
+    /// `db.transaction(body)`: a call of `__sql_transaction`, made once for
+    /// each type `body` returns, which begins, runs `body` with the
+    /// transaction's handle, and commits, or rolls back and fails with
+    /// `body`'s error.
+    fn sql_transaction(
+        &mut self,
+        recv: Expr,
+        sig: &FnSig,
+        args: &[ast::Arg],
+        rt: &Ty,
+        span: Span,
+    ) -> (Expr, Option<Ty>) {
+        let Some(arg) = args.first() else {
+            return (self.unsupported(span, "this transaction"), None);
+        };
+        let body = self.expr(&arg.value);
+        let t = lib_ret(sig, self.p.instantiations.get(&span));
+        let helper = self.transaction_fn(&t, &recv.ty, &body.ty, span);
+        let err = Ty::Adt(self.prims.error, Vec::new());
+        let call = mk(
+            ExprKind::Call {
+                func: helper,
+                args: vec![recv, body],
+            },
+            t,
+            span,
+        );
+        (coerce_value(call, rt), Some(err))
+    }
+
+    fn transaction_fn(&mut self, t: &Ty, db_ty: &Ty, body_ty: &Ty, span: Span) -> FuncId {
+        let key = format!("__sql_transaction:{t:?}");
+        if let Some(&id) = self.helpers.get(&key) {
+            return id;
+        }
+        let id = self.reserve();
+        self.helpers.insert(key, id);
+        let err = Ty::Adt(self.prims.error, Vec::new());
+        self.enter(false, t.clone(), Some(err.clone()));
+        let db = self.new_local("db", db_ty.clone(), false);
+        let body = self.new_local("body", body_ty.clone(), false);
+        let tx = self.new_local("tx", db_ty.clone(), false);
+        let e = self.new_local("err", err.clone(), false);
+        let local = |l: LocalId, ty: &Ty| mk(ExprKind::Local(l), ty.clone(), span);
+        let lib = |name: &str, args: Vec<Expr>, ty: Ty| {
+            mk(
+                ExprKind::Lib {
+                    module: "sql".into(),
+                    name: name.into(),
+                    args,
+                },
+                ty,
+                span,
+            )
+        };
+        let mut stmts = Vec::new();
+        let begin = lib("Db.__begin", vec![local(db, db_ty)], db_ty.clone());
+        stmts.push(Stmt::Let(
+            tx,
+            mk(
+                ExprKind::Try {
+                    expr: Box::new(begin),
+                    wrap: false,
+                },
+                db_ty.clone(),
+                span,
+            ),
+        ));
+        let run = mk(
+            ExprKind::CallClosure {
+                callee: Box::new(local(body, body_ty)),
+                args: vec![local(tx, db_ty)],
+            },
+            t.clone(),
+            span,
+        );
+        let rollback = lib("Db.__rollback", vec![local(tx, db_ty)], Ty::Unit);
+        let rethrow = mk(
+            ExprKind::Throw {
+                value: Box::new(local(e, &err)),
+                wrap: false,
+            },
+            Ty::Never,
+            span,
+        );
+        let caught = mk(
+            ExprKind::Catch {
+                expr: Box::new(run),
+                err: err.clone(),
+                binding: Some(e),
+                handler: Block {
+                    stmts: vec![Stmt::Expr(rollback)],
+                    value: Some(Box::new(rethrow)),
+                },
+            },
+            t.clone(),
+            span,
+        );
+        let result = if matches!(t, Ty::Unit) {
+            stmts.push(Stmt::Expr(caught));
+            None
+        } else {
+            let r = self.new_local("result", t.clone(), false);
+            stmts.push(Stmt::Let(r, caught));
+            Some(r)
+        };
+        let commit = lib("Db.__commit", vec![local(tx, db_ty)], Ty::Unit);
+        stmts.push(Stmt::Expr(mk(
+            ExprKind::Try {
+                expr: Box::new(commit),
+                wrap: false,
+            },
+            Ty::Unit,
+            span,
+        )));
+        let block = Block {
+            stmts,
+            value: result.map(|r| Box::new(local(r, t))),
+        };
+        let name = format!("__sql_transaction_{}", self.helpers.len());
+        self.finish(id, name, FuncKind::Fn, vec![db, body], t.clone(), block);
+        id
     }
 
     /// Fills the arguments left out of a call to a standard library
@@ -2029,12 +2230,18 @@ impl Lowerer<'_> {
 /// Modules whose functions become [`ExprKind::Lib`] calls, for the
 /// backend to build.
 const LIB_MODULES: &[&str] = &[
-    "time", "fs", "os", "io", "web", "json", "html", "base64", "markdown", "ember", "js", "browser",
+    "time", "fs", "os", "io", "web", "json", "html", "base64", "markdown", "ember", "js",
+    "browser", "sql",
 ];
 
 /// Types of those modules whose methods are [`ExprKind::Lib`] calls too,
 /// named `Type.method`, with the receiver as the first argument.
-const LIB_TYPES: &[(&str, &str)] = &[("web", "App"), ("web", "Request"), ("js", "Value")];
+const LIB_TYPES: &[(&str, &str)] = &[
+    ("web", "App"),
+    ("web", "Request"),
+    ("js", "Value"),
+    ("sql", "Db"),
+];
 
 /// The type of a library call: its declared return type, with a generic
 /// one's type arguments at this call filled in (`json.decode<Post>` has type

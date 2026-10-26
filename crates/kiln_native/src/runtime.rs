@@ -163,7 +163,13 @@ pub(crate) fn signature(name: &str) -> Option<(&'static [C], Option<C>)> {
         "k_fs_exists" | "k_fs_is_dir" => (P1, Some(Bool)),
         "round" | "floor" | "ceil" => (&[F64], Some(F64)),
         "fmod" | "fmin" | "fmax" => (&[F64, F64], Some(F64)),
-        _ => return None,
+        _ => {
+            // The Rust runtime's table: slots in, a slot out.
+            const SLOTS: &[C] = &[I64, I64, I64, I64, I64, I64, I64, I64];
+            let rf = kiln_ir::rt::rt_symbol(name)?;
+            let n = rf.args + usize::from(rf.desc != kiln_ir::rt::DescOf::None);
+            return Some((&SLOTS[..n], Some(I64)));
+        }
     };
     Some(sig)
 }

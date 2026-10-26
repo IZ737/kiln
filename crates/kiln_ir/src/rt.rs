@@ -1,0 +1,80 @@
+//! Standard library functions that the runtime's Rust part (`kiln_rt`)
+//! implements with one calling convention, so that both backends build
+//! their calls from this table instead of a case each.
+//!
+//! The function `k_rt_<module>_<name>` takes a type description first when
+//! [`RtFn::desc`] says so, then each argument as a `kv` slot (an `Int`, a
+//! `Float`'s bits, a `Bool` as 0 or 1, or a pointer), and returns a `kv`,
+//! which is 0 for a function with no value. A function that can fail
+//! stores its message with `k_rt_fail` and returns 0, and the generated
+//! code then fails with a standard `Error`, as for the other library
+//! functions.
+
+/// Which type the description passed first describes.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DescOf {
+    /// None is passed.
+    None,
+    /// The call's type, such as `List<Post>` for `db.query<Post>(...)`.
+    Ret,
+    /// The type of argument `i`, under its coercion to `Any`.
+    Arg(usize),
+}
+
+#[derive(Debug)]
+pub struct RtFn {
+    pub module: &'static str,
+    /// The function's name, or `Type.method` with the receiver first.
+    pub name: &'static str,
+    pub symbol: &'static str,
+    /// How many arguments, the receiver's included.
+    pub args: usize,
+    pub fallible: bool,
+    pub desc: DescOf,
+}
+
+const fn f(
+    module: &'static str,
+    name: &'static str,
+    symbol: &'static str,
+    args: usize,
+    fallible: bool,
+    desc: DescOf,
+) -> RtFn {
+    RtFn {
+        module,
+        name,
+        symbol,
+        args,
+        fallible,
+        desc,
+    }
+}
+
+use DescOf::*;
+
+pub static RT_FNS: &[RtFn] = &[
+    f("sql", "open", "k_rt_sql_open", 3, true, None),
+    f("sql", "error_kind", "k_rt_sql_error_kind", 1, false, None),
+    f("sql", "__value", "k_rt_sql_value", 1, false, Arg(0)),
+    f("sql", "Db.query", "k_rt_sql_query", 3, true, Ret),
+    f("sql", "Db.one", "k_rt_sql_one", 3, true, Ret),
+    f("sql", "Db.scalar", "k_rt_sql_scalar", 3, true, Ret),
+    f("sql", "Db.exec", "k_rt_sql_exec", 3, true, None),
+    f("sql", "Db.insert", "k_rt_sql_insert", 3, true, None),
+    f("sql", "Db.dialect", "k_rt_sql_dialect", 1, false, None),
+    f("sql", "Db.close", "k_rt_sql_close", 1, false, None),
+    f("sql", "Db.__begin", "k_rt_sql_begin", 1, true, None),
+    f("sql", "Db.__commit", "k_rt_sql_commit", 1, true, None),
+    f("sql", "Db.__rollback", "k_rt_sql_rollback", 1, false, None),
+];
+
+/// The entry for a library call, if the Rust runtime implements it.
+pub fn rt_fn(module: &str, name: &str) -> Option<&'static RtFn> {
+    RT_FNS.iter().find(|f| f.module == module && f.name == name)
+}
+
+/// The entry with this symbol.
+pub fn rt_symbol(symbol: &str) -> Option<&'static RtFn> {
+    RT_FNS.iter().find(|f| f.symbol == symbol)
+}

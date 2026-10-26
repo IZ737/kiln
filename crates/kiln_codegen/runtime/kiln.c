@@ -213,6 +213,9 @@ K_API kv k_take_error(void) {
  * returns; the generated code turns it into an `Error` and fails. */
 K_API kstr *k_lib_error = NULL;
 
+/* For `kiln_rt`: makes the library call that runs fail with `message`. */
+K_EXPORT void k_rt_fail(kstr *message) { k_lib_error = message; }
+
 K_API void k_lib_fail(const char *what, kstr *path) {
     char buf[512];
     snprintf(buf, sizeof buf, "cannot %s %s: %s", what, k_cstr(path), strerror(errno));
@@ -1452,6 +1455,9 @@ K_API void k_time_sleep(int64_t ns) {
     if (k_tasks_on) k_task_sleep(ns);
     else k_time_sleep_os(ns);
 }
+
+/* For `kiln_rt`: waits without holding up the other tasks. */
+K_EXPORT void k_rt_sleep(int64_t ns) { k_time_sleep(ns); }
 
 /* Days since 1970-01-01 to a civil date and back (Howard Hinnant's
  * algorithms, valid for every day an int64_t can hold here). */

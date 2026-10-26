@@ -1,14 +1,72 @@
-// SQL databases. Queries use `$1`, `$2`, ... placeholders; the extra
-// arguments fill them in order.
+// SQL databases: SQLite files (`sqlite:./data/app.db`) and memory
+// (`sqlite::memory:`), PostgreSQL (`postgres://user:pass@host/app`) and
+// MySQL or MariaDB (`mysql://user:pass@host/app`).
+//
+// Queries write `$1`, `$2`, ... where values go, whatever the database,
+// and the extra arguments fill them in order. Values are always sent to
+// the database apart from the query's text, never written into it. An
+// argument can be an `Int`, `Float`, `Bool`, `String`, `time.Instant`,
+// `Date`, an optional of one (none is NULL), or any other value with a
+// JSON form, which is stored as its JSON text.
+//
+// Rows are read into the type a query names: a struct or record takes
+// each field from the column of the same name (a missing optional field is
+// none), and any other type the row's only column. A NULL column needs an
+// optional field. A database error fails with an `Error` whose kind
+// `error_kind` gives.
 
+// A database: a pool of connections, opened as they are needed, up to
+// `max_connections`. A transaction's handle is a `Db` too.
 struct Db {}
 
-fn open(url: String) -> Db ! {}
+// A value sent with a query. Arguments become these by themselves.
+enum Value {
+    Null
+    Int(Int)
+    Float(Float)
+    Text(String)
+    Bool(Bool)
+}
+
+// Opens a database. Nothing about its tables changes: create them with
+// migrations (`kiln db migrate`) or with `exec`. A task that finds every
+// connection busy waits up to `busy_timeout` for one, and so does a query
+// that finds an SQLite file locked by another writer.
+fn open(url: String, max_connections: Int = 4, busy_timeout: Duration = 5s) -> Db ! {}
+
+// What kind of database error `err` is: "unique", "foreign_key",
+// "not_null", "check" or "constraint" for a broken constraint, "syntax"
+// for a query the database cannot run, "decode" for a row that does not
+// fit its Kiln type, "connection", "busy", "transaction", "unsupported"
+// or "other"; and "" for an error that did not come from a database.
+fn error_kind(err: Error) -> String {}
+
+// A query argument as a `Value`.
+fn __value(value: Any) -> Value {}
 
 impl Db {
+    // Every row.
     fn query<T>(self, sql: String, args: Rest) -> List<T> ! {}
+    // The first row, or none when there are none.
     fn one<T>(self, sql: String, args: Rest) -> T? ! {}
+    // The value of a query that returns exactly one row of one column,
+    // such as `select count(*) from posts`.
     fn scalar<T>(self, sql: String, args: Rest) -> T ! {}
+    // Runs a statement, returning how many rows it changed.
     fn exec(self, sql: String, args: Rest) -> Int ! {}
-    fn insert<T>(self, table: String, value: T) -> T ! {}
+    // Runs an insert, returning the key the database generated for the
+    // new row. On PostgreSQL, end the statement with `RETURNING id`.
+    fn insert(self, sql: String, args: Rest) -> Int ! {}
+    // Runs `body` in a transaction, with a handle whose queries are part
+    // of it. It commits when `body` returns, and rolls back when it
+    // fails, so either all of its changes are kept or none are.
+    fn transaction<T>(self, body: fn(Db) -> T !) -> T ! {}
+    // "sqlite", "postgres" or "mysql".
+    fn dialect(self) -> String {}
+    // Closes every connection; queries on it fail afterwards.
+    fn close(self) {}
+
+    fn __begin(self) -> Db ! {}
+    fn __commit(self) ! {}
+    fn __rollback(self) {}
 }

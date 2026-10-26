@@ -36,6 +36,7 @@
 pub mod glaze;
 mod lower;
 mod print;
+pub mod rt;
 
 pub use kiln_check::types::{AdtDef, AdtId, AdtKind, FnTy, Ty};
 pub use kiln_check::ValueKind;
