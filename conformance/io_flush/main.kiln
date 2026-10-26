@@ -1,0 +1,12 @@
+import io
+
+fn main() {
+    io.flush()
+    io.flush()
+    io.write("> ")
+    io.flush()
+    io.flush()
+    let input = io.read_line() ?? "EOF"
+    io.write(input)
+    io.flush()
+}

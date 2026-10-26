@@ -104,7 +104,8 @@ as `cannot read notes.txt: No such file or directory`.
 | `io.read_line() -> String?` | The next line of standard input, or none at the end |
 | `io.read_lines() -> List<String>` | The remaining lines |
 | `io.read_all() -> String` | The rest of standard input |
-| `io.write(text)` | Writes to standard output without a newline |
+| `io.write(text)` | Writes to buffered standard output without a newline |
+| `io.flush()` | Flushes pending standard output without writing text or a newline |
 | `io.print_err(value)` | Prints on standard error, as `print` does |
 
 ```kiln
@@ -122,6 +123,21 @@ fn main() {
 `fs`, `os` and `io` need the server, so embers cannot use them; the
 browser's modules are [`browser`](#browser), [`js`](#js) and
 [npm packages](#npm-packages).
+
+`io.write()` may leave text buffered. Call `io.flush()` to make a prompt
+visible before waiting for input; `io.read_line()` does not automatically
+flush standard output.
+
+```kiln
+import io
+
+fn main() {
+    io.write("> ")
+    io.flush()
+    let input = io.read_line()
+    print(input)
+}
+```
 
 ## `web`
 

@@ -7,7 +7,10 @@ fn read_line() -> String? {}
 fn read_all() -> String {}
 // The remaining lines of standard input.
 fn read_lines() -> List<String> {}
-// Writes text to standard output without adding a newline.
+// Writes text to buffered standard output without adding a newline.
+// Call flush() to make pending output visible before waiting for input.
 fn write(text: String) {}
+// Flushes standard output without writing text or adding a newline.
+fn flush() {}
 // Prints a value on standard error, as `print` does on standard output.
 fn print_err(value: Any) {}

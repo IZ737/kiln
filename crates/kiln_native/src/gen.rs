@@ -2423,6 +2423,7 @@ impl Fx<'_, '_, '_> {
                     "read_all" => "k_io_read_all",
                     "read_lines" => "k_io_read_lines",
                     "write" => "k_io_write",
+                    "flush" => "k_io_flush",
                     "print_err" => "k_io_print_err",
                     _ => return self.unsupported(span, format!("`{module}.{name}`")),
                 };
