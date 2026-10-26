@@ -1,6 +1,6 @@
 # Glaze syntax reference
 
-Glazes (`.glaze` files) are templates and components: HTML with Kiln code in
+Glazes (`.glaze` files) are server-only templates and components: HTML with Kiln code in
 it. This is the syntax the phase 0 parser accepts; every form here is covered
 by a test in `crates/kiln_syntax/tests/glaze.rs`. Code inside braces is
 ordinary Kiln, as in [syntax.md](syntax.md).
@@ -85,8 +85,9 @@ glaze must be named in quotes, so the compiler knows which one it is.
 - A glaze that always renders itself again, through its layout or
   components outside `if`, `for` and `match` blocks, is E0310. Inside a
   block that ends, a component can render itself, as for a tree.
-- A glaze with `{% state %}` or an `on:` handler is an ember: the server
-  renders it, and the browser takes it over (see [Embers](#embers)).
+- Browser-capable components use `.ember`. State or `on:` handlers in a
+  `.glaze` are E0314; rename the interactive component to `.ember`. A Glaze
+  can render an Ember without becoming an island itself (see [Embers](#embers)).
 
 ## Tags
 
@@ -98,7 +99,7 @@ glaze must be named in quotes, so the compiler knows which one it is.
 | `{% fill name %} ... {% end %}` | Content for `{% slot name %}`: directly inside a component tag, or at the top level of a page with a layout |
 | `{% css "site.css" %}` | Use a global stylesheet. At the top level |
 | `{% css module name from "card.module.css" %}` | Use a CSS Module: `name.card` is its renamed class. At the top level |
-| `{% state name = value %}`, `{% state name: Type = value %}` | Browser-side state; makes the glaze an ember. At the top level |
+| `{% state name = value %}`, `{% state name: Type = value %}` | Mutable reactive state in `.ember` files only. At the top level |
 | `{% let name = value %}` | A local value |
 | `{% if c %} ... {% else if d %} ... {% else %} ... {% end %}` | Conditional |
 | `{% for x in xs where c %} ... {% empty %} ... {% end %}` | Loop; `where` and `empty` are optional |
@@ -308,7 +309,7 @@ and building again changes the site, layout included.
   `<input>`, `<meta>`, `<link>`, ...) need no closing tag; any element may
   close itself with `/>`.
 - A capitalized tag is a component: `<LikeButton post={post} />` renders
-  `like_button.glaze` with `post` as its prop. Its children fill its
+  `like_button.ember` with `post` as its prop. Its children fill its
   `{% slot %}`.
 - Attributes:
 
@@ -323,16 +324,28 @@ and building again changes the site, layout included.
 
 ## Embers
 
-**Current implemented syntax:** Embers are still inferred from interactive `.glaze` content. The planned [Phase 4.1 explicit source model](../plans/phase-4.1.md) will require `.ember` for browser-capable components and disallow state/handlers in `.glaze`. The change has **not** been implemented yet.
+An Ember is a component in an **`.ember` file**. It shares the Glaze markup
+grammar, but may declare `{% state %}` and `on:` handlers. Ordinary `{% let %}`
+values remain immutable. The suffix declares the kind even without state or
+events; template contents never promote a `.glaze` into an Ember.
 
-A glaze with `{% state %}` or an `on:` handler is an ember. The server
+`<LikeButton>` resolves `like_button.ember` or `like_button.glaze` in the same
+folder. Having both is an ambiguity (E0315), regardless of directory order.
+Hydration hints on a Glaze target are E0314. To migrate an interactive Glaze,
+rename its file to `.ember` and update explicit filename references; component
+tags keep their names. Layouts and static pages remain `.glaze`.
+
+An Ember is not client-only by default. The server
 renders it like any glaze, inside a `<kiln-island>` element that carries
 its props and state as JSON, and the browser takes it over with the
 program's WebAssembly (WasmGC): after each event its handlers run, it
 renders again, and the page's DOM is updated to match, keeping focus,
-typed text and keyed items. A page with no ember loads no script.
+typed text and keyed items. A page with no Ember loads no script, even when
+unused `.ember` files exist in the project. Unreferenced components are excluded
+from the browser build. Layout files must be `.glaze` (E0316).
 
 ```glaze
+{# like_button.ember #}
 {% props post: Post %}
 {% state likes = post.likes %}
 {% state saving = false %}
@@ -389,7 +402,7 @@ typed text and keyed items. A page with no ember loads no script.
 - **Without WebAssembly** (an old browser), the page stays as the server
   rendered it, with working links and forms, and `<html>` gets
   `data-k-embers="unsupported"` so CSS can hide controls that need it.
-- An ember cannot have a layout (E0401): use it as a component in a page
+- An ember cannot have a layout (E0316): use it as a component in a page
   that has one. An ember that the browser adds (inside another ember's
   `{% if %}`, say) starts from its state's first values, so their code runs
   in the browser; one whose state calls a `server fn` can only be started

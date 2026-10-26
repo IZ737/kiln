@@ -48,7 +48,7 @@ enum Command {
     /// Check source files for errors without building.
     Check {
         /// Files or directories to check. Directories are searched for
-        /// `.kiln` and `.glaze` files. Defaults to the current directory.
+        /// `.kiln`, `.glaze` and `.ember` files. Defaults to the current directory.
         paths: Vec<PathBuf>,
         /// Print diagnostics as JSON, for editors and coding agents.
         #[arg(long)]
@@ -365,7 +365,9 @@ fn check_app_sources(
     for (path, text) in &texts {
         let file = SourceFile::new(path.display().to_string(), text.clone());
         let parsed = if is_glaze(path) {
-            Parsed::Glaze(Box::new(kiln_syntax::glaze::parse_glaze(&file.text)))
+            Parsed::Glaze(Box::new(kiln_syntax::glaze::parse_component(
+                &file.text, &file.name,
+            )))
         } else {
             Parsed::Kiln(kiln_syntax::parse(&file.text))
         };
@@ -451,7 +453,7 @@ fn check_app_sources(
     (out, info)
 }
 
-/// The folder a program lives in, and its `.kiln` and `.glaze` files. A
+/// The folder a program lives in, and its `.kiln`, `.glaze` and `.ember` files. A
 /// program is a whole folder; naming one of its files means that folder.
 fn app_files(path: &Path) -> std::io::Result<(PathBuf, Vec<PathBuf>)> {
     let dir = if path.is_dir() {
@@ -604,7 +606,7 @@ fn build(
         .collect();
     let parsed_glazes: Vec<kiln_syntax::ast::Glaze> = glaze_files
         .iter()
-        .map(|f| kiln_syntax::glaze::parse_glaze(&f.text).glaze)
+        .map(|f| kiln_syntax::glaze::parse_component(&f.text, &f.name).glaze)
         .collect();
     let glaze_names: Vec<String> = glaze_files
         .iter()
@@ -651,14 +653,19 @@ fn build(
     let mut server_fns = Vec::new();
     let mut rpc_version = String::new();
     let mut rpc_guard = false;
-    if parsed_glazes.iter().any(|g| g.is_ember()) {
-        let user = kiln_syntax::parse(&combined);
+    let user = kiln_syntax::parse(&combined);
+    let reachable = reachable_components(&user.module, &glaze_refs, &styles.styling);
+    if glaze_refs
+        .iter()
+        .any(|(name, g)| g.is_ember() && reachable.contains(*name))
+    {
         (server_fns, rpc_guard) = server_fns_of(&user.module, &combined);
         // Handlers wait for the npm functions that return promises as
         // they do for `server fn`s.
         let mut waits = server_fns.clone();
         waits.extend(npm::waits(&info.npm));
         let client_app = kiln_ir::glaze::App {
+            reachable_components: Some(&reachable),
             server_fns: &waits,
             ..Default::default()
         };
@@ -725,6 +732,7 @@ fn build(
     }
 
     let app = kiln_ir::glaze::App {
+        reachable_components: Some(&reachable),
         stylesheet: styles.stylesheet.as_deref(),
         assets: &assets,
         ember_script: ember_script.as_deref(),
@@ -789,6 +797,37 @@ fn build(
         eprintln!("error: {err}");
         ExitCode::from(2)
     })
+}
+
+/// Follow explicit render calls, layouts and component references. All source
+/// functions are conservatively roots: a component with no reference is never
+/// included merely because its file is present in the folder.
+fn reachable_components(
+    module: &kiln_syntax::ast::Module,
+    glazes: &[(&str, &kiln_syntax::ast::Glaze)],
+    styling: &kiln_check::Styling,
+) -> std::collections::HashSet<String> {
+    use kiln_check::ide::{analyze_app, Ref, Target};
+    let references = |target| {
+        analyze_app(&[module], glazes, target, styling)
+            .references
+            .into_iter()
+            .filter_map(|(_, r)| match r {
+                Ref::Component(file) => Some(file),
+                _ => None,
+            })
+            .collect::<Vec<_>>()
+    };
+    let mut pending = references(Target::Module(0));
+    let mut reached = std::collections::HashSet::new();
+    while let Some(file) = pending.pop() {
+        if reached.insert(file.clone()) {
+            if let Some(i) = glazes.iter().position(|(name, _)| *name == file) {
+                pending.extend(references(Target::Glaze(i)));
+            }
+        }
+    }
+    reached
 }
 
 /// Prints diagnostics of a program's combined text, each in the file it
@@ -900,7 +939,8 @@ fn same_file(a: &Path, b: &Path) -> bool {
 }
 
 pub(crate) fn is_glaze(path: &Path) -> bool {
-    path.extension().is_some_and(|ext| ext == "glaze")
+    path.extension()
+        .is_some_and(|ext| ext == "glaze" || ext == "ember")
 }
 
 fn collect_sources(path: &Path, out: &mut Vec<PathBuf>) -> std::io::Result<()> {
@@ -936,7 +976,7 @@ fn parse(path: &Path) -> ExitCode {
     };
     let file = SourceFile::new(path.display().to_string(), text);
     let diagnostics = if is_glaze(path) {
-        let result = kiln_syntax::glaze::parse_glaze(&file.text);
+        let result = kiln_syntax::glaze::parse_component(&file.text, &file.name);
         println!("{:#?}", result.glaze);
         result.diagnostics
     } else {

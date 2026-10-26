@@ -14,10 +14,14 @@ use std::collections::HashMap;
 
 /// A name the language server writes where it wants completions.
 pub const COMPLETION_MARKER: &str = "__kiln_complete__";
+/// Starts with a letter so the template parser recognizes it as a tag.
+pub const COMPONENT_COMPLETION_MARKER: &str = "KilnComponentCompletion";
 
 /// What a name refers to.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Ref {
+    /// A component or layout, by its actual source filename.
+    Component(String),
     /// A local variable or parameter, by where it is bound in the same file.
     Local(Span),
     /// A top-level function: the program's, or the prelude's.
@@ -49,6 +53,8 @@ pub enum Ref {
 /// What may be written where the editor asked for completions.
 #[derive(Clone, Debug)]
 pub enum Completion {
+    /// Component tags and their source filenames.
+    Components(Vec<(String, String)>),
     /// A name in an expression. Holds the locals in scope, innermost
     /// first; the program's functions, constants and types also fit.
     Names(Vec<(String, Ty)>),

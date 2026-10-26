@@ -1,0 +1,2 @@
+{% state unused = 0 %}
+<button on:click={ unused += 1 }>{unused}</button>

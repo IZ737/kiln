@@ -407,3 +407,122 @@ fn programs_serve_their_files_byte_for_byte() {
     );
     std::fs::remove_dir_all(&dir).unwrap();
 }
+
+#[test]
+fn unused_ember_files_do_not_emit_browser_assets() {
+    let dir = std::env::temp_dir().join(format!("kiln-unused-ember-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(
+        dir.join("main.kiln"),
+        "import web\nfn main() { print(web.render(\"page.glaze\").body) }\n",
+    )
+    .unwrap();
+    std::fs::write(dir.join("page.glaze"), "<p>Static</p>").unwrap();
+    std::fs::write(
+        dir.join("unused.ember"),
+        "{% state n = 0 %}<button on:click={ n += 1 }>{n}</button>",
+    )
+    .unwrap();
+    let ir = dir.join("program.ir");
+    let output = Command::new(env!("CARGO_BIN_EXE_kiln"))
+        .arg("build")
+        .arg(&dir)
+        .arg("--emit-ir")
+        .arg(&ir)
+        .arg("-o")
+        .arg(dir.join("app"))
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let text = std::fs::read_to_string(&ir).unwrap();
+    assert!(
+        !text.contains("/_kiln/ember-"),
+        "unused Ember emitted assets"
+    );
+    // A stateless Ember is still an island when referenced.
+    std::fs::write(dir.join("quiet.ember"), "<p>Quiet</p>").unwrap();
+    std::fs::write(dir.join("page.glaze"), "<Quiet />").unwrap();
+    let output = Command::new(env!("CARGO_BIN_EXE_kiln"))
+        .arg("build")
+        .arg(&dir)
+        .arg("--emit-ir")
+        .arg(&ir)
+        .arg("-o")
+        .arg(dir.join("app"))
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(std::fs::read_to_string(&ir)
+        .unwrap()
+        .contains("/_kiln/ember-"));
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
+fn ember_diagnostics_keep_the_actual_filename_and_line() {
+    let dir = std::env::temp_dir().join(format!("kiln-ember-spans-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("main.kiln"), "fn main() {}\n").unwrap();
+    let file = dir.join("counter.ember");
+    std::fs::write(
+        &file,
+        "{% state n = 0 %}\n<button on:click={ missing() }>{n}</button>",
+    )
+    .unwrap();
+    let out = kiln()
+        .args(["check", "--json"])
+        .arg(&file)
+        .output()
+        .unwrap();
+    assert!(!out.status.success());
+    let report: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(report["error_count"], 1, "{report}");
+    let error = &report["diagnostics"][0];
+    assert_eq!(error["code"], "E0201");
+    assert_eq!(error["start"]["line"], 2);
+    assert!(error["file"].as_str().unwrap().ends_with("counter.ember"));
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
+fn explicit_embers_cannot_read_server_capabilities_in_the_browser() {
+    let dir = std::env::temp_dir().join(format!("kiln-ember-boundary-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(
+        dir.join("main.kiln"),
+        "import web, fs\nfn main() { print(web.render(\"index.glaze\").body) }\n",
+    )
+    .unwrap();
+    std::fs::write(dir.join("index.glaze"), "<Counter />").unwrap();
+    for handler in [
+        "env(\"SECRET\")",
+        "fs.read(\"secret\") catch { \"\" }",
+        "web.redirect(\"/\")",
+    ] {
+        std::fs::write(
+            dir.join("counter.ember"),
+            format!("<button on:click={{ {handler} }}>Go</button>"),
+        )
+        .unwrap();
+        let output = kiln()
+            .arg("build")
+            .arg(&dir)
+            .arg("-o")
+            .arg(dir.join("app"))
+            .output()
+            .unwrap();
+        assert!(!output.status.success(), "browser accepted {handler}");
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(stderr.contains("E0218"), "{handler}: {stderr}");
+        assert!(stderr.contains("counter.ember:1:"), "{handler}: {stderr}");
+    }
+    let _ = std::fs::remove_dir_all(dir);
+}

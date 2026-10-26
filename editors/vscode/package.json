@@ -1,7 +1,7 @@
 {
   "name": "kiln",
   "displayName": "Kiln",
-  "description": "Kiln and Glaze language support: highlighting, file icons, completion, hover, go to definition, and Check, Run and Build commands, from the Kiln language server.",
+  "description": "Kiln, Glaze and Ember language support: highlighting, file icons, completion, hover, go to definition, and Check, Run and Build commands, from the Kiln language server.",
   "version": "0.8.0",
   "publisher": "iz737",
   "license": "MIT",
@@ -22,13 +22,15 @@
   "keywords": [
     "kiln",
     "glaze",
-    "web"
+    "web",
+    "ember"
   ],
   "main": "./dist/extension.js",
   "activationEvents": [
     "onLanguage:kiln",
     "onLanguage:glaze",
-    "workspaceContains:**/*.kiln"
+    "workspaceContains:**/*.kiln",
+    "onLanguage:ember"
   ],
   "contributes": {
     "languages": [
@@ -61,6 +63,21 @@
           "light": "./icons/glaze-component.svg",
           "dark": "./icons/glaze-component-dark.svg"
         }
+      },
+      {
+        "id": "ember",
+        "aliases": [
+          "Ember",
+          "ember"
+        ],
+        "extensions": [
+          ".ember"
+        ],
+        "configuration": "./glaze-language-configuration.json",
+        "icon": {
+          "light": "./icons/ember-wasm.svg",
+          "dark": "./icons/ember-wasm-dark.svg"
+        }
       }
     ],
     "grammars": [
@@ -73,6 +90,16 @@
         "language": "glaze",
         "scopeName": "text.html.glaze",
         "path": "./syntaxes/glaze.tmLanguage.json",
+        "embeddedLanguages": {
+          "source.kiln": "kiln",
+          "source.css": "css",
+          "source.js": "javascript"
+        }
+      },
+      {
+        "language": "ember",
+        "scopeName": "text.html.ember",
+        "path": "./syntaxes/ember.tmLanguage.json",
         "embeddedLanguages": {
           "source.kiln": "kiln",
           "source.css": "css",
@@ -138,15 +165,15 @@
       "commandPalette": [
         {
           "command": "kiln.check",
-          "when": "editorLangId == kiln || editorLangId == glaze"
+          "when": "editorLangId == kiln || editorLangId == glaze || editorLangId == ember"
         },
         {
           "command": "kiln.run",
-          "when": "editorLangId == kiln || editorLangId == glaze"
+          "when": "editorLangId == kiln || editorLangId == glaze || editorLangId == ember"
         },
         {
           "command": "kiln.build",
-          "when": "editorLangId == kiln || editorLangId == glaze"
+          "when": "editorLangId == kiln || editorLangId == glaze || editorLangId == ember"
         }
       ]
     },

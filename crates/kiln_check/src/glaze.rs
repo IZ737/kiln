@@ -70,7 +70,48 @@ impl Checker {
     }
 
     pub(crate) fn check_glaze(&mut self, file: &str, glaze: &Glaze) {
-        self.in_ember = glaze.is_ember();
+        self.in_ember = file.ends_with(".ember");
+        let stem = file.trim_end_matches(".glaze").trim_end_matches(".ember");
+        let server = format!("{stem}.glaze");
+        let client = format!("{stem}.ember");
+        if self
+            .glazes
+            .as_ref()
+            .is_some_and(|g| g.contains_key(&server) && g.contains_key(&client))
+        {
+            self.error(
+                Diagnostic::error(
+                    codes::AMBIGUOUS_COMPONENT,
+                    format!("component name is ambiguous: both `{server}` and `{client}` exist"),
+                    Span::new(0, 0),
+                )
+                .with_help("rename one component so each component has a unique name"),
+            );
+        }
+        if !self.in_ember {
+            for state in &glaze.states {
+                self.error(
+                    Diagnostic::error(
+                        codes::EMBER_REQUIRED,
+                        "`{% state %}` requires an `.ember` file",
+                        state.span,
+                    )
+                    .with_help(format!("rename `{file}` to `{stem}.ember`")),
+                );
+            }
+        }
+        if self.in_ember {
+            if let Some(layout) = &glaze.layout {
+                self.error(
+                    Diagnostic::error(
+                        codes::EMBER_LAYOUT,
+                        "an Ember cannot declare a page layout",
+                        layout.path.span,
+                    )
+                    .with_help("place this Ember inside a `.glaze` page or layout"),
+                );
+            }
+        }
         // An ember's handlers see the browser's modules without imports.
         if self.in_ember {
             for (id, m) in self.modules.iter().enumerate() {
@@ -125,7 +166,9 @@ impl Checker {
         for state in &glaze.states {
             let ty = self.local_value(state);
             let what = format!("the state `{}`", state.name.name);
-            self.must_cross(&ty, &what, state.name.span);
+            if self.in_ember {
+                self.must_cross(&ty, &what, state.name.span);
+            }
             let shown = self.show(&ty);
             self.glaze_states.push((state.name.name.clone(), shown));
             self.bind(&state.name.name, state.name.span, ty, true, None);
@@ -187,6 +230,35 @@ impl Checker {
                 Node::Let(decl) => {
                     let ty = self.local_value(decl);
                     self.bind(&decl.name.name, decl.name.span, ty, false, None);
+                }
+                Node::Element(e)
+                    if self.completing
+                        && e.name.name == crate::ide::COMPONENT_COMPLETION_MARKER =>
+                {
+                    let mut components: Vec<_> = self
+                        .glazes
+                        .as_ref()
+                        .into_iter()
+                        .flat_map(|g| g.keys())
+                        .map(|file| {
+                            let stem = file.trim_end_matches(".glaze").trim_end_matches(".ember");
+                            let tag: String = stem
+                                .split('_')
+                                .map(|part| {
+                                    let mut chars = part.chars();
+                                    chars
+                                        .next()
+                                        .map(|c| {
+                                            c.to_ascii_uppercase().to_string() + chars.as_str()
+                                        })
+                                        .unwrap_or_default()
+                                })
+                                .collect();
+                            (tag, file.clone())
+                        })
+                        .collect();
+                    components.sort();
+                    self.completion = Some(crate::ide::Completion::Components(components));
                 }
                 Node::Element(e) if e.is_component() => self.check_component(e),
                 Node::Element(e) => {
@@ -267,6 +339,17 @@ impl Checker {
     }
 
     fn check_attr(&mut self, attr: &Attr) {
+        if attr.name.name.starts_with("on:") && !self.in_ember {
+            self.error(
+                Diagnostic::error(
+                    codes::EMBER_REQUIRED,
+                    "event handlers require an `.ember` file",
+                    attr.name.span,
+                )
+                .with_help("rename this component from `.glaze` to `.ember`"),
+            );
+            return;
+        }
         // `ui={{ p: space.md }}` styles the element.
         if attr.name.name == "ui" {
             match &attr.value {
@@ -450,31 +533,45 @@ impl Checker {
     fn glaze_sig(&mut self, file: &str, what: &str, span: Span) -> Option<GlazeSig> {
         let glazes = self.glazes.clone().unwrap_or_default();
         if let Some(sig) = glazes.get(file) {
+            self.refer(span, crate::ide::Ref::Component(file.to_owned()));
             return Some(sig.clone());
         }
         let mut diag = Diagnostic::error(
             codes::UNKNOWN_GLAZE,
-            format!("there is no {what}: no file named `{file}` in this directory"),
+            format!("there is no {what}: no file named `{file}` in this directory (components may also use `.ember`)"),
             span,
         );
-        // Compare names without `.glaze`, which every candidate shares.
-        let stems: Vec<&str> = glazes
-            .keys()
-            .map(|k| k.trim_end_matches(".glaze"))
-            .collect();
-        if let Some(s) = similar(file.trim_end_matches(".glaze"), stems) {
-            diag = diag.with_help(format!("did you mean `{s}.glaze`?"));
+        let mut files: Vec<&str> = glazes.keys().map(String::as_str).collect();
+        files.sort();
+        if let Some(s) = similar(file, files) {
+            diag = diag.with_help(format!("did you mean `{s}`?"));
         }
         self.error(diag);
         None
     }
 
+    fn component_path(&self, file: &str) -> String {
+        let ember = file.trim_end_matches(".glaze").to_owned() + ".ember";
+        if self
+            .glazes
+            .as_ref()
+            .is_some_and(|g| !g.contains_key(file) && g.contains_key(&ember))
+        {
+            ember
+        } else {
+            file.to_owned()
+        }
+    }
+
     fn check_component(&mut self, e: &Element) {
         let name = &e.name.name;
-        let file = format!("{}.glaze", snake_case(name));
+        let file = self.component_path(&format!("{}.glaze", snake_case(name)));
         let sig = self.glaze_sig(&file, &format!("component `<{name}>`"), e.name.span);
         let mut given = Vec::new();
         for attr in &e.attrs {
+            if attr.name.name.starts_with("on:") && !self.in_ember {
+                self.check_attr(attr);
+            }
             let value = match &attr.value {
                 AttrValue::Expr(x) => PropValue::Expr(x),
                 AttrValue::Text(parts) => PropValue::Text(parts),
@@ -482,6 +579,24 @@ impl Checker {
                 AttrValue::Handler(_) => PropValue::Handler,
             };
             if let Some(hint) = attr.name.name.strip_prefix("client:") {
+                if ["load", "visible", "idle", "only"].contains(&hint)
+                    && sig.is_some()
+                    && !file.ends_with(".ember")
+                {
+                    self.error(
+                        Diagnostic::error(
+                            codes::EMBER_REQUIRED,
+                            format!(
+                                "`{}` requires an Ember, but `{file}` is a Glaze",
+                                attr.name.name
+                            ),
+                            attr.name.span,
+                        )
+                        .with_help(
+                            "remove the hydration hint, or move the component to an `.ember` file",
+                        ),
+                    );
+                }
                 const HINTS: &[&str] = &["load", "visible", "idle", "only"];
                 if !HINTS.contains(&hint) {
                     let mut diag = Diagnostic::error(
@@ -602,6 +717,7 @@ impl Checker {
     fn check_endless(&mut self, file: &str, glaze: &Glaze) {
         let glazes = self.glazes.clone().unwrap_or_default();
         for (target, span) in always_renders(glaze) {
+            let target = self.component_path(&target);
             // Is there a path from `target` back to `file`?
             let mut path = vec![target.clone()];
             let mut seen = vec![target.clone()];
@@ -612,9 +728,12 @@ impl Checker {
                 if last == file {
                     break Some(path.clone());
                 }
-                let next = glazes
-                    .get(&last)
-                    .and_then(|s| s.renders.iter().find(|r| !seen.contains(r)).cloned());
+                let next = glazes.get(&last).and_then(|s| {
+                    s.renders
+                        .iter()
+                        .map(|r| self.component_path(r))
+                        .find(|r| !seen.contains(r))
+                });
                 match next {
                     Some(n) => {
                         seen.push(n.clone());
@@ -652,6 +771,14 @@ impl Checker {
             ));
             return None;
         };
+        if !file.ends_with(".glaze") {
+            self.error(Diagnostic::error(
+                codes::EMBER_LAYOUT,
+                "a layout must be a server-side `.glaze` file",
+                layout.path.span,
+            ));
+            return None;
+        }
         let sig = self.glaze_sig(&file, "layout", layout.path.span)?;
         if !sig.has_slot {
             self.error(Diagnostic::error(

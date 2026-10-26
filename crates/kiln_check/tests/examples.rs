@@ -11,7 +11,7 @@ fn kiln_files(dir: &Path, out: &mut Vec<PathBuf>) {
             kiln_files(&path, out);
         } else if path
             .extension()
-            .is_some_and(|e| e == "kiln" || e == "glaze")
+            .is_some_and(|e| e == "kiln" || e == "glaze" || e == "ember")
         {
             out.push(path);
         }
@@ -41,7 +41,7 @@ fn all_examples_type_check() {
             .iter()
             .map(|p| ((*p).clone(), std::fs::read_to_string(p).unwrap()))
             .collect();
-        let is_glaze = |p: &Path| p.extension().is_some_and(|e| e == "glaze");
+        let is_glaze = |p: &Path| p.extension().is_some_and(|e| e == "glaze" || e == "ember");
         let modules: Vec<_> = sources
             .iter()
             .filter(|(p, _)| !is_glaze(p))
@@ -60,7 +60,7 @@ fn all_examples_type_check() {
             .iter()
             .filter(|(p, _)| is_glaze(p))
             .map(|(p, text)| {
-                let r = kiln_syntax::glaze::parse_glaze(text);
+                let r = kiln_syntax::glaze::parse_component(text, &p.to_string_lossy());
                 assert!(
                     r.diagnostics.is_empty(),
                     "{}: {:#?}",

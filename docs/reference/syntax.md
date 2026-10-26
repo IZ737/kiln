@@ -143,3 +143,11 @@ for details.
 | `function`, `func`, `def`, `let mut`, `elif` | `fn`, `fn`, `fn`, `var`, `else if` | E0108 |
 | `===`, `!==` | `==`, `!=` | E0109 |
 | `&&`, `\|\|`, `!x` | `and`, `or`, `not x` | E0110 |
+
+## Component source files
+
+`.glaze` is server-only; `.ember` is browser-capable and may also render on the
+server. Both use the [template grammar](glazes.md). Reactive `{% state %}` and
+`on:` handlers require `.ember`; ordinary `{% let %}` stays immutable. Components
+resolve by their same-folder filename, with an error if both suffixes define the
+same name. Page layouts remain `.glaze`.

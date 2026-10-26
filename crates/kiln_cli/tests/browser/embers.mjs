@@ -44,7 +44,7 @@ try {
     check("a page without embers has no script", !html.includes("<script"), html);
     check(
       "a page without embers fetches no ember files",
-      !requests.some((u) => u.includes("/_kiln/ember")),
+      !requests.some((u) => /\.(?:js|wasm)(?:\?|$)/.test(u)),
       requests.join(" "),
     );
     await page.close();
@@ -72,6 +72,9 @@ try {
   await page.goto(base);
   await page.waitForSelector("#first[data-k-ready], kiln-island[data-k-ember=counter][data-k-ready]");
   metrics.hydrate_ms = Date.now() - started;
+  await page.waitForSelector('kiln-island[data-k-ember="quiet"][data-k-ready]');
+  check("a stateless Ember keeps its island identity", await page.locator('kiln-island[data-k-ember="quiet"] #quiet').count() === 1);
+  check("unused Embers do not produce islands", await page.locator('kiln-island[data-k-ember="unused"]').count() === 0);
 
   // Server-rendered state, before and after the islands hydrate.
   check("the first counter starts at 0", (await text(page, "#first .count")) === "0");

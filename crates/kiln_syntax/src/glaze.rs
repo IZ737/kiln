@@ -44,6 +44,18 @@ pub fn parse_glaze(src: &str) -> GlazeResult {
     }
 }
 
+/// Parses the shared template grammar with its actual source filename.
+/// The suffix, never template contents, declares browser capability.
+pub fn parse_component(src: &str, file: &str) -> GlazeResult {
+    let mut result = parse_glaze(src);
+    result.glaze.kind = if file.ends_with(".ember") {
+        ComponentKind::Ember
+    } else {
+        ComponentKind::Glaze
+    };
+    result
+}
+
 /// Elements that never have children or a closing tag.
 const VOID_ELEMENTS: &[&str] = &[
     "area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "source", "track",

@@ -2,7 +2,7 @@
 
 **Status:** Planned implementation and acceptance specification. Syntax snippets here describe **targets**, not functions that currently compile. The existing Glaze parser recognizes `{% state %}`, `on:...` and hydration hints, but compiling interactive Embers remains future work.
 
-**Post-implementation correction (2026-10-26):** Phase 4 landed with *implicit* Embers (a `.glaze` containing state/handlers). That behavior is currently implemented, but it does not match the later decision for explicit `.ember` files. [Phase 4.1](phase-4.1.md) is the authoritative follow-up for component file kinds; it supersedes conflicting implicit classification language below, not the WasmGC, RPC, hydration or interop design. Do not infer that `.ember` currently compiles from this plan.
+**Post-implementation correction (2026-10-26):** Phase 4 landed with *implicit* Embers (a `.glaze` containing state/handlers). That source model is historical: Phase 4.1 replaces it with explicit `.ember` files. [Phase 4.1](phase-4.1.md) is the authoritative follow-up for component file kinds; it supersedes conflicting implicit classification language below, not the WasmGC, RPC, hydration or interop design. Use the current [Glaze and Ember reference](../reference/glazes.md#embers) for implemented source syntax.
 
 **Goal:** Complete Kiln's browser-interactivity and typed client/server language capabilities **before** the database and authentication framework. Phase 3's compiled Glazes and styles and the existing HTTP/JSON runtime suffice for browser WasmGC, selective hydration, reactive state, and checked `server fn` RPC. Phase 5 will add persistent data, sessions and authorization on top of that boundary.
 

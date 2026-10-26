@@ -94,3 +94,11 @@ nothing but VS Code around it, and that the package holds only what VS Code
 loads. The icons in `icons/` are copies of
 `assets/brand`; a test fails if they drift apart. The extension's version
 is kiln's, and a test checks that too.
+
+### Ember components
+
+`.ember` files use the shared Glaze markup grammar with embedded Kiln code,
+a distinct Ember icon, and the same Check, Run and Build commands. The language
+server checks state/handlers and server/browser boundaries, completes props and
+locals, and navigates component tags from `.glaze` to their actual `.ember`
+source. `.glaze` files are server-only; rename interactive components to `.ember`.

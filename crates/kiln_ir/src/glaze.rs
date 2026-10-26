@@ -43,6 +43,9 @@ pub struct GlazeInput<'a> {
 /// the files the program serves.
 #[derive(Default)]
 pub struct App<'a> {
+    /// Components reachable from the program's render calls, including layouts
+    /// and nested components. None keeps all components for standalone callers.
+    pub reachable_components: Option<&'a std::collections::HashSet<String>>,
     /// The path the stylesheet is served at, which every `<head>` links.
     pub stylesheet: Option<&'a str>,
     pub assets: &'a [Asset],
@@ -144,13 +147,14 @@ fn glaze_fn(file: &str) -> String {
 /// digits and `_` become `_`.
 fn stem(file: &str) -> String {
     file.trim_end_matches(".glaze")
+        .trim_end_matches(".ember")
         .chars()
         .map(|c| if c.is_ascii_alphanumeric() { c } else { '_' })
         .collect()
 }
 
 /// The glaze file a component tag renders: `<LikeButton>` is
-/// `like_button.glaze`.
+/// `like_button.ember`.
 pub fn component_file(name: &str) -> String {
     let mut out = String::new();
     for (i, c) in name.chars().enumerate() {
@@ -246,7 +250,12 @@ fn generate_for(glazes: &[GlazeInput], app: &App, client: bool) -> GlazeSource {
         client,
         embers: glazes
             .iter()
-            .filter(|g| g.glaze.is_ember())
+            .filter(|g| {
+                g.glaze.is_ember()
+                    && app
+                        .reachable_components
+                        .is_none_or(|names| names.contains(g.file))
+            })
             .map(|g| g.file.to_string())
             .collect(),
         is_ember: false,
@@ -289,7 +298,7 @@ fn generate_for(glazes: &[GlazeInput], app: &App, client: bool) -> GlazeSource {
     );
     if let (Some(script), false) = (app.ember_script, client) {
         g.text.push_str(&format!(
-            "\nfn __glaze_page(html: String) -> String {{\n\
+            "\nfn __kiln_hydrate_page(html: String) -> String {{\n\
              \x20   if not html.contains(\"<kiln-island\") {{\n\
              \x20       return html\n\
              \x20   }}\n\
@@ -318,6 +327,13 @@ fn generate_for(glazes: &[GlazeInput], app: &App, client: bool) -> GlazeSource {
     }
     let mut names: HashMap<String, &str> = HashMap::new();
     for (i, input) in glazes.iter().enumerate() {
+        if client
+            && app
+                .reachable_components
+                .is_some_and(|names| !names.contains(input.file))
+        {
+            continue;
+        }
         if let Some(other) = names.insert(stem(input.file), input.file) {
             g.diagnostics.push((
                 i,
@@ -489,7 +505,7 @@ impl<'a> Gen<'a> {
             self.text.push_str(")\n    __out.join(\"\")\n}\n");
         } else {
             self.text
-                .push_str(")\n    __glaze_page(__out.join(\"\"))\n}\n");
+                .push_str(")\n    __kiln_hydrate_page(__out.join(\"\"))\n}\n");
         }
         self.segment(start, whole);
     }
@@ -726,7 +742,7 @@ impl<'a> Gen<'a> {
              \x20   let id = __KILN_NEXT[0]\n",
         );
         let mut first = true;
-        for g in glazes.iter().filter(|g| g.glaze.is_ember()) {
+        for g in glazes.iter().filter(|g| self.embers.contains(g.file)) {
             let name = stem(g.file);
             self.text.push_str(&format!(
                 "    {}if name == {} {{\n        __KILN_ISLANDS[id] = __ember_{name}(props, state)\n    }}",
@@ -1357,7 +1373,11 @@ impl<'a> Gen<'a> {
 
     /// `<Card title={t}>children</Card>` calls `__glaze_card`.
     fn component(&mut self, e: &Element) {
-        let file = component_file(&e.name.name);
+        let mut file = component_file(&e.name.name);
+        let ember = file.trim_end_matches(".glaze").to_owned() + ".ember";
+        if self.embers.contains(&ember) {
+            file = ember;
+        }
         let hint = e
             .attrs
             .iter()

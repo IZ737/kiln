@@ -149,12 +149,20 @@ test("every example tokenizes with no rule left open", async () => {
   const examples = path.join(root, "..", "..", "examples");
   const files = fs
     .readdirSync(examples, { recursive: true })
-    .filter((f) => f.endsWith(".kiln") || f.endsWith(".glaze"));
+    .filter((f) => f.endsWith(".kiln") || f.endsWith(".glaze") || f.endsWith(".ember"));
   assert.ok(files.length > 0);
   for (const file of files) {
-    const scope = file.endsWith(".kiln") ? "source.kiln" : "text.html.glaze";
+    const scope = file.endsWith(".kiln") ? "source.kiln" : file.endsWith(".ember") ? "text.html.ember" : "text.html.glaze";
     const text = fs.readFileSync(path.join(examples, file), "utf8");
     const { stack } = await tokenize(scope, text);
     assert.strictEqual(stack.depth, textmate.INITIAL.depth, `${file} leaves a rule open`);
   }
+});
+
+test("Ember uses the shared template grammar and embedded Kiln", async () => {
+  const source = '{% state n = 0 %}\n<button on:click={ n += 1 }>{n}</button>';
+  const ember = await tokenize("text.html.ember", source);
+  const glaze = await tokenize("text.html.glaze", source);
+  assert.deepEqual(ember.lines.map(line => line.map(t => ({text: t.text, scopes: t.scopes.filter(s => s !== "text.html.ember")}))),
+    glaze.lines.map(line => line.map(t => ({text: t.text, scopes: t.scopes.filter(s => s !== "text.html.glaze")}))));
 });

@@ -11,7 +11,7 @@ fn kiln_files(dir: &Path, out: &mut Vec<PathBuf>) {
             kiln_files(&path, out);
         } else if path
             .extension()
-            .is_some_and(|e| e == "kiln" || e == "glaze")
+            .is_some_and(|e| e == "kiln" || e == "glaze" || e == "ember")
         {
             out.push(path);
         }
@@ -31,8 +31,11 @@ fn all_examples_parse() {
     for path in files {
         let text = std::fs::read_to_string(&path).unwrap();
         let file = kiln_diagnostics::SourceFile::new(path.display().to_string(), text);
-        let diagnostics = if path.extension().is_some_and(|e| e == "glaze") {
-            kiln_syntax::glaze::parse_glaze(&file.text).diagnostics
+        let diagnostics = if path
+            .extension()
+            .is_some_and(|e| e == "glaze" || e == "ember")
+        {
+            kiln_syntax::glaze::parse_component(&file.text, &file.name).diagnostics
         } else {
             kiln_syntax::parse(&file.text).diagnostics
         };
@@ -50,7 +53,9 @@ fn truncated_examples_do_not_crash() {
     kiln_files(&root, &mut files);
     for path in files {
         let text = std::fs::read_to_string(&path).unwrap();
-        let glaze = path.extension().is_some_and(|e| e == "glaze");
+        let glaze = path
+            .extension()
+            .is_some_and(|e| e == "glaze" || e == "ember");
         for (i, _) in text.char_indices() {
             if glaze {
                 kiln_syntax::glaze::parse_glaze(&text[..i]);

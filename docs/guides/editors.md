@@ -1,7 +1,7 @@
 # Editor setup
 
 `kiln lsp` is a language server (LSP) that talks over standard input and
-output. A file is understood together with the other `.kiln` and `.glaze`
+output. A file is understood together with the other `.kiln`, `.glaze` and `.ember`
 files in its directory, so glazes see your types and pages see your glazes'
 props, and the editor's unsaved text is used for every open file. It gives:
 
@@ -41,7 +41,7 @@ cargo install --path crates/kiln_cli
 ## VS Code
 
 The extension in [editors/vscode](../../editors/vscode) starts `kiln lsp` for
-you, highlights `.kiln` and `.glaze` files, gives them Kiln's file icons,
+you, highlights `.kiln`, `.glaze` and `.ember` files, gives them Kiln's file icons,
 and adds **Kiln: Check Program**, **Run Program** and **Build Program**
 commands and tasks. It finds `kiln` on your `PATH` or in `~/.kiln/bin`, or
 where the `kiln.path` setting says; its README shows how to install it. Its
@@ -51,10 +51,10 @@ that read them, such as Sublime Text.
 ## Neovim (0.11 and later)
 
 ```lua
-vim.filetype.add({ extension = { kiln = "kiln", glaze = "glaze" } })
+vim.filetype.add({ extension = { kiln = "kiln", glaze = "glaze", ember = "ember" } })
 vim.lsp.config("kiln", {
   cmd = { "kiln", "lsp" },
-  filetypes = { "kiln", "glaze" },
+  filetypes = { "kiln", "glaze", "ember" },
   root_markers = { ".git" },
 })
 vim.lsp.enable("kiln")
@@ -76,7 +76,7 @@ args = ["lsp"]
 [[language]]
 name = "kiln"
 scope = "source.kiln"
-file-types = ["kiln", "glaze"]
+file-types = ["kiln", "glaze", "ember"]
 comment-token = "//"
 language-servers = ["kiln"]
 ```
@@ -84,10 +84,10 @@ language-servers = ["kiln"]
 ## Zed, Sublime Text, Emacs and others
 
 Any editor with a generic LSP client works: run `kiln lsp` for files ending
-in `.kiln` and `.glaze`. For Emacs `eglot`:
+in `.kiln`, `.glaze` and `.ember`. For Emacs `eglot`:
 
 ```elisp
 (define-derived-mode kiln-mode prog-mode "Kiln")
-(add-to-list 'auto-mode-alist '("\\.\\(kiln\\|glaze\\)\\'" . kiln-mode))
+(add-to-list 'auto-mode-alist '("\\.\\(kiln\\|glaze\\|ember\\)\\'" . kiln-mode))
 (add-to-list 'eglot-server-programs '(kiln-mode . ("kiln" "lsp")))
 ```

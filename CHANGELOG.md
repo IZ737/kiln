@@ -1,5 +1,18 @@
 # Changelog
 
+## Unreleased
+
+- **Explicit Ember files (Phase 4.1).** Browser-capable components now use
+  `.ember`; `.glaze` stays server-only. Rename reactive Glazes to `.ember`
+  and update explicit filename references. Component tag names stay the same.
+- Diagnose state/handlers in Glazes and hydration hints on Glaze targets
+  (E0314), duplicate Glaze/Ember names (E0315), and Ember layouts (E0316).
+- Discover Ember files in the CLI and LSP, with completion, hover, component
+  navigation, symbols, highlighting and distinct VS Code icons.
+- Preserve WasmGC, SSR, hydration, typed RPC and browser/npm interop; omit
+  unreferenced components from browser assets. Static routes load no runtime.
+
+
 ## 0.8.0 (2026-10-26)
 
 Phase 4: embers. Glazes with state and event handlers render on the

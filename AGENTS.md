@@ -25,7 +25,7 @@ reference docs and tests as the feature becomes real.
 
 For Phase 4 Embers/WasmGC work, follow [docs/plans/phase-4.md](docs/plans/phase-4.md): keep SSR Glazes useful without client scripts, hydrate interactive islands selectively and secure RPC against untrusted inputs. **Do not depend on Phase 5 SQL/auth/admin**; use pure or ephemeral server functions and browser regression tests.
 
-For the corrective Phase 4.1 source-model work, follow [docs/plans/phase-4.1.md](docs/plans/phase-4.1.md) **over any contradictory implicit-Ember wording in Phase 4**. `.ember` is the explicit browser-capable component file; `.glaze` stays server-only, and existing WasmGC/SSR/RPC behavior is preserved. Do not treat this planned syntax as already implemented; migrate tests, docs and editor support with the compiler change.
+For the corrective Phase 4.1 source-model work, follow [docs/plans/phase-4.1.md](docs/plans/phase-4.1.md) **over any contradictory implicit-Ember wording in Phase 4**. `.ember` is the explicit browser-capable component file; `.glaze` stays server-only, and existing WasmGC/SSR/RPC behavior is preserved. The explicit source model is implemented; keep tests, docs and editor support aligned with the compiler.
 
 For Phase 4.2 local-module/project work, follow [docs/plans/phase-4.2.md](docs/plans/phase-4.2.md) **before Phase 5**. Organize app code in imported folders with `pub` exports, optional minimal `kiln.toml`, module-aware Glazes/Embers/assets and cross-folder CLI/LSP. Do not pull Wares, registry, lockfile or public `kiln test` into this milestone.
 
@@ -219,6 +219,6 @@ Run `cargo fmt --all`, `cargo clippy --all-targets -- -D warnings` and
 
 ## Vocabulary
 
-Source files are `.kiln`. Templates and components are glazes (`.glaze`),
-packages are wares, interactive WebAssembly components are embers, and
+Source files are `.kiln`. Server-only templates and components are glazes (`.glaze`),
+packages are wares, browser-capable WebAssembly components are embers (`.ember`), and
 `kiln fire` makes a release build.

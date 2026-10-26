@@ -36,11 +36,11 @@ fn main() ! {
 > system), so it needs no C compiler, linker or libraries; the C backend
 > (`--backend c`) remains for other platforms. The server runs requests
 > on lightweight tasks, reads and writes JSON and renders glazes, with
-> typed styles, Finishes and themes. **Embers** are glazes with state and
+> typed styles, Finishes and themes. **Embers** are `.ember` components with optional state and
 > event handlers: the server renders them, and the browser hydrates them
 > as WasmGC, calling `server fn`s through generated, checked RPC and npm
 > packages through typed bindings, with no JavaScript to write. The
-> [VS Code extension](editors/vscode) highlights Kiln and glazes, and
+> [VS Code extension](editors/vscode) highlights Kiln, Glaze and Ember, and
 > `kiln lsp` gives completion, hover, go to definition and symbols in any
 > editor. `sql` and `auth` arrive in phase 5. See the [roadmap](#roadmap).
 
@@ -89,11 +89,28 @@ between today's implementation and future ideas.
 | Term | Meaning |
 | --- | --- |
 | `.kiln` | Source file |
-| Glaze (`.glaze`) | A template or component |
+| Glaze (`.glaze`) | A server-only template or component |
 | Finish | An ordinary function returning typed `Ui` styles or a multi-part style record |
 | Ware | A package |
-| Ember | An interactive glaze: rendered on the server, hydrated in the browser as WasmGC |
+| Ember (`.ember`) | A browser-capable component: SSR by default, hydrated as WasmGC |
 | `kiln fire` | Make a release build |
+
+A page remains server-only while using an interactive island:
+
+```glaze
+{# page.glaze #}
+<h1>Counter</h1>
+<Counter client:visible />
+```
+
+```glaze
+{# counter.ember #}
+{% state count = 0 %}
+<button on:click={ count += 1 }>{count}</button>
+```
+
+The Ember renders initial HTML on the server, then hydrates when visible.
+State and handlers in `.glaze` are errors; ordinary `{% let %}` remains immutable.
 
 ## Install
 
@@ -222,7 +239,7 @@ For errors and quick fixes in your editor, see [docs/guides/editors.md](docs/gui
 | ✅ 2.5 | VS Code developer experience: dedicated extension, Kiln/Glaze highlighting and file icons, compiler-backed completion, hover, definition and symbol navigation, diagnostics/quick fixes, Check/Run/Build actions; [implementation plan](docs/plans/phase-2.5.md) | A developer can edit, navigate, check, build and run Kiln programs comfortably in VS Code with the Rust LSP providing intelligence to other editors |
 | ✅ 3 | Compiled Glazes/layouts, native typed `ui` styling, CSS/CSS Modules, design tokens, **Finishes**, typed themes and LSP support; [implementation plan](docs/plans/phase-3.md) | A native Kiln docs site, restylable via two compatible themes without changing content/Glazes |
 | ✅ 4 | **Embers/WasmGC**: selective hydration, reactive state/events, `server fn` with generated safe RPC and browser/JS interoperability; [implementation plan](docs/plans/phase-4.md) | A database-free Kiln website uses real WasmGC islands and typed RPC, without handwritten JavaScript or SQL/auth prerequisites |
-| 4.1 | **Explicit Ember files**: make `.glaze` server-only and `.ember` the sole source for browser-capable components; enforce compile-time boundaries, migrate examples and update editor/LSP; [implementation plan](docs/plans/phase-4.1.md) | `.ember` islands SSR/hydrate with Phase 4 behavior, plain Glazes never silently become Embers, and compiler/IDE/browser tests pass |
+| 🚧 4.1 | **Explicit Ember files**: make `.glaze` server-only and `.ember` the sole source for browser-capable components; enforce compile-time boundaries, migrate examples and update editor/LSP; [implementation plan](docs/plans/phase-4.1.md) | `.ember` islands SSR/hydrate with Phase 4 behavior, plain Glazes never silently become Embers, and compiler/IDE/browser tests pass |
 | 4.2 | **Multi-folder projects**: local modules, `pub` exports, nested imports, optional basic `kiln.toml`, module-aware Glaze/Ember/assets and cross-folder LSP; [implementation plan](docs/plans/phase-4.2.md) | A manifest-free multi-folder app builds and runs with safe local modules, SSR/Ember routes and editor navigation on Linux/Windows |
 | 5 | **SQL/ORM and application framework**: SQLite then PostgreSQL/MySQL, typed queries, schema import (`kiln db pull`), reviewed migrations, forms/validation, sessions/auth and generated admin; [implementation plan](docs/plans/phase-5.md) | A native multi-folder database-backed app works with protected SSR/admin and an authenticated Ember calling ORM-backed typed RPC |
 | 6 | **Developer ecosystem**: Wares/registry/global cache, extended `kiln.toml` dependency fields and `kiln.lock`, official UI Ware, integrated `kiln test` (including Embers), formatter/hot reload, advanced LSP, MCP; [implementation plan](docs/plans/phase-6.md) | A multi-folder app consumes a versioned Ware, rebuilds offline, passes real-browser tests and works in the editor/agent toolchain |

@@ -1,11 +1,7 @@
 {% props title: String %}
-{% css "site.css" %}
-<!doctype html>
-<html>
-<head><title>{title}</title></head>
-<body>
+{% layout "base.glaze" title: title %}
 <h1>{title}</h1>
-<p id="static">Static text.</p>
+<StaticText />
 <Counter name="first" />
 <Counter name="second" start={7} />
 <Counter name="idle" client:idle />
@@ -24,5 +20,5 @@
 <Seeded />
 <div class="spacer"></div>
 <Counter name="far" client:visible />
-</body>
-</html>
+
+<Quiet />

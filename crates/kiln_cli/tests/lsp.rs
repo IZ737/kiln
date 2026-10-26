@@ -72,7 +72,9 @@ impl Client {
     }
 
     fn open(&mut self, uri: &str, text: &str) {
-        let language = if uri.ends_with(".glaze") {
+        let language = if uri.ends_with(".ember") {
+            "ember"
+        } else if uri.ends_with(".glaze") {
             "glaze"
         } else {
             "kiln"
@@ -619,5 +621,53 @@ fn completes_and_explains_styles() {
     assert_eq!(token["range"]["start"], json!({"line": 1, "character": 4}));
     let theme = definition("theme: .li|ght");
     assert_eq!(theme["range"]["start"], json!({"line": 5, "character": 0}));
+    client.finish();
+}
+
+#[test]
+fn ember_files_support_language_features_and_component_navigation() {
+    let (mut client, main, _, dir) = blog("ember");
+    let counter = file_uri(&dir.join("counter.ember"));
+    let page = file_uri(&dir.join("page.glaze"));
+    let source = "{% props post: Post %}\n{% state count = 0 %}\n<button on:click={ count += 1 }>{post.title}: {count}</button>\n";
+    std::fs::write(dir.join("counter.ember"), source).unwrap();
+    client.open(&counter, source);
+    let marked = source.replace("post.title", "post.ti|tle");
+    assert_eq!(
+        hover_text(&client.at("textDocument/hover", &counter, &marked)),
+        "```kiln\nPost.title: String\n```"
+    );
+    let marked = source.replace("post.title", "post.|");
+    assert_eq!(
+        labels(&client.at("textDocument/completion", &counter, &marked)),
+        ["id", "slug", "title"]
+    );
+    let marked = source.replace("{count}", "{co|unt}");
+    let definition = client.at("textDocument/definition", &counter, &marked);
+    assert_eq!(definition["uri"], counter);
+    assert_eq!(definition["range"]["start"]["line"], 1);
+    client.open(&page, "{% props post: Post %}<Counter post={post} />");
+    let marked = "{% props post: Post %}<Cou|nter post={post} />";
+    let definition = client.at("textDocument/definition", &page, marked);
+    assert_eq!(definition["uri"], counter);
+    assert!(hover_text(&client.at("textDocument/hover", &page, marked)).contains("counter.ember"));
+    let completion = client.at(
+        "textDocument/completion",
+        &page,
+        "{% props post: Post %}<Cou| />",
+    );
+    assert!(labels(&completion).contains(&"Counter".to_string()));
+    // Cross-file type navigation still lands in the Kiln file.
+    let definition = client.at(
+        "textDocument/definition",
+        &counter,
+        "{% props post: Po|st %}<p>{post.title}</p>",
+    );
+    assert_eq!(definition["uri"], main);
+    let symbols = client.request(
+        "textDocument/documentSymbol",
+        json!({"textDocument": {"uri": counter}}),
+    );
+    assert!(!symbols.as_array().unwrap().is_empty());
     client.finish();
 }
