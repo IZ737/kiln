@@ -28,8 +28,8 @@ jobs:
           # kiln carries the runtime's Rust part built for both.
           targets: x86_64-unknown-linux-musl, x86_64-pc-windows-gnu
       # A stuck package mirror fails the step instead of hanging.
-      - run: sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=30 update && sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=30 install -y musl-tools gcc-mingw-w64-x86-64
-        timeout-minutes: 5
+      - run: sh scripts/install-ci-deps.sh musl-tools gcc-mingw-w64-x86-64
+        timeout-minutes: 10
       - run: cargo build --release --target x86_64-unknown-linux-musl -p kiln_cli
       - run: strip target/x86_64-unknown-linux-musl/release/kiln
       - name: The tag matches the version kiln reports
@@ -62,8 +62,8 @@ jobs:
           # kiln carries the runtime's Rust part built for both.
           targets: x86_64-unknown-linux-musl, x86_64-pc-windows-gnu
       # A stuck package mirror fails the step instead of hanging.
-      - run: sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=30 update && sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=30 install -y musl-tools gcc-mingw-w64-x86-64
-        timeout-minutes: 5
+      - run: sh scripts/install-ci-deps.sh musl-tools gcc-mingw-w64-x86-64
+        timeout-minutes: 10
       - run: cargo build --release --target x86_64-pc-windows-gnu -p kiln_cli
       - run: x86_64-w64-mingw32-strip target/x86_64-pc-windows-gnu/release/kiln.exe
       - uses: actions/upload-artifact@v4
