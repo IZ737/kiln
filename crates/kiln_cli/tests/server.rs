@@ -136,6 +136,116 @@ fn server_calls_have_a_size_limit() {
     }
 }
 
+/// The pages `admin.pages` generates for `conformance/web_admin`, used as
+/// a browser would: signed in, with the form's token, through a list,
+/// a form that fails validation, a new row, a change and a delete.
+#[test]
+fn admin_pages_list_validate_and_change_rows() {
+    for backend in backends() {
+        let server = Server::start(&program("web_admin"), backend);
+        let send = |method: &str, path: &str, cookie: &str, body: &str| {
+            let mut c = server.connect();
+            let head = format!(
+                "{method} {path} HTTP/1.1\r\nhost: localhost\r\ncookie: {cookie}\r\ncontent-type: application/x-www-form-urlencoded\r\ncontent-length: {}\r\nconnection: close\r\n\r\n",
+                body.len()
+            );
+            c.write_all(head.as_bytes()).unwrap();
+            c.write_all(body.as_bytes()).unwrap();
+            read_response(&mut c)
+        };
+        let sign_in = |role: &str| {
+            let body = format!("email=ada%40example.com&password=open+sesame&role={role}");
+            let (status, headers, _) = send("POST", "/sign-in", "", &body);
+            assert_eq!(status, "HTTP/1.1 200 OK", "{backend}");
+            let line = headers
+                .lines()
+                .find_map(|l| l.strip_prefix("set-cookie: "))
+                .expect("a session cookie");
+            line.split(';').next().unwrap().to_string()
+        };
+        let token = |page: &str| {
+            let at = page.find("name=\"csrf\" value=\"").expect("a token") + 19;
+            page[at..at + page[at..].find('"').unwrap()].to_string()
+        };
+
+        // Signed in, but not with a role `authorize` lets in.
+        let viewer = sign_in("viewer");
+        let (status, _, _) = send("GET", "/admin/posts", &viewer, "");
+        assert_eq!(status, "HTTP/1.1 403 Forbidden", "{backend}");
+
+        let cookie = sign_in("admin");
+        let (status, headers, page) = send("GET", "/admin/posts?sort=views&dir=desc", &cookie, "");
+        assert_eq!(status, "HTTP/1.1 200 OK", "{backend}: {page}");
+        assert!(
+            headers
+                .to_ascii_lowercase()
+                .contains("x-frame-options: deny"),
+            "{backend}"
+        );
+        assert!(
+            page.find("Embers").unwrap() < page.find("Glazes").unwrap(),
+            "{backend}: {page}"
+        );
+        let (_, _, form) = send("GET", "/admin/posts/new", &cookie, "");
+        let csrf = token(&form);
+        assert!(form.contains("step=\"any\""), "{backend}: {form}");
+
+        // A form without the session's token changes nothing.
+        let (status, _, _) = send("POST", "/admin/posts", &cookie, "csrf=forged&title=X");
+        assert_eq!(status, "HTTP/1.1 403 Forbidden", "{backend}");
+        // One that fails validation comes back with what is wrong.
+        let body = format!("csrf={csrf}&title=&views=many&rating=1.5");
+        let (status, _, page) = send("POST", "/admin/posts", &cookie, &body);
+        assert_eq!(status, "HTTP/1.1 422 Unprocessable Content", "{backend}");
+        assert!(page.contains("title is required"), "{backend}: {page}");
+        assert!(
+            page.contains("this needs a whole number"),
+            "{backend}: {page}"
+        );
+        assert!(page.contains("value=\"many\""), "{backend}: {page}");
+
+        let body =
+            format!("csrf={csrf}&title=Wares+%3Cb%3E&summary=new&views=4&rating=2.5&published=on");
+        let (status, headers, _) = send("POST", "/admin/posts", &cookie, &body);
+        assert_eq!(status, "HTTP/1.1 303 See Other", "{backend}");
+        assert!(
+            headers.contains("location: /admin/posts/3"),
+            "{backend}: {headers}"
+        );
+        let (_, _, page) = send("GET", "/admin/posts/3", &cookie, "");
+        assert!(
+            page.contains("value=\"Wares &lt;b&gt;\""),
+            "{backend}: {page}"
+        );
+        assert!(page.contains("value=\"2.5\""), "{backend}: {page}");
+        assert!(page.contains("checked"), "{backend}: {page}");
+
+        let body = format!("csrf={csrf}&title=Wares&summary=&views=5&rating=3");
+        let (status, _, _) = send("POST", "/admin/posts/3", &cookie, &body);
+        assert_eq!(status, "HTTP/1.1 303 See Other", "{backend}");
+        let (_, _, page) = send("GET", "/admin/posts?q=War", &cookie, "");
+        assert!(page.contains("<h1>Posts (1)</h1>"), "{backend}: {page}");
+        assert!(
+            page.contains("<td>Wares<td><td>5<td>3.0"),
+            "{backend}: {page}"
+        );
+
+        // A secret is never shown, even to an administrator.
+        let (_, _, page) = send("GET", "/admin/accounts/1", &cookie, "");
+        assert!(page.contains("not shown here"), "{backend}: {page}");
+        assert!(!page.contains("argon2"), "{backend}: {page}");
+
+        let (_, _, page) = send("GET", "/admin/posts/3/delete", &cookie, "");
+        assert!(page.contains("cannot be undone"), "{backend}: {page}");
+        let body = format!("csrf={csrf}");
+        let (status, _, _) = send("POST", "/admin/posts/3/delete", &cookie, &body);
+        assert_eq!(status, "HTTP/1.1 303 See Other", "{backend}");
+        let (status, _, _) = send("GET", "/admin/posts/3", &cookie, "");
+        assert_eq!(status, "HTTP/1.1 404 Not Found", "{backend}");
+        server.stop();
+    }
+}
+
 fn program(name: &str) -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../../conformance")
@@ -323,8 +433,8 @@ impl Server {
     }
 }
 
-/// Reads one response: its status line, its headers in lower case, and its
-/// body, which must have a `content-length`.
+/// Reads one response: its status line, its headers with their names in
+/// lower case, and its body, which must have a `content-length`.
 fn read_response(s: &mut TcpStream) -> (String, String, String) {
     let mut head = Vec::new();
     let mut byte = [0u8];
@@ -338,7 +448,13 @@ fn read_response(s: &mut TcpStream) -> (String, String, String) {
     }
     let head = String::from_utf8(head).unwrap();
     let (status, headers) = head.split_once("\r\n").unwrap();
-    let headers = headers.to_ascii_lowercase();
+    let headers: String = headers
+        .lines()
+        .map(|l| match l.split_once(':') {
+            Some((name, value)) => format!("{}:{value}\n", name.to_ascii_lowercase()),
+            None => format!("{l}\n"),
+        })
+        .collect();
     let length: usize = headers
         .lines()
         .find_map(|l| l.strip_prefix("content-length: "))

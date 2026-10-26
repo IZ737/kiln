@@ -97,6 +97,38 @@ impl Checker {
         }
     }
 
+    /// `admin.pages<Post>(app, prefix, site)`: the model must be one the
+    /// admin can make pages for, and the pages themselves are written by
+    /// the compiler (see `kiln_ir::admin`).
+    pub(crate) fn admin_pages(&mut self, explicit: &[Ty], span: Span) {
+        let Some(model) = self.model_arg(explicit, span) else {
+            return;
+        };
+        let key = model.key_column();
+        if !self.is_prim(&key.ty, "Int") || key.optional {
+            let shown = self.show(&key.ty);
+            self.error(
+                Diagnostic::error(
+                    codes::BAD_MODEL,
+                    format!(
+                        "the admin's pages need a model whose key is an `Int`, and `{}.{}` is `{shown}`",
+                        model.name, key.name
+                    ),
+                    span,
+                )
+                .with_help("write the pages for this model yourself, with `orm` and a glaze"),
+            );
+            return;
+        }
+        // The generator names its functions after the struct as the
+        // checker knows it, which a folder module has renamed.
+        let declared = match explicit.first() {
+            Some(Ty::Adt(id, _)) => self.adts[*id].name.clone(),
+            _ => model.name.clone(),
+        };
+        self.admins.insert(span, declared);
+    }
+
     /// `orm.find<Post>(db)` and the other functions of the module, after
     /// their arguments have been checked. Returns true when the call was
     /// an `orm` function that needs a model.

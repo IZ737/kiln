@@ -70,6 +70,9 @@ pub struct Program {
     pub queries: HashMap<Span, Query>,
     /// The models the program uses, in the order it first uses them.
     pub models: Vec<orm::Model>,
+    /// The model each `admin.pages<T>` call makes pages for, by the span
+    /// of the call.
+    pub admins: HashMap<Span, String>,
 }
 
 /// Type-checks a whole program for compiling.
@@ -155,6 +158,7 @@ fn check_program_for(
         instantiations: checker.instantiations,
         styles: checker.styles,
         queries: std::mem::take(&mut checker.query_runs),
+        admins: std::mem::take(&mut checker.admins),
         models: checker
             .model_order
             .iter()

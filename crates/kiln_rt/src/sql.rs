@@ -488,6 +488,13 @@ fn connect(url: &str) -> Result<(Dialect, Box<dyn Driver>), DbError> {
 }
 
 pub fn open(url: &str, max: i64, wait: Duration) -> Result<usize, DbError> {
+    // A database already open is shared, so a `server fn` that opens it
+    // on every call takes a connection from the same pool rather than
+    // starting one of its own each time.
+    let open = POOLS.with(|p| p.borrow().iter().position(|pl| !pl.closed && pl.url == url));
+    if let Some(pool) = open {
+        return Ok(pool);
+    }
     let (dialect, first) = connect(url)?;
     let memory = dialect == Dialect::Sqlite && sqlite_path(url) == ":memory:";
     // Each connection to `:memory:` would be a database of its own.

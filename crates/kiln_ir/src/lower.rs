@@ -1579,6 +1579,22 @@ impl<'a> Lowerer<'a> {
             return self.unsupported(span, what);
         }
         let decl = self.structs.get(&id).copied();
+        // A struct of the standard library is declared in a file the
+        // lowering never sees, so a field left out of one has no default
+        // to fall back on here.
+        if decl.is_none() {
+            let left_out = fields.iter().enumerate().find(|(i, f)| {
+                f.has_default
+                    && !args.iter().enumerate().any(|(k, a)| match &a.name {
+                        Some(n) => n.name == f.name,
+                        None => k == *i,
+                    })
+            });
+            if let Some((_, f)) = left_out {
+                let what = format!("a `{}` without `{}`", self.p.adts[id].name, f.name);
+                return self.unsupported(span, what);
+            }
+        }
         let defaults: Vec<Option<&ast::Expr>> = fields
             .iter()
             .map(|f| {
@@ -2340,6 +2356,9 @@ impl<'a> Lowerer<'a> {
         if module == "web" && name.name == "render" {
             return self.render(args, rt, span);
         }
+        if module == "admin" && name.name == "pages" {
+            return self.admin_pages(args, span);
+        }
         if LIB_MODULES.contains(&module) {
             let sig = self
                 .p
@@ -2450,6 +2469,24 @@ impl Lowerer<'_> {
         )
     }
 
+    /// `admin.pages<Post>(app, prefix, site)` calls the function the
+    /// compiler wrote for that model (see [`crate::admin`]).
+    fn admin_pages(&mut self, args: &[ast::Arg], span: Span) -> (Expr, Option<Ty>) {
+        let Some(model) = self.p.admins.get(&span).cloned() else {
+            return (self.unsupported(span, "these admin pages"), None);
+        };
+        let fname = format!("__kiln_admin_{model}");
+        let Some(&(func, decl)) = self.fns.get(&fname) else {
+            return (
+                self.unsupported(span, format!("the admin's pages for `{model}`")),
+                None,
+            );
+        };
+        let sig = self.p.global_fns[&fname].clone();
+        let (func, sig) = self.instance(func, Template::Fn(fname), &sig, span, None);
+        self.user_call(func, &sig, decl, None, args, &Ty::Unit, span)
+    }
+
     /// `web.render("post.glaze", { post })` calls the function compiled from
     /// the glaze (see [`crate::glaze`]) with the data as named arguments,
     /// and makes an HTML response of what it returns.
@@ -2507,7 +2544,7 @@ impl Lowerer<'_> {
 /// backend to build.
 const LIB_MODULES: &[&str] = &[
     "time", "fs", "os", "io", "web", "json", "html", "base64", "markdown", "ember", "js",
-    "validate", "browser", "sql", "auth",
+    "validate", "browser", "sql", "auth", "admin",
 ];
 
 /// Types of those modules whose methods are [`ExprKind::Lib`] calls too,

@@ -5,8 +5,8 @@ The standard library's signatures are Kiln files in
 everywhere; every other module is imported by name (`import fs`). This page
 lists the modules the compiler can build into native programs today. The
 parts of `web` not listed here type-check, and building a program that uses
-them reports E0401 until their phase arrives. `sql` and `orm` have a page
-of their own: [databases, models and migrations](data.md).
+them reports E0401 until their phase arrives. `sql`, `orm` and `admin` have a
+page of their own: [databases, models and migrations](data.md).
 
 ## Prelude
 

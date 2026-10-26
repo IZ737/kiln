@@ -799,12 +799,24 @@ fn build(
     }
     let mut combined = String::new();
     let mut offsets = Vec::new();
+    let mut kiln_files = kiln_files;
     for file in &kiln_files {
         offsets.push(combined.len() as u32);
         combined.push_str(&file.text);
         if !combined.ends_with('\n') {
             combined.push('\n');
         }
+    }
+
+    // The admin's pages are written from the models the program asks for
+    // with `admin.pages`, and are part of its own text, before the
+    // glazes. Errors in them point at a text of their own.
+    let admin = kiln_ir::admin::generate(&kiln_syntax::parse(&combined).module)
+        .map(|text| SourceFile::new("<admin pages>", text));
+    if let Some(file) = &admin {
+        offsets.push(combined.len() as u32);
+        combined.push_str(&file.text);
+        kiln_files.push(file);
     }
 
     // Glazes are compiled into Kiln functions, which follow the files'

@@ -1,0 +1,57 @@
+// A generated admin: `admin.pages` writes the list, form and delete pages
+// of a model from its fields. Without a session every page answers 401;
+// `tests/server.rs` signs in and drives the pages with this program.
+import web, sql, orm, auth, admin, os
+
+struct Post {
+    id: Int
+    title: String
+    summary: String? = none
+    views: Int = 0
+    rating: Float = 0.0
+    published: Bool = false
+    tags: List<String> = []
+}
+
+struct Account {
+    id: Int
+    email: String
+    password: String
+}
+
+fn main() ! {
+    let db = try sql.open("sqlite::memory:")
+    try db.exec("create table posts (id integer primary key, title text not null, summary text, views integer not null, rating real not null, published integer not null, tags text not null)")
+    try db.exec("create table accounts (id integer primary key, email text not null, password text not null)")
+    let hash = try auth.hash_password("open sesame")
+    try orm.insert<Account>(db, Account(id: 0, email: "ada@example.com", password: hash))
+    try orm.insert<Post>(db, Post(id: 0, title: "Glazes", views: 3))
+    try orm.insert<Post>(db, Post(id: 0, title: "Embers", views: 9, published: true))
+
+    let sessions = try auth.sessions(db, secure: false)
+    // Only a session signed in with the role "admin" may use the pages,
+    // and only it may delete.
+    let site = admin.site(
+        db,
+        sessions,
+        fn(who, action, model) { who.roles.contains("admin") },
+        title: "Fieldnotes admin",
+        per_page: 10,
+    )
+    let app = web.app()
+    admin.pages<Post>(app, "/admin/posts", site)
+    admin.pages<Account>(app, "/admin/accounts", site)
+
+    app.post("/sign-in", fn(req) {
+        let form = try req.form<{ email: String, password: String, role: String }>()
+        let found = try orm.find<Account>(db).where(fn(a) { a.email == form.email }).first()
+        if found is some(account) and auth.verify_password(form.password, account.password) {
+            return try sessions.sign_in(web.text("in"), account.id.to_string(), roles: [form.role])
+        }
+        return web.text("no", status: 401)
+    })
+    app.get("/quit", fn(req) {
+        os.exit(0)
+    })
+    try app.listen("127.0.0.1:${env("PORT")}")
+}

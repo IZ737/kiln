@@ -1,0 +1,29 @@
+### GET /admin/posts HTTP/1.1
+HTTP/1.1 401 Unauthorized
+content-type: application/json
+content-length: 31
+connection: close
+
+{"error":"sign in to see this"}
+### GET /admin/posts/1 HTTP/1.1
+HTTP/1.1 401 Unauthorized
+content-type: application/json
+content-length: 31
+connection: close
+
+{"error":"sign in to see this"}
+### POST /admin/posts HTTP/1.1
+HTTP/1.1 401 Unauthorized
+content-type: application/json
+content-length: 31
+connection: close
+
+{"error":"sign in to see this"}
+### POST /admin/posts/1/delete HTTP/1.1
+HTTP/1.1 401 Unauthorized
+content-type: application/json
+content-length: 31
+connection: close
+
+{"error":"sign in to see this"}
+### GET /quit HTTP/1.1

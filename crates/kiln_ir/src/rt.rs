@@ -67,6 +67,7 @@ pub static RT_FNS: &[RtFn] = &[
     f("sql", "Db.__begin", "k_rt_sql_begin", 1, true, None),
     f("sql", "Db.__commit", "k_rt_sql_commit", 1, true, None),
     f("sql", "Db.__rollback", "k_rt_sql_rollback", 1, false, None),
+    f("admin", "site", "k_rt_admin_site", 6, false, None),
     f("auth", "sessions", "k_rt_auth_sessions", 5, true, None),
     f(
         "auth",

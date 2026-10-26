@@ -565,3 +565,23 @@ fn a_model_can_name_its_table_and_columns() {
     let src = "import sql, orm\n\nstruct Entry {\n    id: Int\n    order: Int\n}\n\nfn main() ! {\n    let db = try sql.open(\"sqlite::memory:\")\n    print(try orm.find<Entry>(db).count())\n}\n";
     assert_eq!(error_codes(src), vec![codes::BAD_MODEL]);
 }
+
+#[test]
+fn admin_pages_need_a_model_with_an_int_key() {
+    let program = |key: &str| {
+        format!(
+            "import web, sql, orm, auth, admin\n\nstruct Tag {{\n    id: {key}\n    name: String\n}}\n\nfn main() ! {{\n    let db = try sql.open(\"sqlite::memory:\")\n    let sessions = try auth.sessions(db)\n    let site = admin.site(db, sessions, fn(who, action, model) {{ who.roles.contains(\"admin\") }})\n    admin.pages<Tag>(web.app(), \"/admin/tags\", site)\n}}\n"
+        )
+    };
+    ok(&program("Int"));
+    let diags = check(&program("String"));
+    assert_eq!(
+        diags.iter().map(|d| d.code).collect::<Vec<_>>(),
+        vec![codes::BAD_MODEL]
+    );
+    assert!(
+        diags[0].message.contains("`Tag.id` is `String`"),
+        "{}",
+        diags[0].message
+    );
+}

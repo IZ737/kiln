@@ -112,6 +112,9 @@ pub struct Checker {
     /// The models the program uses, by their struct; None for a struct
     /// that cannot be one, which was reported once.
     pub(crate) models: HashMap<AdtId, Option<crate::orm::Model>>,
+    /// The model each `admin.pages<T>` call makes pages for, by the span
+    /// of the call, which is how lowering finds the generated pages.
+    pub(crate) admins: HashMap<Span, String>,
     /// The models in the order they were first used, for the schema the
     /// migration tools compare with the database.
     pub(crate) model_order: Vec<AdtId>,
@@ -158,13 +161,14 @@ fn infers_from_call(e: &Expr) -> bool {
 pub(crate) const BROWSER_MODULES: &[&str] = &["browser", "js"];
 
 /// Modules that need the server: they cannot be used in embers.
-const SERVER_ONLY_MODULES: &[&str] = &["sql", "orm", "auth", "fs", "os", "io"];
+const SERVER_ONLY_MODULES: &[&str] = &["sql", "orm", "auth", "admin", "fs", "os", "io"];
 
 const STD_MODULES: &[(&str, &str)] = &[
     ("web", include_str!("../std/web.kiln")),
     ("sql", include_str!("../std/sql.kiln")),
     ("orm", include_str!("../std/orm.kiln")),
     ("validate", include_str!("../std/validate.kiln")),
+    ("admin", include_str!("../std/admin.kiln")),
     ("auth", include_str!("../std/auth.kiln")),
     ("log", include_str!("../std/log.kiln")),
     ("json", include_str!("../std/json.kiln")),
@@ -216,6 +220,7 @@ impl Checker {
             recording: false,
             references: Vec::new(),
             models: HashMap::new(),
+            admins: HashMap::new(),
             model_order: Vec::new(),
             mappings: HashMap::new(),
             queries: HashMap::new(),
@@ -561,11 +566,31 @@ impl Checker {
             }
             (Ty::Opt(x), Ty::Opt(y)) => self.unify(x, y),
             (Ty::Fn(f), Ty::Fn(g)) => {
-                f.params.len() == g.params.len()
-                    && f.params
-                        .iter()
-                        .zip(&g.params)
-                        .all(|(x, y)| self.unify(x, y))
+                // `Rest` stands for the parameters that are left, which is
+                // how a route whose path is not written out accepts a
+                // handler with as many parameters as the path has.
+                let rest = |t: &[Ty]| t.iter().position(|p| *p == Ty::Rest);
+                let (f_rest, g_rest) = (rest(&f.params), rest(&g.params));
+                let fixed = match (f_rest, g_rest) {
+                    (None, None) => {
+                        if f.params.len() != g.params.len() {
+                            return false;
+                        }
+                        f.params.len()
+                    }
+                    _ => {
+                        let n = f_rest.unwrap_or(f.params.len());
+                        let m = g_rest.unwrap_or(g.params.len());
+                        if n.min(m) > f.params.len().min(g.params.len()) {
+                            return false;
+                        }
+                        n.min(m)
+                    }
+                };
+                f.params[..fixed]
+                    .iter()
+                    .zip(&g.params[..fixed])
+                    .all(|(x, y)| self.unify(x, y))
                     && self.unify(&f.ret, &g.ret)
             }
             (Ty::Record(xs), Ty::Record(ys)) => {
@@ -2027,6 +2052,9 @@ impl Checker {
                     self.check_args(&params, args, e.span, &fn_name, None);
                     if self.modules[m].name == "orm" {
                         self.orm_call(&name.name, args, &explicit, e.span);
+                    }
+                    if self.modules[m].name == "admin" && name.name == "pages" {
+                        self.admin_pages(&explicit, e.span);
                     }
                     return (ret, throws);
                 }

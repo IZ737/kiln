@@ -138,7 +138,8 @@ pub fn snake_case(name: &str) -> String {
     out
 }
 
-fn plural(name: &str) -> String {
+/// `Post` is `Posts`, for a heading that names many of them.
+pub fn plural(name: &str) -> String {
     let ends = |s: &str| name.ends_with(s);
     let vowel_y = ["ay", "ey", "iy", "oy", "uy"].iter().any(|v| ends(v));
     if ends("s") || ends("x") || ends("z") || ends("ch") || ends("sh") {
@@ -932,7 +933,9 @@ impl Compiler<'_> {
             return Err(self.cannot(span, "a text search on a column that is not text"));
         }
         let p = self.param(plan, Param::Like(arg.value.clone(), mode));
-        Ok(format!("{col} like {p} escape '\\'"))
+        // `!` rather than a backslash, which MySQL reads as an escape
+        // inside the string literal itself.
+        Ok(format!("{col} like {p} escape '!'"))
     }
 
     fn is_binding(&self, e: &ast::Expr, binding: &str) -> bool {
@@ -972,7 +975,7 @@ fn body_value(b: &ast::Block) -> Option<&ast::Expr> {
 }
 
 /// Calls `f` on an expression and every expression inside it.
-fn walk(e: &ast::Expr, f: &mut impl FnMut(&ast::Expr)) {
+pub fn walk(e: &ast::Expr, f: &mut impl FnMut(&ast::Expr)) {
     use ast::ExprKind as E;
     f(e);
     match &e.kind {
@@ -1031,7 +1034,7 @@ fn walk(e: &ast::Expr, f: &mut impl FnMut(&ast::Expr)) {
     }
 }
 
-fn walk_block(b: &ast::Block, f: &mut impl FnMut(&ast::Expr)) {
+pub fn walk_block(b: &ast::Block, f: &mut impl FnMut(&ast::Expr)) {
     for stmt in &b.stmts {
         match stmt {
             ast::Stmt::Let { value, .. } | ast::Stmt::Expr(value) => walk(value, f),

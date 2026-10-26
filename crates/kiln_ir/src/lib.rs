@@ -33,6 +33,7 @@
 //! assert!(ir.to_string().contains("fn main()"));
 //! ```
 
+pub mod admin;
 pub mod glaze;
 mod lower;
 mod print;

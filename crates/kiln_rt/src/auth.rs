@@ -531,6 +531,31 @@ pub unsafe extern "C" fn k_rt_auth_check(sessions: Kv, req: Kv, token: Kv) -> Kv
     0
 }
 
+/// `admin.site(...)`: what the admin's pages work on, as the slots of a
+/// `Site` in the field order of `std/admin.kiln`.
+///
+/// # Safety
+///
+/// The arguments are the values of those fields.
+#[no_mangle]
+pub unsafe extern "C" fn k_rt_admin_site(
+    db: Kv,
+    sessions: Kv,
+    authorize: Kv,
+    title: Kv,
+    home: Kv,
+    per_page: Kv,
+) -> Kv {
+    let out = slots(6);
+    for (i, v) in [db, sessions, authorize, title, home, per_page]
+        .into_iter()
+        .enumerate()
+    {
+        *out.add(i) = v;
+    }
+    kv(out)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

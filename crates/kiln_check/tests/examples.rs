@@ -35,6 +35,14 @@ fn all_examples_type_check() {
         .collect();
     dirs.sort();
     dirs.dedup();
+    // A project with a `kiln.toml` is in folder modules, which `kiln check`
+    // binds before this checker sees them: `kiln_cli`'s tests check those.
+    let in_project = |dir: &Path| {
+        dir.ancestors()
+            .take_while(|d| *d != root)
+            .any(|d| d.join("kiln.toml").is_file())
+    };
+    dirs.retain(|d| !in_project(d));
     for dir in dirs {
         let in_dir: Vec<&PathBuf> = files.iter().filter(|f| f.parent() == Some(&dir)).collect();
         let sources: Vec<(PathBuf, String)> = in_dir

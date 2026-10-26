@@ -274,6 +274,9 @@ impl Parser {
 
     /// Skips to the next line that starts a declaration.
     fn recover_to_item(&mut self) {
+        if self.tokens[self.pos].kind == TokenKind::Eof {
+            return;
+        }
         self.pos += 1;
         loop {
             let at_line_start = self.tokens[self.pos - 1].kind == TokenKind::Newline;

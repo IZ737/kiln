@@ -19,8 +19,8 @@ pub unsafe extern "C" fn k_rt_orm_like(value: Kv, mode: Kv) -> Kv {
     let text = String::from_utf8_lossy(bytes(value));
     let mut escaped = String::with_capacity(text.len() + 2);
     for c in text.chars() {
-        if matches!(c, '%' | '_' | '\\') {
-            escaped.push('\\');
+        if matches!(c, '%' | '_' | '!') {
+            escaped.push('!');
         }
         escaped.push(c);
     }

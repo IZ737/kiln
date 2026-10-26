@@ -6,7 +6,8 @@ values sent apart from its text. [`orm`](#orm) is what the program means:
 a model is an ordinary struct, and a query on it is Kiln the compiler
 turns into SQL while it builds the program. [`kiln db`](#migrations)
 writes the migrations the models ask for, and reads a database that
-already exists into models.
+already exists into models. [`admin`](#admin) writes pages to look
+through and change a model's rows.
 
 SQLite needs nothing on the system: `sqlite:` databases are files, or
 memory. `postgres://` and `mysql://` URLs are read and reported as not
@@ -38,6 +39,11 @@ fn main() ! {
 | `db.dialect() -> String` | `"sqlite"`, `"postgres"` or `"mysql"` |
 | `db.close()` | Closes the pool's connections |
 | `sql.error_kind(err) -> String` | What kind of failure an error was (below) |
+
+Opening a URL that is already open gives the same pool, with the settings
+it was first opened with, so a `server fn` can call
+`sql.open(env("DATABASE_URL"))` on every call without opening new
+connections each time. `db.close()` closes it for everyone.
 
 Values go in `$1`, `$2`, ... whatever the database, and the extra
 arguments fill them in order; the driver writes the placeholders each
@@ -151,6 +157,64 @@ const posts = orm.model<Post>(
 A name that cannot be used as it is written — a reserved word, or not in
 `[a-z_][a-z0-9_]*` — is an error (E0231) that says to map it, rather than
 quoting identifiers differently per database behind the program's back.
+
+## `admin`
+
+`admin.pages<T>` adds pages that list, search, sort, create, change and
+delete the rows of a model. The compiler writes them from the model's
+fields while it builds the program, as ordinary Kiln that uses `orm`, so
+every query is one it has checked.
+
+```kiln
+import web, sql, auth, admin
+
+let sessions = try auth.sessions(db)
+let site = admin.site(
+    db,
+    sessions,
+    fn(who, action, model) { who.roles.contains("admin") },
+    title: "Fieldnotes admin",
+)
+admin.pages<Post>(app, "/admin/posts", site)
+admin.pages<Account>(app, "/admin/accounts", site)
+```
+
+| | |
+| --- | --- |
+| `admin.site(db, sessions, authorize, title: "Admin", home: "/admin", per_page: 25) -> Site` | What every page needs |
+| `admin.pages<T>(app, prefix, site)` | The pages for `T` under `prefix` |
+
+**Nothing is allowed by default.** Every page asks `sessions.require` for
+the identity first, which answers 401 when there is none, then
+`authorize(identity, action, model)`, which answers 403 when it says
+no. The actions are `"list"`, `"view"`, `"create"`, `"update"` and
+`"delete"`, and the model is its name, such as `"Post"`. Every form
+carries the session's token, and a handler that changes a row
+checks it before anything else ([`auth`](stdlib.md#auth)). The pages
+are sent with `x-frame-options: deny` and `cache-control: no-store`.
+
+| Path | |
+| --- | --- |
+| `GET prefix` | The rows, a page at a time: `?q=` searches the text fields, `?sort=` and `?dir=` order them, `?page=` moves |
+| `GET prefix/new`, `POST prefix` | A new row |
+| `GET prefix/<id>`, `POST prefix/<id>` | One row's form, and the change |
+| `GET prefix/<id>/delete`, `POST prefix/<id>/delete` | A page that asks first, and the delete |
+
+The form follows the fields: a `String` is a text input, an `Int` or a
+`Float` a number input, a `Bool` a checkbox, and an optional a field that
+may be left empty. A field without a default must be filled in, and a
+number must be one; a form that fails comes back with 422 and what is
+wrong next to each field. Fields of any other type, such as relations
+and lists, are shown but not changed here. A field whose name says it is
+a secret (`password`, `secret`, `token`, `hash` or `key`) is never shown
+or changed, not even its hash. A model with a field the form cannot
+fill and no default to fall back on, such as an account's password, has
+no page for new rows. The model's key must be an `Int` named
+`id`; the list shows the key and up to four more columns.
+
+The pages are a convenience for the people who run a site, not its
+interface: for anything they cannot do, write the page with `orm` and a
+glaze.
 
 ## Migrations
 
