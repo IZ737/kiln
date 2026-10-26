@@ -1,0 +1,117 @@
+// One program on SQLite, PostgreSQL and MySQL: `tests/databases.rs` runs
+// it on each database it is given, and the output must be the same.
+import sql, orm, auth, web
+
+struct Author {
+    id: Int
+    name: String
+    posts: List<Post> = []
+}
+
+struct Post {
+    id: Int
+    title: String
+    score: Float
+    published: Bool
+    author_id: Int
+    note: String? = none
+    author: Author? = none
+}
+
+// The tables, in each database's words. A program would keep these in
+// migrations; `kiln db diff` writes them.
+fn setup(db: sql.Db) ! {
+    try db.exec("drop table if exists posts")
+    try db.exec("drop table if exists authors")
+    try db.exec("drop table if exists kiln_sessions")
+    let key = match db.dialect() {
+        "postgres" => "bigserial primary key"
+        "mysql" => "bigint auto_increment primary key"
+        _ => "integer primary key"
+    }
+    let flag = if db.dialect() == "sqlite" { "integer" } else { "boolean" }
+    let text = if db.dialect() == "mysql" { "varchar(200)" } else { "text" }
+    try db.exec("create table authors (id ${key}, name ${text} not null unique)")
+    try db.exec("create table posts (id ${key}, title ${text} not null, score double precision not null, published ${flag} not null, author_id bigint not null references authors(id), note ${text})")
+}
+
+fn main() ! {
+    let db = try sql.open(env("DATABASE_URL"))
+    try setup(db)
+
+    let ada = try orm.insert<Author>(db, Author(id: 0, name: "Ada"))
+    let bob = try orm.insert<Author>(db, Author(id: 0, name: "Bob"))
+    print("${ada.id} ${bob.id}")
+    var n = 1
+    for title in ["Kilns", "Glazes 100%", "Embers", "Drafts"] {
+        try orm.insert<Post>(db, Post(id: 0, title: title, score: n.to_float() * 1.5, published: title != "Drafts", author_id: if n > 2 { bob.id } else { ada.id }, note: if n == 1 { "first" } else { none }))
+        n += 1
+    }
+
+    // Typed queries, the same SQL on every database.
+    for post in try orm.find<Post>(db).where(.published).order_by(.score, descending: true).all() {
+        print("${post.title} ${post.score} ${post.note ?? "-"}")
+    }
+    let needle = "100%"
+    print(try orm.find<Post>(db).where(fn(p) { p.title.contains(needle) }).count())
+    print(try orm.find<Post>(db).where(fn(p) { p.title.starts_with("Em") }).count())
+    let page = try orm.find<Post>(db).include(.author).order_by(.id).limit(2).offset(1).all()
+    for p in page {
+        let who = match p.author {
+            some(a) => a.name
+            none => "?"
+        }
+        print("${p.title} by ${who}")
+    }
+    let authors = try orm.find<Author>(db).include(.posts).order_by(.name).all()
+    for a in authors {
+        print("${a.name}: ${a.posts.len()}")
+    }
+
+    // Raw SQL with bound values, which are never read as SQL.
+    let sneaky = "x' or '1'='1"
+    print((try db.query<Post>("select * from posts where title = $1", sneaky)).len())
+    print(try db.scalar<Int>("select count(*) from posts where score > $1 and published = $2", 2.0, true))
+    let changed = try db.exec("update posts set note = $1 where author_id = $2", "by Bob", bob.id)
+    print(changed)
+
+    // Failures have kinds, whatever the database.
+    let again = orm.insert<Author>(db, Author(id: 0, name: "Ada")) catch err {
+        print(sql.error_kind(err))
+        ada
+    }
+    let orphans = db.exec("insert into posts (title, score, published, author_id) values ($1, $2, $3, $4)", "orphan", 1.0, true, 999) catch err {
+        print(sql.error_kind(err))
+        0
+    }
+    let typo = db.exec("selec 1") catch err {
+        print(sql.error_kind(err))
+        0
+    }
+
+    // A transaction that fails changes nothing.
+    db.transaction(fn(tx) {
+        try tx.exec("delete from posts")
+        throw Error(message: "changed my mind")
+    }) catch err {
+        print(err.message)
+    }
+    print(try orm.find<Post>(db).count())
+    try db.transaction(fn(tx) {
+        try tx.exec("delete from posts where published = $1", false)
+    })
+    print(try orm.find<Post>(db).count())
+
+    // Sessions are kept in the same database.
+    let sessions = try auth.sessions(db)
+    let res = try sessions.sign_in(web.text("hi"), "${ada.id}", roles: ["admin"])
+    let cookie = res.headers.get("set-cookie") ?? ""
+    let value = cookie.slice((cookie.index_of("=") ?? 0) + 1, cookie.index_of(";") ?? 0)
+    var headers: Map<String, String> = Map()
+    headers["cookie"] = "kiln_session=${value}"
+    let req = web.Request(method: "GET", path: "/", query_string: "", headers: headers, body: "")
+    let who = try sessions.require(req)
+    print("${who.subject} ${who.roles.join(",")}")
+    try sessions.sign_out(req, web.text("bye"))
+    print(try sessions.current(req) is some(x))
+}

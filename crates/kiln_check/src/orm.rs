@@ -957,11 +957,11 @@ impl Compiler<'_> {
     }
 }
 
-/// `col = 1`: the SQL for a boolean column used as a condition. Databases
-/// store booleans as 1 and 0, or as true and false, and both compare
-/// equal to 1 everywhere Kiln supports.
+/// `col = true`: the SQL for a boolean column used as a condition.
+/// SQLite and MySQL store booleans as 1 and 0, where `true` is 1, and
+/// PostgreSQL has a boolean type, which does not compare with 1.
 fn truth(col: &str) -> String {
-    format!("{col} = 1")
+    format!("{col} = true")
 }
 
 /// The value a block produces: its last statement, when that is an

@@ -107,6 +107,11 @@ Run `cargo fmt --all`, `cargo clippy --all-targets -- -D warnings` and
   with a nested cargo and the `runtime` profile; the build scripts of
   `kiln_native` and `kiln_codegen` use it. A function here is declared at
   the top of `kiln.c` so the C runtime can call it.
+- `crates/kiln_dbwire`: the PostgreSQL and MySQL clients behind `sql`,
+  on blocking-free sockets that wait through a function the caller gives
+  (`kiln_rt/src/remote.rs` gives `k_task_wait`). `tests/live.rs` runs
+  against `KILN_POSTGRES_URL` and `KILN_MYSQL_URL` when they are set, as
+  CI sets them, and so does `kiln_cli/tests/databases.rs`.
 - `crates/kiln_native`: the native backend, the default where `kiln`
   carries the target's runtime. `gen.rs` turns an IR program into an object
   file with Cranelift (`compile(&ir, target)`, ELF for Linux and COFF for

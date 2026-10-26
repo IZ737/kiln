@@ -12,6 +12,30 @@ jobs:
   test:
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    # Database servers for the `sql` module's clients, `kiln db` and the
+    # journal example (KILN_POSTGRES_URL and KILN_MYSQL_URL below).
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: kiln
+          POSTGRES_PASSWORD: kiln
+          POSTGRES_DB: kiln
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U kiln" --health-interval 2s
+          --health-timeout 5s --health-retries 30
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: kiln
+          MYSQL_USER: kiln
+          MYSQL_PASSWORD: kiln
+        ports: ["3306:3306"]
+        options: >-
+          --health-cmd "mysqladmin ping -h 127.0.0.1 -proot" --health-interval 2s
+          --health-timeout 5s --health-retries 60
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
@@ -43,6 +67,8 @@ jobs:
       - run: cargo test
         env:
           KILN_BROWSER: 1
+          KILN_POSTGRES_URL: postgres://kiln:kiln@127.0.0.1:5432/kiln
+          KILN_MYSQL_URL: mysql://kiln:kiln@127.0.0.1:3306/kiln
       - run: cargo run -p kiln_cli -- check examples
       - name: kiln lsp answers an editor, and the VS Code extension works in VS Code
         working-directory: editors/vscode

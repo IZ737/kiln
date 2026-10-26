@@ -280,37 +280,55 @@ fn multi_folder_fieldnotes_works_in_a_real_browser() {
 /// committed migrations make: signing up and in, posts with per-record
 /// permissions, and the ember that adds comments through an ORM-backed
 /// `server fn` that knows who is calling, with hostile calls turned away.
+/// It runs on SQLite with both backends, and natively on PostgreSQL and
+/// MySQL when `KILN_POSTGRES_URL` and `KILN_MYSQL_URL` are set.
 #[test]
 fn journal_works_in_a_real_browser() {
-    for backend in [None, Some("c")] {
-        drive_with(
-            if backend.is_some() {
-                "journal-c"
-            } else {
-                "journal"
-            },
-            "examples/journal",
-            "journal.mjs",
-            backend,
-            &|dir| {
-                let db = dir.join("journal.db");
-                let url = format!("sqlite:{}", db.display());
-                let migrated = Command::new(env!("CARGO_BIN_EXE_kiln"))
-                    .args(["db", "migrate", "--url", &url, "--path"])
-                    .arg(root().join("examples/journal"))
-                    .output()
-                    .unwrap();
-                assert!(
-                    migrated.status.success(),
-                    "{}",
-                    String::from_utf8_lossy(&migrated.stderr)
-                );
-                vec![
-                    ("DATABASE_URL".into(), url),
-                    ("JOURNAL_HTTP".into(), "1".into()),
-                    ("JOURNAL_ADMIN".into(), "ada@example.com".into()),
-                ]
-            },
-        );
+    let mut runs: Vec<(&str, Option<&str>, Option<String>)> =
+        vec![("journal", None, None), ("journal-c", Some("c"), None)];
+    for (name, var) in [
+        ("journal-postgres", "KILN_POSTGRES_URL"),
+        ("journal-mysql", "KILN_MYSQL_URL"),
+    ] {
+        if let Ok(url) = std::env::var(var) {
+            runs.push((name, None, Some(url)));
+        }
+    }
+    for (name, backend, server) in runs {
+        drive_with(name, "examples/journal", "journal.mjs", backend, &|dir| {
+            let url = match &server {
+                Some(url) => {
+                    // A server keeps what the last run left: start again.
+                    let mut db = kiln_dbwire::open(url, None).unwrap();
+                    for table in [
+                        "comments",
+                        "posts",
+                        "users",
+                        "kiln_sessions",
+                        "kiln_migrations",
+                    ] {
+                        db.exec(&format!("drop table if exists {table}"), &[])
+                            .unwrap();
+                    }
+                    url.clone()
+                }
+                None => format!("sqlite:{}", dir.join("journal.db").display()),
+            };
+            let migrated = Command::new(env!("CARGO_BIN_EXE_kiln"))
+                .args(["db", "migrate", "--url", &url, "--path"])
+                .arg(root().join("examples/journal"))
+                .output()
+                .unwrap();
+            assert!(
+                migrated.status.success(),
+                "{}",
+                String::from_utf8_lossy(&migrated.stderr)
+            );
+            vec![
+                ("DATABASE_URL".into(), url),
+                ("JOURNAL_HTTP".into(), "1".into()),
+                ("JOURNAL_ADMIN".into(), "ada@example.com".into()),
+            ]
+        });
     }
 }

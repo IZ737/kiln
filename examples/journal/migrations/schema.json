@@ -59,7 +59,7 @@
         },
         {
           "name": "published",
-          "ty": "integer",
+          "ty": "boolean",
           "not_null": true,
           "key": false
         }

@@ -1,0 +1,27 @@
+[package]
+name = "kiln_dbwire"
+description = "PostgreSQL and MySQL clients for the Kiln runtime and `kiln db`, over a socket the caller can wait on"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[lib]
+doctest = false
+
+[dependencies]
+# PostgreSQL's messages and its SCRAM and MD5 sign-ins; the socket is ours.
+postgres-protocol = "0.6"
+bytes = "1"
+fallible-iterator = "0.2"
+# A connect that does not block, so a program's other tasks go on.
+socket2 = "0.6"
+# MySQL's sign-ins: SHA-1 for `mysql_native_password`, SHA-256 and RSA
+# (by its definition, with a big integer) for `caching_sha2_password`.
+sha1 = "0.11"
+sha2 = "0.11"
+num-bigint = "0.5"
+getrandom = { version = "0.4", features = ["std"] }
+base64 = "0.23"
+percent-encoding = "2"

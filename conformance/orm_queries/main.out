@@ -1,5 +1,5 @@
 1 Ada, 2 Bob
-select posts.id, posts.title, posts.score, posts.published, posts.author_id from posts where posts.published = 1 order by posts.score desc limit $1
+select posts.id, posts.title, posts.score, posts.published, posts.author_id from posts where posts.published = true order by posts.score desc limit $1
 Embers 6
 Glazes 4
 Kilns 2

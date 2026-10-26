@@ -60,14 +60,80 @@ impl Table {
     }
 }
 
-/// The SQL type of a column, for SQLite. Other dialects differ, which is
-/// why migrations are written per dialect.
+/// The type of a column in a schema: `integer`, `real`, `text` or
+/// `boolean`, whatever the database calls it. Migrations are written per
+/// dialect, in its own words ([`ddl_type`]).
 fn sql_type(kind: ColumnKind) -> &'static str {
     match kind {
-        ColumnKind::Int | ColumnKind::Duration | ColumnKind::Bool => "integer",
+        ColumnKind::Int | ColumnKind::Duration => "integer",
+        ColumnKind::Bool => "boolean",
         ColumnKind::Float => "real",
         ColumnKind::Text | ColumnKind::Time | ColumnKind::Json => "text",
     }
+}
+
+/// The databases `kiln db` works on, each with its own migrations.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Dialect {
+    Sqlite,
+    Postgres,
+    Mysql,
+}
+
+impl Dialect {
+    pub const ALL: [Dialect; 3] = [Dialect::Sqlite, Dialect::Postgres, Dialect::Mysql];
+
+    pub fn of_url(url: &str) -> Option<Dialect> {
+        if url.starts_with("sqlite:") {
+            Some(Dialect::Sqlite)
+        } else if url.starts_with("postgres://") || url.starts_with("postgresql://") {
+            Some(Dialect::Postgres)
+        } else if url.starts_with("mysql://") || url.starts_with("mariadb://") {
+            Some(Dialect::Mysql)
+        } else {
+            None
+        }
+    }
+
+    pub fn name(self) -> &'static str {
+        match self {
+            Dialect::Sqlite => "sqlite",
+            Dialect::Postgres => "postgres",
+            Dialect::Mysql => "mysql",
+        }
+    }
+}
+
+/// A schema's type as `dialect` writes it in a migration.
+fn ddl_type(dialect: Dialect, ty: &str) -> String {
+    let t = match (dialect, ty) {
+        (Dialect::Sqlite, "boolean") => "integer",
+        (Dialect::Postgres | Dialect::Mysql, "integer") => "bigint",
+        (Dialect::Postgres, "real") => "double precision",
+        (Dialect::Mysql, "real") => "double",
+        (_, other) => other,
+    };
+    t.to_string()
+}
+
+/// The type a database reports for a column, as a schema's type.
+fn schema_type(ty: &str) -> String {
+    let t = ty.to_lowercase();
+    if t.contains("bool") || t == "tinyint(1)" {
+        "boolean"
+    } else if t.contains("int") || t.contains("serial") {
+        "integer"
+    } else if t.contains("real")
+        || t.contains("doub")
+        || t.contains("floa")
+        || t.contains("numeric")
+        || t.contains("decimal")
+    {
+        "real"
+    } else {
+        "text"
+    }
+    .to_string()
 }
 
 /// The schema the models describe.
@@ -122,6 +188,24 @@ impl Change {
 
 /// The changes that take `from` to `to`.
 pub fn diff(from: &Schema, to: &Schema) -> Vec<Change> {
+    diff_by(from, to, |a, b| a == b)
+}
+
+/// How a database differs from what its migrations describe: SQLite keeps
+/// a boolean as an integer.
+fn drift(dialect: Dialect, live: &Schema, expected: &Schema) -> Vec<Change> {
+    let plain = |t: &str| {
+        let t = schema_type(t);
+        if dialect == Dialect::Sqlite && t == "boolean" {
+            "integer".to_string()
+        } else {
+            t
+        }
+    };
+    diff_by(live, expected, |a, b| plain(a) == plain(b))
+}
+
+fn diff_by(from: &Schema, to: &Schema, same: impl Fn(&str, &str) -> bool) -> Vec<Change> {
     let mut changes = Vec::new();
     for (name, table) in &to.tables {
         let Some(old) = from.tables.get(name) else {
@@ -131,7 +215,7 @@ pub fn diff(from: &Schema, to: &Schema) -> Vec<Change> {
         for c in &table.columns {
             match old.column(&c.name) {
                 None => changes.push(Change::AddColumn(name.clone(), c.name.clone())),
-                Some(before) if before.ty != c.ty || before.not_null != c.not_null => {
+                Some(before) if !same(&before.ty, &c.ty) || before.not_null != c.not_null => {
                     changes.push(Change::AlterColumn(
                         name.clone(),
                         c.name.clone(),
@@ -156,14 +240,16 @@ pub fn diff(from: &Schema, to: &Schema) -> Vec<Change> {
     changes
 }
 
-/// A value of this SQL type for rows that have none yet.
-fn zero(ty: &str) -> &'static str {
-    if ty.contains("int") {
-        "0"
-    } else if ty.contains("real") || ty.contains("doub") {
-        "0.0"
-    } else {
-        "''"
+/// A value of this type for rows that have none yet.
+fn zero(dialect: Dialect, ty: &str) -> &'static str {
+    match (dialect, schema_type(ty).as_str()) {
+        (_, "integer") => "0",
+        (_, "real") => "0.0",
+        (Dialect::Postgres, "boolean") => "false",
+        (_, "boolean") => "0",
+        // MySQL takes a default for text only as an expression.
+        (Dialect::Mysql, _) => "('')",
+        _ => "''",
     }
 }
 
@@ -172,36 +258,51 @@ fn describe(c: &Column) -> String {
 }
 
 /// `create table posts (...)`, with the columns in the model's order.
-fn create_table(name: &str, table: &Table) -> String {
+fn create_table(dialect: Dialect, name: &str, table: &Table) -> String {
     let mut sql = format!("create table {name} (\n");
-    let lines: Vec<String> = table
+    let mut lines: Vec<String> = table
         .columns
         .iter()
         .map(|c| {
-            let mut line = format!("    {} {}", c.name, c.ty);
+            let ty = ddl_type(dialect, &c.ty);
+            let mut line = format!("    {} {ty}", c.name);
             if c.key {
-                line.push_str(" primary key");
+                line.push_str(match (dialect, ty.as_str()) {
+                    (Dialect::Postgres, "bigint") => {
+                        " generated by default as identity primary key"
+                    }
+                    (Dialect::Mysql, "bigint") => " auto_increment primary key",
+                    _ => " primary key",
+                });
             } else if c.not_null {
                 line.push_str(" not null");
             }
-            if let Some(target) = &c.references {
+            // MySQL ignores `references` written on a column.
+            if let (Some(target), false) = (&c.references, dialect == Dialect::Mysql) {
                 line.push_str(&format!(" references {target}"));
             }
             line
         })
         .collect();
+    if dialect == Dialect::Mysql {
+        for c in &table.columns {
+            if let Some(target) = &c.references {
+                lines.push(format!("    foreign key ({}) references {target}", c.name));
+            }
+        }
+    }
     sql.push_str(&lines.join(",\n"));
     sql.push_str("\n)");
     sql
 }
 
 /// The SQL of the changes, with a comment on each that needs a person.
-pub fn migration_sql(to: &Schema, changes: &[Change]) -> String {
+pub fn migration_sql(dialect: Dialect, to: &Schema, changes: &[Change]) -> String {
     let mut sql = String::new();
-    for change in changes {
+    for change in in_order(to, changes) {
         match change {
             Change::CreateTable(name) => {
-                let _ = writeln!(sql, "{};\n", create_table(name, &to.tables[name]));
+                let _ = writeln!(sql, "{};\n", create_table(dialect, name, &to.tables[name]));
             }
             Change::AddColumn(table, column) => {
                 let c = to.tables[table].column(column).expect("the new column");
@@ -210,7 +311,7 @@ pub fn migration_sql(to: &Schema, changes: &[Change]) -> String {
                 let (note, rest) = if c.not_null {
                     (
                         "-- The rows that are already there get this default. If they need\n-- another value, set it here or in a migration of its own.\n",
-                        format!(" not null default {}", zero(&c.ty)),
+                        format!(" not null default {}", zero(dialect, &c.ty)),
                     )
                 } else {
                     ("", String::new())
@@ -218,7 +319,8 @@ pub fn migration_sql(to: &Schema, changes: &[Change]) -> String {
                 let _ = writeln!(
                     sql,
                     "{note}alter table {table} add column {} {}{rest};\n",
-                    c.name, c.ty
+                    c.name,
+                    ddl_type(dialect, &c.ty)
                 );
             }
             Change::DropColumn(table, column) => {
@@ -234,9 +336,14 @@ pub fn migration_sql(to: &Schema, changes: &[Change]) -> String {
                 );
             }
             Change::AlterColumn(table, column, before, after) => {
+                let how = match dialect {
+                    Dialect::Sqlite => "SQLite cannot\n-- change a column in place: make the new table, copy the rows over,\n-- drop the old one and rename it, inside one transaction.",
+                    Dialect::Postgres => "Write the\n-- `alter table ... alter column` that changes it, with `using` to\n-- convert the rows that are there.",
+                    Dialect::Mysql => "Write the\n-- `alter table ... modify column` that changes it, after checking\n-- that every row converts.",
+                };
                 let _ = writeln!(
                     sql,
-                    "-- `{table}.{column}` was `{before}` and is now `{after}`. SQLite cannot\n-- change a column in place: make the new table, copy the rows over,\n-- drop the old one and rename it, inside one transaction.\n"
+                    "-- `{table}.{column}` was `{before}` and is now `{after}`. {how}\n"
                 );
             }
         }
@@ -244,23 +351,77 @@ pub fn migration_sql(to: &Schema, changes: &[Change]) -> String {
     sql
 }
 
+/// The changes with the new tables first, each after the tables it
+/// references, which PostgreSQL and MySQL need to exist already.
+fn in_order<'a>(to: &Schema, changes: &'a [Change]) -> Vec<&'a Change> {
+    let mut created: Vec<&Change> = Vec::new();
+    let mut waiting: Vec<&Change> = changes
+        .iter()
+        .filter(|c| matches!(c, Change::CreateTable(_)))
+        .collect();
+    let name = |c: &Change| match c {
+        Change::CreateTable(n) => n.clone(),
+        _ => String::new(),
+    };
+    while !waiting.is_empty() {
+        let ready = waiting.iter().position(|c| {
+            let table = &to.tables[&name(c)];
+            table.columns.iter().all(|col| match &col.references {
+                Some(target) => {
+                    let target = target.split('(').next().unwrap_or("");
+                    target == name(c) || !waiting.iter().any(|w| name(w) == target)
+                }
+                None => true,
+            })
+        });
+        // A cycle of references is written in name order.
+        created.push(waiting.remove(ready.unwrap_or(0)));
+    }
+    created.extend(
+        changes
+            .iter()
+            .filter(|c| !matches!(c, Change::CreateTable(_))),
+    );
+    created
+}
+
 // ----- the database -----
 
-/// A SQLite database `kiln db` works on. Other dialects are read from the
-/// same URLs the `sql` module takes, and reported until they are
-/// supported.
-struct Database {
-    conn: rusqlite::Connection,
+/// The database `kiln db` works on: SQLite, or a server.
+enum Database {
+    Sqlite(rusqlite::Connection),
+    Server(Box<dyn kiln_dbwire::Client>, Dialect),
+}
+
+/// Tables the runtime and `kiln db` keep for themselves, which no model
+/// describes.
+fn own_table(name: &str) -> bool {
+    name == LEDGER || name == "kiln_sessions"
+}
+
+fn text(v: &kiln_dbwire::Value) -> String {
+    match v {
+        kiln_dbwire::Value::Text(s) => s.clone(),
+        kiln_dbwire::Value::Int(n) => n.to_string(),
+        kiln_dbwire::Value::Blob(b) => String::from_utf8_lossy(b).into_owned(),
+        _ => String::new(),
+    }
 }
 
 impl Database {
     fn open(url: &str) -> Result<Database, String> {
-        let Some(path) = url.strip_prefix("sqlite:") else {
-            return Err(format!(
-                "`kiln db` works on SQLite so far, and {} is not a sqlite: URL",
+        let dialect = Dialect::of_url(url).ok_or_else(|| {
+            format!(
+                "{} is not a database URL: it should start with sqlite:, postgres:// or mysql://",
                 redact(url)
-            ));
-        };
+            )
+        })?;
+        if dialect != Dialect::Sqlite {
+            let client = kiln_dbwire::open(url, None)
+                .map_err(|e| format!("cannot open {}: {e}", redact(url)))?;
+            return Ok(Database::Server(client, dialect));
+        }
+        let path = url.strip_prefix("sqlite:").unwrap_or(url);
         let path = path.strip_prefix("//").unwrap_or(path);
         let conn = if path == ":memory:" {
             rusqlite::Connection::open_in_memory()
@@ -268,15 +429,97 @@ impl Database {
             rusqlite::Connection::open(path)
         }
         .map_err(|e| format!("cannot open {path}: {e}"))?;
-        Ok(Database { conn })
+        Ok(Database::Sqlite(conn))
+    }
+
+    fn dialect(&self) -> Dialect {
+        match self {
+            Database::Sqlite(_) => Dialect::Sqlite,
+            Database::Server(_, d) => *d,
+        }
+    }
+
+    /// Rows of text from a query without values, on a server.
+    fn rows(&mut self, sql: &str) -> Result<Vec<Vec<String>>, String> {
+        let Database::Server(client, _) = self else {
+            unreachable!("a SQLite database is read through rusqlite")
+        };
+        let rows = client.query(sql, &[]).map_err(|e| e.to_string())?;
+        Ok(rows
+            .rows
+            .iter()
+            .map(|r| r.iter().map(text).collect())
+            .collect())
     }
 
     /// The schema the database holds now.
-    fn schema(&self) -> Result<Schema, String> {
+    fn schema(&mut self) -> Result<Schema, String> {
+        match self.dialect() {
+            Dialect::Sqlite => self.sqlite_schema(),
+            dialect => self.server_schema(dialect),
+        }
+    }
+
+    /// A server's schema, from `information_schema`: the tables of the
+    /// schema (PostgreSQL) or database (MySQL) the URL names.
+    fn server_schema(&mut self, dialect: Dialect) -> Result<Schema, String> {
+        let (here, ty) = match dialect {
+            Dialect::Postgres => ("current_schema()", "data_type"),
+            _ => ("database()", "column_type"),
+        };
+        let columns = self.rows(&format!(
+            "select table_name, column_name, {ty}, is_nullable from information_schema.columns where table_schema = {here} order by table_name, ordinal_position"
+        ))?;
+        let keys = self.rows(&format!(
+            "select k.table_name, k.column_name from information_schema.table_constraints c join information_schema.key_column_usage k on k.constraint_name = c.constraint_name and k.table_schema = c.table_schema and k.table_name = c.table_name where c.constraint_type = 'PRIMARY KEY' and c.table_schema = {here}"
+        ))?;
+        let references = match dialect {
+            Dialect::Postgres => self.rows(
+                "select k.table_name, k.column_name, u.table_name, u.column_name from information_schema.table_constraints c join information_schema.key_column_usage k on k.constraint_name = c.constraint_name and k.table_schema = c.table_schema join information_schema.constraint_column_usage u on u.constraint_name = c.constraint_name and u.table_schema = c.table_schema where c.constraint_type = 'FOREIGN KEY' and c.table_schema = current_schema()",
+            )?,
+            _ => self.rows(
+                "select table_name, column_name, referenced_table_name, referenced_column_name from information_schema.key_column_usage where table_schema = database() and referenced_table_name is not null",
+            )?,
+        };
+        let mut tables: BTreeMap<String, Table> = BTreeMap::new();
+        for row in columns {
+            let [table, column, ty, nullable] = &row[..] else {
+                continue;
+            };
+            if own_table(table) {
+                continue;
+            }
+            let key = keys.iter().any(|k| k[0] == *table && k[1] == *column);
+            tables
+                .entry(table.clone())
+                .or_default()
+                .columns
+                .push(Column {
+                    name: column.clone(),
+                    ty: schema_type(ty),
+                    not_null: nullable == "NO" && !key,
+                    key,
+                    references: None,
+                });
+        }
+        for r in references {
+            if let Some(c) = tables
+                .get_mut(&r[0])
+                .and_then(|t| t.columns.iter_mut().find(|c| c.name == r[1]))
+            {
+                c.references = Some(format!("{}({})", r[2], r[3]));
+            }
+        }
+        Ok(Schema { tables })
+    }
+
+    fn sqlite_schema(&self) -> Result<Schema, String> {
+        let Database::Sqlite(conn) = self else {
+            unreachable!()
+        };
         let mut tables = BTreeMap::new();
         let names: Vec<String> = {
-            let mut stmt = self
-                .conn
+            let mut stmt = conn
                 .prepare("select name from sqlite_master where type = 'table' and name not like 'sqlite_%' order by name")
                 .map_err(|e| e.to_string())?;
             let rows = stmt
@@ -285,12 +528,11 @@ impl Database {
             rows.collect::<Result<_, _>>().map_err(|e| e.to_string())?
         };
         for name in names {
-            if name == LEDGER {
+            if own_table(&name) {
                 continue;
             }
             let mut columns = Vec::new();
-            let mut stmt = self
-                .conn
+            let mut stmt = conn
                 .prepare(&format!("pragma table_info({name})"))
                 .map_err(|e| e.to_string())?;
             let rows = stmt
@@ -303,23 +545,18 @@ impl Database {
                     ))
                 })
                 .map_err(|e| e.to_string())?;
-            let mut keys = Vec::new();
             for row in rows {
                 let (column, ty, not_null, pk) = row.map_err(|e| e.to_string())?;
-                if pk > 0 {
-                    keys.push(column.clone());
-                }
                 columns.push(Column {
                     name: column,
-                    ty: ty.to_lowercase(),
+                    ty: schema_type(&ty),
                     not_null: not_null != 0 && pk == 0,
                     key: pk > 0,
                     references: None,
                 });
             }
             // Foreign keys, so a pulled model knows its relations.
-            let mut stmt = self
-                .conn
+            let mut stmt = conn
                 .prepare(&format!("pragma foreign_key_list({name})"))
                 .map_err(|e| e.to_string())?;
             let rows = stmt
@@ -342,35 +579,79 @@ impl Database {
         Ok(Schema { tables })
     }
 
-    fn applied(&self) -> Result<Vec<(String, String)>, String> {
-        self.conn
-            .execute_batch(&format!(
-                "create table if not exists {LEDGER} (version text primary key, name text not null, checksum text not null, applied_at text not null)"
-            ))
-            .map_err(|e| e.to_string())?;
-        let mut stmt = self
-            .conn
-            .prepare(&format!(
-                "select version, checksum from {LEDGER} order by version"
-            ))
-            .map_err(|e| e.to_string())?;
-        let rows = stmt
-            .query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))
-            .map_err(|e| e.to_string())?;
-        rows.collect::<Result<_, _>>().map_err(|e| e.to_string())
+    fn applied(&mut self) -> Result<Vec<(String, String)>, String> {
+        let ledger = format!(
+            "create table if not exists {LEDGER} (version varchar(32) primary key, name varchar(200) not null, checksum varchar(80) not null, applied_at varchar(32) not null)"
+        );
+        let select = format!("select version, checksum from {LEDGER} order by version");
+        match self {
+            Database::Sqlite(conn) => {
+                conn.execute_batch(&ledger).map_err(|e| e.to_string())?;
+                let mut stmt = conn.prepare(&select).map_err(|e| e.to_string())?;
+                let rows = stmt
+                    .query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))
+                    .map_err(|e| e.to_string())?;
+                rows.collect::<Result<_, _>>().map_err(|e| e.to_string())
+            }
+            Database::Server(client, _) => {
+                client.exec(&ledger, &[]).map_err(|e| e.to_string())?;
+                Ok(self
+                    .rows(&select)?
+                    .into_iter()
+                    .map(|r| (r[0].clone(), r[1].clone()))
+                    .collect())
+            }
+        }
     }
 
-    /// Applies one migration and records it, all or nothing.
+    /// Applies one migration and records it, all or nothing where the
+    /// database can: MySQL commits each change to a table as it makes it.
     fn apply(&mut self, m: &Migration) -> Result<(), String> {
-        let tx = self.conn.transaction().map_err(|e| e.to_string())?;
-        tx.execute_batch(&m.sql)
-            .map_err(|e| format!("{}: {e}", m.file_name()))?;
-        tx.execute(
-            &format!("insert into {LEDGER} (version, name, checksum, applied_at) values (?1, ?2, ?3, ?4)"),
-            rusqlite::params![m.version, m.name, m.checksum, now()],
-        )
-        .map_err(|e| e.to_string())?;
-        tx.commit().map_err(|e| e.to_string())
+        let record = [m.version.clone(), m.name.clone(), m.checksum.clone(), now()];
+        match self {
+            Database::Sqlite(conn) => {
+                let tx = conn.transaction().map_err(|e| e.to_string())?;
+                tx.execute_batch(&m.sql)
+                    .map_err(|e| format!("{}: {e}", m.file_name()))?;
+                tx.execute(
+                    &format!("insert into {LEDGER} (version, name, checksum, applied_at) values (?1, ?2, ?3, ?4)"),
+                    rusqlite::params![record[0], record[1], record[2], record[3]],
+                )
+                .map_err(|e| e.to_string())?;
+                tx.commit().map_err(|e| e.to_string())
+            }
+            Database::Server(client, dialect) => {
+                let marks = match dialect {
+                    Dialect::Postgres => "$1, $2, $3, $4",
+                    _ => "?, ?, ?, ?",
+                };
+                let values: Vec<kiln_dbwire::Value> =
+                    record.into_iter().map(kiln_dbwire::Value::Text).collect();
+                let run = |client: &mut Box<dyn kiln_dbwire::Client>| -> Result<(), String> {
+                    client
+                        .exec(&m.sql, &[])
+                        .map_err(|e| format!("{}: {e}", m.file_name()))?;
+                    client
+                        .exec(
+                            &format!("insert into {LEDGER} (version, name, checksum, applied_at) values ({marks})"),
+                            &values,
+                        )
+                        .map_err(|e| e.to_string())?;
+                    Ok(())
+                };
+                client.exec("begin", &[]).map_err(|e| e.to_string())?;
+                match run(client) {
+                    Ok(()) => client
+                        .exec("commit", &[])
+                        .map(|_| ())
+                        .map_err(|e| e.to_string()),
+                    Err(e) => {
+                        let _ = client.exec("rollback", &[]);
+                        Err(e)
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -422,16 +703,18 @@ fn checksum(sql: &str) -> String {
     format!("sha256-{hex}")
 }
 
-fn migrations_dir(root: &Path) -> PathBuf {
-    root.join("migrations/sqlite")
+/// Each database's migrations are in a folder of their own:
+/// `migrations/sqlite`, `migrations/postgres`, `migrations/mysql`.
+fn migrations_dir(root: &Path, dialect: Dialect) -> PathBuf {
+    root.join("migrations").join(dialect.name())
 }
 
 fn snapshot_path(root: &Path) -> PathBuf {
     root.join("migrations/schema.json")
 }
 
-fn read_migrations(root: &Path) -> Result<Vec<Migration>, String> {
-    let dir = migrations_dir(root);
+fn read_migrations(root: &Path, dialect: Dialect) -> Result<Vec<Migration>, String> {
+    let dir = migrations_dir(root, dialect);
     if !dir.is_dir() {
         return Ok(Vec::new());
     }
@@ -503,7 +786,15 @@ fn go(action: Action, path: &Path, url: Option<String>) -> Result<(), String> {
         Action::Diff {
             name,
             allow_destructive,
-        } => write_diff(&root, path, &name, allow_destructive),
+        } => {
+            // The migrations are written for each database the program
+            // has migrations for, and for the one it is given.
+            let given = url
+                .or_else(|| std::env::var("DATABASE_URL").ok())
+                .and_then(|u| Dialect::of_url(&u))
+                .unwrap_or(Dialect::Sqlite);
+            write_diff(&root, path, &name, allow_destructive, given)
+        }
         Action::Migrate { dry_run } => migrate(&root, &database_url(url)?, dry_run),
     }
 }
@@ -514,7 +805,13 @@ fn models(path: &Path) -> Result<Vec<Model>, String> {
     Ok(program.models)
 }
 
-fn write_diff(root: &Path, path: &Path, name: &str, allow_destructive: bool) -> Result<(), String> {
+fn write_diff(
+    root: &Path,
+    path: &Path,
+    name: &str,
+    allow_destructive: bool,
+    given: Dialect,
+) -> Result<(), String> {
     let models = models(path)?;
     if models.is_empty() {
         return Err(
@@ -524,10 +821,6 @@ fn write_diff(root: &Path, path: &Path, name: &str, allow_destructive: bool) -> 
     let wanted = schema_of(&models);
     let before = read_snapshot(root)?;
     let changes = diff(&before, &wanted);
-    if changes.is_empty() {
-        println!("the migrations already describe the models: nothing to write");
-        return Ok(());
-    }
     let destructive: Vec<&Change> = changes.iter().filter(|c| c.destructive()).collect();
     if !destructive.is_empty() && !allow_destructive {
         let mut message = String::from(
@@ -538,28 +831,65 @@ fn write_diff(root: &Path, path: &Path, name: &str, allow_destructive: bool) -> 
         }
         return Err(message);
     }
-    let existing = read_migrations(root)?;
-    let version = format!("{:04}", existing.len() + 1);
+    let dialects: Vec<Dialect> = Dialect::ALL
+        .into_iter()
+        .filter(|d| *d == given || migrations_dir(root, *d).is_dir())
+        .collect();
+    let mut existing = Vec::new();
+    for d in &dialects {
+        existing.extend(read_migrations(root, *d)?.into_iter().map(|m| m.version));
+    }
+    let last = existing
+        .iter()
+        .filter_map(|v| v.parse::<u32>().ok())
+        .max()
+        .unwrap_or(0);
+    // A database that only now gets migrations takes the latest version,
+    // so the folders stay in step.
+    let next = if changes.is_empty() {
+        last.max(1)
+    } else {
+        last + 1
+    };
+    let version = format!("{next:04}");
     let safe: String = name
         .chars()
         .map(|c| if c.is_ascii_alphanumeric() { c } else { '_' })
         .collect();
-    let dir = migrations_dir(root);
-    std::fs::create_dir_all(&dir).map_err(|e| format!("cannot make {}: {e}", dir.display()))?;
-    let file = dir.join(format!("{version}_{safe}.sql"));
-    let mut sql = format!(
-        "-- {version} {safe}\n-- Written by `kiln db diff`. Read it before applying it.\n\n"
-    );
-    sql.push_str(&migration_sql(&wanted, &changes));
-    std::fs::write(&file, &sql).map_err(|e| format!("cannot write {}: {e}", file.display()))?;
+    let mut wrote = false;
+    for dialect in dialects {
+        let dir = migrations_dir(root, dialect);
+        // A database that has no migrations yet gets the whole schema.
+        let changes = if dir.is_dir() {
+            diff(&before, &wanted)
+        } else {
+            diff(&Schema::default(), &wanted)
+        };
+        if changes.is_empty() {
+            continue;
+        }
+        std::fs::create_dir_all(&dir).map_err(|e| format!("cannot make {}: {e}", dir.display()))?;
+        let file = dir.join(format!("{version}_{safe}.sql"));
+        let mut sql = format!(
+            "-- {version} {safe}\n-- Written by `kiln db diff` for {}. Read it before applying it.\n\n",
+            dialect.name()
+        );
+        sql.push_str(&migration_sql(dialect, &wanted, &changes));
+        std::fs::write(&file, &sql).map_err(|e| format!("cannot write {}: {e}", file.display()))?;
+        println!("wrote {}", file.display());
+        for change in &changes {
+            println!("  {}", describe_change(change));
+        }
+        wrote = true;
+    }
+    if !wrote {
+        println!("the migrations already describe the models: nothing to write");
+        return Ok(());
+    }
     let snapshot = snapshot_path(root);
     let text = serde_json::to_string_pretty(&wanted).map_err(|e| e.to_string())?;
     std::fs::write(&snapshot, format!("{text}\n"))
         .map_err(|e| format!("cannot write {}: {e}", snapshot.display()))?;
-    println!("wrote {}", file.display());
-    for change in &changes {
-        println!("  {}", describe_change(change));
-    }
     println!("Read it, then apply it with `kiln db migrate`.");
     Ok(())
 }
@@ -597,11 +927,15 @@ fn describe_drift(change: &Change) -> String {
 }
 
 fn status(root: &Path, url: &str) -> Result<(), String> {
-    let db = Database::open(url)?;
+    let mut db = Database::open(url)?;
+    let dialect = db.dialect();
     let applied = db.applied()?;
-    let files = read_migrations(root)?;
+    let files = read_migrations(root, dialect)?;
     if files.is_empty() {
-        println!("no migrations in {}", migrations_dir(root).display());
+        println!(
+            "no migrations in {}",
+            migrations_dir(root, dialect).display()
+        );
     }
     for m in &files {
         let state = match applied.iter().find(|(v, _)| *v == m.version) {
@@ -619,7 +953,7 @@ fn status(root: &Path, url: &str) -> Result<(), String> {
     // What the database holds, against what the migrations describe.
     let live = db.schema()?;
     let expected = read_snapshot(root)?;
-    let drift = diff(&live, &expected);
+    let drift = drift(dialect, &live, &expected);
     if drift.is_empty() {
         println!("the database matches the migrations");
     } else {
@@ -632,18 +966,28 @@ fn status(root: &Path, url: &str) -> Result<(), String> {
 }
 
 fn verify(root: &Path) -> Result<(), String> {
-    let files = read_migrations(root)?;
-    let mut seen = Vec::new();
-    for m in &files {
-        if seen.contains(&m.version) {
-            return Err(format!("two migrations are version {}", m.version));
+    for dialect in Dialect::ALL {
+        if !migrations_dir(root, dialect).is_dir() {
+            continue;
         }
-        seen.push(m.version.clone());
+        let files = read_migrations(root, dialect)?;
+        let mut seen = Vec::new();
+        for m in &files {
+            if seen.contains(&m.version) {
+                return Err(format!(
+                    "two {} migrations are version {}",
+                    dialect.name(),
+                    m.version
+                ));
+            }
+            seen.push(m.version.clone());
+        }
+        println!(
+            "{}: {} migration(s), each with a version of its own",
+            dialect.name(),
+            files.len()
+        );
     }
-    println!(
-        "{} migration(s), each with a version of its own",
-        files.len()
-    );
     let snapshot = snapshot_path(root);
     if snapshot.is_file() {
         read_snapshot(root)?;
@@ -655,7 +999,7 @@ fn verify(root: &Path) -> Result<(), String> {
 fn migrate(root: &Path, url: &str, dry_run: bool) -> Result<(), String> {
     let mut db = Database::open(url)?;
     let applied = db.applied()?;
-    let files = read_migrations(root)?;
+    let files = read_migrations(root, db.dialect())?;
     for (version, sum) in &applied {
         match files.iter().find(|m| m.version == *version) {
             Some(m) if m.checksum == *sum => {}
@@ -704,7 +1048,7 @@ fn migrate(root: &Path, url: &str, dry_run: bool) -> Result<(), String> {
 
 /// `kiln db pull`: the models for the tables a database already has.
 fn pull(root: &Path, url: &str, out: Option<PathBuf>, check: bool) -> Result<(), String> {
-    let db = Database::open(url)?;
+    let mut db = Database::open(url)?;
     let live = db.schema()?;
     if live.tables.is_empty() {
         return Err(format!("{} has no tables", redact(url)));
@@ -712,7 +1056,7 @@ fn pull(root: &Path, url: &str, out: Option<PathBuf>, check: bool) -> Result<(),
     let source = models_source(&live);
     if check {
         let expected = read_snapshot(root)?;
-        let changes = diff(&expected, &live);
+        let changes = drift(db.dialect(), &expected, &live);
         if changes.is_empty() {
             println!("the database matches the models");
             return Ok(());
@@ -864,7 +1208,7 @@ mod tests {
         let changes = diff(&before, &after);
         assert_eq!(changes.len(), 2);
         assert!(!changes.iter().any(Change::destructive));
-        let sql = migration_sql(&after, &changes);
+        let sql = migration_sql(Dialect::Sqlite, &after, &changes);
         assert!(sql.contains("alter table posts add column title text not null default ''"));
         assert!(sql.contains("create table tags"));
         let back = diff(&after, &before);

@@ -1,6 +1,36 @@
 # Changelog
 
-## Unreleased
+## 0.10.0 (2026-10-26)
+
+Phase 5: data, auth and admin. Programs reach SQLite, PostgreSQL and
+MySQL through `sql`, query models through `orm` (checked and turned into
+SQL at build time), keep schemas in step with reviewed `kiln db`
+migrations, read forms with typed validation, sign people in with `auth`,
+and get admin pages from `admin.pages<T>`.
+
+- `sql`: parameterised queries into typed records, transactions and a
+  shared pool. SQLite is built in; PostgreSQL and MySQL/MariaDB clients
+  are part of the runtime and wait on Kiln's tasks, so a slow query holds
+  up only its own request. TLS to a database is not supported yet.
+- `orm`: models are structs; `where`, `order`, `limit`, inserts, updates
+  and deletes are checked against the model and compiled to SQL for the
+  database the program opens.
+- `kiln db diff/migrate/status/verify/pull`: per-database migration
+  folders with a neutral `schema.json`, SHA-256 ledger, drift reports, and
+  models read from an existing database. Destructive changes need
+  `--allow-destructive`.
+- `req.form` and `validate`: typed form records with field errors that SSR
+  forms and Embers share.
+- `auth`: Argon2id passwords, database sessions, CSRF checks and
+  same-origin guards. A `server fn` can take `web.Request` first, so RPC
+  is authenticated and authorised per record on the server.
+- `admin.pages<T>`: list, search, sort, page, create, edit and delete
+  pages for a model, behind an authorisation function.
+- `examples/journal`: a multi-folder app with sign-in, posts, an Ember
+  calling authenticated ORM-backed RPC, and admin, tested in a real
+  browser on all three databases.
+
+## 0.9.0 (2026-10-26)
 
 - **Multi-folder projects (Phase 4.2).** Explicit local folder imports, nested
   modules, public exports, private implementation types and deterministic

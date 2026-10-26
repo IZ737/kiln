@@ -14,6 +14,12 @@ ignore = [
     # programs Kiln builds.
     { id = "RUSTSEC-2024-0436", reason = "unmaintained, no fix; in libwild (kiln's linker), not in programs" },
     { id = "RUSTSEC-2024-0449", reason = "unmaintained, no fix; in libwild (kiln's linker), not in programs" },
+    # zstd-safe 7 comes from libwild too; the fix is in zstd-safe 8, which
+    # libwild 0.10 cannot use. libwild reads compressed sections through
+    # `zstd::stream::read::Decoder` and `decode_all`, which 0403 says are not
+    # affected, and does not turn on the `seekable` feature 0398 is in.
+    { id = "RUSTSEC-2026-0398", reason = "zstd seekable API, not enabled; in libwild (kiln's linker), not in programs" },
+    { id = "RUSTSEC-2026-0403", reason = "zstd write::Decoder only, which libwild does not use; not in programs" },
 ]
 
 [licenses]

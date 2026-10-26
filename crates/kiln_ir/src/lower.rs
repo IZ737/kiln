@@ -2125,15 +2125,16 @@ impl<'a> Lowerer<'a> {
                 }
                 let value = if one {
                     // `first` and `get` read the row the query kept.
-                    mk(
+                    let row = mk(
                         ExprKind::Method {
                             name: "get".into(),
                             recv: Box::new(read()),
                             args: vec![mk(ExprKind::Int(0), int, span)],
                         },
-                        rt.clone(),
+                        Ty::Opt(Box::new(model)),
                         span,
-                    )
+                    );
+                    coerce_value(row, rt)
                 } else {
                     read()
                 };
