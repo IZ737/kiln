@@ -1031,7 +1031,7 @@ dependencies = [
 
 [[package]]
 name = "kiln_check"
-version = "0.8.0"
+version = "0.9.0"
 dependencies = [
  "kiln_css",
  "kiln_diagnostics",
@@ -1040,7 +1040,7 @@ dependencies = [
 
 [[package]]
 name = "kiln_cli"
-version = "0.8.0"
+version = "0.9.0"
 dependencies = [
  "base64 0.22.1",
  "clap",
@@ -1065,7 +1065,7 @@ dependencies = [
 
 [[package]]
 name = "kiln_codegen"
-version = "0.8.0"
+version = "0.9.0"
 dependencies = [
  "kiln_check",
  "kiln_diagnostics",
@@ -1075,7 +1075,7 @@ dependencies = [
 
 [[package]]
 name = "kiln_css"
-version = "0.8.0"
+version = "0.9.0"
 dependencies = [
  "kiln_diagnostics",
  "lightningcss",
@@ -1083,7 +1083,7 @@ dependencies = [
 
 [[package]]
 name = "kiln_diagnostics"
-version = "0.8.0"
+version = "0.9.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -1091,7 +1091,7 @@ dependencies = [
 
 [[package]]
 name = "kiln_ir"
-version = "0.8.0"
+version = "0.9.0"
 dependencies = [
  "base64 0.23.1",
  "kiln_check",
@@ -1101,7 +1101,7 @@ dependencies = [
 
 [[package]]
 name = "kiln_native"
-version = "0.8.0"
+version = "0.9.0"
 dependencies = [
  "cranelift-codegen",
  "cranelift-frontend",
@@ -1117,7 +1117,7 @@ dependencies = [
 
 [[package]]
 name = "kiln_rt"
-version = "0.8.0"
+version = "0.9.0"
 dependencies = [
  "base64 0.23.1",
  "bytes",
@@ -1135,14 +1135,14 @@ dependencies = [
 
 [[package]]
 name = "kiln_syntax"
-version = "0.8.0"
+version = "0.9.0"
 dependencies = [
  "kiln_diagnostics",
 ]
 
 [[package]]
 name = "kiln_wasm"
-version = "0.8.0"
+version = "0.9.0"
 dependencies = [
  "kiln_check",
  "kiln_diagnostics",
