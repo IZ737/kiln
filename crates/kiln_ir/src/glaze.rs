@@ -266,6 +266,10 @@ fn generate_for(glazes: &[GlazeInput], app: &App, client: bool) -> GlazeSource {
              \n\
              fn __glaze_no_slot(__out: List<String>, __h: List<fn(ember.Event)>) {}\n",
         );
+        // The npm packages, which handlers use without imports.
+        for f in kiln_check::foreign_modules() {
+            g.text.push_str(&format!("import {}\n", f.name));
+        }
     } else {
         g.text.push_str(
             "// Generated from the app's glazes.\n\

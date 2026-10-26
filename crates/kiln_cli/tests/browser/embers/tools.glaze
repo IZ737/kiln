@@ -4,6 +4,8 @@
 {% state bad = "" %}
 {% state upper = "" %}
 {% state fetched = "" %}
+{% state ids = "" %}
+{% state later = "" %}
 <div id="tools">
     <button class="title" on:click={
         browser.set_title("Changed")
@@ -31,10 +33,22 @@
     }>JS</button>
     <button class="fetch" on:click={ fetched = browser.fetch("/plain") catch err { err.message } }>Fetch</button>
     <button class="fetch-missing" on:click={ fetched = browser.fetch("/missing") catch err { err.message } }>Fetch missing</button>
+    <button class="npm" on:click={
+        let short = nanoid.nanoid(8.0) catch err { err.message }
+        let long = nanoid.nanoid() catch err { err.message }
+        let alphabet = nanoid.url_alphabet() catch err { err.message }
+        ids = "${short.len()} ${long.len()} ${alphabet.len()}"
+    }>npm</button>
+    <button class="npm-wait" on:click={
+        later = kiln_demo.later(50.0) catch err { err.message }
+        kiln_demo.fail() catch err { later = "${later} ${err.message}" }
+    }>npm wait</button>
     <span class="title-out">{title}</span>
     <span class="stored">{stored}</span>
     <span class="heading">{heading}</span>
     <span class="bad">{bad}</span>
     <span class="upper">{upper}</span>
     <span class="fetched">{fetched}</span>
+    <span class="ids">{ids}</span>
+    <span class="later">{later}</span>
 </div>

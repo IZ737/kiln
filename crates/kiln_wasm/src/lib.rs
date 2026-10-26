@@ -150,15 +150,32 @@ pub fn node_runner(module: &Module) -> String {
     )
 }
 
+/// An npm package as the bridge loads it: its Kiln name, the URL of its
+/// entry module, and the JavaScript name of each export by its Kiln name.
+pub struct NpmModule {
+    pub name: String,
+    pub url: String,
+    pub names: Vec<(String, String)>,
+}
+
 /// The script a page with embers loads: the runtime and the bridge, which
 /// fetches the module from `wasm_url`, sends calls of `server fn`s with
-/// `rpc_version`, which the server checks, and loads the npm packages
-/// `npm` names (each Kiln name with the URL of its module).
-pub fn browser_script(wasm_url: &str, rpc_version: &str, npm: &[(String, String)]) -> String {
+/// `rpc_version`, which the server checks, and loads the npm packages.
+pub fn browser_script(wasm_url: &str, rpc_version: &str, npm: &[NpmModule]) -> String {
     let quote = |s: &str| serde_json::to_string(s).expect("a string is JSON");
     let packages: serde_json::Map<String, serde_json::Value> = npm
         .iter()
-        .map(|(name, url)| (name.clone(), url.clone().into()))
+        .map(|m| {
+            let names: serde_json::Map<String, serde_json::Value> = m
+                .names
+                .iter()
+                .map(|(k, js)| (k.clone(), js.clone().into()))
+                .collect();
+            (
+                m.name.clone(),
+                serde_json::json!({ "url": m.url, "names": names }),
+            )
+        })
         .collect();
     format!(
         "// Built by kiln: the runtime of this site's embers.\nconst KILN_WASM = {};\nconst KILN_RPC = {};\nconst KILN_NPM = {};\n{RUNTIME_JS}\n{EMBER_JS}",

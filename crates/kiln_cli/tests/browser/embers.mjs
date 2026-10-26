@@ -234,6 +234,12 @@ try {
   await page.click("#tools .fetch-missing");
   await eventually("a failed fetch is an error", async () => (await text(page, "#tools .fetched")) === "/missing answered 404");
 
+  await page.click("#tools .npm");
+  await eventually("an npm package's functions and constants work", async () => (await text(page, "#tools .ids")) === "8 21 64");
+
+  await page.click("#tools .npm-wait");
+  await eventually("an npm promise is waited for, and a throw is an error", async () => (await text(page, "#tools .later")) === "done Error: nope");
+
   check("the page logged nothing", logs.length === 0, logs.join("\n"));
   check("the module is served as application/wasm", wasm.every((w) => w.type === "application/wasm"), JSON.stringify(wasm));
   check("the module is fetched once", wasm.length === 1, JSON.stringify(wasm));

@@ -69,6 +69,22 @@ pub(super) fn lib_call(g: &mut Gen, module: &str, name: &str, args: &[Expr], ty:
         g.line("call $b_ember_call");
         return;
     }
+    if let ("ember", "npm") = (module, name) {
+        // A package function that does not wait: the bridge calls it
+        // there and then.
+        for a in args {
+            g.expr(a);
+        }
+        g.extra_imports.insert(
+            "  (import \"n\" \"call\" (func $n_call (param externref externref externref) (result externref)))"
+                .to_string(),
+        );
+        g.line("call $n_call");
+        g.line("call $k_take_error_js");
+        g.line("global.set $lib_error");
+        g.lib_failed();
+        return;
+    }
     if WAITING.contains(&(module, name)) {
         for a in args {
             g.discard(a);

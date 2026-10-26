@@ -28,6 +28,7 @@ ureq = { version = "3", default-features = false, features = ["rustls", "gzip"] 
 rustls-native-certs = "0.8"
 webpki-root-certs = "1"
 sha2 = "0.11"
+base64 = "0.22"
 flate2 = "1"
 tar = { version = "0.4", default-features = false }
 zip = { version = "9", default-features = false, features = ["deflate-flate2"] }

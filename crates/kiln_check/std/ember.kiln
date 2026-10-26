@@ -30,3 +30,8 @@ struct Reply {
 // Calls the `server fn` named `name` with its arguments as a JSON object,
 // and then `done` with the answer. Embers call server functions this way.
 fn call(name: String, args: String, done: fn(Reply)) {}
+
+// Calls the export `name` of the npm package `package` with its arguments
+// as a JSON object, and gives `{"ok": result}`. A package's functions call
+// it; JavaScript's exceptions are its errors.
+fn npm(package: String, name: String, args: String) -> String ! {}

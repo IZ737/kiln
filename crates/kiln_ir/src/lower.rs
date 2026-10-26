@@ -1891,6 +1891,17 @@ impl<'a> Lowerer<'a> {
                 return (with_prelude(prelude, call), sig.throws.clone());
             }
         }
+        // An npm package's function is called through the Kiln function
+        // the build adds for it (see `kiln add`).
+        if self.p.modules.get(module).is_some_and(|m| m.foreign) {
+            let mangled = format!("__npm__{module}__{}", name.name);
+            if let Some(&(func, decl)) = self.fns.get(&mangled) {
+                let sig = self.p.global_fns[&mangled].clone();
+                let (func, sig) =
+                    self.instance(func, Template::Fn(mangled.clone()), &sig, span, None);
+                return self.user_call(func, &sig, decl, None, args, rt, span);
+            }
+        }
         let what = format!("`{module}.{}`", name.name);
         (self.unsupported(span, what), None)
     }

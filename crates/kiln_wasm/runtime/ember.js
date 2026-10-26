@@ -613,9 +613,10 @@ async function send(name, args, signal) {
   if (local) return local(JSON.parse(args), signal);
   const dot = name.indexOf(".");
   if (dot > 0 && name.slice(0, dot) in npm) {
-    const f = npm[name.slice(0, dot)][name.slice(dot + 1)];
+    const pkg = name.slice(0, dot);
     try {
-      return [true, JSON.stringify({ ok: await f(...Object.values(JSON.parse(args))) })];
+      const result = await npmCall(pkg, KILN_NPM[pkg].names[name.slice(dot + 1)], args);
+      return [true, JSON.stringify({ ok: result })];
     } catch (err) {
       return [false, err instanceof Error ? `${err.name}: ${err.message}` : String(err)];
     }
@@ -671,7 +672,17 @@ const WAITS = {
 const npm = {};
 
 async function loadPackages() {
-  for (const [name, url] of Object.entries(KILN_NPM)) npm[name] = await import(url);
+  for (const [name, { url }] of Object.entries(KILN_NPM)) npm[name] = await import(url);
+}
+
+/** Calls a package's export `js` with the arguments of `args` (a JSON
+ *  object, in order), or reads it when it is not a function. Kiln's
+ *  `none` is `undefined`, as JavaScript leaves an argument out. */
+function npmCall(pkg, js, args) {
+  const v = npm[pkg][js];
+  if (typeof v !== "function") return v;
+  const values = Object.values(JSON.parse(args)).map((a) => (a === null ? undefined : a));
+  return v(...values);
 }
 
 /** The imports of module `n`: each package function the embers call,
@@ -681,12 +692,12 @@ function npmImports() {
   return {
     call: (pkg, name, args) => {
       try {
-        const result = npm[pkg][name](...Object.values(JSON.parse(args)));
+        const result = npmCall(pkg, name, args);
         if (result instanceof Promise) {
           failWith(`${pkg}.${name} returned a promise`);
           return "";
         }
-        return JSON.stringify({ ok: result });
+        return JSON.stringify({ ok: result ?? null });
       } catch (err) {
         failWith(err);
         return "";

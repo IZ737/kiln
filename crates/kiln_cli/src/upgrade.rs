@@ -123,7 +123,7 @@ fn old_path(exe: &Path) -> PathBuf {
 /// proxies that a company's own certificate signs, and Mozilla's where the
 /// system has none (such as an empty container). It uses the HTTPS_PROXY
 /// and NO_PROXY environment variables. Requests give up after `timeout`.
-fn agent(timeout: Duration) -> Result<ureq::Agent, String> {
+pub(crate) fn agent(timeout: Duration) -> Result<ureq::Agent, String> {
     use ureq::tls::{Certificate, RootCerts, TlsConfig};
     let native = rustls_native_certs::load_native_certs().certs;
     let certs: Vec<Certificate<'static>> = if native.is_empty() {
@@ -152,7 +152,7 @@ fn agent(timeout: Duration) -> Result<ureq::Agent, String> {
 /// The body at `url`, or `None` when there is nothing there (404).
 /// Redirects, which GitHub sends for every download, are followed here
 /// without reading their bodies, which some proxies garble.
-fn get(agent: &ureq::Agent, url: &str) -> Result<Option<Vec<u8>>, String> {
+pub(crate) fn get(agent: &ureq::Agent, url: &str) -> Result<Option<Vec<u8>>, String> {
     let mut url = url.to_string();
     for _ in 0..10 {
         let mut response = agent

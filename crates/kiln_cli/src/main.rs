@@ -3,6 +3,7 @@
 
 mod lsp;
 mod notice;
+mod npm;
 mod styles;
 mod upgrade;
 
@@ -99,6 +100,16 @@ enum Command {
         /// An error code such as E0106.
         code: String,
     },
+    /// Add an npm package for embers to call, such as `npm:nanoid@5.0.9`.
+    /// Its files are kept in the program's folder under `npm/`, and
+    /// `npm.lock` records their checksums and the Kiln bindings.
+    Add {
+        /// The package: `npm:name@version`.
+        package: String,
+        /// The program's folder. Defaults to the current directory.
+        #[arg(default_value = ".")]
+        dir: PathBuf,
+    },
     /// Replace this kiln with the latest release, or the one you name.
     Upgrade {
         /// The release to install, such as v0.2.0. Defaults to the latest.
@@ -180,6 +191,16 @@ fn dispatch(command: Command) -> ExitCode {
         Command::Lsp => ExitCode::from(lsp::run() as u8),
         Command::Parse { file } => parse(&file),
         Command::Explain { code } => explain(&code),
+        Command::Add { package, dir } => match npm::add(&package, &dir) {
+            Ok(summary) => {
+                println!("{summary}");
+                ExitCode::SUCCESS
+            }
+            Err(err) => {
+                eprintln!("error: {err}");
+                ExitCode::FAILURE
+            }
+        },
         Command::Upgrade {
             version,
             check,
@@ -307,6 +328,9 @@ struct AppInfo {
     glaze_values: GlazeValues,
     glaze_states: Vec<Vec<(String, String)>>,
     styles: styles::AppStyles,
+    /// The npm packages of `npm.lock`, or why they cannot be used.
+    npm: Vec<npm::Package>,
+    npm_error: Option<String>,
 }
 
 /// What the checker found each value a glaze outputs to be, for each glaze
@@ -331,6 +355,12 @@ fn check_app_sources(
         })
         .unwrap_or(Path::new("."))
         .to_path_buf();
+    // The npm packages are modules for the embers' handlers.
+    let (npm, npm_error) = match npm::load(&dir) {
+        Ok(packages) => (packages, None),
+        Err(err) => (Vec::new(), Some(err)),
+    };
+    kiln_check::set_foreign_modules(npm.iter().map(|p| p.bindings.clone()).collect());
     let mut sources = Vec::new();
     for (path, text) in &texts {
         let file = SourceFile::new(path.display().to_string(), text.clone());
@@ -415,6 +445,8 @@ fn check_app_sources(
         glaze_values: result.glaze_values,
         glaze_states: result.glaze_states,
         styles,
+        npm,
+        npm_error,
     };
     (out, info)
 }
@@ -528,6 +560,10 @@ fn build(
     let glaze_values = &info.glaze_values;
     let glaze_states = &info.glaze_states;
     let styles = &info.styles;
+    if let Some(err) = &info.npm_error {
+        eprintln!("error: {err}");
+        return Err(ExitCode::from(2));
+    }
     let count: usize = checked.iter().map(|(_, d)| d.len()).sum();
     if count > 0 {
         for (file, diagnostics) in &checked {
@@ -618,15 +654,19 @@ fn build(
     if parsed_glazes.iter().any(|g| g.is_ember()) {
         let user = kiln_syntax::parse(&combined);
         (server_fns, rpc_guard) = server_fns_of(&user.module, &combined);
+        // Handlers wait for the npm functions that return promises as
+        // they do for `server fn`s.
+        let mut waits = server_fns.clone();
+        waits.extend(npm::waits(&info.npm));
         let client_app = kiln_ir::glaze::App {
-            server_fns: &server_fns,
+            server_fns: &waits,
             ..Default::default()
         };
         let client = kiln_ir::glaze::generate_client(&inputs, &client_app);
         if !client.diagnostics.is_empty() {
             return Err(failed_in_glazes(&client.diagnostics));
         }
-        let text = format!("{combined}{}", client.text);
+        let text = format!("{combined}{}{}", client.text, npm::calls_source(&info.npm));
         let report = |d| {
             report_diagnostics(
                 d,
@@ -657,7 +697,17 @@ fn build(
         // Calls stay valid while the functions' signatures do.
         rpc_version = kiln_css::short_hash(format!("{server_fns:?}").as_bytes());
         let wasm_url = format!("/_kiln/ember-{}.wasm", kiln_css::short_hash(&module.wasm));
-        let js = kiln_wasm::browser_script(&wasm_url, &rpc_version, &[]);
+        let js = kiln_wasm::browser_script(&wasm_url, &rpc_version, &npm::modules(&info.npm));
+        for package in &info.npm {
+            for (path, body) in &package.files {
+                assets.push(kiln_ir::glaze::Asset {
+                    path: path.clone(),
+                    content_type: "text/javascript; charset=utf-8",
+                    body: body.clone(),
+                    immutable: true,
+                });
+            }
+        }
         let js_url = format!("/_kiln/ember-{}.js", kiln_css::short_hash(js.as_bytes()));
         assets.push(kiln_ir::glaze::Asset {
             path: wasm_url,
