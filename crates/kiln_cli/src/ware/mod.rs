@@ -15,6 +15,7 @@ pub mod name;
 pub mod policy;
 pub mod registry;
 pub mod resolve;
+pub mod ui;
 
 use lock::Lock;
 use manifest::Manifest;

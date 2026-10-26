@@ -58,7 +58,7 @@ fn tell(op: String, at: String, pairs: List<String>) -> String {
 }
 
 // Fails the test now, with a message.
-pub fn fail(message: String, at: String = "") -> Never {
+pub fn fail(message: String, at: String = "@caller") -> Never {
     io.write("@@kiln-test@@ ${json.encode({ op: "fail", message, at, expected: "", actual: "" })}\n")
     io.flush()
     os.exit(1)
@@ -71,40 +71,40 @@ fn differ(message: String, expected: String, actual: String, at: String) -> Neve
 }
 
 // `actual` must equal `expected`.
-pub fn equal<T>(actual: T, expected: T, at: String = "") {
+pub fn equal<T>(actual: T, expected: T, at: String = "@caller") {
     if actual != expected {
         differ("the values differ", "${expected}", "${actual}", at)
     }
 }
 
 // `actual` must differ from `other`.
-pub fn not_equal<T>(actual: T, other: T, at: String = "") {
+pub fn not_equal<T>(actual: T, other: T, at: String = "@caller") {
     if actual == other {
         differ("the values are equal", "anything but ${other}", "${actual}", at)
     }
 }
 
-pub fn is_true(value: Bool, message: String = "expected true", at: String = "") {
+pub fn is_true(value: Bool, message: String = "expected true", at: String = "@caller") {
     if not value {
         fail(message, at: at)
     }
 }
 
-pub fn is_false(value: Bool, message: String = "expected false", at: String = "") {
+pub fn is_false(value: Bool, message: String = "expected false", at: String = "@caller") {
     if value {
         fail(message, at: at)
     }
 }
 
 // `text` must contain `part`.
-pub fn contains(text: String, part: String, at: String = "") {
+pub fn contains(text: String, part: String, at: String = "@caller") {
     if not text.contains(part) {
         differ("the text does not contain what was expected", "text containing ${part}", text, at)
     }
 }
 
 // `value` must be a value, not `none`; returns it.
-pub fn some<T>(value: T?, at: String = "") -> T {
+pub fn some<T>(value: T?, at: String = "@caller") -> T {
     match value {
         some(v) => v
         none => fail("expected a value, found none", at: at)
@@ -112,7 +112,7 @@ pub fn some<T>(value: T?, at: String = "") -> T {
 }
 
 // `run` must fail; returns its error's message.
-pub fn fails<T>(run: fn() -> T !, at: String = "") -> String {
+pub fn fails<T>(run: fn() -> T !, at: String = "@caller") -> String {
     let message = run() catch err {
         return err.message
     }
@@ -128,13 +128,13 @@ pub fn temp_dir() -> String {
 // A database of the test's own, with the project's migrations applied:
 // `sqlite:` in the test's folder. The app's server, if the test starts it,
 // uses the same database as `DATABASE_URL`.
-pub fn database_url(at: String = "") -> String {
+pub fn database_url(at: String = "@caller") -> String {
     tell("database", at, [])
 }
 
 // The address of the app under test: kiln builds the project's program
 // and starts it for this test on a free port, on 127.0.0.1.
-pub fn base_url(at: String = "") -> String {
+pub fn base_url(at: String = "@caller") -> String {
     tell("server", at, [])
 }
 
@@ -145,7 +145,7 @@ pub fn request(
     path: String,
     body: String = "",
     headers: Map<String, String> = Map(),
-    at: String = "",
+    at: String = "@caller",
 ) -> Response {
     let value = tell(
         "http",
@@ -157,12 +157,12 @@ pub fn request(
     }
 }
 
-pub fn get(path: String, at: String = "") -> Response {
+pub fn get(path: String, at: String = "@caller") -> Response {
     request("GET", path, at: at)
 }
 
 // Posts a form, encoded as a browser does.
-pub fn post_form(path: String, fields: Map<String, String>, at: String = "") -> Response {
+pub fn post_form(path: String, fields: Map<String, String>, at: String = "@caller") -> Response {
     var body = ""
     for entry in fields.entries() {
         if body != "" {
@@ -176,7 +176,7 @@ pub fn post_form(path: String, fields: Map<String, String>, at: String = "") -> 
 }
 
 // Posts JSON.
-pub fn post_json(path: String, body: String, at: String = "") -> Response {
+pub fn post_json(path: String, body: String, at: String = "@caller") -> Response {
     let headers: Map<String, String> = Map()
     headers["content-type"] = "application/json"
     request("POST", path, body: body, headers: headers, at: at)

@@ -210,6 +210,14 @@ enum Command {
         #[command(subcommand)]
         action: CacheCommand,
     },
+    /// Copy components of kiln/ui into your project, to own and change.
+    Ui {
+        #[command(subcommand)]
+        action: UiCommand,
+    },
+    /// Make a new web app in a new folder: a manifest, a page, a module and
+    /// tests. Nothing is fetched or run.
+    New { dir: PathBuf },
     /// Check a locked Ware's source against kiln.lock and its capabilities.
     Ware {
         #[command(subcommand)]
@@ -274,6 +282,23 @@ enum WareCommand {
         #[arg(long, default_value = ".")]
         dir: PathBuf,
     },
+}
+
+#[derive(Subcommand)]
+enum UiCommand {
+    /// Copy components, such as `button input`, or `all`. Files that exist
+    /// are never overwritten.
+    Add {
+        #[arg(required = true)]
+        components: Vec<String>,
+        /// The folder module to copy them into.
+        #[arg(long, default_value = "components")]
+        into: String,
+        #[arg(long, default_value = ".")]
+        dir: PathBuf,
+    },
+    /// List the components.
+    List,
 }
 
 #[derive(Subcommand)]
@@ -448,6 +473,18 @@ fn dispatch(command: Command) -> ExitCode {
                 days: older_than,
             },
         })),
+        Command::Ui {
+            action:
+                UiCommand::Add {
+                    components,
+                    into,
+                    dir,
+                },
+        } => report(ware::ui::add(&dir, &into, &components)),
+        Command::Ui {
+            action: UiCommand::List,
+        } => report(Ok(ware::ui::names().join("\n"))),
+        Command::New { dir } => report(ware::ui::new_project(&dir)),
         Command::Ware {
             action: WareCommand::Verify { ware: w, dir },
         } => report(ware::commands::verify_ware(&w, &dir)),
@@ -969,8 +1006,19 @@ fn build(
         eprintln!("{}", diag.render(&file));
         ExitCode::from(2)
     })?;
-    let dir = project.root;
-    let files = project.files;
+    build_project(&project, out, emit, backend, target)
+}
+
+/// [`build`], for a project already found, such as a test harness.
+fn build_project(
+    project: &project::Project,
+    out: &Path,
+    emit: Emit,
+    backend: Backend,
+    target: Target,
+) -> Result<(), ExitCode> {
+    let dir = project.root.clone();
+    let files = project.files.clone();
     let failed = |count: usize| {
         eprintln!("{count} error(s). Run `kiln explain <code>` for details.");
         ExitCode::FAILURE
@@ -1233,7 +1281,10 @@ fn build(
             ExitCode::from(2)
         })
     };
-    let ir = kiln_ir::lower(&parsed.module, &program).map_err(report)?;
+    kiln_ir::set_caller_location(Some(caller_locations(&kiln_files, &offsets, &info)));
+    let ir = kiln_ir::lower(&parsed.module, &program);
+    kiln_ir::set_caller_location(None);
+    let ir = ir.map_err(report)?;
     if let Some(ir_path) = emit.ir {
         write(ir_path, &ir.to_string())?;
     }
@@ -1258,6 +1309,37 @@ fn build(
     linked.map_err(|err| {
         eprintln!("error: {err}");
         ExitCode::from(2)
+    })
+}
+
+/// How a call is shown to a person, as `path:line:column` in its original
+/// file, from its offset in the program's text.
+fn caller_locations(
+    kiln_files: &[&SourceFile],
+    offsets: &[u32],
+    info: &AppInfo,
+) -> Box<dyn Fn(u32) -> String + Send> {
+    let files: Vec<(u32, SourceFile, Option<(SourceFile, project::bind::SourceMap)>)> = kiln_files
+        .iter()
+        .zip(offsets)
+        .map(|(f, &o)| ((*f).clone(), o, info.source_maps.get(&f.name).cloned()))
+        .map(|(f, o, m)| (o, f, m))
+        .collect();
+    let cwd = std::env::current_dir().unwrap_or_default();
+    Box::new(move |offset| {
+        let Some(i) = files.iter().rposition(|(o, _, _)| *o <= offset) else {
+            return String::new();
+        };
+        let (start, file, map) = &files[i];
+        let local = offset - start;
+        let (file, local) = match map {
+            Some((original, map)) => (original, map.original(Span::new(local as usize, local as usize)).start),
+            None => (file, local),
+        };
+        let at = file.line_col(local);
+        let path = PathBuf::from(project::shown(&file.name));
+        let path = path.strip_prefix(&cwd).unwrap_or(&path);
+        format!("{}:{}:{}", path.display(), at.line, at.column)
     })
 }
 

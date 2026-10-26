@@ -41,7 +41,7 @@ pub mod rt;
 
 pub use kiln_check::types::{AdtDef, AdtId, AdtKind, FnTy, Ty};
 pub use kiln_check::ValueKind;
-pub use lower::lower;
+pub use lower::{lower, set_caller_location, CALLER_DEFAULT};
 
 use kiln_diagnostics::Span;
 

@@ -10,6 +10,7 @@ Glazes with scoped CSS, styled by your design tokens.
 | `<ui.Textarea label="Body" name="body" />` | A labelled text area |
 | `<ui.Select label="Role" name="role" options={[ui.choice("a", "Admin")]} />` | A labelled choice |
 | `<ui.Checkbox label="Published" name="published" checked={...} />` | A checkbox and its label |
+| `<ui.Radio label="Plan" name="plan" options={[ui.choice("free", "Free")]} selected="free" />` | Radio buttons under one legend |
 | `<ui.FormErrors problems={checked.messages()} />` | A form's problems, announced to screen readers |
 | `<ui.Alert tone={ui.Tone.Success} title="Saved">...</ui.Alert>` | A message; danger alerts are announced at once |
 | `<ui.Badge>Draft</ui.Badge>` | A short label |
