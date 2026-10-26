@@ -1562,7 +1562,7 @@ impl<'a> Gen<'a> {
             ("os", "args" | "cwd" | "temp_dir" | "pid" | "platform") => {
                 (self.store(&format!("k_os_{name}()"), ty), false)
             }
-            ("io", "read_line" | "read_all" | "read_lines") => {
+            ("io", "read_line" | "read_all" | "read_lines" | "flush") => {
                 (self.store(&format!("k_io_{name}()"), ty), false)
             }
             ("io", "write" | "print_err") => {

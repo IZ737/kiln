@@ -83,6 +83,7 @@ pub(crate) fn signature(name: &str) -> Option<(&'static [C], Option<C>)> {
         "k_take_error" | "k_time_now" | "k_os_args" | "k_os_cwd" | "k_os_temp_dir" | "k_os_pid"
         | "k_os_platform" | "k_io_read_line" | "k_io_read_all" | "k_io_read_lines"
         | "k_web_not_found" => (&[], Some(I64)),
+        "k_io_flush" => (&[], None),
         "k_web_app" => (&[I64, I64, I64, I64, Bool], Some(I64)),
         "k_alloc"
         | "k_neg"

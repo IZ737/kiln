@@ -1869,6 +1869,7 @@ K_API klist *k_io_read_lines(void) {
     return lines;
 }
 
+K_API void k_io_flush(void) { fflush(stdout); }
 K_API void k_io_write(kstr *s) { fwrite(s->data, 1, (size_t)s->len, stdout); }
 
 K_API void k_io_print_err(kstr *s) {
