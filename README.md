@@ -56,6 +56,11 @@ See the [full long-term vision](docs/vision.md) for the principles, eventual
 capabilities, adoption strategy, deliberate non-goals and the distinction
 between today's implementation and future ideas.
 
+For a **far-future, explicitly non-roadmapped experiment**, see the
+[KilnOS vision](docs/vision/kilnos.md): a Linux-based, web-first operating
+environment written largely in Kiln, with first-class PWAs and a programmable
+desktop. KilnOS is a separate hobby concept, not a current compiler milestone.
+
 ## Highlights
 
 - **Convention over configuration.** The planned ORM, forms, auth, admin,
