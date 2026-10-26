@@ -110,6 +110,16 @@ fn every_page_and_file_is_served() {
             assert_eq!(kind, "image/svg+xml", "{path}");
             continue;
         }
+        if path.ends_with(".js") {
+            // The embers' runtime, which loads their WebAssembly.
+            assert_eq!(kind, "text/javascript; charset=utf-8", "{path}");
+            let wasm = r.body.split("const KILN_WASM = \"").nth(1).unwrap();
+            let wasm = &wasm[..wasm.find('"').unwrap()];
+            let w = server.get(wasm);
+            assert_eq!(w.status, 200, "{wasm}");
+            assert_eq!(w.header("content-type"), "application/wasm", "{wasm}");
+            continue;
+        }
         if path.ends_with(".png") {
             assert_eq!(kind, "image/png", "{path}");
             continue;
@@ -129,6 +139,21 @@ fn every_page_and_file_is_served() {
     // The landing page, install and getting started, and every page of
     // docs/ that the generator carries.
     assert!(pages >= 18, "only {pages} pages: {seen:?}");
+    // Without WebAssembly the search box is a form that loads /search.
+    let found = server.get("/search?q=glaze");
+    assert_eq!(found.status, 200);
+    check_page("/search", &found.body);
+    assert!(
+        found.body.contains("href=\"/docs/reference/glazes\""),
+        "{}",
+        found.body
+    );
+    let none = server.get("/search?q=%3Cscript%3Exyzzy");
+    assert!(
+        none.body.contains("No pages match “&lt;script&gt;xyzzy”"),
+        "{}",
+        none.body
+    );
     assert!(css.contains(".theme-forge{"), "{css}");
     assert!(css.contains(".theme-paper{"), "{css}");
     assert!(css.contains("@media (min-width:900px)"), "{css}");
@@ -211,7 +236,7 @@ fn the_other_theme_restyles_the_same_pages() {
 }
 
 /// What a page must have: a language, a title, one `<h1>`, images with
-/// text alternatives, and no scripts.
+/// text alternatives, and no scripts but the embers' runtime.
 fn check_page(path: &str, html: &str) {
     assert!(html.starts_with("<!doctype html>"), "{path}");
     assert!(html.contains("<html lang=\"en\">"), "{path}");
@@ -230,7 +255,16 @@ fn check_page(path: &str, html: &str) {
         let tag = &img[..img.find('>').unwrap()];
         assert!(tag.contains(" alt=\""), "{path}: <img{tag}>");
     }
-    assert!(!html.contains("<script"), "{path}");
+    // The only script is the embers' runtime: the search box and copy
+    // buttons are embers, and the rest is HTML and CSS.
+    for script in html.split("<script").skip(1) {
+        assert!(
+            script.starts_with(" type=\"module\" src=\"/_kiln/ember-"),
+            "{path}: <script{}",
+            &script[..script.find('>').unwrap_or(script.len())]
+        );
+    }
+    assert_eq!(html.matches("<script").count(), 1, "{path}: one script");
 }
 
 fn build(program: &Path, dir: &Path) -> PathBuf {

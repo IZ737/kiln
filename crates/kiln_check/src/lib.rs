@@ -90,7 +90,29 @@ pub fn check_program_with_tokens(
     glazes: &[(&str, &Glaze)],
     tokens: &style::Tokens,
 ) -> Program {
+    check_program_for(module, glazes, tokens, false)
+}
+
+/// [`check_program_with_tokens`] for the code of a page's embers, which
+/// runs in the browser: the handlers the compiler wrote from the glazes
+/// may use the browser's modules. The glazes were checked with
+/// [`check_app`], which made sure only handlers do.
+pub fn check_browser_program(
+    module: &Module,
+    glazes: &[(&str, &Glaze)],
+    tokens: &style::Tokens,
+) -> Program {
+    check_program_for(module, glazes, tokens, true)
+}
+
+fn check_program_for(
+    module: &Module,
+    glazes: &[(&str, &Glaze)],
+    tokens: &style::Tokens,
+    browser: bool,
+) -> Program {
     let mut checker = checker::Checker::new();
+    checker.browser_program = browser;
     checker.tokens = Rc::new(tokens.clone());
     checker.collect_module(module);
     if !glazes.is_empty() {
@@ -209,6 +231,9 @@ pub struct AppDiagnostics {
     /// For each glaze, what each value it outputs is, by the span of the
     /// value's expression: what the compiler needs to render it.
     pub glaze_values: Vec<HashMap<Span, ValueKind>>,
+    /// For each glaze, its `{% state %}`s with their types as Kiln writes
+    /// them.
+    pub glaze_states: Vec<Vec<(String, String)>>,
     /// The atomic CSS rules the app's styles use, by class name (see
     /// [`style::stylesheet`]).
     pub ui_rules: BTreeMap<String, style::UiRule>,
@@ -243,6 +268,7 @@ pub fn check_app_with_css(
         modules: Vec::new(),
         glazes: Vec::new(),
         glaze_values: Vec::new(),
+        glaze_states: Vec::new(),
         ui_rules: BTreeMap::new(),
     };
     for i in 0..modules.len() {
@@ -254,6 +280,7 @@ pub fn check_app_with_css(
         let checker = glaze_checker(modules, glazes, i, false, css);
         out.glazes.push(sorted(checker.diags));
         out.glaze_values.push(checker.glaze_values);
+        out.glaze_states.push(checker.glaze_states);
         out.ui_rules.extend(checker.ui_rules);
     }
     out
@@ -364,4 +391,30 @@ fn glaze_checker(
 fn sorted(mut diags: Vec<Diagnostic>) -> Vec<Diagnostic> {
     diags.sort_by_key(|d| (d.span.start, d.span.end));
     diags
+}
+
+/// An npm package's bindings: Kiln declarations made from its TypeScript
+/// ones, such as `fn nanoid(size: Float? = none) -> String ! {}`, and the
+/// exports Kiln cannot call, with why. The checker sees each as a module
+/// named `name`, which only an ember's handlers can use.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Foreign {
+    pub name: String,
+    pub source: String,
+    pub unsupported: Vec<(String, String)>,
+}
+
+thread_local! {
+    static FOREIGN: std::cell::RefCell<Vec<Foreign>> = const { std::cell::RefCell::new(Vec::new()) };
+}
+
+/// Sets the npm packages that checking on this thread sees, for the
+/// program being compiled.
+pub fn set_foreign_modules(modules: Vec<Foreign>) {
+    FOREIGN.with(|f| *f.borrow_mut() = modules);
+}
+
+/// The npm packages set by [`set_foreign_modules`].
+pub fn foreign_modules() -> Vec<Foreign> {
+    FOREIGN.with(|f| f.borrow().clone())
 }

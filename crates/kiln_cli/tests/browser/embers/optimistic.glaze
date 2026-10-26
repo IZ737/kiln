@@ -1,0 +1,15 @@
+{% state n = 0 %}
+{% state error = "" %}
+<div id="optimistic">
+    <button class="bump" on:click={
+        let before = n
+        n += 1
+        error = ""
+        save(n) catch err {
+            n = before
+            error = err.message
+        }
+    }>Bump</button>
+    <span class="n">{n}</span>
+    <span class="error">{error}</span>
+</div>

@@ -1,0 +1,23 @@
+{% layout "layout.glaze" title: "Search", current: "" %}
+{% props q: String, hits: List<SearchHit> %}
+<article class="prose">
+<h1>Search</h1>
+<form action="/search" method="get" role="search">
+<label for="results-q">Search the docs</label>
+<input id="results-q" type="search" name="q" value={q}>
+<button type="submit">Search</button>
+</form>
+{% if q.trim() == "" %}
+<p>Type a word to look for.</p>
+{% else %}
+{% if hits.is_empty() %}
+<p>No pages match “{q}”.</p>
+{% else %}
+<ul>
+{% for hit in hits %}
+<li><a href={hit.href}>{hit.title}</a> ({hit.section})</li>
+{% end %}
+</ul>
+{% end %}
+{% end %}
+</article>

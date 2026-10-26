@@ -413,6 +413,7 @@ impl<'a> Lowerer<'a> {
         self.finish(id, decl.name.name.clone(), kind, params, ret, body);
         if let Some(f) = self.funcs[id].as_mut() {
             f.type_args = type_args;
+            f.server = decl.is_server;
         }
     }
 
@@ -462,6 +463,7 @@ impl<'a> Lowerer<'a> {
             throws: ctx.throws,
             locals,
             body,
+            server: false,
         });
         ctx.captures.iter().map(|c| c.0).collect()
     }
@@ -1794,6 +1796,7 @@ impl<'a> Lowerer<'a> {
                 E::Bool(b) => Some(ExprKind::Bool(*b)),
                 E::Duration(text) => duration_ns(text).map(ExprKind::Int),
                 E::None => Some(ExprKind::None),
+                E::List(items) if items.is_empty() => Some(ExprKind::List(Vec::new())),
                 E::Str(pieces) => match pieces.as_slice() {
                     [] => Some(ExprKind::Str(String::new())),
                     [ast::StrPiece::Text(t)] => Some(ExprKind::Str(t.clone())),
@@ -1886,6 +1889,17 @@ impl<'a> Lowerer<'a> {
                 };
                 let call = coerce_value(call, rt);
                 return (with_prelude(prelude, call), sig.throws.clone());
+            }
+        }
+        // An npm package's function is called through the Kiln function
+        // the build adds for it (see `kiln add`).
+        if self.p.modules.get(module).is_some_and(|m| m.foreign) {
+            let mangled = format!("__npm__{module}__{}", name.name);
+            if let Some(&(func, decl)) = self.fns.get(&mangled) {
+                let sig = self.p.global_fns[&mangled].clone();
+                let (func, sig) =
+                    self.instance(func, Template::Fn(mangled.clone()), &sig, span, None);
+                return self.user_call(func, &sig, decl, None, args, rt, span);
             }
         }
         let what = format!("`{module}.{}`", name.name);
@@ -2015,12 +2029,12 @@ impl Lowerer<'_> {
 /// Modules whose functions become [`ExprKind::Lib`] calls, for the
 /// backend to build.
 const LIB_MODULES: &[&str] = &[
-    "time", "fs", "os", "io", "web", "json", "html", "base64", "markdown",
+    "time", "fs", "os", "io", "web", "json", "html", "base64", "markdown", "ember", "js", "browser",
 ];
 
 /// Types of those modules whose methods are [`ExprKind::Lib`] calls too,
 /// named `Type.method`, with the receiver as the first argument.
-const LIB_TYPES: &[(&str, &str)] = &[("web", "App"), ("web", "Request")];
+const LIB_TYPES: &[(&str, &str)] = &[("web", "App"), ("web", "Request"), ("js", "Value")];
 
 /// The type of a library call: its declared return type, with a generic
 /// one's type arguments at this call filled in (`json.decode<Post>` has type

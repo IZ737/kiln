@@ -162,3 +162,72 @@ img {
     border-left: 3px solid var(--color-accent);
     color: var(--color-muted);
 }
+
+/* The search box in the header, an ember. Without WebAssembly it is a
+   form that loads /search. */
+.search {
+    position: relative;
+}
+
+.search-label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+}
+
+.search input {
+    font: inherit;
+    padding: var(--space-xs) var(--space-sm);
+    border: 1px solid var(--color-line);
+    border-radius: var(--radius-control);
+    background: var(--color-raised);
+    color: inherit;
+    width: 12rem;
+}
+
+.search-hits {
+    position: absolute;
+    right: 0;
+    z-index: 10;
+    margin: var(--space-xs) 0 0;
+    padding: var(--space-xs) 0;
+    list-style: none;
+    min-width: 18rem;
+    background: var(--color-code);
+    border: 1px solid var(--color-line);
+    border-radius: var(--radius-control);
+}
+
+.search-hits li {
+    padding: var(--space-xs) var(--space-sm);
+}
+
+.search-hits span, .search-none {
+    color: var(--color-muted);
+    font-size: 0.85em;
+}
+
+/* A command with a button that copies it, an ember. */
+.copy {
+    position: relative;
+}
+
+.copy-button {
+    position: absolute;
+    top: var(--space-xs);
+    right: var(--space-xs);
+    font: inherit;
+    font-size: 0.85em;
+    padding: 0.1em var(--space-sm);
+    border: 1px solid var(--color-line);
+    border-radius: var(--radius-control);
+    background: var(--color-code);
+    color: inherit;
+    cursor: pointer;
+}
+
+[data-k-embers="unsupported"] .copy-button {
+    display: none;
+}

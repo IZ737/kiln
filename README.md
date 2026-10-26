@@ -26,8 +26,7 @@ fn main() ! {
 }
 ```
 
-> **Status: phases 0, 1, 2 and 2.5 are done, and phase 1.5 (self-contained
-> compiler and executables) is done for Linux x86-64 and Windows x86-64.**
+> **Status: phases 0 to 4 are done**, for Linux x86-64 and Windows x86-64.
 > `kiln check` reports syntax and type errors in `.kiln` files and glazes,
 > `kiln lsp` shows them in your editor, and `kiln run` compiles command-line
 > programs with the `time`, `fs`, `os` and `io` modules, and HTTP servers
@@ -36,14 +35,14 @@ fn main() ! {
 > executables itself (`--target linux` or `--target windows`, from either
 > system), so it needs no C compiler, linker or libraries; the C backend
 > (`--backend c`) remains for other platforms. The server runs requests
-> on lightweight tasks with keep-alive, reads and writes JSON (`json`,
-> `web.json`, `req.json<T>()`), answers errors with statuses
-> (`web.error`) and logs each request; [examples/api](examples/api/main.kiln)
-> is a JSON API. The [VS Code extension](editors/vscode) highlights Kiln and
-> glazes, and `kiln lsp` gives completion, hover, go to definition and
-> symbols in any editor.
-> Templates, `sql` and `auth` arrive in later phases. See the [roadmap](#roadmap) and
-> [what phase 1 leaves for later](docs/design.md#what-phase-1-leaves-for-later).
+> on lightweight tasks, reads and writes JSON and renders glazes, with
+> typed styles, Finishes and themes. **Embers** are glazes with state and
+> event handlers: the server renders them, and the browser hydrates them
+> as WasmGC, calling `server fn`s through generated, checked RPC and npm
+> packages through typed bindings, with no JavaScript to write. The
+> [VS Code extension](editors/vscode) highlights Kiln and glazes, and
+> `kiln lsp` gives completion, hover, go to definition and symbols in any
+> editor. `sql` and `auth` arrive in phase 5. See the [roadmap](#roadmap).
 
 ## Vision
 
@@ -91,9 +90,9 @@ between today's implementation and future ideas.
 | --- | --- |
 | `.kiln` | Source file |
 | Glaze (`.glaze`) | A template or component |
-| Finish (planned, Phase 3) | An ordinary function returning typed `Ui` styles or a multi-part style record |
+| Finish | An ordinary function returning typed `Ui` styles or a multi-part style record |
 | Ware | A package |
-| Ember | An interactive component compiled to WebAssembly |
+| Ember | An interactive glaze: rendered on the server, hydrated in the browser as WasmGC |
 | `kiln fire` | Make a release build |
 
 ## Install
@@ -193,6 +192,8 @@ For errors and quick fixes in your editor, see [docs/guides/editors.md](docs/gui
 | `crates/kiln_check` | Type checker, and standard library signatures in `std/` |
 | `crates/kiln_ir` | The typed IR between the checker and the backends |
 | `crates/kiln_codegen` | The C backend, and the runtime in `runtime/kiln.c` |
+| `crates/kiln_wasm` | The WasmGC backend for embers, with their runtime and the browser bridge |
+| `crates/kiln_rt` | The runtime's Rust part: the HTTP server, JSON and TLS |
 | `crates/kiln_native` | The native backend: Cranelift code generation, built-in linking for Linux and Windows, and the bundled runtime, Boehm GC (`vendor/bdwgc`) and C libraries |
 | `crates/kiln_cli` | The `kiln` command |
 | `examples/` | Example programs and glazes; every one is checked in CI |
@@ -220,7 +221,7 @@ For errors and quick fixes in your editor, see [docs/guides/editors.md](docs/gui
 | ✅ 2 | Core runtime, HTTP server, typed routing, JSON, error handling | A real HTTP API runs as a native binary |
 | ✅ 2.5 | VS Code developer experience: dedicated extension, Kiln/Glaze highlighting and file icons, compiler-backed completion, hover, definition and symbol navigation, diagnostics/quick fixes, Check/Run/Build actions; [implementation plan](docs/plans/phase-2.5.md) | A developer can edit, navigate, check, build and run Kiln programs comfortably in VS Code with the Rust LSP providing intelligence to other editors |
 | ✅ 3 | Compiled Glazes/layouts, native typed `ui` styling, CSS/CSS Modules, design tokens, **Finishes**, typed themes and LSP support; [implementation plan](docs/plans/phase-3.md) | A native Kiln docs site, restylable via two compatible themes without changing content/Glazes |
-| 4 | **Embers/WasmGC**: selective hydration, reactive state/events, `server fn` with generated safe RPC and browser/JS interoperability; [implementation plan](docs/plans/phase-4.md) | A database-free Kiln website uses real WasmGC islands and typed RPC, without handwritten JavaScript or SQL/auth prerequisites |
+| ✅ 4 | **Embers/WasmGC**: selective hydration, reactive state/events, `server fn` with generated safe RPC and browser/JS interoperability; [implementation plan](docs/plans/phase-4.md) | A database-free Kiln website uses real WasmGC islands and typed RPC, without handwritten JavaScript or SQL/auth prerequisites |
 | 5 | **SQL/ORM and application framework**: SQLite then PostgreSQL/MySQL, typed queries, schema import (`kiln db pull`), reviewed migrations, forms/validation, sessions/auth and generated admin; [implementation plan](docs/plans/phase-5.md) | A native database-backed app works with protected SSR/admin and an authenticated Ember calling ORM-backed typed RPC |
 | 6 | **Developer ecosystem**: multi-folder modules, optional `kiln.toml`, `kiln.lock`, Wares/registry/global cache, official UI Ware, integrated `kiln test` (including Embers), formatter/hot reload, advanced LSP, MCP; [implementation plan](docs/plans/phase-6.md) | A multi-folder app consumes a versioned Ware, rebuilds offline, passes real-browser tests and works in the editor/agent toolchain |
 | 7 | Production hardening, static site generation (`kiln fire --static`), deployment, performance (precise GC, LLVM release builds), stability | Kiln 1.0: stable and ready for personal production projects |

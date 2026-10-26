@@ -1,0 +1,12 @@
+{% props label: String, start: Int = 0 %}
+{% state count = start %}
+{% state history: List<Int> = [] %}
+<div class="counter">
+    <button on:click={ count += 1 }>{label}: {count}</button>
+    <button on:click.latest={ count = add(count, b: 100) catch err { count } }>Add 100</button>
+    <ul>
+    {% for n in history %}
+        <li key={n}>{n}</li>
+    {% end %}
+    </ul>
+</div>

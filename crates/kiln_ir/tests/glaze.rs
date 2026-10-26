@@ -1,7 +1,7 @@
 //! Compiling glazes into Kiln: the generated code parses, checks and
 //! lowers, and errors in it point back into the glaze.
 
-use kiln_ir::glaze::{generate, App, GlazeInput};
+use kiln_ir::glaze::{generate, generate_client, App, GlazeInput, GlazeSource};
 use kiln_syntax::ast::Glaze;
 
 const APP: &str = "import web\n\nstruct Post {\n    id: Int\n    title: String\n}\n\nfn main() {\n    let res = web.render(\"page.glaze\", { post: Post(id: 1, title: \"Hi\") })\n    print(res.body)\n}\n";
@@ -30,6 +30,7 @@ fn compile(glazes: &[(&str, &str)]) -> (String, kiln_ir::glaze::GlazeSource) {
             values: &checked.glaze_values[i],
             scope: None,
             modules: None,
+            states: &checked.glaze_states[i],
         })
         .collect();
     let source = generate(&inputs, &App::default()).expect("glazes");
@@ -88,25 +89,63 @@ fn copied_code_maps_back_to_the_glaze() {
     assert_eq!(&page[mapped.start as usize..mapped.end as usize], "title");
 }
 
-#[test]
-fn embers_are_not_compiled_yet() {
-    let page =
-        "{% props post: Post %}\n{% state n = 1 %}\n<button on:click={ n += 1 }>{n}</button>\n";
+/// Compiles an ember for the server and for the browser.
+fn ember(page: &str) -> (GlazeSource, GlazeSource) {
     let module = kiln_syntax::parse(APP).module;
     let glaze = kiln_syntax::glaze::parse_glaze(page).glaze;
     let checked = kiln_check::check_app(&[&module], &[("page.glaze", &glaze)]);
-    let source = generate(
-        &[GlazeInput {
-            file: "page.glaze",
-            src: page,
-            glaze: &glaze,
-            values: &checked.glaze_values[0],
-            scope: None,
-            modules: None,
-        }],
-        &App::default(),
+    assert!(checked.glazes[0].is_empty(), "{:#?}", checked.glazes[0]);
+    let input = [GlazeInput {
+        file: "page.glaze",
+        src: page,
+        glaze: &glaze,
+        values: &checked.glaze_values[0],
+        scope: None,
+        modules: None,
+        states: &checked.glaze_states[0],
+    }];
+    let app = App {
+        ember_script: Some("/_kiln/ember.js"),
+        ..App::default()
+    };
+    (
+        generate(&input, &app).unwrap(),
+        generate_client(&input, &App::default()),
     )
-    .unwrap();
-    let codes: Vec<&str> = source.diagnostics.iter().map(|(_, d)| d.code).collect();
-    assert_eq!(codes, ["E0401"]);
+}
+
+#[test]
+fn embers_render_as_islands() {
+    let (server, client) = ember(
+        "{% props post: Post %}\n{% state n = 1 %}\n<button on:click.prevent={ n += 1 }>{n}</button>\n",
+    );
+    assert!(server.diagnostics.is_empty());
+    assert!(
+        server
+            .text
+            .contains("<kiln-island data-k-ember=\\\"page\\\""),
+        "{}",
+        server.text
+    );
+    assert!(server.text.contains("json.encode({ post: post })"));
+    assert!(server.text.contains("json.encode({ n: n })"));
+    // The server renders no handlers; the browser does.
+    assert!(!server.text.contains("data-k-on"));
+    assert!(client.diagnostics.is_empty());
+    assert!(client
+        .text
+        .contains("fn __ember_page(__props: String, __state: String) -> ember.Island"));
+    assert!(
+        client.text.contains("data-k-on-click=\\\""),
+        "{}",
+        client.text
+    );
+    assert!(client.text.contains(":prevent"));
+    assert!(
+        client
+            .text
+            .contains("let __s = if __state != \"\" { json.decode<{ n: Int }>(__state)"),
+        "{}",
+        client.text
+    );
 }

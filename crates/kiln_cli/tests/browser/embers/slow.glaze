@@ -1,0 +1,11 @@
+{% state value = 0 %}
+{% state busy = false %}
+<div id="slow">
+    <button class="go" on:click={
+        busy = true
+        value = slow(value) catch err { value }
+        busy = false
+    }>Go</button>
+    <span class="value">{value}</span>
+    {% if busy %}<span class="busy">working</span>{% end %}
+</div>

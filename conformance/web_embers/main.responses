@@ -1,0 +1,169 @@
+### GET / HTTP/1.1
+HTTP/1.1 200 OK
+content-type: text/html; charset=utf-8
+content-length: 1362
+connection: close
+
+<!doctype html>
+<html>
+<head><title>Embers &lt;&amp;&gt;</title><script type="module" src="/_kiln/ember-HASH.js"></script></head>
+<body>
+<h1>Embers &lt;&amp;&gt;</h1>
+<kiln-island data-k-ember="counter" data-k-hydrate="load" data-k-props="{&quot;label&quot;:&quot;Clicks&quot;,&quot;start&quot;:0}" data-k-state="{&quot;count&quot;:0,&quot;history&quot;:[]}"><div class="counter">
+    <button>Clicks: 0</button>
+    <button>Add 100</button>
+    <ul>
+    </ul>
+</div></kiln-island>
+<kiln-island data-k-ember="counter" data-k-hydrate="visible" data-k-props="{&quot;label&quot;:&quot;&lt;/script&gt;&lt;script&gt;alert(1)&lt;/script&gt;&quot;,&quot;start&quot;:10}" data-k-state="{&quot;count&quot;:10,&quot;history&quot;:[]}"><div class="counter">
+    <button>&lt;/script&gt;&lt;script&gt;alert(1)&lt;/script&gt;: 10</button>
+    <button>Add 100</button>
+    <ul>
+    </ul>
+</div></kiln-island>
+<kiln-island data-k-ember="panel" data-k-hydrate="idle" data-k-props="{&quot;heading&quot;:&quot;Later&quot;}" data-k-state="{&quot;open&quot;:true}"><section>
+    <h2>Later</h2>
+    <kiln-slot data-k-slot=""><p>Static text inside the panel.</p></kiln-slot>
+</section></kiln-island>
+<kiln-island data-k-ember="greeter" data-k-hydrate="only" data-k-props="{}" data-k-state="{&quot;name&quot;:&quot;&quot;,&quot;reply&quot;:&quot;&quot;}"></kiln-island>
+</body>
+</html>
+### GET /plain HTTP/1.1
+HTTP/1.1 200 OK
+content-type: text/html; charset=utf-8
+content-length: 101
+connection: close
+
+<!doctype html>
+<html>
+<head><title>hidden</title></head>
+<body><p>No embers here.</p></body>
+</html>
+### POST /_kiln/rpc/add HTTP/1.1
+HTTP/1.1 200 OK
+content-type: application/json
+content-length: 8
+connection: close
+
+{"ok":2}
+### POST /_kiln/rpc/add HTTP/1.1
+HTTP/1.1 200 OK
+content-type: application/json
+content-length: 9
+connection: close
+
+{"ok":42}
+### POST /_kiln/rpc/greet HTTP/1.1
+HTTP/1.1 200 OK
+content-type: application/json
+content-length: 21
+connection: close
+
+{"ok":"Hello, Kiln!"}
+### POST /_kiln/rpc/reset HTTP/1.1
+HTTP/1.1 403 Forbidden
+content-type: application/json
+content-length: 29
+connection: close
+
+{"error":"only admins reset"}
+### POST /_kiln/rpc/reset HTTP/1.1
+HTTP/1.1 200 OK
+content-type: application/json
+content-length: 11
+connection: close
+
+{"ok":true}
+### POST /_kiln/rpc/greet HTTP/1.1
+HTTP/1.1 422 Unprocessable Content
+content-type: application/json
+content-length: 28
+connection: close
+
+{"error":"a name is needed"}
+### POST /_kiln/rpc/greet HTTP/1.1
+HTTP/1.1 500 Internal Server Error
+content-type: application/json
+content-length: 33
+connection: close
+
+{"error":"Internal Server Error"}
+### POST /_kiln/rpc/add HTTP/1.1
+HTTP/1.1 400 Bad Request
+content-type: application/json
+content-length: 101
+connection: close
+
+{"error":"the arguments do not decode: cannot read JSON: expected an integer at $.a, found a string"}
+### POST /_kiln/rpc/add HTTP/1.1
+HTTP/1.1 400 Bad Request
+content-type: application/json
+content-length: 81
+connection: close
+
+{"error":"the arguments do not decode: cannot read JSON: missing field `a` at $"}
+### POST /_kiln/rpc/add HTTP/1.1
+HTTP/1.1 400 Bad Request
+content-type: application/json
+content-length: 91
+connection: close
+
+{"error":"the arguments do not decode: invalid JSON: expected a value, but the text ended"}
+### POST /_kiln/rpc/add HTTP/1.1
+HTTP/1.1 409 Conflict
+content-type: application/json
+content-length: 46
+connection: close
+
+{"error":"the page is out of date: reload it"}
+### POST /_kiln/rpc/add HTTP/1.1
+HTTP/1.1 409 Conflict
+content-type: application/json
+content-length: 46
+connection: close
+
+{"error":"the page is out of date: reload it"}
+### POST /_kiln/rpc/add HTTP/1.1
+HTTP/1.1 403 Forbidden
+content-type: application/json
+content-length: 43
+connection: close
+
+{"error":"a call must come from this site"}
+### POST /_kiln/rpc/add HTTP/1.1
+HTTP/1.1 403 Forbidden
+content-type: application/json
+content-length: 43
+connection: close
+
+{"error":"a call must come from this site"}
+### POST /_kiln/rpc/add HTTP/1.1
+HTTP/1.1 403 Forbidden
+content-type: application/json
+content-length: 43
+connection: close
+
+{"error":"a call must come from this site"}
+### POST /_kiln/rpc/add HTTP/1.1
+HTTP/1.1 415 Unsupported Media Type
+content-type: application/json
+content-length: 33
+connection: close
+
+{"error":"a call must send JSON"}
+### POST /_kiln/rpc/secret HTTP/1.1
+HTTP/1.1 404 Not Found
+content-type: application/json
+content-length: 21
+connection: close
+
+{"error":"Not Found"}
+### GET /_kiln/rpc/add HTTP/1.1
+HTTP/1.1 405 Method Not Allowed
+content-type: text/plain; charset=utf-8
+allow: POST
+content-length: 18
+connection: close
+
+Method Not Allowed
+### GET /quit HTTP/1.1

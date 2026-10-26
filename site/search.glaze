@@ -1,0 +1,21 @@
+{% state q = "" %}
+{% state hits: List<SearchHit> = [] %}
+{% state looked = false %}
+<form class="search" action="/search" method="get" role="search">
+<label class="search-label" for="search-q">Search the docs</label>
+<input id="search-q" type="search" name="q" value={q} placeholder="Search the docs" autocomplete="off" on:input.latest={
+    q = event.value
+    hits = search_docs(q) catch err { [] }
+    looked = q.trim() != ""
+}>
+{% if looked %}
+<ul class="search-hits">
+{% for hit in hits %}
+<li key={hit.href}><a href={hit.href}>{hit.title}</a> <span>{hit.section}</span></li>
+{% end %}
+{% if hits.is_empty() %}
+<li class="search-none">No pages match.</li>
+{% end %}
+</ul>
+{% end %}
+</form>

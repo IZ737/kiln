@@ -1,0 +1,28 @@
+{% props title: String %}
+{% css "site.css" %}
+<!doctype html>
+<html>
+<head><title>{title}</title></head>
+<body>
+<h1>{title}</h1>
+<p id="static">Static text.</p>
+<Counter name="first" />
+<Counter name="second" start={7} />
+<Counter name="idle" client:idle />
+<Counter name="only" start={3} client:only />
+<Todos />
+<Signup />
+<Slow />
+<Search />
+<Optimistic />
+<Panel title="Nested">
+<p class="slotted">From the page</p>
+<Counter name="inner" start={5} />
+</Panel>
+<Host />
+<Tools />
+<Seeded />
+<div class="spacer"></div>
+<Counter name="far" client:visible />
+</body>
+</html>

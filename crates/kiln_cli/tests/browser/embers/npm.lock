@@ -1,0 +1,30 @@
+{
+  "kiln_demo": {
+    "entry": "dist/index.js",
+    "files": {
+      "LICENSE": "sha256-adc37366f403835c1470ab2df93d3837d4719372fc1ef8593d922e06f033f8b2",
+      "dist/index.d.ts": "sha256-925b0a48bcd1bab0650049830130eda8781cdbb3ff85b3141534aa7f13fa8356",
+      "dist/index.js": "sha256-3e620aae57d1d4152849b179041e7655a421cc13832d71cb1fe5cfcdae2c331a",
+      "dist/util.js": "sha256-737c671de099c97a1bfbac7dae769739563625ebf2148571e25d7ead280797de",
+      "package.json": "sha256-a71180fcffa29f9769413864fb688efc61f2f53172af3619844c18e06519fd4b"
+    },
+    "integrity": "sha512-bCLH0IMTrXAdA7BshA4zUV2D6VF1pa5R9vjqH5vPiSstvXiHulKIIJd79w0srTOhddYpmBSYITaCsLWgHLvl4w==",
+    "package": "kiln-demo",
+    "types": "dist/index.d.ts",
+    "version": "1.0.0"
+  },
+  "nanoid": {
+    "entry": "index.browser.js",
+    "files": {
+      "LICENSE": "sha256-da4db1480d9beea3483a2eda5c53b22238d0827d57da162b48f122e04d2d9987",
+      "index.browser.js": "sha256-a9052b58f04ff8fd76bf2773c9161e4fc34644d8ccd6a7d17d42f6e7e3aa4cf4",
+      "index.d.ts": "sha256-a45ee7555d019a67fbe092898d1aef0b1d02a9f6679ab84461ff515b4460d706",
+      "package.json": "sha256-8abea34d6a4a4f718c4259e531ee6d927db00be47fe27b4268de423dab43ba0e",
+      "url-alphabet/index.js": "sha256-c1609d1c3a4ca7ae55919992575e7fd14115532ceb32a9199b13878cca1a5790"
+    },
+    "integrity": "sha512-Aooyr6MXU6HpvvWXKoVoXwKMs/KyVakWwg7xQfv5/S/RIgJMy0Ifa45H9qqYy7pTCszrHzP21Uk4PZq2HpEM8Q==",
+    "package": "nanoid",
+    "types": "index.d.ts",
+    "version": "5.0.9"
+  }
+}

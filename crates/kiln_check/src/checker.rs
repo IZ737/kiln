@@ -72,6 +72,17 @@ pub struct Checker {
     pub(crate) glazes: Option<HashMap<String, GlazeSig>>,
     /// Whether the code being checked runs in the browser.
     pub(crate) in_ember: bool,
+    /// Whether the code being checked is an `on:` handler, where a call to
+    /// a `server fn` goes over the network and so can fail.
+    pub(crate) in_handler: bool,
+    /// Whether this is the code of a page's embers, all of which runs in
+    /// the browser.
+    pub(crate) browser_program: bool,
+    /// The program's `server fn`s, by name.
+    pub(crate) server_fns: HashSet<String>,
+    /// Each `{% state %}` of the glaze being checked, with its type as Kiln
+    /// writes it, for the code that restores it in the browser.
+    pub(crate) glaze_states: Vec<(String, String)>,
     /// The class names of the CSS Modules each glaze imports: by glaze
     /// file, then by the name it imports them as.
     pub(crate) css_modules: crate::CssModules,
@@ -127,6 +138,9 @@ fn infers_from_call(e: &Expr) -> bool {
     }
 }
 
+/// Modules that run only in the browser: only handlers can use them.
+pub(crate) const BROWSER_MODULES: &[&str] = &["browser", "js"];
+
 /// Modules that need the server: they cannot be used in embers.
 const SERVER_ONLY_MODULES: &[&str] = &["sql", "auth", "fs", "os", "io"];
 
@@ -143,6 +157,9 @@ const STD_MODULES: &[(&str, &str)] = &[
     ("html", include_str!("../std/html.kiln")),
     ("base64", include_str!("../std/base64.kiln")),
     ("markdown", include_str!("../std/markdown.kiln")),
+    ("ember", include_str!("../std/ember.kiln")),
+    ("js", include_str!("../std/js.kiln")),
+    ("browser", include_str!("../std/browser.kiln")),
 ];
 const PRELUDE: &str = include_str!("../std/prelude.kiln");
 
@@ -166,6 +183,10 @@ impl Checker {
             diags: Vec::new(),
             glazes: None,
             in_ember: false,
+            in_handler: false,
+            browser_program: false,
+            server_fns: HashSet::new(),
+            glaze_states: Vec::new(),
             glaze_values: HashMap::new(),
             css_modules: HashMap::new(),
             tokens: Default::default(),
@@ -193,6 +214,21 @@ impl Checker {
                 ..Default::default()
             });
             checker.declare_types(module, Scope::Module(id));
+        }
+        // An npm package's bindings are a module too.
+        let foreign = crate::foreign_modules();
+        let mut modules = modules;
+        for f in &foreign {
+            let id = checker.modules.len();
+            checker.modules.push(ModuleDef {
+                name: f.name.clone(),
+                foreign: true,
+                unsupported: f.unsupported.iter().cloned().collect(),
+                ..Default::default()
+            });
+            let module = parse_std(&f.name, &f.source);
+            checker.declare_types(&module, Scope::Module(id));
+            modules.push((f.name.clone(), module));
         }
         for (id, (_, module)) in modules.iter().enumerate() {
             checker.define_items(module, Scope::Module(id));
@@ -343,6 +379,75 @@ impl Checker {
     /// Whether `ty` is `Ui`, the type of styles.
     pub(crate) fn is_ui(&self, ty: &Ty) -> bool {
         matches!(ty, Ty::Adt(id, _) if Some(id) == self.global_types.get("Ui") && *id < self.std_adts)
+    }
+
+    /// Why a value of `ty` cannot travel as JSON between the server and
+    /// the browser, if it cannot.
+    pub(crate) fn unserializable(&self, ty: &Ty) -> Option<String> {
+        self.unserializable_in(&self.zonk(ty), &mut HashSet::new())
+    }
+
+    fn unserializable_in(&self, ty: &Ty, seen: &mut HashSet<AdtId>) -> Option<String> {
+        match ty {
+            Ty::Fn(_) => Some("a function".into()),
+            Ty::Style(_) => Some("a style".into()),
+            Ty::Opt(inner) => self.unserializable_in(inner, seen),
+            Ty::Record(fields) => fields
+                .iter()
+                .find_map(|(_, t)| self.unserializable_in(t, seen)),
+            Ty::Adt(id, args) => {
+                if self.is_ui(ty) {
+                    return Some("a style (`Ui`)".into());
+                }
+                if let Some(why) = args.iter().find_map(|a| self.unserializable_in(a, seen)) {
+                    return Some(why);
+                }
+                if !seen.insert(*id) {
+                    return None;
+                }
+                let prelude = self.global_types.values().any(|g| g == id);
+                if *id < self.std_adts && !prelude {
+                    // A module's type: a handle such as `web.Request` or
+                    // `js.Value`, which has no JSON form.
+                    let module = self
+                        .modules
+                        .iter()
+                        .find(|m| m.types.values().any(|t| t == id))
+                        .map_or(String::new(), |m| format!("{}.", m.name));
+                    return Some(format!("`{module}{}`, a handle", self.adts[*id].name));
+                }
+                if *id < self.std_adts {
+                    return None;
+                }
+                match &self.adts[*id].kind {
+                    AdtKind::Struct(fields) => fields
+                        .iter()
+                        .find_map(|f| self.unserializable_in(&f.ty, seen)),
+                    AdtKind::Enum(variants) => variants.iter().find_map(|v| {
+                        v.fields
+                            .iter()
+                            .find_map(|(_, t)| self.unserializable_in(t, seen))
+                    }),
+                }
+            }
+            _ => None,
+        }
+    }
+
+    /// Reports E0224 when a value of `ty` must cross to the browser and
+    /// cannot. `what` names it: "the prop `count`".
+    pub(crate) fn must_cross(&mut self, ty: &Ty, what: &str, span: Span) {
+        if let Some(why) = self.unserializable(ty) {
+            let shown = self.show(ty);
+            self.error(
+                Diagnostic::error(
+                    codes::NOT_SERIALIZABLE,
+                    format!("{what} is `{shown}`, which contains {why}: it cannot travel as JSON between the server and the browser"),
+                    span,
+                )
+                .with_help("use plain data: numbers, strings, lists, maps, and structs and enums of them"),
+            );
+        }
     }
 
     pub(crate) fn list_of(&self, elem: Ty) -> Ty {
@@ -684,7 +789,14 @@ impl Checker {
             if let Some(default) = &p.default {
                 self.check(default, &ty);
             }
+            if f.is_server {
+                let what = format!("the parameter `{}` of a `server fn`", p.name.name);
+                self.must_cross(&ty, &what, p.span);
+            }
             self.bind(&p.name.name, p.name.span, ty, false, None);
+        }
+        if let (true, Some(t)) = (f.is_server, &f.ret) {
+            self.must_cross(&ret, "what a `server fn` returns", t.span);
         }
         let outer_params = std::mem::replace(&mut self.type_params, generics);
         self.check_body(&f.body, &ret);
@@ -1495,8 +1607,24 @@ impl Checker {
         }
     }
 
-    /// Reports a server-only module used in browser code.
+    /// Reports a server-only module used in browser code, and a browser
+    /// one used outside a handler.
     fn use_module(&mut self, m: ModId, span: Span) {
+        let name = &self.modules[m].name;
+        if !self.in_handler
+            && !self.browser_program
+            && (BROWSER_MODULES.contains(&name.as_str()) || self.modules[m].foreign)
+        {
+            let message = format!(
+                "`{name}` runs only in the browser, so only an ember's `on:` handlers can use it"
+            );
+            self.error(
+                Diagnostic::error(codes::BROWSER_ONLY, message, span).with_help(
+                    "call it from a handler, and keep what it gives in `{% state %}` to show it",
+                ),
+            );
+            return;
+        }
         let name = &self.modules[m].name;
         if self.in_ember && SERVER_ONLY_MODULES.contains(&name.as_str()) {
             let message =
@@ -1552,7 +1680,19 @@ impl Checker {
             format!("the module `{}` has no `{}`", module.name, name.name),
             name.span,
         );
-        if let Some(s) = similar(&name.name, candidates.iter().map(String::as_str)) {
+        if let Some(why) = module.unsupported.get(&name.name) {
+            diag = Diagnostic::error(
+                codes::NO_SUCH_MEMBER,
+                format!(
+                    "the npm package `{}` exports `{}`, but Kiln cannot call it: {why}",
+                    module.name, name.name
+                ),
+                name.span,
+            )
+            .with_help(
+                "use `js.global(...)` and `js.Value` for it, or a package with simpler types",
+            );
+        } else if let Some(s) = similar(&name.name, candidates.iter().map(String::as_str)) {
             diag = diag.with_suggestion(format!("did you mean `{s}`?"), name.span, s);
         }
         self.error(diag);
@@ -1864,8 +2004,11 @@ impl Checker {
             if self.local(name).is_none() {
                 if let Some(sig) = self.global_fns.get(name).cloned() {
                     self.refer(callee.span, Ref::Fn(name.clone()));
-                    let (params, ret, throws) = self.instantiate(&sig, &[], &explicit, e.span);
+                    let (params, ret, mut throws) = self.instantiate(&sig, &[], &explicit, e.span);
                     self.check_args(&params, args, e.span, &fn_name, None);
+                    if self.in_handler && throws.is_none() && self.server_fns.contains(name) {
+                        throws = Some(self.error_ty());
+                    }
                     return (ret, throws);
                 }
                 if let Some(id) = self.global_types.get(name).copied() {

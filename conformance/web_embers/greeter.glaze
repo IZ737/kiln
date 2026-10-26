@@ -1,0 +1,7 @@
+{% state name = "" %}
+{% state reply = "" %}
+<form on:submit={ reply = greet(event.form["name"] ?? "") catch err { err.message } }>
+    <input name="name" value={name} on:input={ name = event.value }>
+    <button>Greet</button>
+    <output>{reply}</output>
+</form>

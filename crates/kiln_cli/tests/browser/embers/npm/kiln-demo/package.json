@@ -1,0 +1,7 @@
+{
+  "name": "kiln-demo",
+  "version": "1.0.0",
+  "type": "module",
+  "exports": { ".": { "node": "./dist/node.js", "browser": "./dist/index.js", "default": "./dist/node.js" } },
+  "types": "./dist/index.d.ts"
+}

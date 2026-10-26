@@ -68,6 +68,36 @@ fn doc_page(path: String) -> DocPage? {
     return none
 }
 
+// A page that matches a search.
+struct SearchHit {
+    href: String
+    title: String
+    section: String
+}
+
+// The pages with every word of `q` in their title or text, at most eight.
+fn find_pages(q: String) -> List<SearchHit> {
+    let words = q.lower().split(" ").filter(fn(w) { w != "" })
+    if words.is_empty() {
+        return []
+    }
+    let hits: List<SearchHit> = []
+    for source in doc_sources() {
+        let title = title_of(source)
+        let text = "${title}\n${source.lines.join("\n")}".lower()
+        if words.all(fn(w) { text.contains(w) }) {
+            hits.push(SearchHit(href: href_of(source), title: title, section: source.section))
+        }
+    }
+    return hits.take(8)
+}
+
+// The search box's embers call this as you type; without WebAssembly the
+// box is a form that loads `/search`.
+server fn search_docs(q: String) -> List<SearchHit> {
+    return find_pages(q.slice(0, 100))
+}
+
 fn show_doc(path: String) -> web.Response ! {
     let found = doc_page(path)
     if found is some(page) {
@@ -101,6 +131,10 @@ fn main() ! {
     app.get("/", fn(req) { web.render("home.glaze") })
     app.get("/install", fn(req) { web.render("install.glaze") })
     app.get("/start", fn(req) { web.render("start.glaze") })
+    app.get("/search", fn(req) {
+        let q = req.query("q") ?? ""
+        web.render("results.glaze", { q: q, hits: find_pages(q.slice(0, 100)) })
+    })
     app.get("/docs", fn(req) { web.redirect("/docs/", 301) })
     app.get("/docs/", fn(req) { try show_doc("README") })
     app.get("/docs/README", fn(req) { web.redirect("/docs/", 301) })

@@ -1,0 +1,14 @@
+{% props title: String %}
+<!doctype html>
+<html>
+<head><title>{title}</title></head>
+<body>
+<h1>{title}</h1>
+<Counter label="Clicks" />
+<Counter label="</script><script>alert(1)</script>" start={10} client:visible />
+<Panel heading="Later" client:idle>
+<p>Static text inside the panel.</p>
+</Panel>
+<Greeter client:only />
+</body>
+</html>

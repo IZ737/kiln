@@ -2,7 +2,10 @@
 //! once with each backend (the native one when this kiln has its runtime),
 //! and compares its output with the expected files in the folder. When
 //! `KILN_WINE` names a Wine, each program is also built for Windows and run
-//! with it. The expected files:
+//! with it. Programs that the browser can run (all but those using
+//! server-only modules, E0218) are also built with `--target wasm` and run
+//! with Node.js 22 or later (`KILN_NODE`, or `node`), when there is one, to
+//! test the WebAssembly backend. The expected files:
 //!
 //! - `main.out`: the expected standard output.
 //! - `main.err`: the expected standard error, if the program fails. The
@@ -62,6 +65,9 @@ fn conformance_programs_produce_expected_output() {
     {
         backends.push("windows");
     }
+    if node().is_some() {
+        backends.push("wasm");
+    }
     let mut failures = Vec::new();
     for backend in backends {
         for program in &programs {
@@ -71,13 +77,63 @@ fn conformance_programs_produce_expected_output() {
     assert!(failures.is_empty(), "{}", failures.join("\n\n"));
 }
 
+/// Standard library modules the browser does not have yet.
+const NOT_IN_BROWSER: &[&str] = &["markdown", "time", "Instant", "Date"];
+
+/// A Node.js that runs WasmGC: version 22 or later.
+fn node() -> Option<std::ffi::OsString> {
+    let node = std::env::var_os("KILN_NODE").unwrap_or_else(|| "node".into());
+    let out = Command::new(&node).arg("--version").output().ok()?;
+    let version = String::from_utf8_lossy(&out.stdout);
+    let major: u32 = version
+        .trim()
+        .trim_start_matches('v')
+        .split('.')
+        .next()?
+        .parse()
+        .ok()?;
+    (major >= 22).then_some(node)
+}
+
 /// Runs one program and records how its behaviour differs from the
 /// expected files.
 fn run_program(program: &Path, backend: &str, failures: &mut Vec<String>) {
     let read = |ext: &str| std::fs::read_to_string(program.join("main").with_extension(ext)).ok();
     let args = read("args").unwrap_or_default();
     let mut built_exe = None;
-    let mut command = if backend == "windows" {
+    let mut command = if backend == "wasm" {
+        let script = std::env::temp_dir().join(format!(
+            "kiln-conformance-{}-{}.mjs",
+            std::process::id(),
+            program.file_name().unwrap().to_string_lossy()
+        ));
+        let built = Command::new(env!("CARGO_BIN_EXE_kiln"))
+            .args(["build", "--target", "wasm", "-o"])
+            .arg(&script)
+            .arg(program)
+            .output()
+            .unwrap();
+        if !built.status.success() {
+            let stderr = String::from_utf8_lossy(&built.stderr);
+            // Programs that use the server's modules do not run in the
+            // browser, and neither do the modules not built for it yet.
+            let browser_cannot = stderr.lines().filter(|l| l.starts_with("error[")).all(|l| {
+                l.starts_with("error[E0218]")
+                    || NOT_IN_BROWSER.iter().any(|m| l.contains(&format!("`{m}.")))
+            });
+            if !browser_cannot || !stderr.contains("error[") {
+                failures.push(format!(
+                    "{} (wasm): does not build:\n{stderr}",
+                    program.display()
+                ));
+            }
+            return;
+        }
+        let mut c = Command::new(node().unwrap());
+        c.arg(&script);
+        built_exe = Some(script);
+        c
+    } else if backend == "windows" {
         // Built with `kiln build --target windows`, then run with Wine.
         let exe = std::env::temp_dir().join(format!(
             "kiln-conformance-{}-{}.exe",
@@ -178,6 +234,24 @@ fn run_program(program: &Path, backend: &str, failures: &mut Vec<String>) {
     };
     let stdout = String::from_utf8_lossy(&out.stdout);
     let stderr = String::from_utf8_lossy(&out.stderr);
+    // `KILN_BLESS=1` writes what the programs did as what they should do,
+    // to be read over before committing.
+    if std::env::var_os("KILN_BLESS").is_some() {
+        let write = |ext: &str, text: &str| {
+            let path = program.join(format!("main.{ext}"));
+            if text.is_empty() {
+                let _ = std::fs::remove_file(path);
+            } else {
+                std::fs::write(path, text).unwrap();
+            }
+        };
+        write("out", &stdout);
+        write("err", &stderr);
+        if let Some(found) = &responses {
+            write("responses", found);
+        }
+        return;
+    }
     let name = format!(
         "{} ({backend})",
         program.file_name().unwrap().to_string_lossy()
@@ -287,7 +361,7 @@ fn send_requests(port: u16, requests: &str) -> String {
         };
         for line in response.split_inclusive('\n') {
             if !line.to_ascii_lowercase().starts_with("date:") {
-                transcript.push_str(line);
+                transcript.push_str(&unhashed(line));
             }
         }
         if !transcript.ends_with('\n') {
@@ -295,4 +369,26 @@ fn send_requests(port: u16, requests: &str) -> String {
         }
     }
     transcript
+}
+
+/// `text` with the hashes in the names of ember files, which change with
+/// the compiler, written as `HASH`: `/_kiln/ember-HASH.js`.
+fn unhashed(text: &str) -> String {
+    let mut out = String::new();
+    let mut rest = text;
+    while let Some(at) = rest.find("ember-") {
+        let (before, after) = rest.split_at(at + "ember-".len());
+        out.push_str(before);
+        let hash = after.get(..6);
+        if hash.is_some_and(|h| h.bytes().all(|b| b.is_ascii_alphanumeric()))
+            && after[6..].starts_with('.')
+        {
+            out.push_str("HASH");
+            rest = &after[6..];
+        } else {
+            rest = after;
+        }
+    }
+    out.push_str(rest);
+    out
 }

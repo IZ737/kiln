@@ -3,6 +3,7 @@
 
 mod lsp;
 mod notice;
+mod npm;
 mod styles;
 mod upgrade;
 
@@ -72,11 +73,12 @@ enum Command {
         /// this kiln supports it.
         #[arg(long, value_enum)]
         backend: Option<Backend>,
-        /// The system to build for: `linux` or `windows` (x86-64). Defaults
-        /// to the one kiln runs on. Only the native backend builds for
-        /// other systems.
+        /// The system to build for: `linux` or `windows` (x86-64), or
+        /// `wasm` for a WebAssembly module run by Node.js (22 or later),
+        /// which tests the browser's backend. Defaults to the one kiln runs
+        /// on. Only the native backend builds for other systems.
         #[arg(long, value_parser = parse_target)]
-        target: Option<Target>,
+        target: Option<BuildTarget>,
     },
     /// Compile a program and run it.
     Run {
@@ -97,6 +99,16 @@ enum Command {
     Explain {
         /// An error code such as E0106.
         code: String,
+    },
+    /// Add an npm package for embers to call, such as `npm:nanoid@5.0.9`.
+    /// Its files are kept in the program's folder under `npm/`, and
+    /// `npm.lock` records their checksums and the Kiln bindings.
+    Add {
+        /// The package: `npm:name@version`.
+        package: String,
+        /// The program's folder. Defaults to the current directory.
+        #[arg(default_value = ".")]
+        dir: PathBuf,
     },
     /// Replace this kiln with the latest release, or the one you name.
     Upgrade {
@@ -145,12 +157,26 @@ fn dispatch(command: Command) -> ExitCode {
             backend,
             target,
         } => {
-            let target = target.unwrap_or_else(Target::host);
-            let out = output.unwrap_or_else(|| default_output(&file, target));
             let emit = Emit {
                 c: emit_c.as_deref(),
                 ir: emit_ir.as_deref(),
+                wasm: false,
             };
+            let target = match target {
+                Some(BuildTarget::Wasm) => {
+                    let out = output.unwrap_or_else(|| {
+                        default_output(&file, Target::Linux).with_extension("mjs")
+                    });
+                    let emit = Emit { wasm: true, ..emit };
+                    return match build(&file, &out, emit, Backend::Native, Target::host()) {
+                        Ok(()) => ExitCode::SUCCESS,
+                        Err(code) => code,
+                    };
+                }
+                Some(BuildTarget::System(t)) => t,
+                None => Target::host(),
+            };
+            let out = output.unwrap_or_else(|| default_output(&file, target));
             let backend = Backend::or_default(backend, target);
             match build(&file, &out, emit, backend, target) {
                 Ok(()) => ExitCode::SUCCESS,
@@ -165,6 +191,16 @@ fn dispatch(command: Command) -> ExitCode {
         Command::Lsp => ExitCode::from(lsp::run() as u8),
         Command::Parse { file } => parse(&file),
         Command::Explain { code } => explain(&code),
+        Command::Add { package, dir } => match npm::add(&package, &dir) {
+            Ok(summary) => {
+                println!("{summary}");
+                ExitCode::SUCCESS
+            }
+            Err(err) => {
+                eprintln!("error: {err}");
+                ExitCode::FAILURE
+            }
+        },
         Command::Upgrade {
             version,
             check,
@@ -290,7 +326,11 @@ pub(crate) fn check_sources(texts: Vec<(PathBuf, String)>) -> Vec<(SourceFile, V
 #[derive(Default)]
 struct AppInfo {
     glaze_values: GlazeValues,
+    glaze_states: Vec<Vec<(String, String)>>,
     styles: styles::AppStyles,
+    /// The npm packages of `npm.lock`, or why they cannot be used.
+    npm: Vec<npm::Package>,
+    npm_error: Option<String>,
 }
 
 /// What the checker found each value a glaze outputs to be, for each glaze
@@ -315,6 +355,12 @@ fn check_app_sources(
         })
         .unwrap_or(Path::new("."))
         .to_path_buf();
+    // The npm packages are modules for the embers' handlers.
+    let (npm, npm_error) = match npm::load(&dir) {
+        Ok(packages) => (packages, None),
+        Err(err) => (Vec::new(), Some(err)),
+    };
+    kiln_check::set_foreign_modules(npm.iter().map(|p| p.bindings.clone()).collect());
     let mut sources = Vec::new();
     for (path, text) in &texts {
         let file = SourceFile::new(path.display().to_string(), text.clone());
@@ -397,7 +443,10 @@ fn check_app_sources(
     }
     let info = AppInfo {
         glaze_values: result.glaze_values,
+        glaze_states: result.glaze_states,
         styles,
+        npm,
+        npm_error,
     };
     (out, info)
 }
@@ -428,11 +477,25 @@ fn app_files(path: &Path) -> std::io::Result<(PathBuf, Vec<PathBuf>)> {
 
 /// Where `kiln build` writes the executable by default: the program's
 /// folder name, in the current directory.
-fn parse_target(name: &str) -> Result<Target, String> {
-    Target::from_name(name).ok_or_else(|| {
-        let names: Vec<&str> = Target::ALL.iter().map(|t| t.name()).collect();
-        format!("expected one of: {}", names.join(", "))
-    })
+fn parse_target(name: &str) -> Result<BuildTarget, String> {
+    if name == "wasm" {
+        return Ok(BuildTarget::Wasm);
+    }
+    Target::from_name(name)
+        .map(BuildTarget::System)
+        .ok_or_else(|| {
+            let mut names: Vec<&str> = Target::ALL.iter().map(|t| t.name()).collect();
+            names.push("wasm");
+            format!("expected one of: {}", names.join(", "))
+        })
+}
+
+/// What `kiln build --target` names.
+#[derive(Clone, Copy)]
+enum BuildTarget {
+    System(Target),
+    /// A WebAssembly module and its runtime, as one script for Node.js.
+    Wasm,
 }
 
 /// The executable `kiln build` writes when no `--output` is given: the
@@ -457,6 +520,8 @@ fn default_output(path: &Path, target: Target) -> PathBuf {
 struct Emit<'a> {
     c: Option<&'a Path>,
     ir: Option<&'a Path>,
+    /// Build the program for WebAssembly instead, as a Node.js script.
+    wasm: bool,
 }
 
 /// Checks and compiles the program in a folder into an executable at `out`.
@@ -493,7 +558,12 @@ fn build(
     }
     let (checked, info) = check_app_sources(texts);
     let glaze_values = &info.glaze_values;
+    let glaze_states = &info.glaze_states;
     let styles = &info.styles;
+    if let Some(err) = &info.npm_error {
+        eprintln!("error: {err}");
+        return Err(ExitCode::from(2));
+    }
     let count: usize = checked.iter().map(|(_, d)| d.len()).sum();
     if count > 0 {
         for (file, diagnostics) in &checked {
@@ -554,6 +624,7 @@ fn build(
             values: &glaze_values[i],
             scope: styles.scopes.get(&glaze_names[i]).map(String::as_str),
             modules: styles.exports.get(&glaze_names[i]),
+            states: glaze_states.get(i).map_or(&[][..], Vec::as_slice),
         })
         .collect();
     let mut assets = styles.assets.clone();
@@ -561,70 +632,126 @@ fn build(
         eprintln!("error: {err}");
         ExitCode::from(2)
     })?);
-    let app = kiln_ir::glaze::App {
-        stylesheet: styles.stylesheet.as_deref(),
-        assets: &assets,
-    };
-    let generated = kiln_ir::glaze::generate(&inputs, &app);
     let generated_at = combined.len() as u32;
-    let generated_file = generated
-        .as_ref()
-        .map(|g| SourceFile::new("<glazes>", g.text.clone()));
-    if let Some(g) = &generated {
-        if !g.diagnostics.is_empty() {
-            for (i, diag) in &g.diagnostics {
-                eprintln!("{}", diag.render(glaze_files[*i]));
-            }
-            return Err(failed(g.diagnostics.len()));
-        }
-        combined.push_str(&g.text);
-    }
-
-    let report = |diagnostics: Vec<Diagnostic>| {
-        let count = diagnostics.len();
-        for mut diag in diagnostics {
-            if let (Some(g), Some(gen_file)) = (&generated, &generated_file) {
-                if diag.span.start >= generated_at {
-                    diag.span = Span {
-                        start: diag.span.start - generated_at,
-                        end: diag.span.end.saturating_sub(generated_at),
-                    };
-                    diag.suggestion = None;
-                    match g.locate(diag.span) {
-                        Some((i, span)) => {
-                            diag.span = span;
-                            eprintln!("{}", diag.render(glaze_files[i]));
-                        }
-                        None => eprintln!("{}", diag.render(gen_file)),
-                    }
-                    continue;
-                }
-            }
-            let i = offsets
-                .iter()
-                .rposition(|&o| o <= diag.span.start)
-                .unwrap_or(0);
-            let shift = |s: &mut Span| {
-                s.start = s.start.saturating_sub(offsets[i]);
-                s.end = s.end.saturating_sub(offsets[i]);
-            };
-            shift(&mut diag.span);
-            if let Some(s) = &mut diag.suggestion {
-                shift(&mut s.span);
-            }
-            eprintln!("{}", diag.render(kiln_files[i]));
-        }
-        failed(count)
-    };
-    let parsed = kiln_syntax::parse(&combined);
-    if !parsed.diagnostics.is_empty() {
-        return Err(report(parsed.diagnostics));
-    }
     let glaze_refs: Vec<(&str, &kiln_syntax::ast::Glaze)> = glaze_names
         .iter()
         .map(String::as_str)
         .zip(&parsed_glazes)
         .collect();
+    let failed_in_glazes = |diagnostics: &[(usize, Diagnostic)]| {
+        for (i, diag) in diagnostics {
+            eprintln!("{}", diag.render(glaze_files[*i]));
+        }
+        failed(diagnostics.len())
+    };
+
+    // The embers run in the browser: their code, with the program's, is
+    // compiled to WebAssembly, which the server serves with the bridge.
+    let mut ember_script = None;
+    let mut server_fns = Vec::new();
+    let mut rpc_version = String::new();
+    let mut rpc_guard = false;
+    if parsed_glazes.iter().any(|g| g.is_ember()) {
+        let user = kiln_syntax::parse(&combined);
+        (server_fns, rpc_guard) = server_fns_of(&user.module, &combined);
+        // Handlers wait for the npm functions that return promises as
+        // they do for `server fn`s.
+        let mut waits = server_fns.clone();
+        waits.extend(npm::waits(&info.npm));
+        let client_app = kiln_ir::glaze::App {
+            server_fns: &waits,
+            ..Default::default()
+        };
+        let client = kiln_ir::glaze::generate_client(&inputs, &client_app);
+        if !client.diagnostics.is_empty() {
+            return Err(failed_in_glazes(&client.diagnostics));
+        }
+        let text = format!("{combined}{}{}", client.text, npm::calls_source(&info.npm));
+        let report = |d| {
+            report_diagnostics(
+                d,
+                &kiln_files,
+                &offsets,
+                &glaze_files,
+                Some((&client, generated_at)),
+            )
+        };
+        let parsed = kiln_syntax::parse(&text);
+        if !parsed.diagnostics.is_empty() {
+            return Err(report(parsed.diagnostics));
+        }
+        let program =
+            kiln_check::check_browser_program(&parsed.module, &glaze_refs, &styles.styling.tokens);
+        if !program.diagnostics.is_empty() {
+            return Err(report(program.diagnostics));
+        }
+        let ir = kiln_ir::lower(&parsed.module, &program).map_err(report)?;
+        let roots = kiln_ir::glaze::CLIENT_EXPORTS
+            .iter()
+            .filter_map(|name| {
+                let id = ir.funcs.iter().position(|f| f.name == *name)?;
+                Some((name.to_string(), id))
+            })
+            .collect();
+        let module = kiln_wasm::compile(&ir, &kiln_wasm::Roots::Exports(roots)).map_err(report)?;
+        // Calls stay valid while the functions' signatures do.
+        rpc_version = kiln_css::short_hash(format!("{server_fns:?}").as_bytes());
+        let wasm_url = format!("/_kiln/ember-{}.wasm", kiln_css::short_hash(&module.wasm));
+        let js = kiln_wasm::browser_script(&wasm_url, &rpc_version, &npm::modules(&info.npm));
+        for package in &info.npm {
+            for (path, body) in &package.files {
+                assets.push(kiln_ir::glaze::Asset {
+                    path: path.clone(),
+                    content_type: "text/javascript; charset=utf-8",
+                    body: body.clone(),
+                    immutable: true,
+                });
+            }
+        }
+        let js_url = format!("/_kiln/ember-{}.js", kiln_css::short_hash(js.as_bytes()));
+        assets.push(kiln_ir::glaze::Asset {
+            path: wasm_url,
+            content_type: "application/wasm",
+            body: module.wasm,
+            immutable: true,
+        });
+        assets.push(kiln_ir::glaze::Asset {
+            path: js_url.clone(),
+            content_type: "text/javascript; charset=utf-8",
+            body: js.into_bytes(),
+            immutable: true,
+        });
+        ember_script = Some(js_url);
+    }
+
+    let app = kiln_ir::glaze::App {
+        stylesheet: styles.stylesheet.as_deref(),
+        assets: &assets,
+        ember_script: ember_script.as_deref(),
+        server_fns: &server_fns,
+        rpc_version: &rpc_version,
+        rpc_guard,
+    };
+    let generated = kiln_ir::glaze::generate(&inputs, &app);
+    if let Some(g) = &generated {
+        if !g.diagnostics.is_empty() {
+            return Err(failed_in_glazes(&g.diagnostics));
+        }
+        combined.push_str(&g.text);
+    }
+    let report = |diagnostics: Vec<Diagnostic>| {
+        report_diagnostics(
+            diagnostics,
+            &kiln_files,
+            &offsets,
+            &glaze_files,
+            generated.as_ref().map(|g| (g, generated_at)),
+        )
+    };
+    let parsed = kiln_syntax::parse(&combined);
+    if !parsed.diagnostics.is_empty() {
+        return Err(report(parsed.diagnostics));
+    }
     let program =
         kiln_check::check_program_with_tokens(&parsed.module, &glaze_refs, &styles.styling.tokens);
     if !program.diagnostics.is_empty() {
@@ -639,6 +766,10 @@ fn build(
     let ir = kiln_ir::lower(&parsed.module, &program).map_err(report)?;
     if let Some(ir_path) = emit.ir {
         write(ir_path, &ir.to_string())?;
+    }
+    if emit.wasm {
+        let module = kiln_wasm::compile(&ir, &kiln_wasm::Roots::Main).map_err(report)?;
+        return write(out, &kiln_wasm::node_runner(&module));
     }
     let c = match (backend, emit.c) {
         (Backend::C, _) | (_, Some(_)) => Some(kiln_codegen::emit_c(&ir).map_err(report)?),
@@ -658,6 +789,56 @@ fn build(
         eprintln!("error: {err}");
         ExitCode::from(2)
     })
+}
+
+/// Prints diagnostics of a program's combined text, each in the file it
+/// points into: a `.kiln` file (which start at `offsets`), or a glaze
+/// whose code was generated at the offset given with `generated`.
+fn report_diagnostics(
+    diagnostics: Vec<Diagnostic>,
+    kiln_files: &[&SourceFile],
+    offsets: &[u32],
+    glaze_files: &[&SourceFile],
+    generated: Option<(&kiln_ir::glaze::GlazeSource, u32)>,
+) -> ExitCode {
+    let count = diagnostics.len();
+    for mut diag in diagnostics {
+        if let Some((g, generated_at)) = generated {
+            if diag.span.start >= generated_at {
+                diag.span = Span {
+                    start: diag.span.start - generated_at,
+                    end: diag.span.end.saturating_sub(generated_at),
+                };
+                diag.suggestion = None;
+                match g.locate(diag.span) {
+                    Some((i, span)) => {
+                        diag.span = span;
+                        eprintln!("{}", diag.render(glaze_files[i]));
+                    }
+                    None => {
+                        let file = SourceFile::new("<glazes>", g.text.clone());
+                        eprintln!("{}", diag.render(&file));
+                    }
+                }
+                continue;
+            }
+        }
+        let i = offsets
+            .iter()
+            .rposition(|&o| o <= diag.span.start)
+            .unwrap_or(0);
+        let shift = |s: &mut Span| {
+            s.start = s.start.saturating_sub(offsets[i]);
+            s.end = s.end.saturating_sub(offsets[i]);
+        };
+        shift(&mut diag.span);
+        if let Some(s) = &mut diag.suggestion {
+            shift(&mut s.span);
+        }
+        eprintln!("{}", diag.render(kiln_files[i]));
+    }
+    eprintln!("{count} error(s). Run `kiln explain <code>` for details.");
+    ExitCode::FAILURE
 }
 
 fn run(path: &Path, args: &[String], backend: Backend) -> ExitCode {
@@ -790,4 +971,41 @@ fn indent(text: &str) -> String {
         .map(|line| format!("    {line}"))
         .collect::<Vec<_>>()
         .join("\n")
+}
+
+/// The program's `server fn`s, as written in `text`, and whether it
+/// defines `rpc_guard`, which every call of one passes first.
+fn server_fns_of(
+    module: &kiln_syntax::ast::Module,
+    text: &str,
+) -> (Vec<kiln_ir::glaze::ServerFn>, bool) {
+    use kiln_syntax::ast::{Item, Throws};
+    let at = |s: Span| text[s.start as usize..s.end as usize].to_string();
+    let mut fns = Vec::new();
+    let mut guard = false;
+    for item in &module.items {
+        let Item::Fn(f) = item else { continue };
+        guard |= f.name.name == "rpc_guard";
+        if !f.is_server {
+            continue;
+        }
+        fns.push(kiln_ir::glaze::ServerFn {
+            module: None,
+            name: f.name.name.clone(),
+            params: f
+                .params
+                .iter()
+                .map(|p| {
+                    (
+                        p.name.name.clone(),
+                        p.ty.as_ref().map_or_else(|| "_".into(), |t| at(t.span)),
+                        p.default.as_ref().map(|d| at(d.span)),
+                    )
+                })
+                .collect(),
+            ret: f.ret.as_ref().map(|t| at(t.span)),
+            throws: !matches!(f.throws, Throws::Never),
+        });
+    }
+    (fns, guard)
 }

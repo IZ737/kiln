@@ -1,0 +1,54 @@
+{% state title = "" %}
+{% state stored = "" %}
+{% state heading = "" %}
+{% state bad = "" %}
+{% state upper = "" %}
+{% state fetched = "" %}
+{% state ids = "" %}
+{% state later = "" %}
+<div id="tools">
+    <button class="title" on:click={
+        browser.set_title("Changed")
+        title = browser.title()
+    }>Title</button>
+    <button class="store" on:click={
+        browser.set_item("kiln-test", "kept") catch err { browser.log(err.message) }
+        stored = browser.get_item("kiln-test") ?? "none"
+    }>Store</button>
+    <button class="js" on:click={
+        let doc = js.global("document")
+        heading = doc.get("title").as_string() catch err { "?" }
+        var why = ""
+        let n = doc.as_float() catch err {
+            why = err.message
+            0.0
+        }
+        bad = why
+        let shout = js.string("abc").call("toUpperCase") catch err { js.null() }
+        upper = shout.as_string() catch err { err.message }
+        let missing = doc.call("noSuchMethod") catch err {
+            upper = "${upper} ${err.message}"
+            js.null()
+        }
+    }>JS</button>
+    <button class="fetch" on:click={ fetched = browser.fetch("/plain") catch err { err.message } }>Fetch</button>
+    <button class="fetch-missing" on:click={ fetched = browser.fetch("/missing") catch err { err.message } }>Fetch missing</button>
+    <button class="npm" on:click={
+        let short = nanoid.nanoid(8.0) catch err { err.message }
+        let long = nanoid.nanoid() catch err { err.message }
+        let alphabet = nanoid.url_alphabet() catch err { err.message }
+        ids = "${short.len()} ${long.len()} ${alphabet.len()}"
+    }>npm</button>
+    <button class="npm-wait" on:click={
+        later = kiln_demo.later(50.0) catch err { err.message }
+        kiln_demo.fail() catch err { later = "${later} ${err.message}" }
+    }>npm wait</button>
+    <span class="title-out">{title}</span>
+    <span class="stored">{stored}</span>
+    <span class="heading">{heading}</span>
+    <span class="bad">{bad}</span>
+    <span class="upper">{upper}</span>
+    <span class="fetched">{fetched}</span>
+    <span class="ids">{ids}</span>
+    <span class="later">{later}</span>
+</div>

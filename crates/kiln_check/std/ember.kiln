@@ -1,0 +1,37 @@
+// Embers in the browser. A handler, `on:click={ ... }`, sees the event as
+// `event`; the compiler writes the other uses of this module.
+
+// What happened: `kind` is the event's name ("click", "input", ...),
+// `value` and `checked` are the target element's, `key` is the key of a
+// keyboard event, and `form` the fields of a submitted form.
+struct Event {
+    kind: String
+    value: String
+    checked: Bool
+    key: String
+    form: Map<String, String>
+}
+
+// A mounted ember: renders its HTML, runs its handlers by number, and
+// takes new props as JSON.
+struct Island {
+    render: fn() -> String
+    fire: fn(Int, Event)
+    props: fn(String)
+}
+
+// The answer to a call of a `server fn`: `{"ok": value}` when `ok`, and
+// otherwise the error's message.
+struct Reply {
+    ok: Bool
+    text: String
+}
+
+// Calls the `server fn` named `name` with its arguments as a JSON object,
+// and then `done` with the answer. Embers call server functions this way.
+fn call(name: String, args: String, done: fn(Reply)) {}
+
+// Calls the export `name` of the npm package `package` with its arguments
+// as a JSON object, and gives `{"ok": result}`. A package's functions call
+// it; JavaScript's exceptions are its errors.
+fn npm(package: String, name: String, args: String) -> String ! {}

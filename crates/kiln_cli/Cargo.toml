@@ -19,6 +19,7 @@ kiln_ir.workspace = true
 kiln_css.workspace = true
 kiln_codegen.workspace = true
 kiln_native.workspace = true
+kiln_wasm.workspace = true
 serde_json.workspace = true
 clap = { version = "4", features = ["derive"] }
 # For `kiln upgrade`: HTTPS with rustls (ring, so no cmake), the system's
@@ -27,6 +28,7 @@ ureq = { version = "3", default-features = false, features = ["rustls", "gzip"] 
 rustls-native-certs = "0.8"
 webpki-root-certs = "1"
 sha2 = "0.11"
+base64 = "0.22"
 flate2 = "1"
 tar = { version = "0.4", default-features = false }
 zip = { version = "9", default-features = false, features = ["deflate-flate2"] }

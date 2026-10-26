@@ -1,0 +1,17 @@
+{% state items: List<String> = ["a", "b"] %}
+{% state draft = "" %}
+<div id="todos">
+    <input class="draft" value={draft} on:input={ draft = event.value } on:keydown={
+        if event.key == "Enter" and draft != "" {
+            items.push(draft)
+            draft = ""
+        }
+    }>
+    <ul>
+    {% for item in items %}
+        <li key={item}><input class="note" placeholder={item}> <span>{item}</span> <button class="remove" on:click={ items = items.filter(fn(i) { i != item }) }>x</button></li>
+    {% end %}
+    </ul>
+    <button class="reverse" on:click={ items = items.reverse() }>Reverse</button>
+    <span class="size">{items.len()}</span>
+</div>

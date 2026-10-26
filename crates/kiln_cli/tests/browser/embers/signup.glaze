@@ -1,0 +1,9 @@
+{% state message = "" %}
+<form id="signup" method="post" action="/signup" on:submit={
+    message = signup(Signup(name: event.form["name"] ?? "", email: event.form["email"] ?? "")) catch err { "Error: ${err.message}" }
+}>
+    <input name="name" required>
+    <input name="email">
+    <button>Sign up</button>
+    <output>{message}</output>
+</form>

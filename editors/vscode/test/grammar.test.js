@@ -94,6 +94,7 @@ test("Glaze tags, output, components and attributes", async () => {
       "{% fill sidebar %}<nav></nav>{% end %}",
       '{% css module card from "card.module.css" %}',
       '<p ui={{ p: space.md, hover: { bg: color.accent } }}>x</p>',
+      "<form on:submit.prevent.latest={ save() }></form>",
     ].join("\n"),
   );
   assertScope(lines, 0, "{%", "punctuation.definition.tag.begin.glaze");
@@ -118,6 +119,8 @@ test("Glaze tags, output, components and attributes", async () => {
   assertScope(lines, 4, "end", "keyword.control.glaze");
   assertScope(lines, 5, "on", "entity.other.attribute-name.event.glaze");
   assertScope(lines, 5, "click", "entity.other.attribute-name.event.glaze");
+  assertScope(lines, 13, "submit", "entity.other.attribute-name.event.glaze");
+  assertScope(lines, 13, ".prevent.latest", "storage.modifier.event.glaze");
   assertScope(lines, 5, "+=", "keyword.operator.assignment.compound.kiln");
   assertScope(lines, 5, "client:visible", "entity.other.attribute-name.html");
   assertScope(lines, 5, "&hearts;", "constant.character.entity.html");

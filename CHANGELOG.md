@@ -1,5 +1,51 @@
 # Changelog
 
+## 0.8.0 (2026-10-26)
+
+Phase 4: embers. Glazes with state and event handlers render on the
+server and hydrate in the browser as WasmGC, call `server fn`s through
+generated, checked RPC, and use browser APIs and npm packages through
+typed bindings, with no JavaScript to write.
+
+- **A WasmGC backend.** `kiln_wasm` compiles checked Kiln to WebAssembly
+  that uses the browser's garbage collector, with the native runtime's
+  semantics for strings, errors, JSON and collections.
+  `kiln build --target wasm` writes a Node.js script, and the conformance
+  tests run every program that can run in a browser as a third target.
+- **Embers.** A glaze with `{% state %}` or an `on:` handler is an ember.
+  The server renders it inside `<kiln-island>` with its props and state
+  as JSON; a page with one loads one content-addressed script, and a page
+  without loads none. `client:load`, `client:idle`, `client:visible` and
+  `client:only` choose when it hydrates. After each event the ember
+  renders again and the DOM is morphed in place, keeping focus, typed
+  text, `key=` items, nested embers' state and the caller's slot content.
+  Removed embers are disposed. Without WasmGC the page stays as rendered,
+  and `<html>` gets `data-k-embers="unsupported"`.
+- **Typed server calls.** A `server fn` called in a handler is a call to
+  `POST /_kiln/rpc/<name>`; the statements after it run with the reply.
+  The call takes a `catch`. The routes accept only same-origin JSON up to
+  1 MiB from a matching build (409 otherwise), decode arguments as
+  untrusted input, and call `rpc_guard(req, name)` first when the program
+  has one. Pending elements get `aria-busy`; a repeated event is ignored
+  while its call waits unless the handler is `.latest`, which cancels the
+  older call. Calls time out and end with the page. `.prevent` and `.stop`
+  are the other modifiers; unknown ones are E0313.
+- **The browser and JavaScript.** `browser` (title, location, storage,
+  console, focus, confirm, `fetch`, `copy`) and `js.Value`, with checked
+  conversions, for what typed APIs do not reach. They run only in
+  handlers (E0223).
+- **npm packages.** `kiln add npm:name@version` downloads a package,
+  checks its integrity, keeps only its browser module and what it imports,
+  and records file checksums in `npm.lock`; it runs no scripts. Its
+  TypeScript declarations become a typed Kiln module; promise-returning
+  functions wait like server calls, and exports Kiln cannot map are left
+  out with why.
+- **What crosses is plain data.** Ember props and state and `server fn`
+  parameters and results must have a JSON form (E0224).
+- **The docs site uses embers**: a search box that asks the server as you
+  type (a form that loads `/search` without WebAssembly) and copy buttons
+  for the install commands.
+
 ## 0.7.0 (2026-10-25)
 
 Phase 3: glazes render, with styles, typed `ui`, Finishes and themes, and

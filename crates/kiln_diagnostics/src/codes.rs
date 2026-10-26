@@ -55,6 +55,8 @@ pub const UNKNOWN_GLAZE: &str = "E0219";
 pub const BAD_STYLE: &str = "E0220";
 pub const UNKNOWN_TOKEN: &str = "E0221";
 pub const BAD_TOKEN: &str = "E0222";
+pub const BROWSER_ONLY: &str = "E0223";
+pub const NOT_SERIALIZABLE: &str = "E0224";
 
 pub const UNCLOSED_GLAZE_TAG: &str = "E0301";
 pub const MISMATCHED_CLOSING_TAG: &str = "E0302";
@@ -68,9 +70,11 @@ pub const UNSAFE_ATTRIBUTE: &str = "E0309";
 pub const ENDLESS_GLAZE: &str = "E0310";
 pub const MISPLACED_FILL: &str = "E0311";
 pub const BAD_CSS: &str = "E0312";
+pub const UNKNOWN_MODIFIER: &str = "E0313";
 
 pub const NOT_COMPILED_YET: &str = "E0401";
 pub const NO_MAIN: &str = "E0402";
+pub const SERVER_CALL_PLACE: &str = "E0403";
 
 pub static ALL: &[ErrorCode] = &[
     ErrorCode {
@@ -312,6 +316,20 @@ pub static ALL: &[ErrorCode] = &[
         right: "// main.kiln\nserver fn recent_posts() -> List<Post> ! { ... }\n\n// feed.glaze\n{% state posts = recent_posts() catch { [] } %}",
     },
     ErrorCode {
+        code: BROWSER_ONLY,
+        title: "browser-only module used outside a handler",
+        explanation: "`browser`, `js` and npm packages run in the browser, so only an ember's `on:` handlers can use them: a glaze's HTML is rendered on the server too, and `.kiln` functions run on the server. Call them from a handler, and keep what they give in `{% state %}` to show it.",
+        wrong: "<p>{browser.title()}</p>",
+        right: "{% state title = \"\" %}\n<button on:click={ title = browser.title() }>Title</button>\n<p>{title}</p>",
+    },
+    ErrorCode {
+        code: NOT_SERIALIZABLE,
+        title: "value cannot cross between server and browser",
+        explanation: "An ember's props and state, and the parameters and results of a `server fn`, travel as JSON between the server and the browser. Functions, `js.Value` handles, styles and server handles such as `web.Request` have no JSON form, so they cannot be among them. Pass plain data (numbers, strings, lists, maps, structs and enums of them) and do the rest on its side.",
+        wrong: "server fn run(task: fn() -> Int) -> Int { task() }",
+        right: "server fn run(task: String) -> Int { ... }",
+    },
+    ErrorCode {
         code: UNKNOWN_GLAZE,
         title: "unknown glaze or component",
         explanation: "Components, layouts and `web.render` refer to `.glaze` files in the same directory. A component tag uses the file name in PascalCase: `<LikeButton>` is `like_button.glaze`. A layout must contain `{% slot %}`.",
@@ -424,6 +442,13 @@ pub static ALL: &[ErrorCode] = &[
         right: "{% css \"site.css\" %}",
     },
     ErrorCode {
+        code: UNKNOWN_MODIFIER,
+        title: "unknown event modifier",
+        explanation: "An `on:` handler's event can be followed by modifiers: `.prevent` stops the browser's own action (a form's submit always does), `.stop` keeps the event from reaching outer handlers, and `.latest` lets a new event replace a call that is still waiting instead of being ignored. Other names are not modifiers.",
+        wrong: "<form on:submit.preventDefault={ save() }>",
+        right: "<form on:submit.prevent={ save() }>",
+    },
+    ErrorCode {
         code: NOT_COMPILED_YET,
         title: "not supported by the compiler yet",
         explanation: "The program is valid Kiln, but the compiler cannot build this part of it yet. `kiln check` accepts it; `kiln build` and `kiln run` do not. Forms (`req.form`), embers, `sql` and `auth` arrive in later phases. Map keys and set items can be `Int`, `Float`, `Bool`, `Duration` or `String` for now. Printing or comparing a value whose type is a generic parameter also needs a later phase.",
@@ -436,6 +461,13 @@ pub static ALL: &[ErrorCode] = &[
         explanation: "A program that is built or run starts at `fn main()`, which takes no parameters. Files without `main` can still be checked with `kiln check`.",
         wrong: "fn greet() {\n    print(\"hi\")\n}",
         right: "fn main() {\n    print(\"hi\")\n}",
+    },
+    ErrorCode {
+        code: SERVER_CALL_PLACE,
+        title: "a `server fn` called where the browser cannot wait for it",
+        explanation: "A `server fn` runs on the server. Code in an ember calls it with a request, so the call must be a statement of its own in an `on:` handler, where the handler can wait for the answer: `x = f(...)`, `let x = f(...)` or `f(...)`, optionally with `catch`. Elsewhere in browser code, such as in the ember's markup or inside an expression, there is nothing to wait with.",
+        wrong: "<p>{like_count(post.id)}</p>",
+        right: "{% state count = 0 %}\n<button on:click={ count = like_count(post.id) catch { count } }>{count}</button>",
     },
 ];
 

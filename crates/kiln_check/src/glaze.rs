@@ -71,6 +71,14 @@ impl Checker {
 
     pub(crate) fn check_glaze(&mut self, file: &str, glaze: &Glaze) {
         self.in_ember = glaze.is_ember();
+        // An ember's handlers see the browser's modules without imports.
+        if self.in_ember {
+            for (id, m) in self.modules.iter().enumerate() {
+                if m.foreign || crate::checker::BROWSER_MODULES.contains(&m.name.as_str()) {
+                    self.imports.entry(m.name.clone()).or_insert(id);
+                }
+            }
+        }
         self.enter_fn(Ty::Unit, None, None);
         self.push_scope();
         if let Some(props) = &glaze.props {
@@ -79,6 +87,10 @@ impl Checker {
                 let ty = sig.as_ref().map_or(Ty::Unknown, |s| s.props[i].ty.clone());
                 if let Some(default) = &p.default {
                     self.check(default, &ty);
+                }
+                if self.in_ember {
+                    let what = format!("the ember prop `{}`", p.name.name);
+                    self.must_cross(&ty, &what, p.span);
                 }
                 self.bind(&p.name.name, p.name.span, ty, false, None);
             }
@@ -112,6 +124,10 @@ impl Checker {
         }
         for state in &glaze.states {
             let ty = self.local_value(state);
+            let what = format!("the state `{}`", state.name.name);
+            self.must_cross(&ty, &what, state.name.span);
+            let shown = self.show(&ty);
+            self.glaze_states.push((state.name.name.clone(), shown));
             self.bind(&state.name.name, state.name.span, ty, true, None);
         }
         let layout = glaze.layout.as_ref().and_then(|l| self.check_layout(l));
@@ -283,7 +299,10 @@ impl Checker {
                     self.check_attr_value(&attr.name, kind, e.span);
                 }
             }
-            AttrValue::Handler(block) => self.check_handler(block),
+            AttrValue::Handler(block) => {
+                self.check_modifiers(&attr.name);
+                self.check_handler(block)
+            }
         }
     }
 
@@ -347,9 +366,42 @@ impl Checker {
 
     /// `on:click={ ... }`: statements that run in the browser and cannot
     /// fail, so errors must be handled with `catch`.
+    /// Reports the modifiers of `on:click.prevent` that are not ones.
+    fn check_modifiers(&mut self, name: &Ident) {
+        const MODIFIERS: &[&str] = &["prevent", "stop", "latest"];
+        let mut at = name.span.start as usize;
+        for (i, part) in name.name.split('.').enumerate() {
+            if i > 0 && !MODIFIERS.contains(&part) {
+                let span = Span::new(at, at + part.len());
+                let mut diag = Diagnostic::error(
+                    codes::UNKNOWN_MODIFIER,
+                    format!("`.{part}` is not an event modifier: expected `.prevent`, `.stop` or `.latest`"),
+                    span,
+                );
+                let lower = part.to_ascii_lowercase();
+                if let Some(m) = MODIFIERS.iter().find(|m| lower.starts_with(*m)) {
+                    diag = diag.with_suggestion(format!("use `.{m}`"), span, m.to_string());
+                }
+                self.error(diag);
+            }
+            at += part.len() + 1;
+        }
+    }
+
     fn check_handler(&mut self, block: &Block) {
         self.enter_fn(Ty::Unit, None, None);
+        self.push_scope();
+        let event = self
+            .modules
+            .iter()
+            .find(|m| m.name == "ember")
+            .and_then(|m| m.types.get("Event"))
+            .map_or(Ty::Unknown, |&id| Ty::Adt(id, Vec::new()));
+        self.bind("event", block.span, event, false, None);
+        let outer = std::mem::replace(&mut self.in_handler, true);
         self.check_block(block, &Expect::Discard);
+        self.in_handler = outer;
+        self.pop_scope();
         self.exit_fn();
     }
 
