@@ -112,9 +112,11 @@ async function main() {
     textDocument: doc,
     position: positionOf(MAIN, "helper(post", 2),
   });
+  // Windows' TEMP can contain an 8.3 name (RUNNER~1), while the LSP
+  // canonicalizes it to the long path. Use the OS resolver for both.
   assert.strictEqual(
-    fs.realpathSync(fileURLToPath(definition.uri)),
-    fs.realpathSync(path.join(dir, "other.kiln")),
+    fs.realpathSync.native(fileURLToPath(definition.uri)),
+    fs.realpathSync.native(path.join(dir, "other.kiln")),
   );
   assert.deepStrictEqual(definition.range.start, { line: 1, character: 3 });
 
