@@ -1,0 +1,69 @@
+// The app `tests/browser.rs` drives in Chromium: a page of independent
+// embers with different hydration hints, next to static content, and the
+// `server fn`s they call.
+import web, os, time, html
+
+// How many times `slow` ran, to check that a double click calls it once.
+const SLOW_CALLS: List<Int> = [0]
+
+struct Signup {
+    name: String
+    email: String
+}
+
+server fn add(a: Int, b: Int) -> Int {
+    a + b
+}
+
+server fn slow(n: Int) -> Int {
+    SLOW_CALLS[0] = SLOW_CALLS[0] + 1
+    time.sleep(300ms)
+    return n + 1
+}
+
+server fn slow_calls() -> Int {
+    SLOW_CALLS[0]
+}
+
+// Short queries answer later, so their replies come back out of order.
+server fn search(q: String) -> String {
+    if q.len() < 3 {
+        time.sleep(400ms)
+    } else {
+        time.sleep(30ms)
+    }
+    return q.upper()
+}
+
+server fn save(n: Int) ! {
+    if n % 2 == 0 {
+        throw web.error(409, "${n} is even")
+    }
+}
+
+server fn signup(form: Signup) -> String ! {
+    if not form.email.contains("@") {
+        throw web.error(422, "the email needs an @")
+    }
+    return "Welcome, ${form.name}"
+}
+
+fn main() ! {
+    let app = web.app(access_log: false)
+    app.get("/", fn(req) {
+        let page = web.render("index.glaze", { title: "Embers </script><script>alert(1)</script>" })
+        page.headers["content-security-policy"] = "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self'"
+        return page
+    })
+    app.get("/plain", fn(req) {
+        return web.render("plain.glaze")
+    })
+    // Where the sign-up form goes without the ember.
+    app.post("/signup", fn(req) {
+        return web.html("<p id=\"fallback\">signed up without the ember: ${html.escape(req.body)}</p>")
+    })
+    app.get("/quit", fn(req) {
+        os.exit(0)
+    })
+    try app.listen("127.0.0.1:${env("PORT")}")
+}

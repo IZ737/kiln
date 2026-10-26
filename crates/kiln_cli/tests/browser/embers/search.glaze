@@ -1,0 +1,9 @@
+{% state q = "" %}
+{% state result = "" %}
+<div id="search">
+    <input class="q" value={q} on:input.latest={
+        q = event.value
+        result = search(q) catch err { "failed" }
+    }>
+    <span class="result">{result}</span>
+</div>

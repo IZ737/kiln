@@ -18,6 +18,8 @@ pub use emit::Roots;
 /// The JavaScript half of the runtime: loads a module and gives it the
 /// functions it imports.
 pub const RUNTIME_JS: &str = include_str!("../runtime/kiln.js");
+/// The bridge that takes over a page's embers (see `runtime/ember.js`).
+pub const EMBER_JS: &str = include_str!("../runtime/ember.js");
 
 /// A compiled module.
 pub struct Module {
@@ -145,6 +147,18 @@ pub fn node_runner(module: &Module) -> String {
     let b64 = base64(&module.wasm);
     format!(
         "// Built by kiln: run with `node` (22 or later).\nconst KILN_MODULE = \"{b64}\";\n{RUNTIME_JS}\nawait runMain(KILN_MODULE);\n"
+    )
+}
+
+/// The script a page with embers loads: the runtime and the bridge, which
+/// fetches the module from `wasm_url` and sends calls of `server fn`s
+/// with `rpc_version`, which the server checks.
+pub fn browser_script(wasm_url: &str, rpc_version: &str) -> String {
+    let quote = |s: &str| serde_json::to_string(s).expect("a string is JSON");
+    format!(
+        "// Built by kiln: the runtime of this site's embers.\nconst KILN_WASM = {};\nconst KILN_RPC = {};\n{RUNTIME_JS}\n{EMBER_JS}",
+        quote(wasm_url),
+        quote(rpc_version)
     )
 }
 

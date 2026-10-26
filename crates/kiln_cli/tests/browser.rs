@@ -122,3 +122,76 @@ fn wasm_programs_run_in_a_real_browser() {
     let _ = std::fs::remove_dir_all(&dir);
     assert!(failures.is_empty(), "{}", failures.join("\n\n"));
 }
+
+/// The app in `tests/browser/embers`, a server with a page of embers, built
+/// natively and driven in Chromium by `tests/browser/embers.mjs`:
+/// hydration hints, state and events, lists, forms, nested embers, calls
+/// of `server fn`s with their pending, cancelled and failed states, and
+/// pages that work without JavaScript or WasmGC.
+#[test]
+fn embers_work_in_a_real_browser() {
+    let Some(node) = node() else { return };
+    let dir = std::env::temp_dir().join(format!("kiln-embers-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let exe = dir.join(if cfg!(windows) {
+        "embers.exe"
+    } else {
+        "embers"
+    });
+    let built = Command::new(env!("CARGO_BIN_EXE_kiln"))
+        .args(["build", "-o"])
+        .arg(&exe)
+        .arg(root().join("crates/kiln_cli/tests/browser/embers"))
+        .output()
+        .unwrap();
+    assert!(
+        built.status.success(),
+        "the embers app does not build:\n{}",
+        String::from_utf8_lossy(&built.stderr)
+    );
+    let port = std::net::TcpListener::bind("127.0.0.1:0")
+        .unwrap()
+        .local_addr()
+        .unwrap()
+        .port();
+    let mut server = Command::new(&exe)
+        .env("PORT", port.to_string())
+        .spawn()
+        .unwrap();
+    let address = format!("127.0.0.1:{port}");
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
+    while std::net::TcpStream::connect(&address).is_err() {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "the embers app never listened"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+    let out = Command::new(&node)
+        .arg(root().join("crates/kiln_cli/tests/browser/embers.mjs"))
+        .arg(format!("http://{address}"))
+        .output()
+        .unwrap();
+    let _ = server.kill();
+    let _ = server.wait();
+    let _ = std::fs::remove_dir_all(&dir);
+    assert!(
+        out.status.success(),
+        "the browser did not run:\n{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let result: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap_or_else(|_| {
+        panic!(
+            "the test printed no result:\n{}",
+            String::from_utf8_lossy(&out.stdout)
+        )
+    });
+    eprintln!("embers: {}", result["metrics"]);
+    let failures: Vec<&str> = result["failures"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|f| f.as_str())
+        .collect();
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}

@@ -1,0 +1,5 @@
+{% state show = true %}
+<div id="host">
+    <button class="toggle" on:click={ show = not show }>Toggle</button>
+    {% if show %}<Counter name="child" start={100} />{% end %}
+</div>

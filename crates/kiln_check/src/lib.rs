@@ -209,6 +209,9 @@ pub struct AppDiagnostics {
     /// For each glaze, what each value it outputs is, by the span of the
     /// value's expression: what the compiler needs to render it.
     pub glaze_values: Vec<HashMap<Span, ValueKind>>,
+    /// For each glaze, its `{% state %}`s with their types as Kiln writes
+    /// them.
+    pub glaze_states: Vec<Vec<(String, String)>>,
     /// The atomic CSS rules the app's styles use, by class name (see
     /// [`style::stylesheet`]).
     pub ui_rules: BTreeMap<String, style::UiRule>,
@@ -243,6 +246,7 @@ pub fn check_app_with_css(
         modules: Vec::new(),
         glazes: Vec::new(),
         glaze_values: Vec::new(),
+        glaze_states: Vec::new(),
         ui_rules: BTreeMap::new(),
     };
     for i in 0..modules.len() {
@@ -254,6 +258,7 @@ pub fn check_app_with_css(
         let checker = glaze_checker(modules, glazes, i, false, css);
         out.glazes.push(sorted(checker.diags));
         out.glaze_values.push(checker.glaze_values);
+        out.glaze_states.push(checker.glaze_states);
         out.ui_rules.extend(checker.ui_rules);
     }
     out

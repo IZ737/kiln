@@ -89,6 +89,9 @@ pub(crate) struct Gen<'a> {
     used_globals: Vec<bool>,
     /// Hosts the backend's extra imports (JSON, the DOM and so on).
     extra_imports: BTreeSet<String>,
+    /// Whether this is a page's embers, where `server fn`s run on the
+    /// server, rather than a whole program.
+    browser: bool,
 }
 
 const RUNTIME_WAT: &str = include_str!("../runtime/kiln.wat");
@@ -121,6 +124,7 @@ impl<'a> Gen<'a> {
             via: vec![None; p.funcs.len()],
             used_globals: vec![false; p.globals.len()],
             extra_imports: BTreeSet::new(),
+            browser: false,
         }
     }
 
@@ -131,6 +135,7 @@ impl<'a> Gen<'a> {
             Roots::Main => vec![self.p.main],
             Roots::Exports(list) => list.iter().map(|(_, f)| *f).collect(),
         };
+        self.browser = matches!(roots, Roots::Exports(_));
         self.reach(&root_ids);
         self.struct_types();
         for (i, g) in self.p.globals.iter().enumerate() {
@@ -250,6 +255,10 @@ impl<'a> Gen<'a> {
 
     fn add_refs(&mut self, refs: Refs, from: Option<FuncId>, work: &mut Vec<FuncId>) {
         for f in refs.funcs {
+            // A page's embers call `server fn`s over the network.
+            if self.browser && self.p.funcs[f].server {
+                continue;
+            }
             if !self.reached[f] {
                 self.reached[f] = true;
                 self.via[f] = from;
@@ -1254,7 +1263,7 @@ impl<'a> Gen<'a> {
                 self.line("call $k_map_get");
             }
             ExprKind::Call { func, args } => {
-                if self.p.funcs[*func].server {
+                if self.p.funcs[*func].server && self.browser {
                     self.server_call(*func, e.span);
                     return;
                 }

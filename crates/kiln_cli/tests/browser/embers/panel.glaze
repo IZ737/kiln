@@ -1,0 +1,6 @@
+{% props title: String %}
+{% state open = true %}
+<section id="panel">
+    <h2 class="toggle" on:click={ open = not open }>{title}</h2>
+    {% if open %}<div class="body">{% slot %}</div>{% end %}
+</section>

@@ -27,7 +27,9 @@ namespace, and one of them has `fn main()`. `cargo test` runs it with
   written as `PORT`.
 
 `KILN_CONFORMANCE=web cargo test --test conformance` runs only the programs
-whose names contain `web`.
+whose names contain `web`, and `KILN_BLESS=1` with it writes what they did
+as the expected files, to read over before committing. The hashes in the
+names of ember files (`/_kiln/ember-1a2b3c.js`) are written as `HASH`.
 
 Add a program here for every feature the compiler learns. The suite passing
 on the compiled programs is the exit gate of phase 1.

@@ -1,0 +1,21 @@
+info listening on http://127.0.0.1:PORT
+info GET / 200 TIME
+info GET /plain 200 TIME
+info POST /_kiln/rpc/add 200 TIME
+info POST /_kiln/rpc/add 200 TIME
+info POST /_kiln/rpc/greet 200 TIME
+info POST /_kiln/rpc/reset 200 TIME
+info POST /_kiln/rpc/greet 422 TIME
+error POST /_kiln/rpc/greet failed: the database password is hunter2
+info POST /_kiln/rpc/greet 500 TIME
+info POST /_kiln/rpc/add 400 TIME
+info POST /_kiln/rpc/add 400 TIME
+info POST /_kiln/rpc/add 400 TIME
+info POST /_kiln/rpc/add 409 TIME
+info POST /_kiln/rpc/add 409 TIME
+info POST /_kiln/rpc/add 403 TIME
+info POST /_kiln/rpc/add 403 TIME
+info POST /_kiln/rpc/add 403 TIME
+info POST /_kiln/rpc/add 415 TIME
+info POST /_kiln/rpc/secret 404 TIME
+info GET /_kiln/rpc/add 405 TIME

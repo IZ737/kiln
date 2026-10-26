@@ -72,6 +72,14 @@ pub struct Checker {
     pub(crate) glazes: Option<HashMap<String, GlazeSig>>,
     /// Whether the code being checked runs in the browser.
     pub(crate) in_ember: bool,
+    /// Whether the code being checked is an `on:` handler, where a call to
+    /// a `server fn` goes over the network and so can fail.
+    pub(crate) in_handler: bool,
+    /// The program's `server fn`s, by name.
+    pub(crate) server_fns: HashSet<String>,
+    /// Each `{% state %}` of the glaze being checked, with its type as Kiln
+    /// writes it, for the code that restores it in the browser.
+    pub(crate) glaze_states: Vec<(String, String)>,
     /// The class names of the CSS Modules each glaze imports: by glaze
     /// file, then by the name it imports them as.
     pub(crate) css_modules: crate::CssModules,
@@ -143,6 +151,7 @@ const STD_MODULES: &[(&str, &str)] = &[
     ("html", include_str!("../std/html.kiln")),
     ("base64", include_str!("../std/base64.kiln")),
     ("markdown", include_str!("../std/markdown.kiln")),
+    ("ember", include_str!("../std/ember.kiln")),
 ];
 const PRELUDE: &str = include_str!("../std/prelude.kiln");
 
@@ -166,6 +175,9 @@ impl Checker {
             diags: Vec::new(),
             glazes: None,
             in_ember: false,
+            in_handler: false,
+            server_fns: HashSet::new(),
+            glaze_states: Vec::new(),
             glaze_values: HashMap::new(),
             css_modules: HashMap::new(),
             tokens: Default::default(),
@@ -1864,8 +1876,11 @@ impl Checker {
             if self.local(name).is_none() {
                 if let Some(sig) = self.global_fns.get(name).cloned() {
                     self.refer(callee.span, Ref::Fn(name.clone()));
-                    let (params, ret, throws) = self.instantiate(&sig, &[], &explicit, e.span);
+                    let (params, ret, mut throws) = self.instantiate(&sig, &[], &explicit, e.span);
                     self.check_args(&params, args, e.span, &fn_name, None);
+                    if self.in_handler && throws.is_none() && self.server_fns.contains(name) {
+                        throws = Some(self.error_ty());
+                    }
                     return (ret, throws);
                 }
                 if let Some(id) = self.global_types.get(name).copied() {

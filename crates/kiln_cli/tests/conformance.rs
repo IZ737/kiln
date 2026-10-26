@@ -234,6 +234,24 @@ fn run_program(program: &Path, backend: &str, failures: &mut Vec<String>) {
     };
     let stdout = String::from_utf8_lossy(&out.stdout);
     let stderr = String::from_utf8_lossy(&out.stderr);
+    // `KILN_BLESS=1` writes what the programs did as what they should do,
+    // to be read over before committing.
+    if std::env::var_os("KILN_BLESS").is_some() {
+        let write = |ext: &str, text: &str| {
+            let path = program.join(format!("main.{ext}"));
+            if text.is_empty() {
+                let _ = std::fs::remove_file(path);
+            } else {
+                std::fs::write(path, text).unwrap();
+            }
+        };
+        write("out", &stdout);
+        write("err", &stderr);
+        if let Some(found) = &responses {
+            write("responses", found);
+        }
+        return;
+    }
     let name = format!(
         "{} ({backend})",
         program.file_name().unwrap().to_string_lossy()
@@ -343,7 +361,7 @@ fn send_requests(port: u16, requests: &str) -> String {
         };
         for line in response.split_inclusive('\n') {
             if !line.to_ascii_lowercase().starts_with("date:") {
-                transcript.push_str(line);
+                transcript.push_str(&unhashed(line));
             }
         }
         if !transcript.ends_with('\n') {
@@ -351,4 +369,26 @@ fn send_requests(port: u16, requests: &str) -> String {
         }
     }
     transcript
+}
+
+/// `text` with the hashes in the names of ember files, which change with
+/// the compiler, written as `HASH`: `/_kiln/ember-HASH.js`.
+fn unhashed(text: &str) -> String {
+    let mut out = String::new();
+    let mut rest = text;
+    while let Some(at) = rest.find("ember-") {
+        let (before, after) = rest.split_at(at + "ember-".len());
+        out.push_str(before);
+        let hash = after.get(..6);
+        if hash.is_some_and(|h| h.bytes().all(|b| b.is_ascii_alphanumeric()))
+            && after[6..].starts_with('.')
+        {
+            out.push_str("HASH");
+            rest = &after[6..];
+        } else {
+            rest = after;
+        }
+    }
+    out.push_str(rest);
+    out
 }

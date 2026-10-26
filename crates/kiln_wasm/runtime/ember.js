@@ -1,0 +1,546 @@
+// ----- embers: the browser bridge -----
+//
+// Takes over the `<kiln-island>`s the server rendered. Each island is an
+// ember: its Kiln code, compiled into the page's WebAssembly module, holds
+// its state and renders its HTML, and this bridge turns the HTML into
+// changes to the page (keeping elements, focus and what the user typed),
+// sends events to the island's handlers, and carries its calls of
+// `server fn`s. The server adds this script only to pages with an island,
+// and the module is fetched only when the first island needs it.
+//
+// An island's element has `data-k-ember` (its name), `data-k-hydrate`
+// (`load`, `idle`, `visible` or `only`), and its props and state as JSON.
+// Inside it, `<kiln-slot>` holds HTML its caller rendered, which belongs
+// to the caller; `data-k-on-<event>="<n>[:modifier...]"` marks an element
+// whose handler number `n` runs on that event; `data-k-key` keeps an
+// element's identity in a list.
+
+let ember = null;
+let loading = null;
+const islands = new Map();
+let current = null;
+
+/** Whether this browser runs WasmGC: a module with one struct type. */
+function wasmGc() {
+  try {
+    return WebAssembly.validate(
+      new Uint8Array([0, 97, 115, 109, 1, 0, 0, 0, 1, 5, 1, 0x5f, 1, 0x7f, 0]),
+    );
+  } catch {
+    return false;
+  }
+}
+
+function load() {
+  if (!loading) {
+    loading = (async () => {
+      const res = await fetch(KILN_WASM, { credentials: "same-origin" });
+      if (!res.ok) throw new Error(`${KILN_WASM} answered ${res.status}`);
+      const module =
+        WebAssembly.compileStreaming && res.headers.get("content-type") === "application/wasm"
+          ? await WebAssembly.compileStreaming(res)
+          : await WebAssembly.compile(await res.arrayBuffer());
+      const exports = await instantiate(module, { k: emberImports() });
+      exports.init();
+      ember = exports;
+      return exports;
+    })();
+  }
+  return loading;
+}
+
+// ----- islands -----
+
+let observer = null;
+
+/** Takes an island over when its hint says to. */
+function schedule(el) {
+  if (islands.has(el) || el.kilnScheduled) return;
+  el.kilnScheduled = true;
+  const hint = el.getAttribute("data-k-hydrate") || "load";
+  // An island has no box of its own (it is `display: contents`), so the
+  // observer watches its first element.
+  const watched = el.firstElementChild;
+  if (hint === "visible" && typeof IntersectionObserver === "function" && watched) {
+    if (!observer) {
+      observer = new IntersectionObserver((entries) => {
+        for (const entry of entries) {
+          if (entry.isIntersecting) {
+            observer.unobserve(entry.target);
+            mount(entry.target.kilnIsland);
+          }
+        }
+      });
+    }
+    watched.kilnIsland = el;
+    el.kilnWatched = watched;
+    observer.observe(watched);
+  } else if (hint === "idle") {
+    const idle = window.requestIdleCallback || ((f) => setTimeout(f, 200));
+    idle(() => mount(el));
+  } else {
+    mount(el);
+  }
+}
+
+async function mount(el) {
+  let exports;
+  try {
+    exports = await load();
+  } catch (err) {
+    console.error("kiln: cannot load the embers", err);
+    el.setAttribute("data-k-error", "cannot load the embers");
+    return;
+  }
+  if (!el.isConnected || islands.has(el)) return;
+  const name = el.getAttribute("data-k-ember");
+  let id;
+  try {
+    id = Number(
+      exports.__kiln_mount(
+        name,
+        el.getAttribute("data-k-props") || "{}",
+        el.getAttribute("data-k-state") ?? "",
+      ),
+    );
+  } catch (err) {
+    fail({ el, name }, err);
+    return;
+  }
+  if (id < 0) {
+    console.error(`kiln: there is no ember named "${name}"`);
+    return;
+  }
+  const island = { id, el, name, controllers: new Set(), pending: new Map(), stash: new Map(), dead: false };
+  islands.set(el, island);
+  const rendered = el.hasAttribute("data-k-state") && el.getAttribute("data-k-hydrate") !== "only";
+  render(island, rendered);
+  el.setAttribute("data-k-ready", "");
+}
+
+/** Stops the islands in `node` (or `node` itself): their calls are
+ *  cancelled, and their state is dropped. */
+function dispose(node) {
+  if (node.nodeType !== 1) return;
+  const all = node.nodeName === "KILN-ISLAND" ? [node] : [];
+  all.push(...node.querySelectorAll("kiln-island"));
+  for (const el of all) {
+    if (el.kilnWatched) observer?.unobserve(el.kilnWatched);
+    const island = islands.get(el);
+    if (!island) continue;
+    islands.delete(el);
+    island.dead = true;
+    for (const c of island.controllers) c.abort("dispose");
+    try {
+      ember.__kiln_drop(BigInt(island.id));
+    } catch {
+      // The island already failed.
+    }
+  }
+}
+
+function fail(island, err) {
+  const message = err?.kilnMessage ?? String(err?.message ?? err);
+  console.error(`kiln: the ember "${island.name}" failed: ${message}`);
+  island.el.setAttribute("data-k-error", message);
+  island.dead = true;
+}
+
+// ----- rendering -----
+
+const dirty = new Set();
+let queued = false;
+
+/** Renders an island again before the browser next paints, once however
+ *  many of its handlers ran. */
+function invalidate(island) {
+  dirty.add(island);
+  if (queued) return;
+  queued = true;
+  queueMicrotask(() => {
+    queued = false;
+    const list = [...dirty];
+    dirty.clear();
+    for (const i of list) {
+      if (!i.dead && islands.get(i.el) === i) render(i);
+    }
+  });
+}
+
+function render(island, check = false) {
+  let html;
+  try {
+    html = ember.__kiln_render(BigInt(island.id));
+  } catch (err) {
+    fail(island, err);
+    return;
+  }
+  const template = document.createElement("template");
+  template.innerHTML = html;
+  const changes = { count: 0 };
+  morphChildren(island.el, template.content, island, changes);
+  if (check && changes.count > 0) {
+    console.warn(
+      `kiln: the ember "${island.name}" rendered differently in the browser than on the server (${changes.count} changes); the page now shows the browser's HTML`,
+    );
+  }
+  for (const [el, calls] of island.pending) {
+    if (calls.size > 0) markPending(el, island);
+  }
+}
+
+function keyOf(n) {
+  return n.nodeType === 1 ? n.getAttribute("data-k-key") : null;
+}
+
+function same(a, b) {
+  if (a.nodeType !== b.nodeType || a.nodeName !== b.nodeName) return false;
+  if (a.nodeName === "KILN-ISLAND") {
+    return a.getAttribute("data-k-ember") === b.getAttribute("data-k-ember");
+  }
+  return true;
+}
+
+/** Makes `from`'s children like `to`'s, keeping the elements that match:
+ *  by `data-k-key`, or else by position and tag. */
+function morphChildren(from, to, island, changes) {
+  const before = [...from.childNodes];
+  const after = [...to.childNodes];
+  const keyed = new Map();
+  for (const n of before) {
+    const k = keyOf(n);
+    if (k !== null) keyed.set(k, n);
+  }
+  const used = new Set();
+  let i = 0;
+  let ref = from.firstChild;
+  for (const n of after) {
+    let match = null;
+    const k = keyOf(n);
+    if (k !== null) {
+      match = keyed.get(k) ?? null;
+      if (match && (used.has(match) || !same(match, n))) match = null;
+    } else {
+      while (i < before.length && (used.has(before[i]) || keyOf(before[i]) !== null)) i++;
+      if (i < before.length && same(before[i], n)) match = before[i++];
+    }
+    if (match) {
+      used.add(match);
+      if (match === ref) {
+        ref = ref.nextSibling;
+      } else {
+        from.insertBefore(match, ref);
+        changes.count++;
+      }
+      update(match, n, island, changes);
+    } else {
+      from.insertBefore(n, ref);
+      changes.count++;
+      adoptSlots(n, island);
+      if (n.nodeType === 1) {
+        if (n.nodeName === "KILN-ISLAND") schedule(n);
+        for (const el of n.querySelectorAll("kiln-island")) schedule(el);
+      }
+    }
+  }
+  for (const n of before) {
+    if (!used.has(n)) {
+      stashSlots(n, island);
+      dispose(n);
+      n.remove();
+      changes.count++;
+    }
+  }
+}
+
+/** Keeps the content of the island's slots in `node`, which is going: the
+ *  caller rendered it, and it comes back when the slot does. */
+function stashSlots(node, island) {
+  if (node.nodeType !== 1) return;
+  const slots = node.nodeName === "KILN-SLOT" ? [node] : [...node.querySelectorAll("kiln-slot")];
+  for (const slot of slots) {
+    if (ownerIsland(slot) !== island.el || !slot.firstChild) continue;
+    const kept = document.createDocumentFragment();
+    while (slot.firstChild) kept.appendChild(slot.firstChild);
+    island.stash.set(slot.getAttribute("data-k-slot"), kept);
+  }
+}
+
+/** The island whose HTML `node` is part of: the nearest one around it,
+ *  except that what is in a `<kiln-slot>` belongs to the island around
+ *  the one the slot is in. */
+function ownerIsland(node) {
+  let skip = 0;
+  for (let n = node.parentNode; n; n = n.parentNode) {
+    if (n.nodeName === "KILN-SLOT") skip++;
+    else if (n.nodeName === "KILN-ISLAND") {
+      if (skip === 0) return n;
+      skip--;
+    }
+  }
+  return null;
+}
+
+/** A new `<kiln-slot>` of `island` takes the content of the old one with
+ *  its name, which its caller rendered. */
+function adoptSlots(node, island) {
+  if (node.nodeType !== 1) return;
+  const slots = node.nodeName === "KILN-SLOT" ? [node] : [...node.querySelectorAll("kiln-slot")];
+  for (const slot of slots) {
+    if (ownerIsland(slot) !== island.el || slot.firstChild) continue;
+    const name = slot.getAttribute("data-k-slot");
+    const kept = island.stash.get(name);
+    if (kept) {
+      island.stash.delete(name);
+      slot.appendChild(kept);
+      continue;
+    }
+    for (const old of island.el.querySelectorAll("kiln-slot")) {
+      if (old !== slot && !node.contains(old) && old.getAttribute("data-k-slot") === name && ownerIsland(old) === island.el) {
+        while (old.firstChild) slot.appendChild(old.firstChild);
+        break;
+      }
+    }
+  }
+}
+
+/** Attributes the bridge sets, which renders leave alone. */
+const OWN = new Set(["data-k-ready", "data-k-pending", "aria-busy", "data-k-error"]);
+
+function update(old, n, island, changes) {
+  if (old.nodeType !== 1) {
+    if (old.nodeValue !== n.nodeValue) {
+      old.nodeValue = n.nodeValue;
+      changes.count++;
+    }
+    return;
+  }
+  // The caller's HTML in a slot is the caller's to render.
+  if (old.nodeName === "KILN-SLOT") return;
+  if (old.nodeName === "KILN-ISLAND") return updateIsland(old, n, island, changes);
+  for (const a of [...n.attributes]) {
+    if (old.getAttribute(a.name) !== a.value) {
+      old.setAttribute(a.name, a.value);
+      if (!a.name.startsWith("data-k-")) changes.count++;
+    }
+  }
+  for (const a of [...old.attributes]) {
+    if (!n.hasAttribute(a.name) && !OWN.has(a.name)) {
+      old.removeAttribute(a.name);
+      if (!a.name.startsWith("data-k-")) changes.count++;
+    }
+  }
+  // What the user typed is in properties, which attributes do not change.
+  if (old.nodeName === "INPUT") {
+    if (n.hasAttribute("value") && old.value !== n.getAttribute("value")) old.value = n.getAttribute("value");
+    if (old.type === "checkbox" || old.type === "radio") old.checked = n.hasAttribute("checked");
+  } else if (old.nodeName === "TEXTAREA") {
+    if (old.value !== n.value) old.value = n.value;
+  } else if (old.nodeName === "OPTION") {
+    old.selected = n.hasAttribute("selected");
+  }
+  morphChildren(old, n, island, changes);
+}
+
+/** An ember inside this one: it gets the new props, and the content of
+ *  its slots is rendered again, but the rest of it is its own. */
+function updateIsland(old, n, island, changes) {
+  const props = n.getAttribute("data-k-props") || "{}";
+  if (old.getAttribute("data-k-props") !== props) {
+    old.setAttribute("data-k-props", props);
+    const inner = islands.get(old);
+    if (inner && !inner.dead) {
+      try {
+        ember.__kiln_props(BigInt(inner.id), props);
+        invalidate(inner);
+      } catch (err) {
+        fail(inner, err);
+      }
+    }
+  }
+  for (const slot of n.querySelectorAll(":scope > kiln-slot")) {
+    const name = slot.getAttribute("data-k-slot");
+    for (const target of old.querySelectorAll("kiln-slot")) {
+      if (target.getAttribute("data-k-slot") === name && ownerIsland(target) === old) {
+        morphChildren(target, slot, island, changes);
+        break;
+      }
+    }
+  }
+}
+
+// ----- events -----
+
+const BUBBLING = ["click", "dblclick", "input", "change", "submit", "keydown", "keyup", "pointerdown", "pointerup", "focusin", "focusout"];
+const DIRECT = ["focus", "blur", "mouseenter", "mouseleave"];
+
+function onEvent(ev) {
+  if (!ember) return;
+  const attr = `data-k-on-${ev.type}`;
+  const path = ev.eventPhase === Event.CAPTURING_PHASE ? [ev.target] : null;
+  for (let n = ev.target; n && n.nodeType === 1; n = path ? null : n.parentNode) {
+    if (!n.hasAttribute(attr)) continue;
+    const [index, ...mods] = n.getAttribute(attr).split(":");
+    const owner = ownerIsland(n);
+    const island = owner && islands.get(owner);
+    if (!island || island.dead) continue;
+    if (mods.includes("prevent") || ev.type === "submit") ev.preventDefault();
+    fire(island, n, ev, Number(index), mods);
+    if (mods.includes("stop")) {
+      ev.stopPropagation();
+      break;
+    }
+  }
+}
+
+function fields(form) {
+  const out = {};
+  if (!(form instanceof HTMLFormElement)) return out;
+  for (const [k, v] of new FormData(form)) {
+    if (typeof v === "string") out[k] = v;
+  }
+  return out;
+}
+
+function fire(island, el, ev, index, mods) {
+  const calls = island.pending.get(el);
+  const busy = calls?.get(ev.type);
+  // While a handler's call is on its way, the handler does not run again,
+  // unless it is `.latest`, whose new call replaces the old one.
+  if (busy) {
+    if (!mods.includes("latest")) return;
+    busy.abort("replaced");
+  }
+  const form = ev.type === "submit" ? el : el.form;
+  current = { island, el, type: ev.type };
+  try {
+    ember.__kiln_fire(
+      BigInt(island.id),
+      BigInt(index),
+      ev.type,
+      "value" in el && el.value != null ? String(el.value) : "",
+      el.checked ? 1 : 0,
+      ev.key ?? "",
+      JSON.stringify(fields(form)),
+    );
+  } catch (err) {
+    fail(island, err);
+  } finally {
+    current = null;
+  }
+  invalidate(island);
+}
+
+/** Marks an element, and its island, as waiting for a call. */
+function markPending(el, island) {
+  busy(el, true);
+  busy(island.el, true);
+}
+
+function busy(el, on) {
+  if (on) {
+    el.setAttribute("data-k-pending", "");
+    el.setAttribute("aria-busy", "true");
+  } else {
+    el.removeAttribute("data-k-pending");
+    el.removeAttribute("aria-busy");
+  }
+}
+
+// ----- calls of server functions -----
+
+const TIMEOUT = 30000;
+
+function emberImports() {
+  return {
+    ember_call: (name, args, done) => call(name, args, done),
+  };
+}
+
+function call(name, args, done) {
+  const ctx = current;
+  if (!ctx) return;
+  const { island, el, type } = ctx;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort("timeout"), TIMEOUT);
+  let calls = island.pending.get(el);
+  if (!calls) island.pending.set(el, (calls = new Map()));
+  calls.set(type, controller);
+  island.controllers.add(controller);
+  markPending(el, island);
+  fetch(`/_kiln/rpc/${name}`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      accept: "application/json",
+      "x-kiln-rpc": KILN_RPC,
+    },
+    body: args,
+    signal: controller.signal,
+    credentials: "same-origin",
+  })
+    .then(async (res) => {
+      const text = await res.text();
+      if (res.ok) return [true, text];
+      let message = null;
+      try {
+        message = JSON.parse(text).error;
+      } catch {
+        // Not JSON: a proxy's page, say.
+      }
+      return [false, typeof message === "string" ? message : `the server answered ${res.status}`];
+    })
+    .catch(() => {
+      const why = controller.signal.reason;
+      if (controller.signal.aborted && why !== "timeout") return null;
+      return [false, why === "timeout" ? "the server did not answer in time" : "the server cannot be reached"];
+    })
+    .then((reply) => {
+      clearTimeout(timer);
+      island.controllers.delete(controller);
+      if (calls.get(type) === controller) calls.delete(type);
+      if (calls.size === 0) {
+        island.pending.delete(el);
+        busy(el, false);
+      }
+      if (island.pending.size === 0) busy(island.el, false);
+      // A cancelled call's reply never reaches the island.
+      if (!reply || island.dead || islands.get(island.el) !== island) return;
+      current = ctx;
+      try {
+        ember.__kiln_reply(done, reply[0] ? 1 : 0, reply[1]);
+      } catch (err) {
+        fail(island, err);
+      } finally {
+        current = null;
+      }
+      invalidate(island);
+    });
+}
+
+// ----- start -----
+
+function boot() {
+  if (!wasmGc()) {
+    // The page stays as the server rendered it: links and forms work.
+    document.documentElement.setAttribute("data-k-embers", "unsupported");
+    return;
+  }
+  try {
+    const sheet = new CSSStyleSheet();
+    sheet.replaceSync("kiln-island,kiln-slot{display:contents}");
+    document.adoptedStyleSheets = [...document.adoptedStyleSheets, sheet];
+  } catch {
+    // Older browsers: the islands are inline elements.
+  }
+  for (const type of BUBBLING) document.addEventListener(type, onEvent);
+  for (const type of DIRECT) document.addEventListener(type, onEvent, true);
+  addEventListener("pagehide", () => {
+    for (const island of islands.values()) {
+      for (const c of island.controllers) c.abort("dispose");
+    }
+  });
+  for (const el of document.querySelectorAll("kiln-island")) schedule(el);
+}
+
+boot();

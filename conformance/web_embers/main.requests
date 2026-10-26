@@ -1,0 +1,150 @@
+GET / HTTP/1.1
+###
+GET /plain HTTP/1.1
+###
+POST /_kiln/rpc/add HTTP/1.1
+Host: localhost
+Origin: http://localhost
+X-Kiln-Rpc: m3w6fj
+Content-Type: application/json
+Accept: application/json
+
+{"a": 1}
+###
+POST /_kiln/rpc/add HTTP/1.1
+Host: localhost
+Origin: http://localhost
+X-Kiln-Rpc: m3w6fj
+Content-Type: application/json
+Accept: application/json
+
+{"a": 1, "b": 41}
+###
+POST /_kiln/rpc/greet HTTP/1.1
+Host: localhost
+Origin: http://localhost
+X-Kiln-Rpc: m3w6fj
+Content-Type: application/json
+Accept: application/json
+
+{"name": "Kiln"}
+###
+POST /_kiln/rpc/reset HTTP/1.1
+Host: localhost
+Origin: http://localhost
+X-Kiln-Rpc: m3w6fj
+Content-Type: application/json
+Accept: application/json
+
+{}
+###
+POST /_kiln/rpc/greet HTTP/1.1
+Host: localhost
+Origin: http://localhost
+X-Kiln-Rpc: m3w6fj
+Content-Type: application/json
+Accept: application/json
+
+{"name": ""}
+###
+POST /_kiln/rpc/greet HTTP/1.1
+Host: localhost
+Origin: http://localhost
+X-Kiln-Rpc: m3w6fj
+Content-Type: application/json
+Accept: application/json
+
+{"name": "boom"}
+###
+POST /_kiln/rpc/add HTTP/1.1
+Host: localhost
+Origin: http://localhost
+X-Kiln-Rpc: m3w6fj
+Content-Type: application/json
+Accept: application/json
+
+{"a": "one"}
+###
+POST /_kiln/rpc/add HTTP/1.1
+Host: localhost
+Origin: http://localhost
+X-Kiln-Rpc: m3w6fj
+Content-Type: application/json
+Accept: application/json
+
+{"b": 2}
+###
+POST /_kiln/rpc/add HTTP/1.1
+Host: localhost
+Origin: http://localhost
+X-Kiln-Rpc: m3w6fj
+Content-Type: application/json
+Accept: application/json
+
+{"a": 1
+###
+POST /_kiln/rpc/add HTTP/1.1
+Host: localhost
+Origin: http://localhost
+X-Kiln-Rpc: old
+Content-Type: application/json
+Accept: application/json
+
+{"a": 1}
+###
+POST /_kiln/rpc/add HTTP/1.1
+Host: localhost
+Origin: http://localhost
+Content-Type: application/json
+Accept: application/json
+
+{"a": 1}
+###
+POST /_kiln/rpc/add HTTP/1.1
+Host: localhost
+Origin: https://evil.example
+X-Kiln-Rpc: m3w6fj
+Content-Type: application/json
+Accept: application/json
+
+{"a": 1}
+###
+POST /_kiln/rpc/add HTTP/1.1
+Host: localhost
+X-Kiln-Rpc: m3w6fj
+Content-Type: application/json
+Accept: application/json
+
+{"a": 1}
+###
+POST /_kiln/rpc/add HTTP/1.1
+Host: localhost
+Origin: http://localhost
+X-Kiln-Rpc: m3w6fj
+Content-Type: application/json
+Accept: application/json
+Sec-Fetch-Site: cross-site
+
+{"a": 1}
+###
+POST /_kiln/rpc/add HTTP/1.1
+Host: localhost
+Origin: http://localhost
+X-Kiln-Rpc: m3w6fj
+Content-Type: application/x-www-form-urlencoded
+Accept: application/json
+
+a=1
+###
+POST /_kiln/rpc/secret HTTP/1.1
+Host: localhost
+Origin: http://localhost
+X-Kiln-Rpc: m3w6fj
+Content-Type: application/json
+Accept: application/json
+
+{}
+###
+GET /_kiln/rpc/add HTTP/1.1
+###
+GET /quit HTTP/1.1

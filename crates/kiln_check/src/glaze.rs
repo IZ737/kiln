@@ -112,6 +112,8 @@ impl Checker {
         }
         for state in &glaze.states {
             let ty = self.local_value(state);
+            let shown = self.show(&ty);
+            self.glaze_states.push((state.name.name.clone(), shown));
             self.bind(&state.name.name, state.name.span, ty, true, None);
         }
         let layout = glaze.layout.as_ref().and_then(|l| self.check_layout(l));
@@ -349,7 +351,18 @@ impl Checker {
     /// fail, so errors must be handled with `catch`.
     fn check_handler(&mut self, block: &Block) {
         self.enter_fn(Ty::Unit, None, None);
+        self.push_scope();
+        let event = self
+            .modules
+            .iter()
+            .find(|m| m.name == "ember")
+            .and_then(|m| m.types.get("Event"))
+            .map_or(Ty::Unknown, |&id| Ty::Adt(id, Vec::new()));
+        self.bind("event", block.span, event, false, None);
+        let outer = std::mem::replace(&mut self.in_handler, true);
         self.check_block(block, &Expect::Discard);
+        self.in_handler = outer;
+        self.pop_scope();
         self.exit_fn();
     }
 

@@ -35,6 +35,8 @@ pub struct GlazeInput<'a> {
     /// Its CSS Modules, by the name it imports them as: each class as a
     /// Kiln field name, with the class name it is renamed to.
     pub modules: Option<&'a HashMap<String, BTreeMap<String, String>>>,
+    /// Its `{% state %}`s, each with its type as Kiln writes it.
+    pub states: &'a [(String, String)],
 }
 
 /// What the app's glazes share: the stylesheet built from their CSS, and
@@ -44,6 +46,28 @@ pub struct App<'a> {
     /// The path the stylesheet is served at, which every `<head>` links.
     pub stylesheet: Option<&'a str>,
     pub assets: &'a [Asset],
+    /// The path of the script that hydrates embers, which pages with an
+    /// ember load.
+    pub ember_script: Option<&'a str>,
+    /// The `server fn`s embers call, which get a route each.
+    pub server_fns: &'a [ServerFn],
+    /// Changes whenever the embers' code does, so a page loaded before a
+    /// deploy cannot call the new server with the old arguments.
+    pub rpc_version: &'a str,
+    /// Whether the program defines `fn rpc_guard(req: web.Request, name:
+    /// String) !`, which every call of a `server fn` passes first.
+    pub rpc_guard: bool,
+}
+
+/// A `server fn`, as its declaration writes it.
+#[derive(Clone, Debug, PartialEq)]
+pub struct ServerFn {
+    pub name: String,
+    /// Each parameter's name, type, and default value if it has one.
+    pub params: Vec<(String, String, Option<String>)>,
+    /// The type it returns, if any.
+    pub ret: Option<String>,
+    pub throws: bool,
 }
 
 /// A file the program serves, compiled into it.
@@ -166,6 +190,28 @@ pub fn generate(glazes: &[GlazeInput], app: &App) -> Option<GlazeSource> {
     if glazes.is_empty() && app.assets.is_empty() {
         return None;
     }
+    Some(generate_for(glazes, app, false))
+}
+
+/// Compiles the glazes of an app into the Kiln source of its embers, which
+/// runs in the browser: each ember gets `__ember_<name>`, which makes an
+/// `ember.Island`, and the module exports the functions the bridge calls
+/// (see [`CLIENT_EXPORTS`]).
+pub fn generate_client(glazes: &[GlazeInput], app: &App) -> GlazeSource {
+    generate_for(glazes, app, true)
+}
+
+/// The functions the browser module exports, which `ember.js` calls.
+pub const CLIENT_EXPORTS: &[&str] = &[
+    "__kiln_mount",
+    "__kiln_render",
+    "__kiln_fire",
+    "__kiln_props",
+    "__kiln_drop",
+    "__kiln_reply",
+];
+
+fn generate_for(glazes: &[GlazeInput], app: &App, client: bool) -> GlazeSource {
     static NO_VALUES: std::sync::OnceLock<HashMap<Span, ValueKind>> = std::sync::OnceLock::new();
     // Scoped `<style>`s are in the app's stylesheet, so they are taken out
     // of the glazes, and their lines out of the HTML.
@@ -192,22 +238,69 @@ pub fn generate(glazes: &[GlazeInput], app: &App) -> Option<GlazeSource> {
         pending: String::new(),
         indent: 0,
         temps: 0,
-        ember_reported: false,
         trims: Vec::new(),
+        client,
+        embers: glazes
+            .iter()
+            .filter(|g| g.glaze.is_ember())
+            .map(|g| g.file.to_string())
+            .collect(),
+        is_ember: false,
+        server_fns: app.server_fns,
     };
+    if client {
+        g.text.push_str(
+            "// Generated from the app's glazes, for the browser.\n\
+             import html\n\
+             import json\n\
+             import ember\n\
+             \n\
+             fn __glaze_no_slot(__out: List<String>, __h: List<fn(ember.Event)>) {}\n",
+        );
+    } else {
+        g.text.push_str(
+            "// Generated from the app's glazes.\n\
+             import html\n\
+             import web\n\
+             import base64\n\
+             import json\n\
+             \n\
+             fn __glaze_no_slot(__out: List<String>) {}\n",
+        );
+    }
     g.text.push_str(
-        "// Generated from the app's glazes.\n\
-         import html\n\
-         import web\n\
-         import base64\n\
-         \n\
-         fn __glaze_no_slot(__out: List<String>) {}\n\
-         fn __glaze_text(text: String) -> String { html.escape(text) }\n\
+        "fn __glaze_text(text: String) -> String { html.escape(text) }\n\
          fn __glaze_url(url: String) -> String { html.escape(html.safe_url(url)) }\n\
          fn __glaze_ui(style: Ui) -> String { ui.classes(style) }\n",
     );
-    if !app.assets.is_empty() {
+    if let (Some(script), false) = (app.ember_script, client) {
+        g.text.push_str(&format!(
+            "\nfn __glaze_page(html: String) -> String {{\n\
+             \x20   if not html.contains(\"<kiln-island\") {{\n\
+             \x20       return html\n\
+             \x20   }}\n\
+             \x20   let tag = {}\n\
+             \x20   if html.contains(\"</head>\") {{\n\
+             \x20       return html.replace(\"</head>\", \"${{tag}}</head>\")\n\
+             \x20   }}\n\
+             \x20   return \"${{html}}${{tag}}\"\n\
+             }}\n",
+            kiln_string(&format!(
+                "<script type=\"module\" src=\"{}\"></script>",
+                html_attr(script)
+            ))
+        ));
+    }
+    if client {
+        g.server_proxies();
+        g.dispatcher(glazes);
+    } else if !app.assets.is_empty() || !app.server_fns.is_empty() {
         g.assets(app.assets);
+        g.rpc_routes(app);
+        g.text.push_str("}\n");
+        if !app.server_fns.is_empty() {
+            g.rpc_check(app.rpc_version);
+        }
     }
     let mut names: HashMap<String, &str> = HashMap::new();
     for (i, input) in glazes.iter().enumerate() {
@@ -230,7 +323,6 @@ pub fn generate(glazes: &[GlazeInput], app: &App) -> Option<GlazeSource> {
         g.values = input.values;
         g.scope = input.scope;
         g.temps = 0;
-        g.ember_reported = false;
         // A slot's content takes the slot's place in its line.
         let slots = slot_spans(&input.glaze.nodes);
         let mut tags: Vec<Span> = input
@@ -243,13 +335,18 @@ pub fn generate(glazes: &[GlazeInput], app: &App) -> Option<GlazeSource> {
         tags.append(&mut style_tags[i]);
         g.trims = standalone_tags(input.src, &tags);
         let glaze = stripped[i].as_ref().unwrap_or(input.glaze);
-        g.glaze_fns(&GlazeInput { glaze, ..*input });
+        g.is_ember = input.glaze.is_ember();
+        let input = GlazeInput { glaze, ..*input };
+        g.glaze_fns(&input);
+        if client && g.is_ember {
+            g.island_fn(&input);
+        }
     }
-    Some(GlazeSource {
+    GlazeSource {
         text: g.text,
         map: g.map,
         diagnostics: g.diagnostics,
-    })
+    }
 }
 
 struct Gen<'a> {
@@ -268,17 +365,31 @@ struct Gen<'a> {
     indent: usize,
     /// Numbers the locals made for values.
     temps: usize,
-    ember_reported: bool,
     /// Ranges of the glaze's text left out of the HTML, in order: the
     /// whitespace and line break around tags alone on their lines.
     trims: Vec<(usize, usize)>,
+    /// Whether this is the code for the browser.
+    client: bool,
+    /// The glazes that are embers, by file name.
+    embers: std::collections::HashSet<String>,
+    /// Whether the glaze being compiled is an ember.
+    is_ember: bool,
+    server_fns: &'a [ServerFn],
 }
 
 impl<'a> Gen<'a> {
     fn glaze_fns(&mut self, input: &GlazeInput<'a>) {
         let glaze = input.glaze;
-        if let Some(state) = glaze.states.first() {
-            self.ember(state.span);
+        if let (true, Some(layout)) = (self.is_ember, &glaze.layout) {
+            self.diagnostics.push((
+                self.glaze,
+                Diagnostic::error(
+                    codes::NOT_COMPILED_YET,
+                    "an ember cannot use a layout: it is a part of a page, which the page's layout wraps",
+                    layout.span,
+                )
+                .with_help("use the ember as a component in a page that has the layout"),
+            ));
         }
         let props = glaze.props.as_ref().map_or(&[][..], |p| &p.params[..]);
         let slots = slot_names(&glaze.nodes);
@@ -289,36 +400,43 @@ impl<'a> Gen<'a> {
             "\nfn {}(__out: List<String>",
             glaze_fn(input.file)
         ));
+        if self.client {
+            self.text.push_str(", __h: List<fn(ember.Event)>");
+        }
         for p in props {
             self.text.push_str(", ");
             self.copy(p.span, false);
         }
         for slot in &slots {
             self.text.push_str(&format!(
-                ", {}: fn(List<String>) = __glaze_no_slot",
-                slot_param(slot.as_deref())
+                ", {}: {} = __glaze_no_slot",
+                slot_param(slot.as_deref()),
+                self.slot_type()
             ));
+        }
+        let island = self.is_ember && !self.client;
+        if island {
+            self.text.push_str(", __hydrate: String = \"load\"");
         }
         self.text.push_str(") {\n");
         self.indent = 1;
-        // A module with no classes has nothing to use, so it needs no local.
-        let mut modules: Vec<_> = input.modules.into_iter().flatten().collect();
-        modules.sort();
-        for (name, classes) in modules {
-            if classes.is_empty() {
-                continue;
-            }
-            let fields: Vec<String> = classes
-                .iter()
-                .map(|(field, class)| format!("{field}: {}", kiln_string(class)))
-                .collect();
-            self.line(&format!("let {name} = {{ {} }}", fields.join(", ")));
+        self.module_locals(input);
+        self.states(glaze, !self.client);
+        if island {
+            self.island_open(input.file, props, glaze);
+            self.line("if __hydrate != \"only\" {");
+            self.indent += 1;
         }
         match &glaze.layout {
-            Some(layout) => self.layout(layout, &glaze.nodes),
-            None => self.nodes(&glaze.nodes),
+            Some(layout) if !self.is_ember => self.layout(layout, &glaze.nodes),
+            _ => self.nodes(&glaze.nodes),
         }
         self.flush();
+        if island {
+            self.indent -= 1;
+            self.line("}");
+            self.line("__out.push(\"</kiln-island>\")");
+        }
         self.text.push_str("}\n");
         let whole = Span::new(0, self.src.len());
         self.segment(start, whole);
@@ -335,14 +453,364 @@ impl<'a> Gen<'a> {
         }
         self.text.push_str(") -> String {\n");
         self.text.push_str("    let __out: List<String> = []\n");
-        self.text
-            .push_str(&format!("    {}(__out", glaze_fn(input.file)));
+        if self.client {
+            self.text
+                .push_str("    let __h: List<fn(ember.Event)> = []\n");
+            self.text
+                .push_str(&format!("    {}(__out, __h", glaze_fn(input.file)));
+        } else {
+            self.text
+                .push_str(&format!("    {}(__out", glaze_fn(input.file)));
+        }
         for p in props {
             self.text
                 .push_str(&format!(", {}: {}", p.name.name, p.name.name));
         }
-        self.text.push_str(")\n    __out.join(\"\")\n}\n");
+        if self.client || self.embers.is_empty() {
+            self.text.push_str(")\n    __out.join(\"\")\n}\n");
+        } else {
+            self.text
+                .push_str(")\n    __glaze_page(__out.join(\"\"))\n}\n");
+        }
         self.segment(start, whole);
+    }
+
+    /// The type of a slot's parameter.
+    fn slot_type(&self) -> &'static str {
+        if self.client {
+            "fn(List<String>, List<fn(ember.Event)>)"
+        } else {
+            "fn(List<String>)"
+        }
+    }
+
+    /// The locals that hold the classes of the glaze's CSS Modules. A
+    /// module with no classes has nothing to use, so it needs no local.
+    fn module_locals(&mut self, input: &GlazeInput) {
+        let mut modules: Vec<_> = input.modules.into_iter().flatten().collect();
+        modules.sort();
+        for (name, classes) in modules {
+            if classes.is_empty() {
+                continue;
+            }
+            let fields: Vec<String> = classes
+                .iter()
+                .map(|(field, class)| format!("{field}: {}", kiln_string(class)))
+                .collect();
+            self.line(&format!("let {name} = {{ {} }}", fields.join(", ")));
+        }
+    }
+
+    /// `{% state count = 0 %}` as a local: one that does not change when
+    /// `fixed`, as on the server, which only renders it.
+    fn states(&mut self, glaze: &Glaze, fixed: bool) {
+        for state in &glaze.states {
+            self.flush();
+            self.start_line();
+            let start = self.text.len();
+            let kw = if fixed { "let" } else { "var" };
+            self.text.push_str(&format!("{kw} {}", state.name.name));
+            if let Some(ty) = &state.ty {
+                self.text.push_str(": ");
+                self.copy(ty.span, false);
+            }
+            self.text.push_str(" = ");
+            self.copy(state.value.span, true);
+            self.text.push('\n');
+            self.segment(start, state.span);
+        }
+    }
+
+    /// `<kiln-island ...>`, which marks where an ember's HTML is, with
+    /// what the browser needs to take it over: its name, when to, and its
+    /// props and state as JSON.
+    fn island_open(&mut self, file: &str, props: &[Param], glaze: &Glaze) {
+        self.pending.push_str(&format!(
+            "<kiln-island data-k-ember=\"{}\" data-k-hydrate=\"",
+            stem(file)
+        ));
+        self.flush();
+        self.line("__out.push(__glaze_text(__hydrate))");
+        self.pending.push_str("\" data-k-props=\"");
+        let names: Vec<&str> = props.iter().map(|p| p.name.name.as_str()).collect();
+        self.json_attr(&names);
+        self.pending.push_str("\" data-k-state=\"");
+        let names: Vec<&str> = glaze.states.iter().map(|s| s.name.name.as_str()).collect();
+        self.json_attr(&names);
+        self.pending.push_str("\">");
+    }
+
+    /// Pushes the JSON object of the locals `names`, escaped for an
+    /// attribute.
+    fn json_attr(&mut self, names: &[&str]) {
+        if names.is_empty() {
+            self.pending.push_str("{}");
+            return;
+        }
+        let fields: Vec<String> = names.iter().map(|n| format!("{n}: {n}")).collect();
+        self.line(&format!(
+            "__out.push(__glaze_text(json.encode({{ {} }})))",
+            fields.join(", ")
+        ));
+    }
+
+    /// `fn __ember_x(__props: String, __state: String) -> ember.Island`,
+    /// which takes over an ember in the browser: it restores the props and
+    /// state the server rendered it with (or, for an island the browser
+    /// adds, runs the state's initial values), and renders it again with
+    /// each event.
+    fn island_fn(&mut self, input: &GlazeInput<'a>) {
+        let glaze = input.glaze;
+        let props = glaze.props.as_ref().map_or(&[][..], |p| &p.params[..]);
+        let name = stem(input.file);
+        let start = self.text.len();
+        self.text.push_str(&format!(
+            "\nfn __ember_{name}(__props: String, __state: String) -> ember.Island {{\n"
+        ));
+        self.indent = 1;
+        if !props.is_empty() {
+            self.props_from(
+                "__props",
+                "__p",
+                props,
+                &format!(
+                    "catch __e {{ panic(\"the props of `{}` do not decode: ${{__e.message}}\") }}",
+                    input.file
+                ),
+                true,
+            );
+        }
+        self.states(glaze, false);
+        if !glaze.states.is_empty() {
+            let fields: Vec<String> = input
+                .states
+                .iter()
+                .map(|(n, t)| format!("{n}: {t}"))
+                .collect();
+            self.line("if __state != \"\" {");
+            self.line(&format!(
+                "    let __s = json.decode<{{ {} }}>(__state) catch __e {{ panic(\"the state of `{}` does not decode: ${{__e.message}}\") }}",
+                fields.join(", "),
+                input.file
+            ));
+            for (n, _) in input.states {
+                self.line(&format!("    {n} = __s.{n}"));
+            }
+            self.line("}");
+        }
+        self.line("var __h: List<fn(ember.Event)> = []");
+        self.line("return ember.Island(");
+        self.line("    render: fn() -> String {");
+        self.indent = 3;
+        self.line("__h = []");
+        self.line("let __out: List<String> = []");
+        self.module_locals(input);
+        self.nodes(&glaze.nodes);
+        self.flush();
+        self.line("return __out.join(\"\")");
+        self.indent = 1;
+        self.line("    },");
+        self.line("    fire: fn(__i: Int, __e: ember.Event) {");
+        self.line("        if __i >= 0 and __i < __h.len() {");
+        self.line("            __h[__i](__e)");
+        self.line("        }");
+        self.line("    },");
+        self.line("    props: fn(__text: String) {");
+        if !props.is_empty() {
+            self.indent = 3;
+            self.props_from("__text", "__q", props, "catch __e { return }", false);
+            self.indent = 1;
+        }
+        self.line("    },");
+        self.line(")");
+        self.indent = 0;
+        self.text.push_str("}\n");
+        self.segment(start, Span::new(0, self.src.len()));
+    }
+
+    /// Decodes the props from the JSON in `text` into `local`, and sets
+    /// them: as new variables when `declare`. Props with defaults may be
+    /// left out, as a parent ember leaves them out.
+    fn props_from(&mut self, text: &str, local: &str, props: &[Param], fail: &str, declare: bool) {
+        self.flush();
+        self.start_line();
+        let start = self.text.len();
+        self.text
+            .push_str(&format!("let {local} = json.decode<{{ "));
+        for (i, p) in props.iter().enumerate() {
+            if i > 0 {
+                self.text.push_str(", ");
+            }
+            self.text.push_str(&format!("{}: ", p.name.name));
+            if let Some(ty) = &p.ty {
+                self.copy(ty.span, false);
+                let written = &self.src[ty.span.start as usize..ty.span.end as usize];
+                if p.default.is_some() && !written.trim_end().ends_with('?') {
+                    self.text.push('?');
+                }
+            }
+        }
+        self.text.push_str(&format!(" }}>({text}) {fail}\n"));
+        for p in props {
+            self.start_line();
+            let n = &p.name.name;
+            if declare {
+                self.text.push_str("var ");
+            }
+            self.text.push_str(&format!("{n} = {local}.{n}"));
+            if let Some(d) = &p.default {
+                let optional = p.ty.as_ref().is_some_and(|t| {
+                    self.src[t.span.start as usize..t.span.end as usize]
+                        .trim_end()
+                        .ends_with('?')
+                });
+                if !optional {
+                    self.text.push_str(" ?? ");
+                    self.copy(d.span, true);
+                }
+            }
+            self.text.push('\n');
+        }
+        self.segment(start, props[0].span);
+    }
+
+    /// The registry of the islands on the page, and the functions the
+    /// bridge calls.
+    fn dispatcher(&mut self, glazes: &[GlazeInput]) {
+        self.text.push_str(
+            "\nconst __KILN_ISLANDS: Map<Int, ember.Island> = Map()\n\
+             const __KILN_NEXT: List<Int> = [0]\n\
+             \nfn __kiln_mount(name: String, props: String, state: String) -> Int {\n\
+             \x20   let id = __KILN_NEXT[0]\n",
+        );
+        let mut first = true;
+        for g in glazes.iter().filter(|g| g.glaze.is_ember()) {
+            let name = stem(g.file);
+            self.text.push_str(&format!(
+                "    {}if name == {} {{\n        __KILN_ISLANDS[id] = __ember_{name}(props, state)\n    }}",
+                if first { "" } else { " else " },
+                kiln_string(&name),
+            ));
+            first = false;
+        }
+        if first {
+            self.text.push_str("    return -1\n");
+        } else {
+            self.text.push_str(" else {\n        return -1\n    }\n");
+        }
+        self.text.push_str(
+            "    __KILN_NEXT[0] = id + 1\n\
+             \x20   return id\n\
+             }\n\
+             \nfn __kiln_render(id: Int) -> String {\n\
+             \x20   if __KILN_ISLANDS[id] is some(island) {\n\
+             \x20       return island.render()\n\
+             \x20   }\n\
+             \x20   return \"\"\n\
+             }\n\
+             \nfn __kiln_fire(id: Int, index: Int, kind: String, value: String, checked: Bool, key: String, form: String) {\n\
+             \x20   let fields = json.decode<Map<String, String>>(form) catch err { Map() }\n\
+             \x20   let event = ember.Event(kind: kind, value: value, checked: checked, key: key, form: fields)\n\
+             \x20   if __KILN_ISLANDS[id] is some(island) {\n\
+             \x20       island.fire(index, event)\n\
+             \x20   }\n\
+             }\n\
+             \nfn __kiln_props(id: Int, text: String) {\n\
+             \x20   if __KILN_ISLANDS[id] is some(island) {\n\
+             \x20       island.props(text)\n\
+             \x20   }\n\
+             }\n\
+             \nfn __kiln_drop(id: Int) {\n\
+             \x20   __KILN_ISLANDS.remove(id)\n\
+             }\n\
+             \nfn __kiln_reply(done: fn(ember.Reply), ok: Bool, text: String) {\n\
+             \x20   done(ember.Reply(ok: ok, text: text))\n\
+             }\n",
+        );
+    }
+
+    /// For each `server fn`, `__rpc_<name>`, which reads its result from
+    /// the server's reply, failing when the call failed.
+    fn server_proxies(&mut self) {
+        for f in self.server_fns {
+            let ret = f.ret.as_deref().unwrap_or("()");
+            let returns = f.ret.is_some();
+            let mut text = format!(
+                "\nfn __rpc_{}(reply: ember.Reply){} ! {{\n\
+                 \x20   if not reply.ok {{\n\
+                 \x20       throw Error(message: reply.text)\n\
+                 \x20   }}\n",
+                f.name,
+                if returns {
+                    format!(" -> {ret}")
+                } else {
+                    String::new()
+                },
+            );
+            if returns {
+                text.push_str(&format!(
+                    "    let value = try json.decode<{{ ok: {ret} }}>(reply.text)\n    return value.ok\n"
+                ));
+            }
+            text.push_str("}\n");
+            self.text.push_str(&text);
+        }
+    }
+
+    /// The route of each `server fn`: `POST /_kiln/rpc/<name>`, whose body
+    /// is a JSON object of its arguments and whose reply is `{"ok":
+    /// result}`, or `{"error": message}` with the status of the failure.
+    /// Every call passes `__kiln_rpc_check` first.
+    fn rpc_routes(&mut self, app: &App) {
+        if app.server_fns.is_empty() {
+            return;
+        }
+        for f in app.server_fns {
+            let mut fields = Vec::new();
+            let mut args = Vec::new();
+            for (name, ty, default) in &f.params {
+                match default {
+                    Some(d) if !ty.trim_end().ends_with('?') => {
+                        fields.push(format!("{name}: {ty}?"));
+                        args.push(format!("{name}: __args.{name} ?? ({d})"));
+                    }
+                    _ => {
+                        fields.push(format!("{name}: {ty}"));
+                        args.push(format!("{name}: __args.{name}"));
+                    }
+                }
+            }
+            let guard = if app.rpc_guard {
+                format!("        try rpc_guard(req, {})\n", kiln_string(&f.name))
+            } else {
+                String::new()
+            };
+            let read = if fields.is_empty() {
+                String::new()
+            } else {
+                format!(
+                    "        let __args = req.json<{{ {} }}>() catch err {{\n            throw web.error(400, \"the arguments do not decode: ${{err.message}}\")\n        }}\n",
+                    fields.join(", ")
+                )
+            };
+            let call = format!(
+                "{}{}({})",
+                if f.throws { "try " } else { "" },
+                f.name,
+                args.join(", ")
+            );
+            let reply = if f.ret.is_some() {
+                format!(
+                    "        let __result = {call}\n        return web.json({{ ok: __result }})\n"
+                )
+            } else {
+                format!("        {call}\n        return web.json({{ ok: true }})\n")
+            };
+            self.text.push_str(&format!(
+                "    app.post({}, fn(req) {{\n        try __kiln_rpc_check(req)\n{guard}{read}{reply}    }})\n",
+                kiln_string(&format!("/_kiln/rpc/{}", f.name)),
+            ));
+        }
     }
 
     /// `fn __kiln_assets(app: web.App)`, which adds a route for each file.
@@ -379,24 +847,49 @@ impl<'a> Gen<'a> {
                 kiln_string(asset.content_type),
             ));
         }
-        self.text.push_str("}\n");
     }
 
-    /// Reports a part of an ember, once per glaze.
-    fn ember(&mut self, span: Span) {
-        if self.ember_reported {
-            return;
-        }
-        self.ember_reported = true;
-        self.diagnostics.push((
-            self.glaze,
-            Diagnostic::error(
-                codes::NOT_COMPILED_YET,
-                "the compiler cannot build embers yet: `{% state %}` and `on:` handlers run in the browser, which comes in phase 4",
-                span,
-            )
-            .with_help("render the glaze without its state and handlers for now"),
+    /// `__kiln_rpc_check(req)`, which turns away calls that do not come
+    /// from this version of the site's own pages: the `x-kiln-rpc` header,
+    /// which only a script can set and which makes the browser ask before
+    /// sending it from another site, must be this version; the body must
+    /// be JSON, at most 1 MiB; and `Origin` and `Sec-Fetch-Site` must say
+    /// the call comes from this host.
+    fn rpc_check(&mut self, version: &str) {
+        self.text.push_str(&format!(
+            "\nfn __kiln_rpc_check(req: web.Request) ! {{\n\
+             \x20   let version = req.header(\"x-kiln-rpc\") ?? \"\"\n\
+             \x20   if version != {} {{\n\
+             \x20       throw web.error(409, \"the page is out of date: reload it\")\n\
+             \x20   }}\n\
+             \x20   let kind = req.header(\"content-type\") ?? \"\"\n\
+             \x20   if not kind.starts_with(\"application/json\") {{\n\
+             \x20       throw web.error(415, \"a call must send JSON\")\n\
+             \x20   }}\n\
+             \x20   let host = req.header(\"host\") ?? \"\"\n\
+             \x20   let origin = req.header(\"origin\") ?? \"\"\n\
+             \x20   if host == \"\" or (origin != \"http://${{host}}\" and origin != \"https://${{host}}\") {{\n\
+             \x20       throw web.error(403, \"a call must come from this site\")\n\
+             \x20   }}\n\
+             \x20   let site = req.header(\"sec-fetch-site\") ?? \"same-origin\"\n\
+             \x20   if site != \"same-origin\" {{\n\
+             \x20       throw web.error(403, \"a call must come from this site\")\n\
+             \x20   }}\n\
+             \x20   if req.body.len() > 1048576 {{\n\
+             \x20       throw web.error(413, \"the arguments are too large\")\n\
+             \x20   }}\n\
+             }}\n",
+            kiln_string(version)
         ));
+    }
+
+    /// The parameters of a function that fills a slot.
+    fn slot_args_names(&self) -> &'static str {
+        if self.client {
+            "__out, __h"
+        } else {
+            "__out"
+        }
     }
 
     // ----- writing -----
@@ -662,10 +1155,24 @@ impl<'a> Gen<'a> {
             // take them.
             Node::Fill { .. } => {}
             Node::Slot { name, span } => {
-                let start = self.text.len();
                 let name = name.as_ref().map(|n| n.name.as_str());
-                self.line(&format!("{}(__out)", slot_param(name)));
-                self.segment(start, *span);
+                // An ember's slots hold its caller's HTML, which the
+                // browser keeps as it is when the ember renders again.
+                if self.is_ember {
+                    self.pending.push_str(&format!(
+                        "<kiln-slot data-k-slot=\"{}\">",
+                        name.unwrap_or("")
+                    ));
+                }
+                if !(self.is_ember && self.client) {
+                    let start = self.text.len();
+                    let args = if self.client { "__out, __h" } else { "__out" };
+                    self.line(&format!("{}({args})", slot_param(name)));
+                    self.segment(start, *span);
+                }
+                if self.is_ember {
+                    self.pending.push_str("</kiln-slot>");
+                }
             }
         }
     }
@@ -709,6 +1216,20 @@ impl<'a> Gen<'a> {
     }
 
     fn attr(&mut self, attr: &Attr) {
+        if self.is_ember && attr.name.name == "key" {
+            let renamed = Attr {
+                name: Ident {
+                    name: "data-k-key".into(),
+                    span: attr.name.span,
+                },
+                ..attr.clone()
+            };
+            return self.attr_named(&renamed);
+        }
+        self.attr_named(attr)
+    }
+
+    fn attr_named(&mut self, attr: &Attr) {
         let name = &attr.name.name;
         let is_url = URL_ATTRIBUTES.contains(&name.to_ascii_lowercase().as_str());
         match &attr.value {
@@ -716,7 +1237,10 @@ impl<'a> Gen<'a> {
                 self.pending.push(' ');
                 self.pending.push_str(name);
             }
-            AttrValue::Handler(_) => self.ember(attr.span),
+            // The server renders no handlers: the browser adds them when
+            // it takes the ember over.
+            AttrValue::Handler(block) if self.client => self.handler(attr, block),
+            AttrValue::Handler(_) => {}
             AttrValue::Expr(e) => {
                 if self.values.get(&e.span) == Some(&ValueKind::Bool) {
                     // `disabled={busy}` adds the attribute when `busy`.
@@ -792,23 +1316,29 @@ impl<'a> Gen<'a> {
     /// `<Card title={t}>children</Card>` calls `__glaze_card`.
     fn component(&mut self, e: &Element) {
         let file = component_file(&e.name.name);
+        let hint = e
+            .attrs
+            .iter()
+            .find_map(|a| a.name.name.strip_prefix("client:"))
+            .unwrap_or("load");
+        if self.client && self.embers.contains(&file) {
+            return self.nested_island(e, &file, hint);
+        }
         self.flush();
         let start = self.text.len();
         // The values in text props are worked out first, in order.
         let mut texts = HashMap::new();
         for (i, attr) in e.attrs.iter().enumerate() {
-            match &attr.value {
-                AttrValue::Text(parts) => {
-                    texts.insert(i, self.text_value(parts));
-                }
-                AttrValue::Handler(_) => self.ember(attr.span),
-                _ if attr.name.name.starts_with("client:") => self.ember(attr.span),
-                _ => {}
+            if let AttrValue::Text(parts) = &attr.value {
+                texts.insert(i, self.text_value(parts));
             }
         }
         self.start_line();
         let call = self.text.len();
         self.text.push_str(&format!("{}(__out", glaze_fn(&file)));
+        if self.client {
+            self.text.push_str(", __h");
+        }
         for (i, attr) in e.attrs.iter().enumerate() {
             let name = &attr.name.name;
             if name.starts_with("client:") {
@@ -827,9 +1357,174 @@ impl<'a> Gen<'a> {
             }
         }
         self.slot_args(&e.children, false);
+        if self.embers.contains(&file) {
+            self.text
+                .push_str(&format!(", __hydrate: {}", kiln_string(hint)));
+        }
         self.text.push_str(")\n");
         self.segment(call, e.span);
         self.segment(start, e.span);
+    }
+
+    /// An ember inside an ember, in the browser: the outer one renders
+    /// only where the inner one is, with its props and the content of its
+    /// slots, and the inner one renders itself.
+    fn nested_island(&mut self, e: &Element, file: &str, hint: &str) {
+        self.flush();
+        let start = self.text.len();
+        let mut fields = Vec::new();
+        for attr in &e.attrs {
+            let name = &attr.name.name;
+            if name.starts_with("client:") {
+                continue;
+            }
+            match &attr.value {
+                AttrValue::Flag => fields.push(format!("{name}: true")),
+                AttrValue::Expr(x) => {
+                    let v = self.temp_value(x);
+                    fields.push(format!("{name}: {v}"));
+                }
+                AttrValue::Text(parts) => {
+                    let v = self.text_value(parts);
+                    fields.push(format!("{name}: {v}"));
+                }
+                AttrValue::Handler(_) => {}
+            }
+        }
+        self.pending.push_str(&format!(
+            "<kiln-island data-k-ember=\"{}\" data-k-hydrate=\"{}\" data-k-props=\"",
+            stem(file),
+            html_attr(hint)
+        ));
+        if fields.is_empty() {
+            self.pending.push_str("{}");
+        } else {
+            self.line(&format!(
+                "__out.push(__glaze_text(json.encode({{ {} }})))",
+                fields.join(", ")
+            ));
+        }
+        self.pending.push_str("\">");
+        let (fills, rest): (Vec<&Node>, Vec<&Node>) = e
+            .children
+            .iter()
+            .partition(|n| matches!(n, Node::Fill { .. }));
+        for fill in fills {
+            if let Node::Fill { name, body, .. } = fill {
+                self.pending
+                    .push_str(&format!("<kiln-slot data-k-slot=\"{}\">", name.name));
+                let body: Vec<&Node> = body.iter().collect();
+                for n in trim_ends(&body) {
+                    self.node(&n);
+                }
+                self.pending.push_str("</kiln-slot>");
+            }
+        }
+        if rest.iter().any(|n| !is_blank(n)) {
+            self.pending.push_str("<kiln-slot data-k-slot=\"\">");
+            for n in trim_ends(&rest) {
+                self.node(&n);
+            }
+            self.pending.push_str("</kiln-slot>");
+        }
+        self.pending.push_str("</kiln-island>");
+        self.flush();
+        self.segment(start, e.span);
+    }
+
+    /// `on:click.prevent={ ... }` in the browser: the element is marked
+    /// with the handler's number (and its modifiers), and the handler is
+    /// added to `__h`, which the island's `fire` calls.
+    fn handler(&mut self, attr: &Attr, block: &Block) {
+        let spec = attr.name.name.trim_start_matches("on:");
+        let mut parts = spec.split('.');
+        let event = parts.next().unwrap_or("").to_ascii_lowercase();
+        let mods: Vec<&str> = parts.collect();
+        self.pending.push_str(&format!(" data-k-on-{event}=\""));
+        self.line("__out.push(\"${__h.len()}\")");
+        for m in &mods {
+            self.pending.push(':');
+            self.pending.push_str(m);
+        }
+        self.pending.push('"');
+        self.flush();
+        let start = self.text.len();
+        self.line("__h.push(fn(event: ember.Event) {");
+        self.indent += 1;
+        self.handler_stmts(&block.stmts);
+        self.indent -= 1;
+        self.line("})");
+        self.segment(start, attr.span);
+    }
+
+    /// A handler's statements. A statement that calls a `server fn`, such
+    /// as `n = add(n, 1) catch err { n }`, sends the call, and it and the
+    /// statements after it run when the reply comes.
+    fn handler_stmts(&mut self, stmts: &[Stmt]) {
+        for (i, stmt) in stmts.iter().enumerate() {
+            let span = stmt_span(stmt);
+            if let Some((call, f, args)) = self.rpc_call(stmt) {
+                let mut fields = Vec::new();
+                for (k, arg) in args.iter().enumerate() {
+                    let name = match &arg.name {
+                        Some(n) => n.name.clone(),
+                        None => match f.params.get(k) {
+                            Some((n, _, _)) => n.clone(),
+                            None => continue,
+                        },
+                    };
+                    let v = self.temp_value(&arg.value);
+                    fields.push(format!("{name}: {v}"));
+                }
+                let encoded = if fields.is_empty() {
+                    "\"{}\"".to_string()
+                } else {
+                    format!("json.encode({{ {} }})", fields.join(", "))
+                };
+                self.start_line();
+                let start = self.text.len();
+                self.text.push_str(&format!(
+                    "ember.call({}, {encoded}, fn(__reply: ember.Reply) {{\n",
+                    kiln_string(&f.name)
+                ));
+                self.indent += 1;
+                self.start_line();
+                self.copy(Span::new(span.start as usize, call.start as usize), false);
+                self.text.push_str(&format!("__rpc_{}(__reply)", f.name));
+                self.copy(Span::new(call.end as usize, span.end as usize), false);
+                self.text.push('\n');
+                self.handler_stmts(&stmts[i + 1..]);
+                self.indent -= 1;
+                self.line("})");
+                self.segment(start, span);
+                return;
+            }
+            self.start_line();
+            self.copy(span, false);
+            self.text.push('\n');
+        }
+    }
+
+    /// The call of a `server fn` that a statement's value is, if it is
+    /// one: `f(...)`, or `f(...) catch err { ... }`.
+    fn rpc_call<'s>(&self, stmt: &'s Stmt) -> Option<(Span, &'a ServerFn, &'s [Arg])> {
+        let value = match stmt {
+            Stmt::Let { value, .. } | Stmt::Assign { value, .. } => value,
+            Stmt::Expr(e) => e,
+            _ => return None,
+        };
+        let call = match &value.kind {
+            ExprKind::Catch { expr, .. } => expr,
+            _ => value,
+        };
+        let ExprKind::Call { callee, args, .. } = &call.kind else {
+            return None;
+        };
+        let ExprKind::Ident(name) = &callee.kind else {
+            return None;
+        };
+        let f = self.server_fns.iter().find(|f| &f.name == name)?;
+        Some((call.span, f, args))
     }
 
     /// `{% layout "base.glaze" title: t %}` wraps the glaze's nodes in a call
@@ -845,6 +1540,9 @@ impl<'a> Gen<'a> {
         self.start_line();
         let start = self.text.len();
         self.text.push_str(&format!("{}(__out", glaze_fn(&file)));
+        if self.client {
+            self.text.push_str(", __h");
+        }
         for arg in &layout.args {
             if let Some(name) = &arg.name {
                 self.text.push_str(&format!(", {}: ", name.name));
@@ -865,8 +1563,9 @@ impl<'a> Gen<'a> {
         for fill in fills {
             if let Node::Fill { name, body, .. } = fill {
                 self.text.push_str(&format!(
-                    ", {}: fn(__out) {{\n",
-                    slot_param(Some(&name.name))
+                    ", {}: fn({}) {{\n",
+                    slot_param(Some(&name.name)),
+                    self.slot_args_names()
                 ));
                 let body: Vec<&Node> = body.iter().collect();
                 self.block(&trim_ends(&body));
@@ -875,7 +1574,8 @@ impl<'a> Gen<'a> {
             }
         }
         if always || rest.iter().any(|n| !is_blank(n)) {
-            self.text.push_str(", __slot: fn(__out) {\n");
+            let names = self.slot_args_names();
+            self.text.push_str(&format!(", __slot: fn({names}) {{\n"));
             self.indent += 1;
             for n in trim_ends(&rest) {
                 self.node(&n);
@@ -885,6 +1585,19 @@ impl<'a> Gen<'a> {
             self.start_line();
             self.text.push('}');
         }
+    }
+}
+
+/// The span of a statement.
+fn stmt_span(stmt: &Stmt) -> Span {
+    match stmt {
+        Stmt::Let { span, .. }
+        | Stmt::Assign { span, .. }
+        | Stmt::Return { span, .. }
+        | Stmt::For { span, .. }
+        | Stmt::While { span, .. } => *span,
+        Stmt::Break(span) | Stmt::Continue(span) => *span,
+        Stmt::Expr(e) => e.span,
     }
 }
 

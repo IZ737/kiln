@@ -1,0 +1,6 @@
+{% props title: String %}
+<!doctype html>
+<html>
+<head><title>{title}</title></head>
+<body><p>No embers here.</p></body>
+</html>

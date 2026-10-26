@@ -121,6 +121,9 @@ impl Checker {
                     let sig = self.signature(f, &[], scope);
                     match scope {
                         Scope::Global => {
+                            if f.is_server {
+                                self.server_fns.insert(f.name.name.clone());
+                            }
                             self.global_fns.insert(f.name.name.clone(), sig);
                         }
                         Scope::Module(m) => {

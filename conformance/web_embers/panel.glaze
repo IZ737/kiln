@@ -1,0 +1,6 @@
+{% props heading: String %}
+{% state open = true %}
+<section>
+    <h2 on:click={ open = not open }>{heading}</h2>
+    {% if open %}{% slot %}{% end %}
+</section>

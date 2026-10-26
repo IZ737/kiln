@@ -90,7 +90,8 @@ check_conformance() {
             local port=$((20000 + RANDOM % 30000)) pid waited=0
             PORT=$port run_program "$name" "${args[@]}" < "$input" > "$work/out" 2> "$work/err.raw" &
             pid=$!
-            send_requests "$dir/main.requests" "$port" > "$work/responses"
+            # Ember files are named by hashes, which change with the compiler.
+            send_requests "$dir/main.requests" "$port" | sed -E 's/ember-[0-9a-z]{6}\./ember-HASH./g' > "$work/responses"
             # The last request should have ended the program.
             while kill -0 "$pid" 2> /dev/null && ((waited < 300)); do
                 sleep 0.1

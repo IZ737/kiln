@@ -1,0 +1,42 @@
+// Embers on the server: pages render their islands with their props and
+// state, only pages with an island load the browser's code, and the
+// `server fn`s get routes that turn away calls from other sites, from old
+// pages and with arguments that do not decode.
+import web, os
+
+server fn add(a: Int, b: Int = 1) -> Int {
+    a + b
+}
+
+server fn greet(name: String) -> String ! {
+    if name == "" {
+        throw web.error(422, "a name is needed")
+    }
+    if name == "boom" {
+        throw Error(message: "the database password is hunter2")
+    }
+    return "Hello, ${name}!"
+}
+
+server fn reset() {
+    print("reset")
+}
+
+// Not a `server fn`, so the browser cannot call it.
+fn secret() -> String {
+    "hidden"
+}
+
+fn main() ! {
+    let app = web.app()
+    app.get("/", fn(req) {
+        return web.render("index.glaze", { title: "Embers <&>" })
+    })
+    app.get("/plain", fn(req) {
+        return web.render("plain.glaze", { title: secret() })
+    })
+    app.get("/quit", fn(req) {
+        os.exit(0)
+    })
+    try app.listen("127.0.0.1:${env("PORT")}")
+}
