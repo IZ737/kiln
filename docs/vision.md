@@ -348,30 +348,32 @@ if its integrated developer experience proves better.**
 
 ## 7. Wares, templates and a real ecosystem
 
-The [Phase 6 implementation specification](plans/phase-6.md) details the proposed module graph, manifest/lockfile, Ware registry and cache, official UI Ware, test runner, developer tooling and local MCP workflows. Its syntax examples are targets, not current APIs.
+[Phase 4.2](plans/phase-4.2.md) defines local multi-folder modules, `pub`, root discovery and a minimal optional `kiln.toml` **before the data framework**. [Phase 6](plans/phase-6.md) then extends that foundation for Ware dependencies/lockfiles, registry/cache, official UI components, public test runner, tooling and MCP. Planned syntax is not a claim of current support.
 
 **Wares** are source packages, managed through an optional **`kiln.toml`
 project manifest** and generated **`kiln.lock`** and eventually an official
 registry. The initial implementation can support local/Git dependencies
 and reproducible immutable versions before a full registry exists.
 
-**Phase 6 project configuration** should be a declarative, familiar
-TOML file—not a procedural `Kilnfile` or a new configuration language.
-`kiln.toml` identifies the project, optional application entrypoint,
-version and Wares, with build/test defaults. `kiln.lock` records the
-fully resolved, hash-verified dependency graph for reproducible local/CI
-builds. Tooling should manage both automatically when adding/removing
+**Phase 4.2 project configuration** starts as optional declarative
+`kiln.toml` for project identity/root and application entrypoint,
+not a procedural `Kilnfile`. **Phase 6 extends this same manifest**
+with versioned Wares and build/test defaults; `kiln.lock` then records
+the fully resolved, hash-verified external dependency graph for reproducible
+local/CI builds. Tooling should manage both automatically when adding/removing
 dependencies. Command names for updating Wares are still to be designed;
 the existing `kiln upgrade` command specifically updates the compiler.
 
-**No manifest should be required to run one `.kiln` file or a simple
-single-folder project.** Local multi-folder modules need no registry
+**No manifest should be required to run one `.kiln` file, a simple
+single-folder project, or a multi-folder app with an unambiguous root/entry.**
+Phase 4.2 local modules need no registry
 or individual package manifests; the same resolution foundation can
 later support Wares and optional multi-package workspaces. A project
 manifest must not contain secrets or execute arbitrary dependency
 install hooks. Deployment stays separate in `kiln-deploy.toml`.
-See [the Phase 6 manifest/module design](design.md#phase-6-project-manifests-and-ware-dependencies)
-for an example manifest and acceptance criteria.
+See [the Phase 4.2 module and manifest design](design.md#phase-42-minimal-project-manifest)
+and [Phase 6 Ware extensions](design.md#phase-6-extending-the-project-manifest-for-wares)
+for example manifests and acceptance criteria.
 
 **Shared Ware storage, without project-local dependency trees.** Phase 6
 should cache downloaded Wares once in a machine-local **per-user global
