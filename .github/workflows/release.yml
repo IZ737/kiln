@@ -47,7 +47,7 @@ jobs:
           cp target/x86_64-unknown-linux-musl/release/kiln LICENSE README.md "$name/"
           tar czf "$name.tar.gz" "$name"
           sha256sum "$name.tar.gz" > "$name.tar.gz.sha256"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: linux
           path: kiln-*-x86_64-linux.tar.gz*
@@ -66,7 +66,7 @@ jobs:
         timeout-minutes: 10
       - run: cargo build --release --target x86_64-pc-windows-gnu -p kiln_cli
       - run: x86_64-w64-mingw32-strip target/x86_64-pc-windows-gnu/release/kiln.exe
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: kiln-exe
           path: target/x86_64-pc-windows-gnu/release/kiln.exe
@@ -92,7 +92,7 @@ jobs:
           cp kiln.exe LICENSE README.md "$name/"
           7z a "$name.zip" "$name" > /dev/null
           sha256sum "$name.zip" > "$name.zip.sha256"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: windows
           path: kiln-*-x86_64-windows.zip*
@@ -120,7 +120,7 @@ jobs:
       - run: npm ci
       - run: npm test
       - run: npx vsce package -o "kiln-vscode-${GITHUB_REF_NAME}.vsix"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: vscode
           path: editors/vscode/kiln-vscode-*.vsix
