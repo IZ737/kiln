@@ -1,0 +1,44 @@
+name: Feature or design proposal
+description: Propose an improvement or a change to Kiln's language or tooling
+title: "proposal: "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please describe the problem before prescribing syntax. Kiln is pre-1.0 and maintainer-led; proposals are considered against the [roadmap](https://github.com/IZ737/kiln#roadmap) and [governance](https://github.com/IZ737/kiln/blob/main/GOVERNANCE.md). Please avoid implementing large proposals before discussing them.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem or use case
+      description: Who needs this, and what is difficult or impossible today?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behaviour
+      description: Describe how users would experience the feature; code examples are welcome but need not be final syntax.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives and trade-offs
+      description: Existing workarounds, compatibility considerations, security/performance costs, or reasons not to add this.
+    validations:
+      required: false
+  - type: textarea
+    id: scope
+    attributes:
+      label: Related roadmap work or references
+      description: Link relevant issues, documentation, plans, or other languages, if applicable.
+    validations:
+      required: false
+  - type: checkboxes
+    id: check
+    attributes:
+      label: Before submitting
+      options:
+        - label: I searched for an existing proposal or related issue.
+          required: true
