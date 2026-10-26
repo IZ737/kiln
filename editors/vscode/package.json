@@ -1,7 +1,7 @@
 {
   "name": "kiln",
   "displayName": "Kiln",
-  "description": "Kiln, Glaze and Ember language support: highlighting, file icons, completion, hover, go to definition, and Check, Run and Build commands, from the Kiln language server.",
+  "description": "Kiln, Glaze and Ember language support: highlighting, file icons, completion, hover, go to definition, and Check, Run, Build, Test, Dev and Format commands, from the Kiln language server.",
   "version": "0.10.0",
   "publisher": "iz737",
   "license": "MIT",
@@ -127,6 +127,23 @@
         "icon": "$(package)"
       },
       {
+        "command": "kiln.test",
+        "title": "Test Program",
+        "category": "Kiln",
+        "icon": "$(beaker)"
+      },
+      {
+        "command": "kiln.dev",
+        "title": "Start Dev Server",
+        "category": "Kiln",
+        "icon": "$(server-process)"
+      },
+      {
+        "command": "kiln.fmt",
+        "title": "Format Program",
+        "category": "Kiln"
+      },
+      {
         "command": "kiln.restartServer",
         "title": "Restart Language Server",
         "category": "Kiln"
@@ -174,6 +191,18 @@
         {
           "command": "kiln.build",
           "when": "editorLangId == kiln || editorLangId == glaze || editorLangId == ember"
+        },
+        {
+          "command": "kiln.test",
+          "when": "editorLangId == kiln || editorLangId == glaze || editorLangId == ember"
+        },
+        {
+          "command": "kiln.dev",
+          "when": "editorLangId == kiln || editorLangId == glaze || editorLangId == ember"
+        },
+        {
+          "command": "kiln.fmt",
+          "when": "editorLangId == kiln || editorLangId == glaze || editorLangId == ember"
         }
       ]
     },
@@ -210,7 +239,10 @@
             "enum": [
               "check",
               "run",
-              "build"
+              "build",
+              "test",
+              "dev",
+              "fmt"
             ],
             "description": "The kiln command to run."
           },

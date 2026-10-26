@@ -1,5 +1,5 @@
 // The Kiln extension: starts `kiln lsp` for language features, and runs
-// `kiln check`, `kiln run` and `kiln build` as tasks. Everything a language
+// `kiln check`, `run`, `build`, `test`, `dev` and `fmt` as tasks. Everything a language
 // server can do lives in `kiln lsp`, so other editors get it too.
 const fs = require("node:fs");
 const os = require("node:os");
@@ -9,7 +9,7 @@ const { LanguageClient, State } = require("vscode-languageclient/node");
 const { findKiln } = require("./find");
 
 const INSTALL_URL = "https://github.com/IZ737/kiln#install";
-const COMMANDS = ["check", "run", "build"];
+const COMMANDS = ["check", "run", "build", "test", "dev", "fmt"];
 
 /** @type {LanguageClient | undefined} */
 let client;
@@ -121,9 +121,12 @@ function kilnTask(command, dir, kiln) {
     name,
     "kiln",
     execution,
-    command === "run" ? [] : ["$kiln"],
+    command === "run" || command === "dev" ? [] : ["$kiln"],
   );
   if (command === "build") task.group = vscode.TaskGroup.Build;
+  if (command === "test") task.group = vscode.TaskGroup.Test;
+  // `kiln dev` runs until it is stopped.
+  if (command === "dev") task.isBackground = true;
   task.presentationOptions = { reveal: vscode.TaskRevealKind.Always, clear: true };
   return task;
 }
