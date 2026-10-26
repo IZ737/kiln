@@ -7,6 +7,7 @@ mod notice;
 mod npm;
 mod project;
 mod styles;
+mod testing;
 mod upgrade;
 mod ware;
 
@@ -99,6 +100,57 @@ enum Command {
         /// Arguments passed to the program.
         #[arg(trailing_var_arg = true)]
         args: Vec<String>,
+    },
+    /// Run the project's tests: `fn test_*()` in files named `test_*.kiln`.
+    /// Tests under `tests/integration/` and `tests/browser/` can start the
+    /// app, use a database of their own and drive a real browser.
+    Test {
+        /// The project. Defaults to the current directory.
+        #[arg(default_value = ".")]
+        dir: PathBuf,
+        /// Only unit tests (any kind flags combine).
+        #[arg(long)]
+        unit: bool,
+        /// Only integration tests.
+        #[arg(long)]
+        integration: bool,
+        /// Only browser tests.
+        #[arg(long)]
+        browser: bool,
+        /// Only tests whose name contains this, such as `login`.
+        #[arg(long)]
+        filter: Option<String>,
+        /// Print the results as one JSON document (version 1).
+        #[arg(long)]
+        json: bool,
+        /// List the tests without running them.
+        #[arg(long)]
+        list: bool,
+        /// Also write the results as JUnit XML.
+        #[arg(long)]
+        junit: Option<PathBuf>,
+        /// Run the tests again whenever a file of the project changes.
+        #[arg(long)]
+        watch: bool,
+        /// How many tests run at once. Defaults to the number of CPUs.
+        #[arg(long)]
+        jobs: Option<usize>,
+        /// Seconds a test may take. Defaults to `[test] timeout`, or 60.
+        #[arg(long)]
+        timeout: Option<u64>,
+        /// Run a failing test up to this many more times; a test that
+        /// passes on a retry is reported as flaky.
+        #[arg(long, default_value_t = 0)]
+        retries: u32,
+        /// Show the browser instead of running it headless.
+        #[arg(long)]
+        headed: bool,
+        /// Download the pinned browser that browser tests use, and stop.
+        #[arg(long)]
+        install_browser: bool,
+        /// How to generate code, as for `kiln build`.
+        #[arg(long, value_enum)]
+        backend: Option<Backend>,
     },
     /// Run the language server, for editors, over standard input and output.
     Lsp,
@@ -363,6 +415,62 @@ fn main() -> ExitCode {
 fn dispatch(command: Command) -> ExitCode {
     match command {
         Command::Check { paths, json } => check(paths, json),
+        Command::Test {
+            dir,
+            unit,
+            integration,
+            browser,
+            filter,
+            json,
+            list,
+            junit,
+            watch,
+            jobs,
+            timeout,
+            retries,
+            headed,
+            install_browser,
+            backend,
+        } => {
+            if install_browser {
+                return report(testing::browser::install());
+            }
+            let mut kinds = Vec::new();
+            for (on, kind) in [
+                (unit, testing::Kind::Unit),
+                (integration, testing::Kind::Integration),
+                (browser, testing::Kind::Browser),
+            ] {
+                if on {
+                    kinds.push(kind);
+                }
+            }
+            let configured = project::root(&dir)
+                .ok()
+                .and_then(|r| ware::manifest::Manifest::load(&r).ok().flatten())
+                .and_then(|m| m.test.timeout);
+            let options = testing::Options {
+                path: dir,
+                kinds,
+                filter,
+                json,
+                list,
+                junit,
+                watch,
+                jobs: jobs.unwrap_or_else(|| {
+                    std::thread::available_parallelism().map_or(2, |n| n.get())
+                }),
+                timeout: std::time::Duration::from_secs(timeout.or(configured).unwrap_or(60)),
+                retries,
+                headed,
+            };
+            let target = Target::host();
+            let backend = Backend::or_default(backend, target);
+            let builder = move |p: &project::Project, out: &Path| {
+                build_project(p, out, Emit::default(), backend, target).is_ok()
+            };
+            testing::run(&options, &builder)
+        }
         Command::Build {
             file,
             output,

@@ -104,7 +104,7 @@ pub fn contains(text: String, part: String, at: String = "@caller") {
 }
 
 // `value` must be a value, not `none`; returns it.
-pub fn some<T>(value: T?, at: String = "@caller") -> T {
+pub fn present<T>(value: T?, at: String = "@caller") -> T {
     match value {
         some(v) => v
         none => fail("expected a value, found none", at: at)

@@ -264,17 +264,17 @@ const NEW_HOME: &str = r#"{% props items: List<notes.Note> %}
 
 const NEW_UNIT: &str = r#"import test
 
-fn test_left_counts_notes_not_done() ! {
+fn test_left_counts_notes_not_done() {
     let notes = [Note(title: "a", done: true), Note(title: "b", done: false)]
-    try test.equal(left(notes), 1)
+    test.equal(left(notes), 1)
 }
 "#;
 
 const NEW_INTEGRATION: &str = r#"import test
 
-fn test_home_lists_notes() ! {
-    let res = try test.get("/")
-    try test.equal(res.status, 200)
-    try test.contains(res.body, "Write a page")
+fn test_home_lists_notes() {
+    let res = test.get("/")
+    test.equal(res.status, 200)
+    test.contains(res.body, "Write a page")
 }
 "#;
