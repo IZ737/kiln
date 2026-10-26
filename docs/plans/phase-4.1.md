@@ -1,6 +1,6 @@
 # Phase 4.1 — Explicit Ember components (`.ember`)
 
-**Status:** Implemented in the working tree; release validation is in progress. This is the implementation contract for the corrective milestone after Phase 4 and before Phase 5. Phase 4 originally implemented Embers as `.glaze` files that implicitly became interactive when they contained `{% state %}` or `on:` handlers; Phase 4.1 replaces that source contract with explicit `.ember` files. Do not tag the corrected release until the exit gate below is met.
+**Status:** Complete; included in v0.9.0. The compiler, LSP and real-browser regression suites pass. This is the implementation contract for the corrective milestone after Phase 4 and before Phase 5. Phase 4 originally implemented Embers as `.glaze` files that implicitly became interactive when they contained `{% state %}` or `on:` handlers; Phase 4.1 replaces that source contract with explicit `.ember` files. The exit gate below is met.
 
 **Goal:** Make the server/client component boundary visible and enforceable at the file level: `.glaze` is a server-rendered template/component; `.ember` is a browser-capable component that may also render its initial HTML on the server. Preserve Phase 4's working WasmGC, hydration, state, typed RPC and JS/npm interoperability. **Do not rewrite or replace the runtime just to change the extension.**
 

@@ -140,7 +140,7 @@ An SSR page selectively hydrates a component:
 
 - Provide browser-targeted typed modules (initially `browser`) for representative DOM events, clipboard, storage, fetch and element references; expand to history/location, files, canvas, observers and other standards as needed. Wrap host APIs rather than reimplementing browser behavior.
 - Browser-only modules and functions are rejected when called from server-only code or during SSR evaluation. Browser effects belong in client lifecycle/tasks/event handlers. Browser permissions, secure-context requirements, same-origin and CSP rules continue to apply.
-- Current Phase 4 implementation recognizes Embers implicitly within `.glaze` files; the agreed explicit `.ember` file model and the removal of implicit promotion are specified and scheduled in [Phase 4.1](phase-4.1.md). Until that lands, the `.ember` suffix is not a supported source kind. Ordinary static Glazes continue to render without a browser bridge.
+- [Phase 4.1](phase-4.1.md), included in v0.9.0, replaces the original implicit Ember model with explicit `.ember` files. `.glaze` files are server-only and reject state and event handlers. Ordinary static Glazes continue to render without a browser bridge.
 
 ### 8.2 npm packages with automatically generated bindings
 
