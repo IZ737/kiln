@@ -4,6 +4,7 @@
 mod lsp;
 mod notice;
 mod npm;
+mod project;
 mod styles;
 mod upgrade;
 
@@ -236,30 +237,79 @@ fn check(paths: Vec<PathBuf>, json: bool) -> ExitCode {
         let dir = path.parent().unwrap_or(Path::new(".")).to_path_buf();
         dirs.entry(dir).or_default().push(path.clone());
     }
+    let selected: Vec<_> = paths
+        .iter()
+        .filter(|p| {
+            p.is_dir()
+                && (p.join("kiln.toml").is_file()
+                    || std::fs::read_dir(p).is_ok_and(|mut entries| {
+                        entries.any(|e| {
+                            e.is_ok_and(|e| e.path().extension().is_some_and(|x| x == "kiln"))
+                        })
+                    }))
+        })
+        .cloned()
+        .collect();
+    dirs.retain(|dir, _| {
+        !selected
+            .iter()
+            .any(|root| dir != root && dir.starts_with(root))
+    });
+    for root in selected {
+        dirs.entry(root).or_default();
+    }
     let mut error_count = 0;
     let mut json_diags = Vec::new();
-    for (dir, requested) in &dirs {
-        let mut members = requested.clone();
-        if let Ok(entries) = std::fs::read_dir(dir) {
-            for entry in entries.flatten() {
-                let path = entry.path();
-                let source = path.extension().is_some_and(|e| e == "kiln") || is_glaze(&path);
-                if source && path.is_file() && !members.iter().any(|m| same_file(m, &path)) {
-                    members.push(path);
+    let mut visited = std::collections::HashSet::new();
+    for dir in dirs.keys() {
+        let canonical = dir.canonicalize().unwrap_or_else(|_| dir.clone());
+        if visited.contains(&canonical) {
+            continue;
+        }
+        let target = paths
+            .iter()
+            .find(|p| {
+                p.is_file()
+                    && p.parent()
+                        .is_some_and(|parent| parent.canonicalize().is_ok_and(|p| p == canonical))
+            })
+            .unwrap_or(dir);
+        let project = match project::discover(target) {
+            Ok(project) => project,
+            Err(err) => {
+                let (file, diag) = project::error_diagnostic(&err, &dir.join("kiln.toml"));
+                if json {
+                    json_diags.push(diag.to_json(&file));
+                } else {
+                    eprintln!("{}", diag.render(&file));
                 }
+                error_count += 1;
+                continue;
+            }
+        };
+        for file in &project.files {
+            if let Some(parent) = file.parent() {
+                visited.insert(parent.to_path_buf());
             }
         }
-        let app = match check_dir(&members) {
-            Ok(app) => app,
-            Err((path, err)) => {
-                eprintln!("error: cannot read {}: {err}", path.display());
+        let texts = project
+            .files
+            .iter()
+            .map(|p| std::fs::read_to_string(p).map(|text| (p.clone(), text)))
+            .collect::<Result<Vec<_>, _>>();
+        let app = match texts {
+            Ok(texts) => check_project_sources_entry(&project.root, &project.entry, texts).0,
+            Err(err) => {
+                eprintln!("error: {err}");
                 return ExitCode::from(2);
             }
         };
         for (file, diagnostics) in app {
-            if !requested
-                .iter()
-                .any(|r| r.display().to_string() == file.name)
+            if paths.iter().all(|p| p.is_file())
+                && Path::new(&file.name).parent() == Some(canonical.as_path())
+                && !paths
+                    .iter()
+                    .any(|p| p.canonicalize().is_ok_and(|p| p == Path::new(&file.name)))
             {
                 continue;
             }
@@ -301,24 +351,34 @@ enum Parsed {
     Glaze(Box<kiln_syntax::glaze::GlazeResult>),
 }
 
-/// Parses and type-checks the files of one directory. Type errors in a
-/// directory where something does not parse would mostly be noise, so they
-/// are reported only when every file parses.
-#[allow(clippy::type_complexity)]
-fn check_dir(
-    paths: &[PathBuf],
-) -> Result<Vec<(SourceFile, Vec<Diagnostic>)>, (PathBuf, std::io::Error)> {
-    let mut texts = Vec::new();
-    for path in paths {
-        let text = std::fs::read_to_string(path).map_err(|e| (path.clone(), e))?;
-        texts.push((path.clone(), text));
-    }
-    Ok(check_sources(texts))
-}
-
 /// Parses and type-checks the files of one directory, given their text.
 pub(crate) fn check_sources(texts: Vec<(PathBuf, String)>) -> Vec<(SourceFile, Vec<Diagnostic>)> {
-    check_app_sources(texts).0
+    let root = project::common_root(texts.iter().map(|(p, _)| p.as_path()));
+    let overlays = texts.iter().cloned().collect();
+    if root.is_dir() {
+        if let Err(error) = project::discover_overlay(&root, &overlays) {
+            let (file, diag) = project::error_diagnostic(&error, &root.join("kiln.toml"));
+            let target = texts
+                .iter()
+                .position(|(p, _)| p.display().to_string() == file.name)
+                .unwrap_or(0);
+            return texts
+                .into_iter()
+                .enumerate()
+                .map(|(i, (p, t))| {
+                    (
+                        SourceFile::new(p.display().to_string(), t),
+                        if i == target {
+                            vec![diag.clone()]
+                        } else {
+                            Vec::new()
+                        },
+                    )
+                })
+                .collect();
+        }
+    }
+    check_project_sources(&root, texts).0
 }
 
 /// What `kiln build` needs besides the checked files: what each glaze's
@@ -331,32 +391,77 @@ struct AppInfo {
     /// The npm packages of `npm.lock`, or why they cannot be used.
     npm: Vec<npm::Package>,
     npm_error: Option<String>,
+    source_maps: HashMap<String, (SourceFile, project::bind::SourceMap)>,
+    symbol_names: BTreeMap<String, String>,
 }
 
 /// What the checker found each value a glaze outputs to be, for each glaze
 /// in the order given.
 type GlazeValues = Vec<HashMap<Span, kiln_check::ValueKind>>;
 
+fn check_project_sources(
+    root: &Path,
+    texts: Vec<(PathBuf, String)>,
+) -> (Vec<(SourceFile, Vec<Diagnostic>)>, AppInfo) {
+    check_project_sources_entry(root, root, texts)
+}
+fn check_project_sources_entry(
+    root: &Path,
+    entry: &Path,
+    texts: Vec<(PathBuf, String)>,
+) -> (Vec<(SourceFile, Vec<Diagnostic>)>, AppInfo) {
+    let bound = project::bind::bind_entry(root, entry, &texts);
+    if bound.diagnostics.iter().any(|d| !d.is_empty()) {
+        return (
+            texts
+                .into_iter()
+                .zip(bound.diagnostics)
+                .map(|((p, t), d)| (SourceFile::new(p.display().to_string(), t), d))
+                .collect(),
+            AppInfo::default(),
+        );
+    }
+    let (mut checked, mut info) = check_app_sources_at(root, bound.texts);
+    info.source_maps = texts
+        .iter()
+        .zip(&bound.maps)
+        .map(|((p, t), m)| {
+            (
+                p.display().to_string(),
+                (
+                    SourceFile::new(p.display().to_string(), t.clone()),
+                    m.clone(),
+                ),
+            )
+        })
+        .collect();
+    info.symbol_names = bound.names;
+
+    for (i, (file, diagnostics)) in checked.iter_mut().enumerate() {
+        if diagnostics.is_empty() {
+            continue;
+        }
+        for diagnostic in diagnostics {
+            diagnostic.message = display_symbols(&diagnostic.message, &info.symbol_names);
+            diagnostic.span = bound.maps[i].original(diagnostic.span);
+            if let Some(s) = &mut diagnostic.suggestion {
+                s.span = bound.maps[i].original(s.span);
+            }
+        }
+        *file = SourceFile::new(texts[i].0.display().to_string(), texts[i].1.clone());
+    }
+    (checked, info)
+}
+
 /// [`check_sources`], also returning what the compiler needs to know about
 /// the glazes when the files have no errors. The CSS the glazes import is
 /// read from the folder of the files.
-fn check_app_sources(
+fn check_app_sources_at(
+    dir: &Path,
     texts: Vec<(PathBuf, String)>,
 ) -> (Vec<(SourceFile, Vec<Diagnostic>)>, AppInfo) {
-    let dir = texts
-        .first()
-        .and_then(|(p, _)| p.parent())
-        .map(|p| {
-            if p.as_os_str().is_empty() {
-                Path::new(".")
-            } else {
-                p
-            }
-        })
-        .unwrap_or(Path::new("."))
-        .to_path_buf();
     // The npm packages are modules for the embers' handlers.
-    let (npm, npm_error) = match npm::load(&dir) {
+    let (npm, npm_error) = match npm::load(dir) {
         Ok(packages) => (packages, None),
         Err(err) => (Vec::new(), Some(err)),
     };
@@ -397,10 +502,10 @@ fn check_app_sources(
     let names: Vec<String> = sources
         .iter()
         .map(|(path, _, _)| {
-            path.file_name()
-                .unwrap_or_default()
+            path.strip_prefix(dir)
+                .unwrap_or(path)
                 .to_string_lossy()
-                .into_owned()
+                .replace('\\', "/")
         })
         .collect();
     let glazes: Vec<(&str, &kiln_syntax::ast::Glaze)> = sources
@@ -422,8 +527,28 @@ fn check_app_sources(
             Parsed::Kiln(_) => None,
         })
         .collect();
-    let mut styles = styles::load(&dir, &glaze_files);
+    let mut styles = styles::load(dir, &glaze_files);
     let mut result = kiln_check::check_app_with_css(&modules, &glazes, &styles.styling);
+    project::check_const_exports(&modules, &glazes, &styles.styling, &mut result);
+    let owners: Vec<_> = sources
+        .iter()
+        .filter(|(p, _, _)| !is_glaze(p))
+        .map(|(p, _, _)| p.parent().unwrap_or(dir))
+        .collect();
+    let glaze_owners: Vec<_> = sources
+        .iter()
+        .filter(|(p, _, _)| is_glaze(p))
+        .map(|(p, _, _)| p.parent().unwrap_or(dir))
+        .collect();
+    project::check_method_access(
+        &modules,
+        &owners,
+        &glazes,
+        &glaze_owners,
+        &styles.styling,
+        &mut result,
+    );
+
     styles.finish(&kiln_check::style::stylesheet(
         &result.ui_rules,
         &styles.styling.tokens,
@@ -449,32 +574,10 @@ fn check_app_sources(
         styles,
         npm,
         npm_error,
+        source_maps: HashMap::new(),
+        symbol_names: BTreeMap::new(),
     };
     (out, info)
-}
-
-/// The folder a program lives in, and its `.kiln`, `.glaze` and `.ember` files. A
-/// program is a whole folder; naming one of its files means that folder.
-fn app_files(path: &Path) -> std::io::Result<(PathBuf, Vec<PathBuf>)> {
-    let dir = if path.is_dir() {
-        path.to_path_buf()
-    } else {
-        std::fs::metadata(path)?;
-        match path.parent() {
-            Some(p) if !p.as_os_str().is_empty() => p.to_path_buf(),
-            _ => PathBuf::from("."),
-        }
-    };
-    let mut files = Vec::new();
-    for entry in std::fs::read_dir(&dir)? {
-        let p = entry?.path();
-        let source = p.extension().is_some_and(|e| e == "kiln") || is_glaze(&p);
-        if source && p.is_file() {
-            files.push(p);
-        }
-    }
-    files.sort();
-    Ok((dir, files))
 }
 
 /// Where `kiln build` writes the executable by default: the program's
@@ -542,10 +645,13 @@ fn build(
         );
         return Err(ExitCode::from(2));
     }
-    let (dir, files) = app_files(path).map_err(|err| {
-        eprintln!("error: cannot read {}: {err}", path.display());
+    let project = project::discover(path).map_err(|err| {
+        let (file, diag) = project::error_diagnostic(&err, &path.join("kiln.toml"));
+        eprintln!("{}", diag.render(&file));
         ExitCode::from(2)
     })?;
+    let dir = project.root;
+    let files = project.files;
     let failed = |count: usize| {
         eprintln!("{count} error(s). Run `kiln explain <code>` for details.");
         ExitCode::FAILURE
@@ -558,7 +664,7 @@ fn build(
         })?;
         texts.push((path.clone(), text));
     }
-    let (checked, info) = check_app_sources(texts);
+    let (checked, info) = check_project_sources_entry(&dir, &project.entry, texts);
     let glaze_values = &info.glaze_values;
     let glaze_states = &info.glaze_states;
     let styles = &info.styles;
@@ -612,10 +718,10 @@ fn build(
         .iter()
         .map(|f| {
             Path::new(&f.name)
-                .file_name()
-                .unwrap_or_default()
+                .strip_prefix(&dir)
+                .unwrap_or(Path::new(&f.name))
                 .to_string_lossy()
-                .into_owned()
+                .replace('\\', "/")
         })
         .collect();
     let inputs: Vec<kiln_ir::glaze::GlazeInput> = (0..glaze_files.len())
@@ -630,10 +736,33 @@ fn build(
         })
         .collect();
     let mut assets = styles.assets.clone();
-    assets.extend(styles::static_files(&dir).map_err(|err| {
-        eprintln!("error: {err}");
-        ExitCode::from(2)
-    })?);
+    let asset_dirs: std::collections::BTreeSet<_> =
+        files.iter().filter_map(|p| p.parent()).collect();
+    for asset_dir in asset_dirs {
+        let mut local = styles::static_files(asset_dir).map_err(|err| {
+            eprintln!("error: {err}");
+            ExitCode::from(2)
+        })?;
+        if asset_dir != dir {
+            let module = asset_dir
+                .strip_prefix(&dir)
+                .unwrap()
+                .to_string_lossy()
+                .replace('\\', "/");
+            for asset in &mut local {
+                asset.path = asset
+                    .path
+                    .replacen("/static/", &format!("/static/{module}/"), 1);
+            }
+        }
+        for asset in local {
+            if assets.iter().any(|a| a.path == asset.path) {
+                eprintln!("error: duplicate static asset URL {}", asset.path);
+                return Err(ExitCode::from(2));
+            }
+            assets.push(asset);
+        }
+    }
     let generated_at = combined.len() as u32;
     let glaze_refs: Vec<(&str, &kiln_syntax::ast::Glaze)> = glaze_names
         .iter()
@@ -642,7 +771,7 @@ fn build(
         .collect();
     let failed_in_glazes = |diagnostics: &[(usize, Diagnostic)]| {
         for (i, diag) in diagnostics {
-            eprintln!("{}", diag.render(glaze_files[*i]));
+            eprintln!("{}", render_original(diag, glaze_files[*i], &info));
         }
         failed(diagnostics.len())
     };
@@ -681,6 +810,7 @@ fn build(
                 &offsets,
                 &glaze_files,
                 Some((&client, generated_at)),
+                &info,
             )
         };
         let parsed = kiln_syntax::parse(&text);
@@ -754,6 +884,7 @@ fn build(
             &offsets,
             &glaze_files,
             generated.as_ref().map(|g| (g, generated_at)),
+            &info,
         )
     };
     let parsed = kiln_syntax::parse(&combined);
@@ -839,6 +970,7 @@ fn report_diagnostics(
     offsets: &[u32],
     glaze_files: &[&SourceFile],
     generated: Option<(&kiln_ir::glaze::GlazeSource, u32)>,
+    info: &AppInfo,
 ) -> ExitCode {
     let count = diagnostics.len();
     for mut diag in diagnostics {
@@ -852,7 +984,7 @@ fn report_diagnostics(
                 match g.locate(diag.span) {
                     Some((i, span)) => {
                         diag.span = span;
-                        eprintln!("{}", diag.render(glaze_files[i]));
+                        eprintln!("{}", render_original(&diag, glaze_files[i], info));
                     }
                     None => {
                         let file = SourceFile::new("<glazes>", g.text.clone());
@@ -874,7 +1006,7 @@ fn report_diagnostics(
         if let Some(s) = &mut diag.suggestion {
             shift(&mut s.span);
         }
-        eprintln!("{}", diag.render(kiln_files[i]));
+        eprintln!("{}", render_original(&diag, kiln_files[i], info));
     }
     eprintln!("{count} error(s). Run `kiln explain <code>` for details.");
     ExitCode::FAILURE
@@ -929,13 +1061,6 @@ fn report_signal(status: &std::process::ExitStatus) {
     }
     #[cfg(not(unix))]
     eprintln!("error: the program stopped abnormally ({status})");
-}
-
-fn same_file(a: &Path, b: &Path) -> bool {
-    match (a.canonicalize(), b.canonicalize()) {
-        (Ok(a), Ok(b)) => a == b,
-        _ => a == b,
-    }
 }
 
 pub(crate) fn is_glaze(path: &Path) -> bool {
@@ -1048,4 +1173,28 @@ fn server_fns_of(
         });
     }
     (fns, guard)
+}
+
+fn display_symbols(text: &str, names: &BTreeMap<String, String>) -> String {
+    let mut out = text.to_string();
+    let mut names = names.iter().collect::<Vec<_>>();
+    names.sort_by_key(|(name, _)| std::cmp::Reverse(name.len()));
+    for (name, display) in names {
+        out = out.replace(name, display);
+    }
+    out
+}
+fn render_original(diag: &Diagnostic, file: &SourceFile, info: &AppInfo) -> String {
+    let mut diag = diag.clone();
+    diag.message = display_symbols(&diag.message, &info.symbol_names);
+    if let Some((original, map)) = info.source_maps.get(&file.name) {
+        diag.span = map.original(diag.span);
+        if let Some(s) = &mut diag.suggestion {
+            s.span = map.original(s.span);
+            s.replacement = display_symbols(&s.replacement, &info.symbol_names);
+        }
+        diag.render(original)
+    } else {
+        diag.render(file)
+    }
 }

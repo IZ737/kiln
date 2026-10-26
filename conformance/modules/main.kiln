@@ -1,0 +1,13 @@
+import posts, accounts, posts.search
+fn main() {
+    let post = posts.Post(title: "First")
+    print(posts.title(post))
+    print(accounts.title(accounts.Post(title: "Ada")))
+    print(search.find())
+    print(posts.answer)
+    print(posts.identity(posts.Box<Int>(value: 8)).value)
+    print(post.length())
+    print(posts.Box<Int>(value: 9).unbox())
+    let status = posts.Status.Draft
+    print(match status { posts.Status.Draft => "draft", posts.Status.Published => "published" })
+}

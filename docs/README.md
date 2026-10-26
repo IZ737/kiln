@@ -11,6 +11,7 @@ recognized** by Kiln's compiler and checker; some parsed/checkable features
 are not yet executable. Check their status notes before relying on a feature.
 
 - [Kiln syntax](reference/syntax.md) — source files, declarations and expressions
+- [Projects and modules](reference/projects.md) — local imports, visibility, roots and manifests
 - [Glazes](reference/glazes.md) — template/component syntax and type checking
 - [Type rules](reference/types.md) — inference, records, optionals and more
 - [Standard library](reference/stdlib.md) — available modules and APIs
@@ -34,7 +35,7 @@ APIs. **Proposed syntax in a plan is not automatically implemented syntax.**
 - [Phase 3 — Glazes, native styling, Finishes and themes](plans/phase-3.md)
 - [Phase 4 — Embers, WasmGC, reactive UI and typed server functions](plans/phase-4.md)
 - [Phase 4.1 — Explicit `.ember` files and server/client component boundaries](plans/phase-4.1.md) (implemented; release validation in progress)
-- [Phase 4.2 — Multi-folder projects and local modules](plans/phase-4.2.md) (planned)
+- [Phase 4.2 — Multi-folder projects and local modules](plans/phase-4.2.md) (implemented)
 - [Phase 5 — SQL, ORM, migrations, forms, authentication and admin](plans/phase-5.md)
 - [Phase 6 — Wares, testing, tooling and agent integration](plans/phase-6.md)
 - [Moving the runtime to Rust](plans/runtime-rust.md)

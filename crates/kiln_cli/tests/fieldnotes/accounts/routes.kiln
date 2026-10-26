@@ -1,0 +1,5 @@
+import web
+
+pub fn routes(app: web.App) {
+    app.get("/accounts", fn(req) { return web.render("index.glaze", {}) })
+}

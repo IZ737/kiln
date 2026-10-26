@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- **Multi-folder projects (Phase 4.2).** Explicit local folder imports, nested
+  modules, public exports, private implementation types and deterministic
+  project graphs. Optional strict `kiln.toml` selects the entry folder.
+- Module-local Glazes, Embers, CSS and static assets; qualified component tags;
+  cross-folder LSP navigation/completion and VS Code project tasks.
+- Add a Fieldnotes SSR/Ember/RPC dogfood app, module conformance and browser,
+  editor, visibility, manifest and source-location regressions.
+
 - **Explicit Ember files (Phase 4.1).** Browser-capable components now use
   `.ember`; `.glaze` stays server-only. Rename reactive Glazes to `.ember`
   and update explicit filename references. Component tag names stay the same.

@@ -247,7 +247,7 @@
     },
     "component": {
       "name": "meta.tag.component.glaze",
-      "begin": "(</?)(\\p{Lu}[\\p{L}\\p{N}_.]*)",
+      "begin": "(</?)((?:[\\p{L}_][\\p{L}\\p{N}_]*\\.)*\\p{Lu}[\\p{L}\\p{N}_]*)",
       "end": "/?>",
       "beginCaptures": {
         "1": {

@@ -389,3 +389,13 @@ fn source_suffix_declares_kind_without_changing_spans() {
         assert_eq!(server.glaze.states, client.glaze.states);
     }
 }
+
+#[test]
+fn qualified_folder_components_keep_the_module_path() {
+    let glaze = ok("<posts.search.Result title=\"Found\" />");
+    let Node::Element(element) = &glaze.nodes[0] else {
+        panic!("expected element")
+    };
+    assert!(element.is_component());
+    assert_eq!(element.name.name, "posts.search.Result");
+}

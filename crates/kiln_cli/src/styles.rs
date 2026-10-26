@@ -59,6 +59,12 @@ pub fn load(dir: &Path, glazes: &[GlazeFile]) -> AppStyles {
             let Some(path) = string_literal(import) else {
                 continue; // the checker reports it
             };
+            let path = Path::new(g.name)
+                .parent()
+                .unwrap_or(Path::new(""))
+                .join(path)
+                .to_string_lossy()
+                .into_owned();
             match &import.module {
                 None => {
                     let before = l.properties.len();
@@ -109,8 +115,15 @@ pub fn load(dir: &Path, glazes: &[GlazeFile]) -> AppStyles {
         if !styles.is_empty() {
             let attr = kiln_css::scope_attribute(g.name);
             for (text, span) in styles {
-                let mut resolve =
-                    |url: &str, kind: UrlKind| l.resolve(&l.root.clone(), url, kind, false);
+                let mut resolve = |url: &str, kind: UrlKind| {
+                    l.resolve(
+                        &l.root
+                            .join(Path::new(g.name).parent().unwrap_or(Path::new(""))),
+                        url,
+                        kind,
+                        false,
+                    )
+                };
                 match kiln_css::scoped(text, g.name, &attr, &mut resolve) {
                     Ok(css) => scoped_css.push(css.code),
                     Err(e) => {

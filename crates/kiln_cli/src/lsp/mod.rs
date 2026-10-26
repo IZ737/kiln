@@ -12,7 +12,7 @@ use kiln_diagnostics::{codes, Diagnostic};
 use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::io::{BufRead, Write};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 struct Document {
     text: String,
@@ -193,29 +193,38 @@ impl Server {
             };
             return Some((vec![source], 0));
         };
-        let dir = path.parent().unwrap_or(Path::new(".")).to_path_buf();
+        let dir = crate::project::editor_root(&path, &self.roots);
         // Open documents in this directory, by path.
         let open: HashMap<PathBuf, String> = self
             .docs
             .keys()
             .filter_map(|u| uri_to_path(u).map(|p| (p, u.clone())))
-            .filter(|(p, _)| p.parent() == Some(dir.as_path()))
+            .filter(|(p, _)| p.starts_with(&dir))
             .collect();
         let mut sources = Vec::new();
-        if let Ok(entries) = std::fs::read_dir(&dir) {
-            for entry in entries.flatten() {
-                let p = entry.path();
-                let source = p.extension().is_some_and(|e| e == "kiln") || crate::is_glaze(&p);
-                if !source || open.contains_key(&p) || !p.is_file() {
-                    continue;
-                }
-                if let Ok(text) = std::fs::read_to_string(&p) {
-                    sources.push(features::Source {
-                        path: p,
-                        uri: None,
-                        text,
-                    });
-                }
+        let overlays = self
+            .docs
+            .iter()
+            .filter_map(|(uri, d)| uri_to_path(uri).map(|p| (p, d.text.clone())))
+            .collect();
+        let mut files = crate::project::discover_overlay(&dir, &overlays)
+            .map(|p| p.files)
+            .unwrap_or_default();
+        // Include unsaved imports and new files, then let the binder report
+        // errors against the editor's text rather than stale disk contents.
+        if files.is_empty() {
+            let _ = crate::collect_sources(&dir, &mut files);
+        }
+        for p in files {
+            if open.contains_key(&p) {
+                continue;
+            }
+            if let Ok(text) = std::fs::read_to_string(&p) {
+                sources.push(features::Source {
+                    path: p,
+                    uri: None,
+                    text,
+                });
             }
         }
         for (p, u) in &open {
@@ -225,6 +234,7 @@ impl Server {
                 text: self.docs[u].text.clone(),
             });
         }
+        sources.sort_by(|a, b| a.path.cmp(&b.path));
         let index = sources.iter().position(|s| s.path == path)?;
         Some((sources, index))
     }
@@ -382,7 +392,24 @@ fn uri_to_path(uri: &str) -> Option<PathBuf> {
     if path.len() > 2 && path.as_bytes()[2] == b':' {
         path.remove(0);
     }
-    Some(PathBuf::from(path))
+    #[cfg(windows)]
+    if !path.starts_with('/') && !path.as_bytes().get(1).is_some_and(|b| *b == b':') {
+        path.insert_str(0, "//");
+    }
+    let path = PathBuf::from(path);
+    Some(canonical_document_path(&path))
+}
+
+/// Match project discovery's filesystem identities, including new editor
+/// buffers whose file (or intermediate directories) has not been saved yet.
+fn canonical_document_path(path: &std::path::Path) -> PathBuf {
+    if let Ok(path) = path.canonicalize() {
+        return path;
+    }
+    match (path.parent(), path.file_name()) {
+        (Some(parent), Some(name)) if parent != path => canonical_document_path(parent).join(name),
+        _ => path.to_path_buf(),
+    }
 }
 
 fn read_message(input: &mut impl BufRead) -> Option<Value> {
@@ -423,6 +450,21 @@ mod tests {
         assert_eq!(position(text, x), json!({"line": 1, "character": 11}));
         assert_eq!(offset_of(text, &json!({"line": 1, "character": 11})), x);
         assert_eq!(position(text, 0), json!({"line": 0, "character": 0}));
+    }
+
+    #[test]
+    fn new_buffers_use_the_existing_ancestors_identity() {
+        let root = std::env::temp_dir().join(format!("kiln-lsp-paths-{}", std::process::id()));
+        std::fs::create_dir_all(&root).unwrap();
+        let unsaved = root.join("new-folder").join("new.kiln");
+        assert_eq!(
+            canonical_document_path(&unsaved),
+            root.canonicalize()
+                .unwrap()
+                .join("new-folder")
+                .join("new.kiln")
+        );
+        std::fs::remove_dir(&root).unwrap();
     }
 
     #[test]

@@ -101,11 +101,11 @@ bindings).
 
 ## Programs and folders
 
-A folder is one program, as in Go. All of its `.kiln` files share one
+A folder is one module. All of its `.kiln` files share one
 namespace, so splitting a file in two never needs an import, and the
 folder's glazes see the same types and functions. Imports stay per file.
 
-**Phase 4.2 plan:** [multi-folder projects and local modules](plans/phase-4.2.md) moves project structure **before Phase 5 data/ORM/auth**. A subfolder is a separate local module, imported with `import posts` (nested: `import posts.search`), and `pub` exports its API. Same-folder `.kiln` files still share declarations, but imports remain per source file. Compiler resolution, type checking, builds, Glazes/Embers and assets, diagnostics and LSP navigation must work across folder boundaries; local imports require no registry, Ware installation, lockfile or compulsory manifest.
+**Phase 4.2:** [multi-folder projects and local modules](plans/phase-4.2.md) moves project structure **before Phase 5 data/ORM/auth**. A subfolder is a separate local module, imported with `import posts` (nested: `import posts.search`), and `pub` exports its API. Same-folder `.kiln` files still share declarations, but imports remain per source file. Compiler resolution, type checking, builds, Glazes/Embers and assets, diagnostics and LSP navigation share folder-module binding; local imports require no registry, Ware installation, lockfile or compulsory manifest.
 
 **Phase 4.2 completion:** A manifest-free multi-folder application builds and runs offline with protected module visibility, deterministic path/cycle/name diagnostics and working module-local server Glazes and client Embers. The optional minimal `kiln.toml` may identify a project root and entrypoint; no project file is necessary for an unambiguous simple or multi-folder program.
 
@@ -120,7 +120,9 @@ kind = "app"
 entry = "main.kiln"
 ~~~
 
-Explicit CLI arguments take precedence over manifest defaults. Manifest-relative entry paths must stay inside the project root; parsing/diagnostics should be source-linked. No plaintext secrets, per-folder manifests or automatic dependency installation. `kiln-deploy.toml` remains separate in Phase 7.
+Explicit CLI arguments take precedence over manifest defaults. Manifest-relative entry paths must stay inside the project root; parsing/diagnostics are source-linked. No plaintext secrets, per-folder manifests or automatic dependency installation. `kiln-deploy.toml` remains separate in Phase 7.
+
+See the [project reference](reference/projects.md) for the implemented root, entry, path and visibility rules.
 
 ### Phase 6: extending the project manifest for Wares
 

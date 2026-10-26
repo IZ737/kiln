@@ -1,0 +1,7 @@
+{% state title = "First note" %}
+{% state message = "" %}
+<form on:submit={ message = save(title) catch err { err.message } }>
+    <label>Title <input id="title" value={title} on:input={ title = event.value } /></label>
+    <button type="submit">Save note</button>
+    <p id="message">{message}</p>
+</form>

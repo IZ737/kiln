@@ -19,6 +19,7 @@ fn sources() -> List<Source> {
     return [
         Source(path: "README", section: "Documentation"),
         Source(path: "reference/syntax", section: "Language reference"),
+        Source(path: "reference/projects", section: "Language reference"),
         Source(path: "reference/types", section: "Language reference"),
         Source(path: "reference/glazes", section: "Language reference"),
         Source(path: "reference/stdlib", section: "Language reference"),

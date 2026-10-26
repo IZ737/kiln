@@ -1,0 +1,9 @@
+import web, posts, accounts
+
+fn main() ! {
+    let app = web.app()
+    posts.routes(app)
+    accounts.routes(app)
+    let port = if env("PORT") == "" { "8080" } else { env("PORT") }
+    try app.listen("127.0.0.1:${port}")
+}

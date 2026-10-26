@@ -166,7 +166,7 @@ it refers to are served from inside the program at `/_kiln/name-hash.ext`
 and cached for good, since a change gives a new name. The files in the
 program's `static/` folder are served at `/static/...`.
 
-Paths are relative to the program's folder, and must stay inside it. CSS
+Paths are relative to the component's folder, and must stay inside the project. CSS
 that does not parse, a missing file, or an `@import` in a `<style>` or CSS
 Module is E0312. CSS is read with
 [Lightning CSS](https://lightningcss.dev), and written minified.
@@ -422,3 +422,11 @@ These are errors with a suggested fix. Run `kiln explain <code>` for details.
 | `{% extends %}`, `{% include %}`, `{% block %}` | `{% layout %}`, a component tag, `{% slot %}` | E0303 |
 | `className`, `htmlFor` | `class`, `for` | E0306 |
 | `onClick={...}`, `@click={...}` | `on:click={...}` | E0306 |
+
+## Folder modules
+
+Same-folder components and layouts keep their owning module's context.
+`<posts.Editor />` explicitly names `posts/editor.ember` in a reachable module;
+`web.render("posts/index.glaze", {})` uses a project-root-qualified path.
+Module-local CSS, scoped URLs and static assets retain that context. See
+[projects.md](projects.md) for import reachability, path rules and examples.

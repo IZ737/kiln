@@ -33,6 +33,7 @@ pub const WRONG_KEYWORD: &str = "E0108";
 pub const NO_STRICT_EQUALITY: &str = "E0109";
 pub const NO_SYMBOL_LOGIC: &str = "E0110";
 
+pub const LOCAL_MODULE: &str = "E0230";
 pub const UNDEFINED_NAME: &str = "E0201";
 pub const TYPE_MISMATCH: &str = "E0202";
 pub const MISSING_TRY: &str = "E0203";
@@ -80,6 +81,13 @@ pub const NO_MAIN: &str = "E0402";
 pub const SERVER_CALL_PLACE: &str = "E0403";
 
 pub static ALL: &[ErrorCode] = &[
+    ErrorCode {
+        code: LOCAL_MODULE,
+        title: "Invalid local module",
+        explanation: "Local folder imports must resolve inside the project root, be acyclic and expose only public declarations. Import paths are case-sensitive.",
+        wrong: "// posts/main.kiln\nfn title() -> String { return \"Post\" }\n// main.kiln\nimport posts\nfn main() { print(posts.title()) }",
+        right: "// posts/main.kiln\npub fn title() -> String { return \"Post\" }\n// main.kiln\nimport posts\nfn main() { print(posts.title()) }",
+    },
     ErrorCode {
         code: EMBER_REQUIRED,
         title: "an Ember component is required",

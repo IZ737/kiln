@@ -146,6 +146,18 @@ fn glaze_fn(file: &str) -> String {
 /// `post_card.glaze` is `post_card`. Other characters than letters,
 /// digits and `_` become `_`.
 fn stem(file: &str) -> String {
+    if file.contains('/') {
+        // A path is an identity, not a basename: posts/index and posts_index
+        // must never share a renderer or island ID.
+        return format!(
+            "__module_{}",
+            file.trim_end_matches(".glaze")
+                .trim_end_matches(".ember")
+                .bytes()
+                .map(|b| format!("{b:02x}"))
+                .collect::<String>()
+        );
+    }
     file.trim_end_matches(".glaze")
         .trim_end_matches(".ember")
         .chars()
@@ -156,6 +168,9 @@ fn stem(file: &str) -> String {
 /// The glaze file a component tag renders: `<LikeButton>` is
 /// `like_button.ember`.
 pub fn component_file(name: &str) -> String {
+    if let Some((module, component)) = name.rsplit_once('.') {
+        return format!("{}/{}", module.replace('.', "/"), component_file(component));
+    }
     let mut out = String::new();
     for (i, c) in name.chars().enumerate() {
         if c.is_ascii_uppercase() {

@@ -1,0 +1,1 @@
+pub fn title(post: Post) -> String { return decorate(post.title) }

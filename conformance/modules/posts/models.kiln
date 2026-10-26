@@ -1,0 +1,13 @@
+pub struct Post { title: String }
+pub const answer = 42
+fn decorate(value: String) -> String { return "Post: ${value}" }
+pub enum Status { Draft, Published }
+pub struct Box<T> { value: T }
+pub fn identity<T>(value: T) -> T { return value }
+impl Post {
+    pub fn length(self) -> Int { return self.title.len() }
+}
+struct T { unused: Int }
+impl Box<T> {
+    pub fn unbox(self) -> T { return self.value }
+}

@@ -242,6 +242,9 @@ impl Checker {
                         .flat_map(|g| g.keys())
                         .map(|file| {
                             let stem = file.trim_end_matches(".glaze").trim_end_matches(".ember");
+                            let (module, stem) = stem
+                                .rsplit_once('/')
+                                .map_or((None, stem), |(module, name)| (Some(module), name));
                             let tag: String = stem
                                 .split('_')
                                 .map(|part| {
@@ -254,6 +257,10 @@ impl Checker {
                                         .unwrap_or_default()
                                 })
                                 .collect();
+                            let tag = module.map_or_else(
+                                || tag.clone(),
+                                |module| format!("{}.{}", module.replace('/', "."), tag),
+                            );
                             (tag, file.clone())
                         })
                         .collect();
@@ -975,6 +982,9 @@ fn string_literal(e: &Expr) -> Option<String> {
 
 /// `LikeButton` is `like_button`.
 pub(crate) fn snake_case(name: &str) -> String {
+    if let Some((module, component)) = name.rsplit_once('.') {
+        return format!("{}/{}", module.replace('.', "/"), snake_case(component));
+    }
     let mut out = String::new();
     for (i, c) in name.chars().enumerate() {
         if c.is_ascii_uppercase() {

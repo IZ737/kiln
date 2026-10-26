@@ -14,7 +14,7 @@ files and `.glaze` templates and components.
   so they match what `kiln check` says.
 - **Commands**: **Kiln: Check Program**, **Kiln: Run Program** (also the
   ▶ button in the editor title) and **Kiln: Build Program** run `kiln
-  check`, `kiln run` and `kiln build` on the folder of the current file,
+  check`, `kiln run` and `kiln build` on the app root within the current workspace,
   which is the program, in the terminal. Errors from `check` and `build`
   appear in the Problems panel. The same commands are tasks (**Tasks: Run
   Task** → kiln), and can go in `tasks.json`:
@@ -61,11 +61,12 @@ npm run package          # makes kiln-<version>.vsix
 
 - No debugger yet: breakpoints and stepping are a later milestone.
 - Find references, rename, formatting and deeper navigation between glazes
-  and components come in phase 5.
+  and components come in phase 6.
 - Go to definition stops at the standard library, which has no source file
   on disk; hover still shows its signatures and docs.
-- A program is one folder, so completion and navigation see the `.kiln`
-  and `.glaze` files next to the current one, not other folders.
+- Local folder modules support cross-folder hover, definition, export/import
+  completion and diagnostics. The LSP uses unsaved source text and preserves
+  original file locations; see the [project rules](../../docs/reference/projects.md).
 
 ## Develop
 
