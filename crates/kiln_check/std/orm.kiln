@@ -16,7 +16,6 @@
 // that does not name the model is computed in Kiln first and sent as a
 // value, never written into the SQL.
 
-
 // The mapping of a model, for a table that does not follow the
 // conventions: `const posts = orm.model<Post>(table: "blog_posts",
 // columns: { title: "post_title" })`. A constant like this anywhere in

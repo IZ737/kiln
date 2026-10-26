@@ -2,6 +2,7 @@
 //! `upgrade`.
 
 mod db;
+mod fmt;
 mod lsp;
 mod notice;
 mod npm;
@@ -151,6 +152,16 @@ enum Command {
         /// How to generate code, as for `kiln build`.
         #[arg(long, value_enum)]
         backend: Option<Backend>,
+    },
+    /// Format `.kiln` files, and the code in glazes' `{% %}` tags. Markup
+    /// and CSS are left as they are.
+    Fmt {
+        /// Files or folders. Defaults to the current directory.
+        paths: Vec<PathBuf>,
+        /// Change nothing: list the files that are not formatted, and fail
+        /// if there are any.
+        #[arg(long)]
+        check: bool,
     },
     /// Run the language server, for editors, over standard input and output.
     Lsp,
@@ -415,6 +426,7 @@ fn main() -> ExitCode {
 fn dispatch(command: Command) -> ExitCode {
     match command {
         Command::Check { paths, json } => check(paths, json),
+        Command::Fmt { paths, check } => fmt::run(paths, check),
         Command::Test {
             dir,
             unit,
