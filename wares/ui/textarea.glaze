@@ -1,0 +1,23 @@
+{# A labelled multi-line text field, like `<ui.Input>`. #}
+{% props label: String, name: String, value: String = "", rows: Int = 5, hint: String = "", error: String = "", required: Bool = false, disabled: Bool = false, id: String = "" %}
+{% let field = field_id(id, name) %}
+<div class="field">
+  <label for={field}>{label}{% if required %}<span class="required" aria-hidden="true"> *</span>{% end %}</label>
+  {% if hint != "" %}<p class="hint" id="{field}-hint">{hint}</p>{% end %}
+  <textarea id={field} name={name} rows={rows} required={required} disabled={disabled} aria-invalid={if error != "" { "true" } else { "false" }} aria-describedby={described_by(field, hint, error)}>{value}</textarea>
+  {% if error != "" %}<p class="error" id="{field}-error">{error}</p>{% end %}
+</div>
+<style>
+.field { display: grid; gap: var(--space-xs, 0.25rem); margin-bottom: var(--space-md, 1rem); }
+label { font-weight: 600; color: var(--color-text, #1f232b); }
+.required { color: var(--color-danger, #b3261e); }
+.hint { margin: 0; font-size: 0.875rem; color: var(--color-muted, #4f5560); }
+textarea {
+  padding: var(--space-sm, 0.5rem); border: 1px solid var(--color-border, #8a8f98);
+  border-radius: var(--radius-card, 0.5rem); font: inherit;
+  background: var(--color-surface, #ffffff); color: var(--color-text, #1f232b);
+}
+textarea:focus-visible { outline: 3px solid var(--color-focus, #1f5fbf); outline-offset: 1px; }
+textarea[aria-invalid="true"] { border-color: var(--color-danger, #b3261e); }
+.error { margin: 0; font-size: 0.875rem; color: var(--color-danger, #b3261e); font-weight: 600; }
+</style>

@@ -1,0 +1,152 @@
+// The registry's pages: the Wares it holds, and accounts with their
+// publish tokens.
+import web, sql, orm, auth, validate, store, ui
+
+struct Summary {
+    publisher: String
+    name: String
+    version: String
+    description: String
+}
+
+struct Row {
+    version: String
+    checksum: String
+    capabilities: String
+    yanked: Bool
+    trust: String
+    published_at: String
+}
+
+pub fn routes(app: web.App, db: sql.Db, sessions: auth.Sessions) {
+    app.get("/", fn(req) {
+        let all = try db.query<Summary>("select publisher, name, version, description from releases where yanked = $1 order by id", false)
+        // The newest release of each Ware, in name order.
+        let latest: Map<String, Summary> = Map()
+        for r in all {
+            latest["${r.publisher}/${r.name}"] = r
+        }
+        let wares = latest.values().sort_by(fn(s) { "${s.publisher}/${s.name}" })
+        return web.render("home.glaze", { wares: wares, who: try signed_in(db, sessions, req) })
+    })
+
+    app.get("/wares/{publisher}/{name}", fn(req, publisher, name) {
+        let releases = try store.releases(db, publisher, name)
+        if releases.is_empty() {
+            return web.not_found()
+        }
+        var rows: List<Row> = []
+        for r in releases.reverse() {
+            rows.push(Row(
+                version: r.version,
+                checksum: r.checksum,
+                capabilities: r.capabilities,
+                yanked: r.yanked,
+                trust: try store.trust(db, r),
+                published_at: r.published_at,
+            ))
+        }
+        let host = req.header("host") ?? "127.0.0.1:8081"
+        return web.render("ware.glaze", {
+            ware: "${publisher}/${name}",
+            description: releases[releases.len() - 1].description,
+            rows: rows,
+            registry: "http://${host}",
+            who: try signed_in(db, sessions, req),
+        })
+    })
+
+    app.get("/sign-up", fn(req) {
+        return web.render("sign_up.glaze", { name: "", email: "", problems: [] })
+    })
+
+    app.post("/sign-up", fn(req) {
+        if not store.same_origin(req) {
+            throw web.error(403, "this form was sent from another site")
+        }
+        let form = try req.form<{ name: String, email: String, password: String }>()
+        let name = form.name.trim()
+        let email = form.email.trim().lower()
+        let taken_name = try orm.find<store.Account>(db).where(fn(a) { a.name == name }).count()
+        let taken_email = try orm.find<store.Account>(db).where(fn(a) { a.email == email }).count()
+        let checked = validate.check([
+            validate.when(not store.valid_part(name), "name", "a publisher name is a-z, 0-9 and _, starting with a letter"),
+            validate.when(taken_name > 0, "name", "that publisher name is taken"),
+            validate.email("email", email),
+            validate.when(taken_email > 0, "email", "someone has signed up with this email"),
+            validate.length("password", form.password, min: 10, max: 200),
+        ])
+        if not checked.valid {
+            var res = web.render("sign_up.glaze", { name: name, email: email, problems: checked.messages() })
+            res.status = 422
+            return res
+        }
+        let role = if email == env("REGISTRY_ADMIN") { "admin" } else { "publisher" }
+        let hash = try auth.hash_password(form.password)
+        let account = try orm.insert<store.Account>(db, store.Account(id: 0, name: name, email: email, password: hash, role: role))
+        return try sessions.sign_in(web.redirect("/tokens", status: 303), "${account.id}", roles: [account.role])
+    })
+
+    app.get("/sign-in", fn(req) {
+        return web.render("sign_in.glaze", { email: "", problem: "" })
+    })
+
+    app.post("/sign-in", fn(req) {
+        if not store.same_origin(req) {
+            throw web.error(403, "this form was sent from another site")
+        }
+        let form = try req.form<{ email: String, password: String }>()
+        let email = form.email.trim().lower()
+        let found = try orm.find<store.Account>(db).where(fn(a) { a.email == email }).first()
+        if found is some(account) and auth.verify_password(form.password, account.password) {
+            return try sessions.sign_in(web.redirect("/tokens", status: 303), "${account.id}", roles: [account.role])
+        }
+        var res = web.render("sign_in.glaze", { email: email, problem: "That email and password do not match." })
+        res.status = 401
+        return res
+    })
+
+    app.post("/sign-out", fn(req) {
+        let form = try req.form<{ csrf: String }>()
+        try sessions.check(req, form.csrf)
+        return try sessions.sign_out(req, web.redirect("/", status: 303))
+    })
+
+    app.get("/tokens", fn(req) {
+        let account_found = try signed_in(db, sessions, req)
+        if not (account_found is some(_)) {
+            return web.redirect("/sign-in")
+        }
+        let account = account_found ?? throw "unreachable"
+        return try tokens_page(db, sessions, req, account, "")
+    })
+
+    app.post("/tokens", fn(req) {
+        let account_found = try signed_in(db, sessions, req)
+        if not (account_found is some(_)) {
+            return web.redirect("/sign-in")
+        }
+        let account = account_found ?? throw "unreachable"
+        let form = try req.form<{ csrf: String, label: String }>()
+        try sessions.check(req, form.csrf)
+        let label = if form.label.trim() == "" { "kiln publish" } else { form.label.trim() }
+        let token = try store.new_token(db, account, label)
+        return try tokens_page(db, sessions, req, account, token)
+    })
+}
+
+fn signed_in(db: sql.Db, sessions: auth.Sessions, req: web.Request) -> store.Account? ! {
+    let who = try sessions.current(req)
+    return match who {
+        some(w) => try orm.get<store.Account>(db, w.subject.to_int() ?? 0)
+        none => none
+    }
+}
+
+fn tokens_page(db: sql.Db, sessions: auth.Sessions, req: web.Request, account: store.Account, created: String) -> web.Response ! {
+    let id = account.id
+    let tokens = try orm.find<store.Token>(db).where(fn(t) { t.account_id == id }).order_by(.id).all()
+    let labels = tokens.map(.label)
+    let csrf = try sessions.csrf(req)
+    return web.render("tokens.glaze", { account: account, labels: labels, created: created, csrf: csrf })
+}

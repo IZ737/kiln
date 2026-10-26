@@ -1,0 +1,16 @@
+{# A box of related content, with an optional heading. Fill `actions`
+   for buttons at its foot. #}
+{% props title: String = "", level: Int = 2 %}
+<section class="card">
+  {% if title != "" %}
+  {% if level == 3 %}<h3 class="heading">{title}</h3>{% else %}<h2 class="heading">{title}</h2>{% end %}
+  {% end %}
+  {% slot %}
+  <div class="actions">{% slot actions %}</div>
+</section>
+<style>
+.card { padding: var(--space-lg, 1.5rem); border: 1px solid var(--color-border, #d6d1c8); border-radius: var(--radius-card, 0.5rem); background: var(--color-surface, #ffffff); margin-bottom: var(--space-md, 1rem); }
+.heading { margin-top: 0; }
+.actions { display: flex; gap: var(--space-sm, 0.5rem); }
+.actions:empty { display: none; }
+</style>

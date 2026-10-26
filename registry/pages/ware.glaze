@@ -1,0 +1,24 @@
+{% props ware: String, description: String, rows: List<Row>, registry: String, who: store.Account? %}
+{% layout "pages/layout.glaze" title: ware, who: who %}
+<h1>{ware}</h1>
+<p>{description}</p>
+<pre><code>kiln add {ware} --registry {registry}</code></pre>
+<p>Trust is what this registry says about a release: <em>verified-publisher</em> means an administrator checked who publishes it; <em>peer-reviewed</em> means someone reviewed this exact archive. Neither means the code is safe.</p>
+<table>
+  <thead><tr><th scope="col">Version</th><th scope="col">Trust</th><th scope="col">Capabilities</th><th scope="col">Published</th></tr></thead>
+  <tbody>
+  {% for r in rows %}
+  <tr>
+    <td>{r.version}{% if r.yanked %} <ui.Badge tone={ui.Tone.Danger}>yanked</ui.Badge>{% end %}</td>
+    <td>{r.trust}</td>
+    <td><code>{r.capabilities}</code></td>
+    <td>{r.published_at}</td>
+  </tr>
+  {% end %}
+  </tbody>
+</table>
+<style>
+table { width: 100%; border-collapse: collapse; }
+th, td { text-align: left; padding: 0.5rem; border-bottom: 1px solid #d6d1c8; }
+pre { background: #1f232b; color: #f7f3ec; padding: 1rem; border-radius: 0.5rem; overflow-x: auto; }
+</style>

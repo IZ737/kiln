@@ -298,14 +298,6 @@ pub fn is_cached_ware(root: &Path, path: &Path) -> bool {
 /// The module a written import names, seen from a module (`owner`): a
 /// dependency's name maps to its Ware, and a Ware's own folders are
 /// relative to the Ware.
-pub fn translate(root: &Path, owner: &str, full: &str) -> String {
-    let packages = PACKAGES.lock().unwrap();
-    let Some(packages) = packages.get(root) else {
-        return full.to_string();
-    };
-    translate_in(packages, owner, full)
-}
-
 pub fn translate_in(packages: &Packages, owner: &str, full: &str) -> String {
     resolve_import(packages, owner, full).0
 }

@@ -1,0 +1,22 @@
+{# A button. Its children are its label. `type` is "button", "submit" or
+   "reset"; a disabled button cannot be clicked or focused. `name` and
+   `value`, when given, are sent with the form. #}
+{% props type: String = "button", tone: Tone = Tone.Primary, disabled: Bool = false, name: String = "", value: String = "" %}
+{% if name == "" %}<button type={type} class="button {tone_class(tone)}" disabled={disabled}>{% slot %}</button>{% else %}<button type={type} class="button {tone_class(tone)}" disabled={disabled} name={name} value={value}>{% slot %}</button>{% end %}
+<style>
+.button {
+  display: inline-flex; align-items: center; gap: var(--space-sm, 0.5rem);
+  min-height: 2.75rem; padding: 0 var(--space-md, 1rem);
+  border: 1px solid transparent; border-radius: var(--radius-card, 0.5rem);
+  font: inherit; font-weight: 600; cursor: pointer;
+  transition: background-color 120ms ease, box-shadow 120ms ease;
+}
+.primary { background: var(--color-accent, #a8452a); color: var(--color-on-accent, #ffffff); }
+.neutral { background: var(--color-surface, #ffffff); color: var(--color-text, #1f232b); border-color: var(--color-border, #8a8f98); }
+.danger { background: var(--color-danger, #b3261e); color: #ffffff; }
+.success { background: var(--color-success, #1e6b3a); color: #ffffff; }
+.button:hover { filter: brightness(0.95); }
+.button:focus-visible { outline: 3px solid var(--color-focus, #1f5fbf); outline-offset: 2px; }
+.button:disabled { opacity: 0.55; cursor: not-allowed; }
+@media (prefers-reduced-motion: reduce) { .button { transition: none; } }
+</style>

@@ -1,0 +1,174 @@
+// Version 1 of the registry protocol, which `kiln` speaks. Everything a
+// client sends is checked here; nothing it sends is trusted.
+import web, sql, orm, json, auth, time, store
+
+struct Dependency {
+    ware: String
+    version: String
+    registry: String?
+}
+
+// What `kiln publish` sends.
+struct Upload {
+    name: String
+    version: String
+    checksum: String
+    description: String
+    license: String
+    dependencies: Map<String, Dependency>
+    capabilities: List<String>
+    archive: String
+}
+
+struct Yank {
+    yanked: Bool
+}
+
+// A release as the index lists it.
+struct Listed {
+    version: String
+    checksum: String
+    dependencies: Map<String, Dependency>
+    capabilities: List<String>
+    yanked: Bool
+    trust: String
+}
+
+const CAPABILITIES: List<String> = ["filesystem", "network", "database", "environment", "foreign"]
+
+fn problem(status: Int, message: String) -> web.Response {
+    return web.json({ error: message }, status: status)
+}
+
+pub fn routes(app: web.App, db: sql.Db) {
+    // Every release of a Ware, yanked ones included, so a lockfile that
+    // holds a yanked release still resolves.
+    app.get("/v1/wares/{publisher}/{name}", fn(req, publisher, name) {
+        let all = try store.releases(db, publisher, name)
+        if all.is_empty() {
+            return problem(404, "no Ware ${publisher}/${name}")
+        }
+        var listed: List<Listed> = []
+        for r in all {
+            listed.push(Listed(
+                version: r.version,
+                checksum: r.checksum,
+                dependencies: try json.decode<Map<String, Dependency>>(r.dependencies),
+                capabilities: try json.decode<List<String>>(r.capabilities),
+                yanked: r.yanked,
+                trust: try store.trust(db, r),
+            ))
+        }
+        var res = web.json({ name: "${publisher}/${name}", releases: listed })
+        res.headers["cache-control"] = "no-cache"
+        return res
+    })
+
+    app.get("/v1/wares/{publisher}/{name}/{version}/archive", fn(req, publisher, name, version) {
+        let found = try orm.find<store.Release>(db)
+            .where(fn(r) { r.publisher == publisher and r.name == name and r.version == version })
+            .first()
+        return match found {
+            some(r) => {
+                var res = web.text(r.archive)
+                res.headers["content-type"] = "application/vnd.kiln.ware; charset=utf-8"
+                // A release never changes, so it can be cached for good.
+                res.headers["cache-control"] = "public, max-age=31536000, immutable"
+                res.headers["etag"] = "\"${r.checksum}\""
+                res
+            }
+            none => problem(404, "no release ${publisher}/${name} ${version}")
+        }
+    })
+
+    app.put("/v1/wares/{publisher}/{name}/{version}", fn(req, publisher, name, version) {
+        let who = try store.account_for(db, req)
+        if not (who is some(_)) {
+            return problem(401, "a publish token is needed: run `kiln login`")
+        }
+        let account = who ?? throw "unreachable"
+        if account.name != publisher {
+            return problem(403, "the account ${account.name} cannot publish Wares of ${publisher}")
+        }
+        if not (store.valid_part(publisher) and store.valid_part(name)) {
+            return problem(400, "not a Ware name: ${publisher}/${name}")
+        }
+        if not store.valid_version(version) {
+            return problem(400, "not a version: ${version}")
+        }
+        let upload = try req.json<Upload>()
+        if upload.name != "${publisher}/${name}" or upload.version != version {
+            return problem(400, "the release sent is ${upload.name} ${upload.version}, not ${publisher}/${name} ${version}")
+        }
+        if not upload.archive.starts_with("kiln-ware-archive 1\n") {
+            return problem(400, "the archive is not a Kiln Ware archive")
+        }
+        let actual = "sha256:${auth.sha256(upload.archive)}"
+        if actual != upload.checksum {
+            return problem(400, "checksum mismatch: the archive hashes to ${actual}, not ${upload.checksum}")
+        }
+        for c in upload.capabilities {
+            if not CAPABILITIES.contains(c) {
+                return problem(400, "unknown capability `${c}`")
+            }
+        }
+        for entry in upload.dependencies.entries() {
+            let parts = entry.value.ware.split("/")
+            if parts.len() != 2 or not store.valid_part(parts[0]) or not store.valid_part(parts[1]) {
+                return problem(400, "dependency `${entry.key}` names no Ware")
+            }
+        }
+        // Releases are immutable: the same archive again is fine, another
+        // one under the same version never is.
+        let existing = try orm.find<store.Release>(db)
+            .where(fn(r) { r.publisher == publisher and r.name == name and r.version == version })
+            .first()
+        if existing is some(old) {
+            if old.checksum == upload.checksum {
+                return web.json({ name: upload.name, version: version, checksum: old.checksum })
+            }
+            return problem(409, "${publisher}/${name} ${version} is already published with another checksum; publish a new version")
+        }
+        try orm.insert<store.Release>(db, store.Release(
+            id: 0,
+            account_id: account.id,
+            publisher: publisher,
+            name: name,
+            version: version,
+            checksum: upload.checksum,
+            description: upload.description,
+            license: upload.license,
+            dependencies: json.encode(upload.dependencies),
+            capabilities: json.encode(upload.capabilities),
+            archive: upload.archive,
+            published_at: time.now().iso(),
+        ))
+        try store.record(db, account.id, "publish", "${publisher}/${name} ${version} ${upload.checksum}")
+        return web.json({ name: upload.name, version: version, checksum: upload.checksum }, status: 201)
+    })
+
+    // Yanking hides a release from new resolutions; it is never deleted.
+    app.post("/v1/wares/{publisher}/{name}/{version}/yank", fn(req, publisher, name, version) {
+        let who = try store.account_for(db, req)
+        if not (who is some(_)) {
+            return problem(401, "a publish token is needed: run `kiln login`")
+        }
+        let account = who ?? throw "unreachable"
+        if account.name != publisher {
+            return problem(403, "the account ${account.name} cannot yank Wares of ${publisher}")
+        }
+        let body = try req.json<Yank>()
+        let found = try orm.find<store.Release>(db)
+            .where(fn(r) { r.publisher == publisher and r.name == name and r.version == version })
+            .first()
+        if not (found is some(_)) {
+            return problem(404, "no release ${publisher}/${name} ${version}")
+        }
+        var release = found ?? throw "unreachable"
+        release.yanked = body.yanked
+        try orm.update<store.Release>(db, release)
+        let action = if body.yanked { "yank" } else { "unyank" }
+        try store.record(db, account.id, action, "${publisher}/${name} ${version}")
+        return web.json({ yanked: body.yanked })
+    })
+}

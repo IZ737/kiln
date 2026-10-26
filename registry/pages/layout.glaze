@@ -1,0 +1,30 @@
+{% props title: String, who: store.Account? = none, csrf: String = "" %}
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{title} - Kiln Wares</title>
+</head>
+<body>
+<header class="top">
+  <a class="home" href="/">Kiln Wares</a>
+  <nav aria-label="Account">
+    {% match who %}
+    {% case some(a) %}<a href="/tokens">{a.name}</a>
+    {% case none %}<a href="/sign-in">Sign in</a> <a href="/sign-up">Sign up</a>
+    {% end %}
+  </nav>
+</header>
+<main>
+{% slot %}
+</main>
+</body>
+</html>
+<style>
+:global(body) { margin: 0; font-family: system-ui, sans-serif; color: #1f232b; background: #f7f3ec; line-height: 1.5; }
+.top { display: flex; justify-content: space-between; align-items: center; padding: 1rem 1.5rem; background: #1f232b; }
+.top a { color: #f7f3ec; margin-left: 1rem; }
+.home { font-weight: 700; margin-left: 0; }
+main { max-width: 52rem; margin: 0 auto; padding: 1.5rem; }
+</style>

@@ -1,0 +1,14 @@
+{# A message for the reader. Danger alerts are announced at once
+   (`role="alert"`); others politely (`role="status"`). #}
+{% props tone: Tone = Tone.Neutral, title: String = "" %}
+<div class="alert {tone_class(tone)}" role={if tone == Tone.Danger { "alert" } else { "status" }}>
+  {% if title != "" %}<p class="title">{title}</p>{% end %}
+  {% slot %}
+</div>
+<style>
+.alert { padding: var(--space-md, 1rem); border-radius: var(--radius-card, 0.5rem); border-left: 4px solid; margin-bottom: var(--space-md, 1rem); color: var(--color-text, #1f232b); }
+.title { margin: 0 0 var(--space-xs, 0.25rem); font-weight: 700; }
+.neutral, .primary { background: var(--color-surface-muted, #f2efe9); border-color: var(--color-accent, #a8452a); }
+.danger { background: #fdecea; border-color: var(--color-danger, #b3261e); }
+.success { background: #e8f3ec; border-color: var(--color-success, #1e6b3a); }
+</style>

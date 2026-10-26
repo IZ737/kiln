@@ -2463,8 +2463,12 @@ K_API void k_web_listen_error(kstr *address, const char *why) {
 
 /* Binds `host:port` and serves forever. An empty host, as in `:8080`, is
  * every IPv4 address, and `localhost` is 127.0.0.1. A host in brackets is
- * an IPv6 address. Port 0 lets the system choose a free port. */
+ * an IPv6 address. Port 0 lets the system choose a free port.
+ * `KILN_LISTEN`, when set, replaces the address the program gives, so that
+ * `kiln test` and `kiln dev` can start any server on a port they choose. */
 K_API void k_web_listen(void *app, kstr *address) {
+    const char *over = getenv("KILN_LISTEN");
+    if (over && *over) address = k_str(over);
     const char *s = k_cstr(address);
     const char *colon = strrchr(s, ':');
     if (!colon || colon[1] == 0) { k_web_listen_error(address, "expected host:port, such as :8080"); return; }

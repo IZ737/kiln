@@ -1,0 +1,12 @@
+{% props wares: List<Summary>, who: store.Account? %}
+{% layout "pages/layout.glaze" title: "Wares", who: who %}
+<h1>Wares</h1>
+<p>Packages for Kiln programs. Add one with <code>kiln add publisher/name --registry ...</code>.</p>
+{% for w in wares %}
+<ui.Card title="{w.publisher}/{w.name}" level={3}>
+  <p>{w.description}</p>
+  <p><ui.Badge>{w.version}</ui.Badge> <a href="/wares/{w.publisher}/{w.name}">Releases</a></p>
+</ui.Card>
+{% empty %}
+<ui.EmptyState title="No Wares yet">Publish one with <code>kiln publish</code>.</ui.EmptyState>
+{% end %}

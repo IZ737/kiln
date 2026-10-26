@@ -1,0 +1,15 @@
+{# A checkbox with its label beside it. A form reads it as a `Bool`. #}
+{% props label: String, name: String, checked: Bool = false, hint: String = "", disabled: Bool = false, value: String = "true", id: String = "" %}
+{% let field = field_id(id, name) %}
+<div class="check">
+  <input type="checkbox" id={field} name={name} value={value} checked={checked} disabled={disabled} aria-describedby={described_by(field, hint, "")}>
+  <label for={field}>{label}</label>
+  {% if hint != "" %}<p class="hint" id="{field}-hint">{hint}</p>{% end %}
+</div>
+<style>
+.check { display: grid; grid-template-columns: auto 1fr; gap: 0 var(--space-sm, 0.5rem); align-items: center; margin-bottom: var(--space-md, 1rem); }
+input { width: 1.25rem; height: 1.25rem; accent-color: var(--color-accent, #a8452a); }
+input:focus-visible { outline: 3px solid var(--color-focus, #1f5fbf); outline-offset: 2px; }
+label { color: var(--color-text, #1f232b); }
+.hint { grid-column: 2; margin: 0; font-size: 0.875rem; color: var(--color-muted, #4f5560); }
+</style>

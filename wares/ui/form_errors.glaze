@@ -1,0 +1,16 @@
+{# The problems a submitted form had, such as `checked.messages()` from
+   `validate`, as one list at the top of the form. #}
+{% props problems: List<String>, title: String = "Please fix these problems:" %}
+{% if not problems.is_empty() %}
+<div class="problems" role="alert">
+  <p class="title">{title}</p>
+  <ul>
+    {% for p in problems %}<li>{p}</li>{% end %}
+  </ul>
+</div>
+{% end %}
+<style>
+.problems { padding: var(--space-md, 1rem); border: 2px solid var(--color-danger, #b3261e); border-radius: var(--radius-card, 0.5rem); margin-bottom: var(--space-md, 1rem); background: #fdecea; color: var(--color-text, #1f232b); }
+.title { margin: 0; font-weight: 700; }
+ul { margin: var(--space-xs, 0.25rem) 0 0; }
+</style>

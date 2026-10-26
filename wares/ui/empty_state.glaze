@@ -1,0 +1,10 @@
+{# What a list shows when it has nothing in it yet. #}
+{% props title: String %}
+<div class="empty">
+  <p class="title">{title}</p>
+  {% slot %}
+</div>
+<style>
+.empty { padding: var(--space-xl, 2rem); text-align: center; border: 2px dashed var(--color-border, #d6d1c8); border-radius: var(--radius-card, 0.5rem); color: var(--color-muted, #4f5560); }
+.title { font-weight: 700; color: var(--color-text, #1f232b); }
+</style>

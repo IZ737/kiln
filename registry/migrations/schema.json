@@ -1,0 +1,235 @@
+{
+  "tables": {
+    "accounts": {
+      "columns": [
+        {
+          "name": "id",
+          "ty": "integer",
+          "not_null": false,
+          "key": true
+        },
+        {
+          "name": "name",
+          "ty": "text",
+          "not_null": true,
+          "key": false
+        },
+        {
+          "name": "email",
+          "ty": "text",
+          "not_null": true,
+          "key": false
+        },
+        {
+          "name": "password",
+          "ty": "text",
+          "not_null": true,
+          "key": false
+        },
+        {
+          "name": "verified",
+          "ty": "boolean",
+          "not_null": true,
+          "key": false
+        },
+        {
+          "name": "role",
+          "ty": "text",
+          "not_null": true,
+          "key": false
+        }
+      ]
+    },
+    "events": {
+      "columns": [
+        {
+          "name": "id",
+          "ty": "integer",
+          "not_null": false,
+          "key": true
+        },
+        {
+          "name": "account_id",
+          "ty": "integer",
+          "not_null": true,
+          "key": false
+        },
+        {
+          "name": "action",
+          "ty": "text",
+          "not_null": true,
+          "key": false
+        },
+        {
+          "name": "subject",
+          "ty": "text",
+          "not_null": true,
+          "key": false
+        },
+        {
+          "name": "at",
+          "ty": "text",
+          "not_null": true,
+          "key": false
+        }
+      ]
+    },
+    "releases": {
+      "columns": [
+        {
+          "name": "id",
+          "ty": "integer",
+          "not_null": false,
+          "key": true
+        },
+        {
+          "name": "account_id",
+          "ty": "integer",
+          "not_null": true,
+          "key": false
+        },
+        {
+          "name": "publisher",
+          "ty": "text",
+          "not_null": true,
+          "key": false
+        },
+        {
+          "name": "name",
+          "ty": "text",
+          "not_null": true,
+          "key": false
+        },
+        {
+          "name": "version",
+          "ty": "text",
+          "not_null": true,
+          "key": false
+        },
+        {
+          "name": "checksum",
+          "ty": "text",
+          "not_null": true,
+          "key": false
+        },
+        {
+          "name": "description",
+          "ty": "text",
+          "not_null": true,
+          "key": false
+        },
+        {
+          "name": "license",
+          "ty": "text",
+          "not_null": true,
+          "key": false
+        },
+        {
+          "name": "dependencies",
+          "ty": "text",
+          "not_null": true,
+          "key": false
+        },
+        {
+          "name": "capabilities",
+          "ty": "text",
+          "not_null": true,
+          "key": false
+        },
+        {
+          "name": "archive",
+          "ty": "text",
+          "not_null": true,
+          "key": false
+        },
+        {
+          "name": "yanked",
+          "ty": "boolean",
+          "not_null": true,
+          "key": false
+        },
+        {
+          "name": "published_at",
+          "ty": "text",
+          "not_null": true,
+          "key": false
+        }
+      ]
+    },
+    "reviews": {
+      "columns": [
+        {
+          "name": "id",
+          "ty": "integer",
+          "not_null": false,
+          "key": true
+        },
+        {
+          "name": "publisher",
+          "ty": "text",
+          "not_null": true,
+          "key": false
+        },
+        {
+          "name": "name",
+          "ty": "text",
+          "not_null": true,
+          "key": false
+        },
+        {
+          "name": "version",
+          "ty": "text",
+          "not_null": true,
+          "key": false
+        },
+        {
+          "name": "checksum",
+          "ty": "text",
+          "not_null": true,
+          "key": false
+        },
+        {
+          "name": "reviewer",
+          "ty": "text",
+          "not_null": true,
+          "key": false
+        },
+        {
+          "name": "notes",
+          "ty": "text",
+          "not_null": true,
+          "key": false
+        }
+      ]
+    },
+    "tokens": {
+      "columns": [
+        {
+          "name": "id",
+          "ty": "integer",
+          "not_null": false,
+          "key": true
+        },
+        {
+          "name": "account_id",
+          "ty": "integer",
+          "not_null": true,
+          "key": false,
+          "references": "accounts(id)"
+        },
+        {
+          "name": "token_hash",
+          "ty": "text",
+          "not_null": true,
+          "key": false
+        },
+        {
+          "name": "label",
+          "ty": "text",
+          "not_null": true,
+          "key": false
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,7 @@
+[package]
+name = "registry"
+kind = "app"
+entry = "main.kiln"
+
+[dependencies]
+ui = { ware = "kiln/ui", path = "../wares/ui" }

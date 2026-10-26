@@ -1,0 +1,101 @@
+import sql, orm, auth, web, time
+
+// The database `DATABASE_URL` names, or `registry.db`.
+pub fn database() -> sql.Db ! {
+    let url = if env("DATABASE_URL") == "" { "sqlite:registry.db" } else { env("DATABASE_URL") }
+    return try sql.open(url)
+}
+
+// Browser sessions, for the pages. Cookies are sent over HTTPS only,
+// unless `REGISTRY_HTTP=1` says the registry is served over plain HTTP.
+pub fn sessions(db: sql.Db) -> auth.Sessions ! {
+    return try auth.sessions(db, secure: env("REGISTRY_HTTP") != "1")
+}
+
+// The account a request's `Authorization: Bearer <token>` belongs to.
+pub fn account_for(db: sql.Db, req: web.Request) -> Account? ! {
+    let header = req.header("authorization") ?? ""
+    if not header.starts_with("Bearer ") {
+        return none
+    }
+    let digest = auth.sha256(header.slice(7, header.len()).trim())
+    let found = try orm.find<Token>(db).where(fn(t) { t.token_hash == digest }).include(.account).first()
+    return match found {
+        some(t) => t.account
+        none => none
+    }
+}
+
+// Makes a token for an account, returning the token, which is not stored.
+pub fn new_token(db: sql.Db, account: Account, label: String) -> String ! {
+    let token = "kiln_${auth.token()}"
+    try orm.insert<Token>(db, Token(id: 0, account_id: account.id, token_hash: auth.sha256(token), label: label))
+    try record(db, account.id, "token", label)
+    return token
+}
+
+// A line in the audit log.
+pub fn record(db: sql.Db, account_id: Int, action: String, subject: String) ! {
+    try orm.insert<Event>(db, Event(id: 0, account_id: account_id, action: action, subject: subject, at: time.now().iso()))
+}
+
+// Every release of a Ware, oldest first.
+pub fn releases(db: sql.Db, publisher: String, name: String) -> List<Release> ! {
+    return try orm.find<Release>(db)
+        .where(fn(r) { r.publisher == publisher and r.name == name })
+        .order_by(.id)
+        .all()
+}
+
+// What the registry can say about a release: reviewed (for this exact
+// archive), a verified publisher, or neither.
+pub fn trust(db: sql.Db, release: Release) -> String ! {
+    let checksum = release.checksum
+    let publisher = release.publisher
+    let name = release.name
+    let version = release.version
+    let reviews = try orm.find<Review>(db)
+        .where(fn(r) { r.publisher == publisher and r.name == name and r.version == version and r.checksum == checksum })
+        .count()
+    if reviews > 0 {
+        return "peer-reviewed"
+    }
+    let owner = try orm.get<Account>(db, release.account_id)
+    if owner is some(a) and a.verified {
+        return "verified-publisher"
+    }
+    return "unverified"
+}
+
+// A publisher or package name: 1 to 64 of a-z, 0-9 and single `_`,
+// starting with a letter.
+pub fn valid_part(part: String) -> Bool {
+    if part.len() == 0 or part.len() > 64 or part.contains("__") {
+        return false
+    }
+    let first = part.slice(0, 1)
+    if first < "a" or first > "z" {
+        return false
+    }
+    return part.chars().all(fn(c) { (c >= "a" and c <= "z") or (c >= "0" and c <= "9") or c == "_" })
+}
+
+// `1.2.3`, with an optional `-pre.1`: three numbers, no leading zeros.
+pub fn valid_version(version: String) -> Bool {
+    let core = version.split("-")[0].split("+")[0]
+    let parts = core.split(".")
+    if parts.len() != 3 or version.len() > 64 {
+        return false
+    }
+    return parts.all(fn(p) { p.len() > 0 and p.to_int() != none and (p == "0" or not p.starts_with("0")) })
+}
+
+// Whether a form came from a page of this site.
+pub fn same_origin(req: web.Request) -> Bool {
+    let origin = req.header("origin") ?? ""
+    if origin == "" {
+        return true
+    }
+    let host = req.header("host") ?? ""
+    return origin == "http://${host}" or origin == "https://${host}"
+}

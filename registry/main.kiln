@@ -1,0 +1,34 @@
+// A Ware registry, written in Kiln. Publishers sign up, make tokens and
+// publish Wares with `kiln publish`; `kiln add`, `kiln update` and
+// `kiln fetch` read from it. It speaks version 1 of the registry
+// protocol, described in docs/reference/wares.md.
+//
+//     kiln db migrate --url sqlite:registry.db --path registry
+//     REGISTRY_HTTP=1 REGISTRY_ADMIN=you@example.com kiln run registry
+//
+// `REGISTRY_ADDRESS` sets where it listens (127.0.0.1:8081), and
+// `DATABASE_URL` its database (sqlite:registry.db).
+import web, admin, store, api, pages
+
+fn main() ! {
+    let db = try store.database()
+    let sessions = try store.sessions(db)
+    // Archives are up to 16 MiB, and travel inside JSON.
+    let app = web.app(max_body: 24_000_000)
+    api.routes(app, db)
+    pages.routes(app, db, sessions)
+
+    // Administrators verify publishers and record reviews of releases.
+    let site = admin.site(
+        db,
+        sessions,
+        fn(who, action, model) { who.roles.contains("admin") },
+        title: "Registry admin",
+        home: "/",
+    )
+    admin.pages<store.Account>(app, "/admin/accounts", site)
+    admin.pages<store.Review>(app, "/admin/reviews", site)
+
+    let address = if env("REGISTRY_ADDRESS") == "" { "127.0.0.1:8081" } else { env("REGISTRY_ADDRESS") }
+    try app.listen(address)
+}
