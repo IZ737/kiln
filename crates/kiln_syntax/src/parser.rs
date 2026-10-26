@@ -169,6 +169,20 @@ impl Parser {
         }
     }
 
+    /// A field or method name: an identifier, or `where`, which is a
+    /// keyword only in `for` loops, so that a query can say
+    /// `.where(...)`.
+    pub(crate) fn expect_member(&mut self, what: &str) -> Ident {
+        if *self.peek() == TokenKind::Where {
+            let span = self.bump().span;
+            return Ident {
+                name: "where".into(),
+                span,
+            };
+        }
+        self.expect_ident(what)
+    }
+
     pub(crate) fn with_newlines<T>(
         &mut self,
         significant: bool,
@@ -260,6 +274,9 @@ impl Parser {
 
     /// Skips to the next line that starts a declaration.
     fn recover_to_item(&mut self) {
+        if self.tokens[self.pos].kind == TokenKind::Eof {
+            return;
+        }
         self.pos += 1;
         loop {
             let at_line_start = self.tokens[self.pos - 1].kind == TokenKind::Newline;
@@ -385,7 +402,7 @@ impl Parser {
 
     /// Parses a function after its `fn` keyword.
     fn parse_fn(&mut self, is_pub: bool, is_server: bool, start: Span) -> FnDecl {
-        let name = self.expect_ident("a function name");
+        let name = self.expect_member("a function name");
         let generics = self.parse_generic_params();
         let params = self.parse_params(true);
         let ret = if self.eat(&TokenKind::Arrow) {
@@ -957,7 +974,7 @@ impl Parser {
             match self.peek() {
                 TokenKind::Dot => {
                     self.bump();
-                    let name = self.expect_ident("a field or method name");
+                    let name = self.expect_member("a field or method name");
                     expr = Expr {
                         span: expr.span.to(name.span),
                         kind: ExprKind::Field {

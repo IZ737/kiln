@@ -1,6 +1,7 @@
 //! The `kiln` command: `check`, `build`, `run`, `lsp`, `parse`, `explain` and
 //! `upgrade`.
 
+mod db;
 mod lsp;
 mod notice;
 mod npm;
@@ -123,10 +124,57 @@ enum Command {
         #[arg(long)]
         force: bool,
     },
+    /// Work with the database a program's models describe: its schema,
+    /// its migrations and the models of a database that already exists.
+    Db {
+        #[command(subcommand)]
+        action: DbCommand,
+        /// The program's folder. Defaults to the current directory.
+        #[arg(long, global = true, default_value = ".")]
+        path: PathBuf,
+        /// The database, such as `sqlite:./data/app.db`. Defaults to
+        /// `DATABASE_URL`.
+        #[arg(long, global = true)]
+        url: Option<String>,
+    },
     /// Record the latest release for the notice that a newer kiln is out.
     /// Other commands start it in the background once an hour.
     #[command(hide = true)]
     UpdateCheck,
+}
+
+#[derive(Subcommand)]
+enum DbCommand {
+    /// Show which migrations have been applied, and whether the database
+    /// still matches them.
+    Status,
+    /// Write a migration for what the models changed since the last one.
+    /// It is SQL to read, not to run: nothing is applied.
+    Diff {
+        /// What the migration does, such as `add_post_summary`.
+        #[arg(long)]
+        name: String,
+        /// Write a migration that drops or rewrites data.
+        #[arg(long)]
+        allow_destructive: bool,
+    },
+    /// Apply the migrations that have not run yet, in order.
+    Migrate {
+        /// Print what would run, and change nothing.
+        #[arg(long)]
+        dry_run: bool,
+    },
+    /// Check that the migrations are whole and readable.
+    Verify,
+    /// Write the models of a database that already exists.
+    Pull {
+        /// Where to write them. Defaults to `models.kiln` in the folder.
+        #[arg(long)]
+        out: Option<PathBuf>,
+        /// Only report what the database has that the models do not.
+        #[arg(long)]
+        check: bool,
+    },
 }
 
 fn main() -> ExitCode {
@@ -211,6 +259,22 @@ fn dispatch(command: Command) -> ExitCode {
             check,
             force,
         }),
+        Command::Db { action, path, url } => {
+            let action = match action {
+                DbCommand::Status => db::Action::Status,
+                DbCommand::Diff {
+                    name,
+                    allow_destructive,
+                } => db::Action::Diff {
+                    name,
+                    allow_destructive,
+                },
+                DbCommand::Migrate { dry_run } => db::Action::Migrate { dry_run },
+                DbCommand::Verify => db::Action::Verify,
+                DbCommand::Pull { out, check } => db::Action::Pull { out, check },
+            };
+            db::run(action, &path, url)
+        }
         Command::UpdateCheck => notice::update_check(),
     }
 }
@@ -580,6 +644,46 @@ fn check_app_sources_at(
     (out, info)
 }
 
+/// Checks a program and returns what the checker made of it, for the
+/// tools that read a program rather than build it, such as `kiln db`.
+/// Glazes are left out: they hold no models.
+fn check_program_of(path: &Path) -> Result<(kiln_check::Program, PathBuf), String> {
+    let project = project::discover(path).map_err(|err| {
+        let (file, diag) = project::error_diagnostic(&err, &path.join("kiln.toml"));
+        diag.render(&file)
+    })?;
+    let mut texts = Vec::new();
+    for file in &project.files {
+        let text = std::fs::read_to_string(file)
+            .map_err(|err| format!("cannot read {}: {err}", file.display()))?;
+        texts.push((file.clone(), text));
+    }
+    let bound = project::bind::bind_entry(&project.root, &project.entry, &texts);
+    let broken = "the program has errors: run `kiln check` and fix them first";
+    if bound.diagnostics.iter().any(|d| !d.is_empty()) {
+        return Err(broken.into());
+    }
+    let mut combined = String::new();
+    for ((path, _), (_, text)) in texts.iter().zip(&bound.texts) {
+        if is_glaze(path) {
+            continue;
+        }
+        combined.push_str(text);
+        if !combined.ends_with('\n') {
+            combined.push('\n');
+        }
+    }
+    let parsed = kiln_syntax::parse(&combined);
+    if !parsed.diagnostics.is_empty() {
+        return Err(broken.into());
+    }
+    let program = kiln_check::check_program(&parsed.module);
+    if !program.diagnostics.is_empty() {
+        return Err(broken.into());
+    }
+    Ok((program, project.root))
+}
+
 /// Where `kiln build` writes the executable by default: the program's
 /// folder name, in the current directory.
 fn parse_target(name: &str) -> Result<BuildTarget, String> {
@@ -695,12 +799,24 @@ fn build(
     }
     let mut combined = String::new();
     let mut offsets = Vec::new();
+    let mut kiln_files = kiln_files;
     for file in &kiln_files {
         offsets.push(combined.len() as u32);
         combined.push_str(&file.text);
         if !combined.ends_with('\n') {
             combined.push('\n');
         }
+    }
+
+    // The admin's pages are written from the models the program asks for
+    // with `admin.pages`, and are part of its own text, before the
+    // glazes. Errors in them point at a text of their own.
+    let admin = kiln_ir::admin::generate(&kiln_syntax::parse(&combined).module)
+        .map(|text| SourceFile::new("<admin pages>", text));
+    if let Some(file) = &admin {
+        offsets.push(combined.len() as u32);
+        combined.push_str(&file.text);
+        kiln_files.push(file);
     }
 
     // Glazes are compiled into Kiln functions, which follow the files'

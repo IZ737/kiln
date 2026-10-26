@@ -109,6 +109,25 @@ pub struct Checker {
     /// Whether to record what names refer to, for the language server.
     pub(crate) recording: bool,
     pub(crate) references: Vec<(Span, Ref)>,
+    /// The models the program uses, by their struct; None for a struct
+    /// that cannot be one, which was reported once.
+    pub(crate) models: HashMap<AdtId, Option<crate::orm::Model>>,
+    /// The model each `admin.pages<T>` call makes pages for, by the span
+    /// of the call, which is how lowering finds the generated pages.
+    pub(crate) admins: HashMap<Span, String>,
+    /// The models in the order they were first used, for the schema the
+    /// migration tools compare with the database.
+    pub(crate) model_order: Vec<AdtId>,
+    /// What `orm.model<T>(...)` constants say about models.
+    pub(crate) mappings: HashMap<AdtId, crate::orm::Mapping>,
+    /// The query each call of an `orm.Query` method has built, by the
+    /// span of the call.
+    pub(crate) queries: HashMap<Span, crate::orm::QueryPlan>,
+    /// The queries that run, by the span of the call that runs them.
+    pub(crate) query_runs: HashMap<Span, crate::query::Query>,
+    /// Calls of a query that was already reported, so that one mistake
+    /// is one error for the whole chain.
+    pub(crate) bad_queries: HashSet<Span>,
     /// Whether `COMPLETION_MARKER` marks where the editor wants completions,
     /// and what is wanted there once it is found.
     pub(crate) completing: bool,
@@ -142,11 +161,14 @@ fn infers_from_call(e: &Expr) -> bool {
 pub(crate) const BROWSER_MODULES: &[&str] = &["browser", "js"];
 
 /// Modules that need the server: they cannot be used in embers.
-const SERVER_ONLY_MODULES: &[&str] = &["sql", "auth", "fs", "os", "io"];
+const SERVER_ONLY_MODULES: &[&str] = &["sql", "orm", "auth", "admin", "fs", "os", "io"];
 
 const STD_MODULES: &[(&str, &str)] = &[
     ("web", include_str!("../std/web.kiln")),
     ("sql", include_str!("../std/sql.kiln")),
+    ("orm", include_str!("../std/orm.kiln")),
+    ("validate", include_str!("../std/validate.kiln")),
+    ("admin", include_str!("../std/admin.kiln")),
     ("auth", include_str!("../std/auth.kiln")),
     ("log", include_str!("../std/log.kiln")),
     ("json", include_str!("../std/json.kiln")),
@@ -197,6 +219,13 @@ impl Checker {
             std_adts: 0,
             recording: false,
             references: Vec::new(),
+            models: HashMap::new(),
+            admins: HashMap::new(),
+            model_order: Vec::new(),
+            mappings: HashMap::new(),
+            queries: HashMap::new(),
+            query_runs: HashMap::new(),
+            bad_queries: HashSet::new(),
             completing: false,
             completion: None,
         };
@@ -317,6 +346,7 @@ impl Checker {
     /// Constants, function bodies and field defaults.
     pub(crate) fn check_bodies(&mut self, module: &Module) {
         self.refer_declarations(module);
+        self.collect_mappings(module);
         self.check_consts(module);
         for item in &module.items {
             match item {
@@ -450,6 +480,17 @@ impl Checker {
         }
     }
 
+    /// Whether `ty` is `web.Request`, the type a `server fn` takes to be
+    /// given the request it was called by.
+    pub(crate) fn is_request(&self, ty: &Ty) -> bool {
+        let want = self
+            .modules
+            .iter()
+            .find(|m| m.name == "web")
+            .and_then(|m| m.types.get("Request").copied());
+        matches!((ty, want), (Ty::Adt(id, _), Some(w)) if *id == w)
+    }
+
     pub(crate) fn list_of(&self, elem: Ty) -> Ty {
         Ty::Adt(self.global_types["List"], vec![elem])
     }
@@ -525,11 +566,31 @@ impl Checker {
             }
             (Ty::Opt(x), Ty::Opt(y)) => self.unify(x, y),
             (Ty::Fn(f), Ty::Fn(g)) => {
-                f.params.len() == g.params.len()
-                    && f.params
-                        .iter()
-                        .zip(&g.params)
-                        .all(|(x, y)| self.unify(x, y))
+                // `Rest` stands for the parameters that are left, which is
+                // how a route whose path is not written out accepts a
+                // handler with as many parameters as the path has.
+                let rest = |t: &[Ty]| t.iter().position(|p| *p == Ty::Rest);
+                let (f_rest, g_rest) = (rest(&f.params), rest(&g.params));
+                let fixed = match (f_rest, g_rest) {
+                    (None, None) => {
+                        if f.params.len() != g.params.len() {
+                            return false;
+                        }
+                        f.params.len()
+                    }
+                    _ => {
+                        let n = f_rest.unwrap_or(f.params.len());
+                        let m = g_rest.unwrap_or(g.params.len());
+                        if n.min(m) > f.params.len().min(g.params.len()) {
+                            return false;
+                        }
+                        n.min(m)
+                    }
+                };
+                f.params[..fixed]
+                    .iter()
+                    .zip(&g.params[..fixed])
+                    .all(|(x, y)| self.unify(x, y))
                     && self.unify(&f.ret, &g.ret)
             }
             (Ty::Record(xs), Ty::Record(ys)) => {
@@ -789,7 +850,10 @@ impl Checker {
             if let Some(default) = &p.default {
                 self.check(default, &ty);
             }
-            if f.is_server {
+            // A `server fn` whose first parameter is a `web.Request` is
+            // given the request it was called by: the browser does not
+            // send it, so it does not have to cross.
+            if f.is_server && !(i == 0 && self.is_request(&ty)) {
                 let what = format!("the parameter `{}` of a `server fn`", p.name.name);
                 self.must_cross(&ty, &what, p.span);
             }
@@ -877,6 +941,20 @@ impl Checker {
                         ty
                     }
                 };
+                let resolved = self.resolve(&ty);
+                if self.is_query_ty(&resolved) {
+                    self.error(
+                        Diagnostic::error(
+                            codes::BAD_QUERY,
+                            format!(
+                                "`{}` would hold a query that has not run, and the compiler builds a query's SQL where it runs",
+                                name.name
+                            ),
+                            value.span,
+                        )
+                        .with_help("end the chain with `.all()`, `.first()`, `.count()` or `.delete()`"),
+                    );
+                }
                 let keyword = Span::new(span.start as usize, span.start as usize + 3);
                 self.bind(&name.name, name.span, ty, *mutable, Some(keyword));
             }
@@ -1972,6 +2050,12 @@ impl Checker {
                 if let Some(sig) = self.modules[m].fns.get(&name.name).cloned() {
                     let (params, ret, throws) = self.instantiate(&sig, &[], &explicit, e.span);
                     self.check_args(&params, args, e.span, &fn_name, None);
+                    if self.modules[m].name == "orm" {
+                        self.orm_call(&name.name, args, &explicit, e.span);
+                    }
+                    if self.modules[m].name == "admin" && name.name == "pages" {
+                        self.admin_pages(&explicit, e.span);
+                    }
                     return (ret, throws);
                 }
                 if let Some(id) = self.modules[m].types.get(&name.name).copied() {
@@ -2004,9 +2088,16 @@ impl Checker {
             if self.local(name).is_none() {
                 if let Some(sig) = self.global_fns.get(name).cloned() {
                     self.refer(callee.span, Ref::Fn(name.clone()));
-                    let (params, ret, mut throws) = self.instantiate(&sig, &[], &explicit, e.span);
+                    let (mut params, ret, mut throws) =
+                        self.instantiate(&sig, &[], &explicit, e.span);
+                    // A handler's call to a `server fn` goes over the
+                    // network, and the server gives it the request.
+                    let rpc = self.in_handler && self.server_fns.contains(name);
+                    if rpc && params.first().is_some_and(|p| self.is_request(&p.ty)) {
+                        params.remove(0);
+                    }
                     self.check_args(&params, args, e.span, &fn_name, None);
-                    if self.in_handler && throws.is_none() && self.server_fns.contains(name) {
+                    if rpc && throws.is_none() {
                         throws = Some(self.error_ty());
                     }
                     return (ret, throws);
@@ -2047,6 +2138,9 @@ impl Checker {
                         self.instantiate(sig, &recv_args, &explicit, e.span);
                     let route = self.route_handler_type(id, &name.name, args);
                     self.check_args(&params, args, e.span, &fn_name, route);
+                    if self.is_query_ty(&base_ty) {
+                        self.orm_step(base, &name.name, args, e.span);
+                    }
                     return (ret, throws);
                 }
             }

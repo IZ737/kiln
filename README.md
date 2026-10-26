@@ -42,7 +42,9 @@ fn main() ! {
 > packages through typed bindings, with no JavaScript to write. The
 > [VS Code extension](editors/vscode) highlights Kiln, Glaze and Ember, and
 > `kiln lsp` gives completion, hover, go to definition and symbols in any
-> editor. `sql` and `auth` arrive in phase 5. See the [roadmap](#roadmap).
+> editor. Programs keep their data in SQLite, PostgreSQL or MySQL through
+> `sql` and typed `orm` queries, with reviewed `kiln db` migrations, forms,
+> `auth` sessions and generated admin pages. See the [roadmap](#roadmap).
 
 ## Vision
 
@@ -144,7 +146,7 @@ the folder from your user PATH).
 To install a particular release, or somewhere else:
 
 ```sh
-curl --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/IZ737/kiln/main/install.sh | sh -s -- --version v0.9.1 --dir "$HOME/.kiln"
+curl --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/IZ737/kiln/main/install.sh | sh -s -- --version v0.10.0 --dir "$HOME/.kiln"
 ```
 
 ```powershell
@@ -246,7 +248,7 @@ For errors and quick fixes in your editor, see [docs/guides/editors.md](docs/gui
 | ✅ 4 | **Embers/WasmGC**: selective hydration, reactive state/events, `server fn` with generated safe RPC and browser/JS interoperability; [implementation plan](docs/plans/phase-4.md) | A database-free Kiln website uses real WasmGC islands and typed RPC, without handwritten JavaScript or SQL/auth prerequisites |
 | ✅ 4.1 | **Explicit Ember files**: make `.glaze` server-only and `.ember` the sole source for browser-capable components; enforce compile-time boundaries, migrate examples and update editor/LSP; [implementation plan](docs/plans/phase-4.1.md) | `.ember` islands SSR/hydrate with Phase 4 behavior, plain Glazes never silently become Embers, and compiler/IDE/browser tests pass |
 | ✅ 4.2 | **Multi-folder projects**: local modules, `pub` exports, nested imports, optional basic `kiln.toml`, module-aware Glaze/Ember/assets and cross-folder LSP; [implementation plan](docs/plans/phase-4.2.md) | A manifest-free multi-folder app builds and runs with safe local modules, SSR/Ember routes and editor navigation on Linux/Windows |
-| 5 | **SQL/ORM and application framework**: SQLite then PostgreSQL/MySQL, typed queries, schema import (`kiln db pull`), reviewed migrations, forms/validation, sessions/auth and generated admin; [implementation plan](docs/plans/phase-5.md) | A native multi-folder database-backed app works with protected SSR/admin and an authenticated Ember calling ORM-backed typed RPC |
+| ✅ 5 | **SQL/ORM and application framework**: SQLite then PostgreSQL/MySQL, typed queries, schema import (`kiln db pull`), reviewed migrations, forms/validation, sessions/auth and generated admin; [implementation plan](docs/plans/phase-5.md) | A native multi-folder database-backed app works with protected SSR/admin and an authenticated Ember calling ORM-backed typed RPC |
 | 6 | **Developer ecosystem**: Wares/registry/global cache, extended `kiln.toml` dependency fields and `kiln.lock`, official UI Ware, integrated `kiln test` (including Embers), formatter/hot reload, advanced LSP, MCP; [implementation plan](docs/plans/phase-6.md) | A multi-folder app consumes a versioned Ware, rebuilds offline, passes real-browser tests and works in the editor/agent toolchain |
 | 7 | Production hardening, static site generation (`kiln fire --static`), deployment, performance (precise GC, LLVM release builds), stability | Kiln 1.0: stable and ready for personal production projects |
 | 8+ | Installable PWAs with local-first data that syncs with the server, advanced optimization, interoperability improvements, desktop apps, additional targets, request arenas, self-hosting | Independent milestones after 1.0 |

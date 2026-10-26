@@ -1808,8 +1808,11 @@ impl Fx<'_, '_, '_> {
                 self.builtin_method(r, &recv.ty, name, &vals, args, e.span)
             }
             ExprKind::Lib { module, name, args } => {
+                if let Some(rf) = kiln_ir::rt::rt_fn(module, name) {
+                    return self.rt_call(rf, args, &e.ty);
+                }
                 let vals: Vec<Value> = args.iter().map(|a| self.expr(a)).collect();
-                let tys: Vec<Ty> = args.iter().map(|a| a.uncoerced().ty.clone()).collect();
+                let tys: Vec<Ty> = args.iter().map(|a| a.described().clone()).collect();
                 self.lib_call(module, name, &vals, &tys, &e.ty, e.span)
             }
             ExprKind::Print(v) => {
@@ -2484,6 +2487,40 @@ impl Fx<'_, '_, '_> {
             _ => return self.unsupported(span, format!("`{module}.{name}`")),
         };
         if fallible {
+            self.check_lib_error();
+        }
+        v
+    }
+
+    /// A call of a function of the Rust runtime's table (see
+    /// [`kiln_ir::rt`]): every argument in a slot, after the type
+    /// description it asks for.
+    fn rt_call(&mut self, rf: &'static kiln_ir::rt::RtFn, args: &[Expr], ty: &Ty) -> Value {
+        let mut vals = Vec::new();
+        let described = match rf.desc {
+            kiln_ir::rt::DescOf::None => None,
+            kiln_ir::rt::DescOf::Ret => Some(ty.clone()),
+            kiln_ir::rt::DescOf::Arg(i) => args.get(i).map(|a| a.described().clone()),
+        };
+        if let Some(t) = described {
+            let d = self.g.desc(&t);
+            vals.push(self.data_addr(d));
+        }
+        for a in args {
+            let v = self.expr(a);
+            vals.push(self.kv_of(v, &a.ty));
+        }
+        let raw = self.call_rt(rf.symbol, &vals);
+        if rf.fallible {
+            self.check_lib_error();
+        }
+        self.unkv(raw, ty)
+    }
+
+    /// After a library call that can fail: fails with a standard `Error`
+    /// when it stored a message in `k_lib_error`.
+    fn check_lib_error(&mut self) {
+        {
             let d = self.g.data_import("k_lib_error");
             let addr = self.data_addr(d);
             let message = self.load(types::I64, addr, 0);
@@ -2499,7 +2536,6 @@ impl Fx<'_, '_, '_> {
             self.jump(ok, &[]);
             self.b.switch_to_block(ok);
         }
-        v
     }
 }
 

@@ -304,3 +304,22 @@ fn record_types() {
     assert_eq!(names, ["min", "max"]);
     assert_eq!(f.body.stmts.len(), 1);
 }
+
+#[test]
+fn where_names_a_method_after_a_dot() {
+    let e = expr("orm.find<Post>(db).where(.published).where(fn(p) { p.id > 2 })");
+    let ExprKind::Call { callee, .. } = &e.kind else {
+        panic!("expected a call, got {:?}", e.kind);
+    };
+    let ExprKind::Field { name, .. } = &callee.kind else {
+        panic!("expected a method, got {:?}", callee.kind);
+    };
+    assert_eq!(name.name, "where");
+    let src = "impl Query {\n    fn where(self, test: fn(Post) -> Bool) -> Query { self }\n}\n";
+    assert!(parse(src).diagnostics.is_empty());
+    // It is still the keyword of a `for` loop.
+    assert!(error_codes(
+        "fn main() {\n    for x in xs where x > 1 {\n        print(x)\n    }\n}\n"
+    )
+    .is_empty());
+}

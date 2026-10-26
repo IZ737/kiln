@@ -302,3 +302,47 @@ fn browser_reachability_keeps_server_capabilities_out_across_modules() {
     assert!(error.contains("secrets/api.kiln"), "{error}");
     assert!(!error.contains("__kiln_module_"), "{error}");
 }
+
+/// A glaze has no imports of its own: it sees the folder modules that its
+/// folder's `.kiln` files import, and only those.
+#[test]
+fn glazes_see_the_modules_their_folder_imports() {
+    let app = App::new(&[
+        (
+            "main.kiln",
+            "import web, pages\nfn main() { pages.routes(web.app()) }\n",
+        ),
+        ("models/post.kiln", "pub struct Post { id: Int\n title: String }\npub fn shout(p: Post) -> String { return p.title.upper() }\n"),
+        (
+            "pages/routes.kiln",
+            "import web, models\npub fn routes(app: web.App) {\n    app.get(\"/\", fn(req) { return web.render(\"index.glaze\", { post: models.Post(id: 1, title: \"hi\") }) })\n}\n",
+        ),
+        (
+            "pages/index.glaze",
+            "{% props post: models.Post %}\n<h1>{models.shout(post)}</h1>\n",
+        ),
+    ]);
+    app.succeeds();
+    app.write(
+        "pages/routes.kiln",
+        "import web\npub fn routes(app: web.App) {\n    app.get(\"/\", fn(req) { return web.render(\"index.glaze\", {}) })\n}\n",
+    );
+    app.fails("models.Post");
+}
+
+/// `kiln check examples` checks every example, including the folder
+/// projects that `kiln_check`'s own test of the examples leaves out.
+#[test]
+fn the_examples_check() {
+    let out = Command::new(env!("CARGO_BIN_EXE_kiln"))
+        .arg("check")
+        .arg(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../examples"))
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "{}\n{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+}

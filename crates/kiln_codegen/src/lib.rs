@@ -76,7 +76,13 @@ pub fn compile_c(c_source: &str, out: &Path) -> Result<(), String> {
     }
     let cc = std::env::var("CC").unwrap_or_else(|_| "cc".into());
     let result = Command::new(&cc)
-        .args(["-std=gnu11", "-O2", "-w"])
+        // Warnings are not shown unless the build fails. These two are
+        // errors from GCC 14 on, so an older compiler reports them too.
+        .args(["-std=gnu11", "-O2"])
+        .args([
+            "-Werror=int-conversion",
+            "-Werror=incompatible-pointer-types",
+        ])
         .arg(&c_path)
         .arg("-o")
         .arg(out)

@@ -1,0 +1,32 @@
+// Journal: people sign up, write posts and comment on each other's. The
+// program is split into folders: `shared` holds the models, the rules
+// and the database, `accounts` signing up and in, and `posts` the pages
+// and the ember that adds comments. The admin's pages are generated from
+// the models.
+//
+//     kiln db migrate --url sqlite:journal.db examples/journal
+//     JOURNAL_ADMIN=you@example.com kiln run examples/journal
+import web, admin, shared, posts, accounts
+
+fn main() ! {
+    let db = try shared.database()
+    let sessions = try shared.sessions(db)
+    let app = web.app()
+    accounts.routes(app, db, sessions)
+    posts.routes(app, db, sessions)
+
+    // Only administrators see these pages; everyone else gets 403.
+    let site = admin.site(
+        db,
+        sessions,
+        fn(who, action, model) { who.roles.contains("admin") },
+        title: "Journal admin",
+        home: "/",
+    )
+    admin.pages<shared.User>(app, "/admin/users", site)
+    admin.pages<shared.Post>(app, "/admin/posts", site)
+    admin.pages<shared.Comment>(app, "/admin/comments", site)
+
+    let port = if env("PORT") == "" { "8080" } else { env("PORT") }
+    try app.listen("127.0.0.1:${port}")
+}

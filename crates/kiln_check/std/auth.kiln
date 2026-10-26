@@ -1,12 +1,76 @@
-// Signed-in users and passwords.
+// Signed-in people: passwords, sessions kept in the database, and the
+// identity of a request.
+//
+// A password is stored as an Argon2id hash, never in a form it can be read
+// back from. A session is a long random value the browser keeps in a
+// cookie, and the database holds only its digest, so a copy of the table
+// is not a set of usable sessions. Signing in starts a new session and
+// leaves any old one behind. Every session has a token of its own for
+// forms: a page on another site cannot post to this one with the
+// visitor's cookie.
+//
+// Identity is a request's, not the program's: `sessions.current(req)`,
+// never an ambient signed-in user, because a server answers many requests
+// at the same time.
 
-struct User {
-    id: Int
-    name: String
-    email: String
+// Who a request is from.
+struct Identity {
+    // What `sign_in` was given, usually a user's key as text.
+    subject: String
+    // What this session may do, for the program's own rules to read.
+    roles: List<String>
+    // When the session started.
+    started: time.Instant
 }
 
-fn require() -> User ! {}
-fn current() -> User? {}
+// Sessions kept in a database.
+struct Sessions {}
+
+// Sessions in `db`, in the runtime's own table `kiln_sessions`, which this
+// makes when it is not there yet and never changes when it is. `idle` is
+// how long a session may sit unused and `lifetime` how long it may last at
+// all (720h is 30 days); `0s` is no limit. Keep `secure` on, so the cookie
+// is only ever sent over HTTPS; a program served over plain HTTP in
+// development turns it off.
+fn sessions(
+    db: sql.Db,
+    cookie: String = "kiln_session",
+    idle: Duration = 12h,
+    lifetime: Duration = 720h,
+    secure: Bool = true,
+) -> Sessions ! {}
+
+impl Sessions {
+    // Signs `subject` in: a session of its own, and the cookie for it on
+    // `res`, which it returns. Sign in only after a password, a provider
+    // or a token has been checked.
+    fn sign_in(self, res: web.Response, subject: String, roles: List<String> = []) -> web.Response ! {}
+    // Ends this request's session, and clears its cookie on `res`.
+    fn sign_out(self, req: web.Request, res: web.Response) -> web.Response ! {}
+    // Ends every session of a subject, after a password change. The
+    // number of sessions it ended.
+    fn sign_out_all(self, subject: String) -> Int ! {}
+    // Who the request is from, or `none`.
+    fn current(self, req: web.Request) -> Identity? ! {}
+    // Who the request is from, or an error the server answers 401 with.
+    fn require(self, req: web.Request) -> Identity ! {}
+    // The token to put in a form on a page this request asked for, in a
+    // hidden field, so that the form can only be posted from this site.
+    // "" when the request has no session.
+    fn csrf(self, req: web.Request) -> String ! {}
+    // Lets the request through only when it sent this session's token,
+    // and otherwise fails with an error the server answers 403 with.
+    // Check it in every handler that changes something.
+    fn check(self, req: web.Request, token: String) ! {}
+    // Deletes the sessions that are over. A program with many visitors
+    // calls this now and then; nothing else needs it.
+    fn sweep(self) -> Int ! {}
+}
+
+// The hash to store for a password.
 fn hash_password(password: String) -> String ! {}
+// Whether the password is the one the hash was made from. A hash this
+// cannot read is not a match.
 fn verify_password(password: String, hash: String) -> Bool {}
+// A value no one can guess, for a link in an email or an API key.
+fn token(bytes: Int = 32) -> String {}

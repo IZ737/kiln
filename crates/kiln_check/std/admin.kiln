@@ -1,0 +1,42 @@
+// A generated admin: the pages that list, show, create, change and delete
+// the rows of a model.
+//
+// `admin.pages<Post>(app, "/admin/posts", site)` adds them under that
+// path. The compiler writes them from the model's fields: a text field is
+// a text input, a number a number input, a `Bool` a checkbox, an optional
+// a field that may be left empty, and anything else is shown but not
+// changed. Relations are not forms; a page shows the keys they are loaded
+// through.
+//
+// Nothing is allowed by default. Every page asks `authorize` first, after
+// `sessions.require`, and every form carries the session's token, which
+// the handler checks before it changes anything.
+
+// What the pages work on: the database, the sessions they ask for an
+// identity, and the program's own rule about who may do what.
+struct Site {
+    db: sql.Db
+    sessions: auth.Sessions
+    authorize: fn(auth.Identity, String, String) -> Bool
+    title: String
+    // Where the heading's link goes.
+    home: String
+    // How many rows a list page shows at once.
+    per_page: Int
+}
+
+// `authorize` says whether an identity may do `action` to the model named
+// `model`. The actions are "list", "view", "create", "update" and
+// "delete". Write the rule the program means: a function that returns
+// `true` gives everyone who can sign in the whole database.
+fn site(
+    db: sql.Db,
+    sessions: auth.Sessions,
+    authorize: fn(auth.Identity, String, String) -> Bool,
+    title: String = "Admin",
+    home: String = "/admin",
+    per_page: Int = 25,
+) -> Site {}
+
+// The pages for the model `T`, under `prefix`.
+fn pages<T>(app: web.App, prefix: String, site: Site) {}

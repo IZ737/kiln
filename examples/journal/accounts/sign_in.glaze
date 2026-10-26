@@ -1,0 +1,12 @@
+{% props email: String, problem: String %}
+{% layout "shared/layout.glaze" title: "Sign in" %}
+<h1>Sign in</h1>
+{% if problem != "" %}
+<p class="problem">{problem}</p>
+{% end %}
+<form method="post" action="/sign-in">
+  <label>Email <input type="email" name="email" value={email} required></label>
+  <label>Password <input type="password" name="password" required></label>
+  <button type="submit">Sign in</button>
+</form>
+<p>New here? <a href="/sign-up">Sign up</a></p>

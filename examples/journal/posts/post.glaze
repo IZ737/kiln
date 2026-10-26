@@ -1,0 +1,21 @@
+{% props post: shared.Post, author: String, lines: List<String>, editable: Bool, signed_in: Bool, csrf: String %}
+{% layout "shared/layout.glaze" title: post.title %}
+<article>
+  <h1>{post.title}</h1>
+  <p class="meta">By {author}{% if not post.published %} (a draft){% end %}</p>
+  {% for paragraph in post.body.lines() where paragraph.trim() != "" %}
+  <p>{paragraph}</p>
+  {% end %}
+  {% if editable %}
+  <p><a href="/posts/{post.id}/edit">Edit</a></p>
+  {% end %}
+</article>
+<h2>Comments</h2>
+{% if signed_in %}
+<CommentBox post={post.id} lines={lines} csrf={csrf} />
+{% else %}
+<ul class="comments">
+  {% for line in lines %}<li>{line}</li>{% end %}
+</ul>
+<p><a href="/sign-in">Sign in</a> to comment.</p>
+{% end %}

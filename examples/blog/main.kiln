@@ -1,7 +1,7 @@
 // A small blog: server-rendered pages, a JSON API and a server function.
 // This is the sample app from the design; phase 0's gate is that it parses
 // and type-checks.
-import web, sql, json, auth
+import web, sql, orm, json, auth
 
 struct Post {
     id: Int
@@ -41,9 +41,12 @@ fn main() ! {
     try app.listen(":8080")
 }
 
-server fn like_post(id: Int) -> Int ! {
-    let user = try auth.require()
+// The ember calls `like_post(id)`; the server gives it the request, so
+// the function knows who is asking.
+server fn like_post(req: web.Request, id: Int) -> Int ! {
     let db = try sql.open(env("DATABASE_URL"))
-    try db.exec("insert into likes (post_id, user_id) values ($1, $2)", id, user.id)
+    let sessions = try auth.sessions(db)
+    let who = try sessions.require(req)
+    try db.exec("insert into likes (post_id, user_id) values ($1, $2)", id, who.subject)
     return try db.scalar<Int>("select count(*) from likes where post_id = $1", id)
 }

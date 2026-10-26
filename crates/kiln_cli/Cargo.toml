@@ -29,6 +29,12 @@ ureq = { version = "3", default-features = false, features = ["rustls", "gzip"] 
 rustls-native-certs = "0.8"
 webpki-root-certs = "1"
 sha2 = "0.11"
+# `kiln db`: reading and migrating a SQLite database, with SQLite
+# compiled in, as the runtime has it.
+rusqlite = { version = "0.41", features = ["bundled"] }
+# `kiln db` on PostgreSQL and MySQL.
+kiln_dbwire = { path = "../kiln_dbwire" }
+serde = { workspace = true }
 base64 = "0.22"
 flate2 = "1"
 tar = { version = "0.4", default-features = false }

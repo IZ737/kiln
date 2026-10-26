@@ -1,0 +1,103 @@
+{
+  "tables": {
+    "comments": {
+      "columns": [
+        {
+          "name": "id",
+          "ty": "integer",
+          "not_null": false,
+          "key": true
+        },
+        {
+          "name": "post_id",
+          "ty": "integer",
+          "not_null": true,
+          "key": false,
+          "references": "posts(id)"
+        },
+        {
+          "name": "user_id",
+          "ty": "integer",
+          "not_null": true,
+          "key": false,
+          "references": "users(id)"
+        },
+        {
+          "name": "body",
+          "ty": "text",
+          "not_null": true,
+          "key": false
+        }
+      ]
+    },
+    "posts": {
+      "columns": [
+        {
+          "name": "id",
+          "ty": "integer",
+          "not_null": false,
+          "key": true
+        },
+        {
+          "name": "user_id",
+          "ty": "integer",
+          "not_null": true,
+          "key": false,
+          "references": "users(id)"
+        },
+        {
+          "name": "title",
+          "ty": "text",
+          "not_null": true,
+          "key": false
+        },
+        {
+          "name": "body",
+          "ty": "text",
+          "not_null": true,
+          "key": false
+        },
+        {
+          "name": "published",
+          "ty": "boolean",
+          "not_null": true,
+          "key": false
+        }
+      ]
+    },
+    "users": {
+      "columns": [
+        {
+          "name": "id",
+          "ty": "integer",
+          "not_null": false,
+          "key": true
+        },
+        {
+          "name": "email",
+          "ty": "text",
+          "not_null": true,
+          "key": false
+        },
+        {
+          "name": "name",
+          "ty": "text",
+          "not_null": true,
+          "key": false
+        },
+        {
+          "name": "password",
+          "ty": "text",
+          "not_null": true,
+          "key": false
+        },
+        {
+          "name": "role",
+          "ty": "text",
+          "not_null": true,
+          "key": false
+        }
+      ]
+    }
+  }
+}

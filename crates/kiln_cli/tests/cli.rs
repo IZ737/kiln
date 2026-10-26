@@ -170,14 +170,14 @@ fn run_reports_features_the_compiler_lacks() {
     let file = dir.join("app.kiln");
     std::fs::write(
         &file,
-        "import sql\n\nfn main() ! {\n    let db = try sql.open(\"app.db\")\n}\n",
+        "fn main() {\n    let big = 99999999999999999999\n    print(big)\n}\n",
     )
     .unwrap();
     let out = kiln().arg("run").arg(&file).output().unwrap();
     assert_eq!(out.status.code(), Some(1));
     let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(stderr.contains("E0401"), "{stderr}");
-    assert!(stderr.contains("`sql.open`"), "{stderr}");
+    assert!(stderr.contains("an integer this large"), "{stderr}");
 }
 
 #[test]
@@ -225,21 +225,17 @@ fn run_compiles_every_file_in_the_folder() {
 #[test]
 fn compile_errors_point_into_the_right_file() {
     let dir = scratch("multi-error");
-    std::fs::write(
-        dir.join("a.kiln"),
-        "fn main() ! {\n    let db = try connect()\n}\n",
-    )
-    .unwrap();
+    std::fs::write(dir.join("a.kiln"), "fn main() {\n    print(count())\n}\n").unwrap();
     std::fs::write(
         dir.join("b.kiln"),
-        "import sql\n\nfn connect() -> sql.Db ! {\n    sql.open(\"app.db\") catch err {\n        throw err\n    }\n}\n",
+        "fn count() -> Int {\n    let big = 99999999999999999999\n    big\n}\n",
     )
     .unwrap();
     let out = kiln().arg("run").arg(dir.join("a.kiln")).output().unwrap();
     assert_eq!(out.status.code(), Some(1));
     let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(stderr.contains("E0401"), "{stderr}");
-    assert!(stderr.contains("b.kiln:4:5"), "{stderr}");
+    assert!(stderr.contains("b.kiln:2:15"), "{stderr}");
 }
 
 #[cfg(unix)]

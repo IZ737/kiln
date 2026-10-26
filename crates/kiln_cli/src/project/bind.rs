@@ -159,6 +159,27 @@ pub fn bind_entry(root: &Path, entry: &Path, texts: &[(PathBuf, String)]) -> Bou
         maps: Vec::new(),
         diagnostics: Vec::new(),
     };
+    // A glaze has no imports of its own: it sees the folder modules its
+    // folder's `.kiln` files import, so a page can take `shared.Post`.
+    let mut folder_imports: BTreeMap<String, BTreeMap<String, String>> = BTreeMap::new();
+    for ((path, _), module) in texts.iter().zip(&parsed) {
+        let Some(module) = module else { continue };
+        let seen = folder_imports.entry(owner(root, path)).or_default();
+        for item in &module.items {
+            if let Item::Import(i) = item {
+                for path in &i.paths {
+                    let full = path
+                        .iter()
+                        .map(|p| p.name.as_str())
+                        .collect::<Vec<_>>()
+                        .join(".");
+                    if symbols.contains_key(&full) {
+                        seen.insert(path.last().unwrap().name.clone(), full);
+                    }
+                }
+            }
+        }
+    }
     for ((path, text), module) in texts.iter().zip(&parsed) {
         let own = owner(root, path);
         let mut resolver = Resolver {
@@ -223,6 +244,7 @@ pub fn bind_entry(root: &Path, entry: &Path, texts: &[(PathBuf, String)]) -> Bou
             }
         } else {
             let glaze = kiln_syntax::glaze::parse_component(text, &path.to_string_lossy()).glaze;
+            resolver.imports = folder_imports.get(&own).cloned().unwrap_or_default();
             resolver.glaze(&glaze);
         }
         let rewritten = resolver.map.apply(text);

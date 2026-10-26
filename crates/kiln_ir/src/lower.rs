@@ -111,6 +111,9 @@ struct Lowerer<'a> {
     pending: Vec<PendingCopy>,
     /// Standard library modules parsed for their default arguments.
     std_asts: HashMap<String, ast::Module>,
+    /// Functions the lowering makes itself, such as the one each type of
+    /// transaction runs through, by what they are for.
+    helpers: HashMap<String, FuncId>,
 }
 
 impl<'a> Lowerer<'a> {
@@ -142,6 +145,7 @@ impl<'a> Lowerer<'a> {
             main: 0,
             instances: HashMap::new(),
             std_asts: HashMap::new(),
+            helpers: HashMap::new(),
             copies: HashMap::new(),
             pending: Vec::new(),
         }
@@ -1320,6 +1324,11 @@ impl<'a> Lowerer<'a> {
         };
         let rt = self.ty(e);
         let span = e.span;
+        // A typed `orm` query: the checker worked out its SQL, so the
+        // chain that built it is not lowered at all.
+        if let Some(query) = self.p.queries.get(&span).cloned() {
+            return self.orm_run(&query, &rt, span);
+        }
         match &callee.kind {
             E::Field { expr: base, name } => {
                 if let E::Ident(m) = &base.kind {
@@ -1570,6 +1579,22 @@ impl<'a> Lowerer<'a> {
             return self.unsupported(span, what);
         }
         let decl = self.structs.get(&id).copied();
+        // A struct of the standard library is declared in a file the
+        // lowering never sees, so a field left out of one has no default
+        // to fall back on here.
+        if decl.is_none() {
+            let left_out = fields.iter().enumerate().find(|(i, f)| {
+                f.has_default
+                    && !args.iter().enumerate().any(|(k, a)| match &a.name {
+                        Some(n) => n.name == f.name,
+                        None => k == *i,
+                    })
+            });
+            if let Some((_, f)) = left_out {
+                let what = format!("a `{}` without `{}`", self.p.adts[id].name, f.name);
+                return self.unsupported(span, what);
+            }
+        }
         let defaults: Vec<Option<&ast::Expr>> = fields
             .iter()
             .map(|f| {
@@ -1715,6 +1740,14 @@ impl<'a> Lowerer<'a> {
         rt: &Ty,
         span: Span,
     ) -> (Expr, Option<Ty>) {
+        if type_name == "Db" {
+            if name == "transaction" {
+                return self.sql_transaction(recv, sig, args, rt, span);
+            }
+            if let Some(k) = sig.params.iter().position(|p| p.ty == Ty::Rest) {
+                return self.sql_call(recv, sig, name, k, args, rt, span);
+            }
+        }
         let (prelude, recv, mut vals) = self.arrange(&sig.params, &[], Some(recv), args);
         let module = LIB_TYPES
             .iter()
@@ -1740,6 +1773,467 @@ impl<'a> Lowerer<'a> {
         );
         let call = coerce_value(call, rt);
         (with_prelude(prelude, call), sig.throws.clone())
+    }
+
+    /// A query method of `sql.Db`, whose arguments after the first `k`
+    /// fill the query's placeholders: they are passed as one
+    /// `List<sql.Value>`.
+    #[allow(clippy::too_many_arguments)]
+    fn sql_call(
+        &mut self,
+        recv: Expr,
+        sig: &FnSig,
+        name: &str,
+        k: usize,
+        args: &[ast::Arg],
+        rt: &Ty,
+        span: Span,
+    ) -> (Expr, Option<Ty>) {
+        let split = k.min(args.len());
+        let (prelude, recv, vals) = self.arrange(&sig.params[..k], &[], Some(recv), &args[..split]);
+        let list = self.sql_params(&args[split..], span);
+        let mut all = vec![recv.expect("the receiver is kept")];
+        all.extend(vals);
+        all.push(list);
+        let call = mk(
+            ExprKind::Lib {
+                module: "sql".into(),
+                name: format!("Db.{name}"),
+                args: all,
+            },
+            lib_ret(sig, self.p.instantiations.get(&span)),
+            span,
+        );
+        let call = coerce_value(call, rt);
+        (with_prelude(prelude, call), sig.throws.clone())
+    }
+
+    /// The type `module.name` of the standard library.
+    fn std_type(&self, module: &str, name: &str) -> Ty {
+        let id = self.p.modules[module].types[name];
+        Ty::Adt(id, Vec::new())
+    }
+
+    /// Query arguments as a `List<sql.Value>`, each turned into a
+    /// `sql.Value` by the runtime from its type.
+    fn sql_params(&mut self, args: &[ast::Arg], span: Span) -> Expr {
+        let value_ty = self.std_type("sql", "Value");
+        let mut items = Vec::new();
+        for a in args {
+            let v = self.expr(&a.value);
+            if v.ty == value_ty {
+                items.push(v);
+                continue;
+            }
+            let vspan = v.span;
+            items.push(mk(
+                ExprKind::Lib {
+                    module: "sql".into(),
+                    name: "__value".into(),
+                    args: vec![coerce(v, &Ty::Any)],
+                },
+                value_ty.clone(),
+                vspan,
+            ));
+        }
+        let list = Ty::Adt(self.prims.list, vec![value_ty]);
+        mk(ExprKind::List(items), list, span)
+    }
+
+    /// `db.transaction(body)`: a call of `__sql_transaction`, made once for
+    /// each type `body` returns, which begins, runs `body` with the
+    /// transaction's handle, and commits, or rolls back and fails with
+    /// `body`'s error.
+    fn sql_transaction(
+        &mut self,
+        recv: Expr,
+        sig: &FnSig,
+        args: &[ast::Arg],
+        rt: &Ty,
+        span: Span,
+    ) -> (Expr, Option<Ty>) {
+        let Some(arg) = args.first() else {
+            return (self.unsupported(span, "this transaction"), None);
+        };
+        let body = self.expr(&arg.value);
+        let t = lib_ret(sig, self.p.instantiations.get(&span));
+        let helper = self.transaction_fn(&t, &recv.ty, &body.ty, span);
+        let err = Ty::Adt(self.prims.error, Vec::new());
+        let call = mk(
+            ExprKind::Call {
+                func: helper,
+                args: vec![recv, body],
+            },
+            t,
+            span,
+        );
+        (coerce_value(call, rt), Some(err))
+    }
+
+    fn transaction_fn(&mut self, t: &Ty, db_ty: &Ty, body_ty: &Ty, span: Span) -> FuncId {
+        let key = format!("__sql_transaction:{t:?}");
+        if let Some(&id) = self.helpers.get(&key) {
+            return id;
+        }
+        let id = self.reserve();
+        self.helpers.insert(key, id);
+        let err = Ty::Adt(self.prims.error, Vec::new());
+        self.enter(false, t.clone(), Some(err.clone()));
+        let db = self.new_local("db", db_ty.clone(), false);
+        let body = self.new_local("body", body_ty.clone(), false);
+        let tx = self.new_local("tx", db_ty.clone(), false);
+        let e = self.new_local("err", err.clone(), false);
+        let local = |l: LocalId, ty: &Ty| mk(ExprKind::Local(l), ty.clone(), span);
+        let lib = |name: &str, args: Vec<Expr>, ty: Ty| {
+            mk(
+                ExprKind::Lib {
+                    module: "sql".into(),
+                    name: name.into(),
+                    args,
+                },
+                ty,
+                span,
+            )
+        };
+        let mut stmts = Vec::new();
+        let begin = lib("Db.__begin", vec![local(db, db_ty)], db_ty.clone());
+        stmts.push(Stmt::Let(
+            tx,
+            mk(
+                ExprKind::Try {
+                    expr: Box::new(begin),
+                    wrap: false,
+                },
+                db_ty.clone(),
+                span,
+            ),
+        ));
+        let run = mk(
+            ExprKind::CallClosure {
+                callee: Box::new(local(body, body_ty)),
+                args: vec![local(tx, db_ty)],
+            },
+            t.clone(),
+            span,
+        );
+        let rollback = lib("Db.__rollback", vec![local(tx, db_ty)], Ty::Unit);
+        let rethrow = mk(
+            ExprKind::Throw {
+                value: Box::new(local(e, &err)),
+                wrap: false,
+            },
+            Ty::Never,
+            span,
+        );
+        let caught = mk(
+            ExprKind::Catch {
+                expr: Box::new(run),
+                err: err.clone(),
+                binding: Some(e),
+                handler: Block {
+                    stmts: vec![Stmt::Expr(rollback)],
+                    value: Some(Box::new(rethrow)),
+                },
+            },
+            t.clone(),
+            span,
+        );
+        let result = if matches!(t, Ty::Unit) {
+            stmts.push(Stmt::Expr(caught));
+            None
+        } else {
+            let r = self.new_local("result", t.clone(), false);
+            stmts.push(Stmt::Let(r, caught));
+            Some(r)
+        };
+        let commit = lib("Db.__commit", vec![local(tx, db_ty)], Ty::Unit);
+        stmts.push(Stmt::Expr(mk(
+            ExprKind::Try {
+                expr: Box::new(commit),
+                wrap: false,
+            },
+            Ty::Unit,
+            span,
+        )));
+        let block = Block {
+            stmts,
+            value: result.map(|r| Box::new(local(r, t))),
+        };
+        let name = format!("__sql_transaction_{}", self.helpers.len());
+        self.finish(id, name, FuncKind::Fn, vec![db, body], t.clone(), block);
+        id
+    }
+
+    // ----- typed queries -----
+
+    /// Runs a query the checker compiled ([`kiln_check::Query`]): the SQL
+    /// it worked out, the values it binds, and the relations to load.
+    fn orm_run(&mut self, q: &kiln_check::Query, rt: &Ty, span: Span) -> (Expr, Option<Ty>) {
+        let err = Ty::Adt(self.prims.error, Vec::new());
+        let model = Ty::Adt(q.plan.model.adt, Vec::new());
+        let list_ty = Ty::Adt(self.prims.list, vec![model.clone()]);
+        let int = Ty::Adt(self.prims.int, Vec::new());
+        let string = Ty::Adt(self.prims.string, Vec::new());
+        let db_ty = self.std_type("sql", "Db");
+        match q.terminal.as_str() {
+            "insert" | "update" | "delete" if q.value.is_some() => {
+                let (sql, fields) = match q.terminal.as_str() {
+                    "insert" => q.plan.insert_sql(),
+                    "update" => q.plan.update_sql(),
+                    _ => q.plan.delete_row_sql(),
+                };
+                let mut prelude = Vec::new();
+                let db = self.expr(&q.plan.db);
+                let db = self.hoist(db, &mut prelude);
+                let value = self.expr(q.value.as_ref().expect("a row"));
+                let value = self.hoist(value, &mut prelude);
+                let params = self.field_params(&value, &fields, span);
+                let call = if q.terminal == "insert" {
+                    // The key the database generates comes back in the row.
+                    let key_column = q.plan.model.key_column();
+                    let key = if key_column.generated {
+                        key_column.field as i64
+                    } else {
+                        -1
+                    };
+                    mk(
+                        ExprKind::Lib {
+                            module: "orm".into(),
+                            name: "__insert".into(),
+                            args: vec![
+                                db,
+                                coerce(value, &Ty::Any),
+                                mk(ExprKind::Str(sql), string, span),
+                                mk(ExprKind::Int(key), int, span),
+                                params,
+                            ],
+                        },
+                        model,
+                        span,
+                    )
+                } else {
+                    self.sql_lib(
+                        "Db.exec",
+                        vec![db, mk(ExprKind::Str(sql), string, span), params],
+                        int,
+                        span,
+                    )
+                };
+                let _ = db_ty;
+                (with_prelude(prelude, coerce_value(call, rt)), Some(err))
+            }
+            "sql" => {
+                let (sql, _) = q.plan.rows_sql();
+                (mk(ExprKind::Str(sql), string, span), None)
+            }
+            "count" | "delete" => {
+                let (sql, params) = q.sql();
+                let db = self.expr(&q.plan.db);
+                let values = self.sql_values(&params, span);
+                let name = if q.terminal == "count" {
+                    "Db.scalar"
+                } else {
+                    "Db.exec"
+                };
+                let call = self.sql_lib(
+                    name,
+                    vec![db, mk(ExprKind::Str(sql), string, span), values],
+                    int,
+                    span,
+                );
+                (coerce_value(call, rt), Some(err))
+            }
+            _ => {
+                // `all`, `first` and `get`: the rows, then each relation.
+                let (sql, params) = q.sql();
+                let one = q.terminal != "all";
+                let steps = {
+                    let models = |adt: AdtId| self.p.models.iter().find(|m| m.adt == adt).cloned();
+                    q.plan.include_steps(&models)
+                };
+                let mut prelude = Vec::new();
+                let db = self.expr(&q.plan.db);
+                let db = if steps.is_empty() {
+                    db
+                } else {
+                    self.hoist(db, &mut prelude)
+                };
+                let values = self.sql_values(&params, span);
+                if steps.is_empty() {
+                    let (name, ty) = if one {
+                        ("Db.one", Ty::Opt(Box::new(model)))
+                    } else {
+                        ("Db.query", list_ty)
+                    };
+                    let call = self.sql_lib(
+                        name,
+                        vec![db, mk(ExprKind::Str(sql), string, span), values],
+                        ty,
+                        span,
+                    );
+                    return (with_prelude(prelude, coerce_value(call, rt)), Some(err));
+                }
+                let rows_call = self.sql_lib(
+                    "Db.query",
+                    vec![
+                        reread(&db),
+                        mk(ExprKind::Str(sql), string.clone(), span),
+                        values,
+                    ],
+                    list_ty.clone(),
+                    span,
+                );
+                let rows = self.new_local("rows", list_ty.clone(), false);
+                let read = || mk(ExprKind::Local(rows), list_ty.clone(), span);
+                prelude.push(Stmt::Let(
+                    rows,
+                    mk(
+                        ExprKind::Try {
+                            expr: Box::new(rows_call),
+                            wrap: false,
+                        },
+                        list_ty.clone(),
+                        span,
+                    ),
+                ));
+                for step in steps {
+                    let call = mk(
+                        ExprKind::Lib {
+                            module: "orm".into(),
+                            name: "__include".into(),
+                            args: vec![
+                                reread(&db),
+                                coerce(read(), &Ty::Any),
+                                mk(ExprKind::Int(step.field as i64), int.clone(), span),
+                                mk(ExprKind::Str(step.sql), string.clone(), span),
+                                mk(ExprKind::Int(step.key_field as i64), int.clone(), span),
+                                mk(ExprKind::Int(step.fk_field as i64), int.clone(), span),
+                                mk(ExprKind::Bool(step.list), self.bool_ty(), span),
+                            ],
+                        },
+                        Ty::Unit,
+                        span,
+                    );
+                    prelude.push(Stmt::Expr(mk(
+                        ExprKind::Try {
+                            expr: Box::new(call),
+                            wrap: false,
+                        },
+                        Ty::Unit,
+                        span,
+                    )));
+                }
+                let value = if one {
+                    // `first` and `get` read the row the query kept.
+                    let row = mk(
+                        ExprKind::Method {
+                            name: "get".into(),
+                            recv: Box::new(read()),
+                            args: vec![mk(ExprKind::Int(0), int, span)],
+                        },
+                        Ty::Opt(Box::new(model)),
+                        span,
+                    );
+                    coerce_value(row, rt)
+                } else {
+                    read()
+                };
+                (with_prelude(prelude, value), Some(err))
+            }
+        }
+    }
+
+    fn bool_ty(&self) -> Ty {
+        Ty::Adt(self.prims.bool_, Vec::new())
+    }
+
+    /// A call of a `sql.Db` method with the arguments already lowered.
+    fn sql_lib(&mut self, name: &str, args: Vec<Expr>, ty: Ty, span: Span) -> Expr {
+        mk(
+            ExprKind::Lib {
+                module: "sql".into(),
+                name: name.into(),
+                args,
+            },
+            ty,
+            span,
+        )
+    }
+
+    /// The values a query binds, as a `List<sql.Value>`.
+    fn sql_values(&mut self, params: &[kiln_check::orm::Param], span: Span) -> Expr {
+        let value_ty = self.std_type("sql", "Value");
+        let string = Ty::Adt(self.prims.string, Vec::new());
+        let int = Ty::Adt(self.prims.int, Vec::new());
+        let mut items = Vec::new();
+        for p in params {
+            let (v, ty) = match p {
+                kiln_check::orm::Param::Value(e) => {
+                    let v = self.expr(e);
+                    let ty = v.ty.clone();
+                    (v, ty)
+                }
+                kiln_check::orm::Param::Like(e, mode) => {
+                    let v = self.expr(e);
+                    let pattern = mk(
+                        ExprKind::Lib {
+                            module: "orm".into(),
+                            name: "__like".into(),
+                            args: vec![v, mk(ExprKind::Int(*mode as i64), int.clone(), span)],
+                        },
+                        string.clone(),
+                        span,
+                    );
+                    (pattern, string.clone())
+                }
+            };
+            let _ = ty;
+            items.push(self.sql_value(v, span, &value_ty));
+        }
+        let list = Ty::Adt(self.prims.list, vec![value_ty]);
+        mk(ExprKind::List(items), list, span)
+    }
+
+    /// The values of some of a row's fields, as a `List<sql.Value>`.
+    fn field_params(&mut self, value: &Expr, fields: &[usize], span: Span) -> Expr {
+        let value_ty = self.std_type("sql", "Value");
+        let mut items = Vec::new();
+        for &f in fields {
+            let ty = match &value.ty {
+                Ty::Adt(id, args) => match &self.p.adts[*id].kind {
+                    AdtKind::Struct(decl) => substitute(&decl[f].ty, &self.type_map(*id, args)),
+                    _ => Ty::Unknown,
+                },
+                _ => Ty::Unknown,
+            };
+            let read = mk(
+                ExprKind::Field {
+                    base: Box::new(reread(value)),
+                    field: f,
+                },
+                ty,
+                span,
+            );
+            items.push(self.sql_value(read, span, &value_ty));
+        }
+        let list = Ty::Adt(self.prims.list, vec![value_ty.clone()]);
+        mk(ExprKind::List(items), list, span)
+    }
+
+    /// One value as a `sql.Value`.
+    fn sql_value(&mut self, v: Expr, span: Span, value_ty: &Ty) -> Expr {
+        if v.ty == *value_ty {
+            return v;
+        }
+        mk(
+            ExprKind::Lib {
+                module: "sql".into(),
+                name: "__value".into(),
+                args: vec![coerce(v, &Ty::Any)],
+            },
+            value_ty.clone(),
+            span,
+        )
     }
 
     /// Fills the arguments left out of a call to a standard library
@@ -1863,6 +2357,9 @@ impl<'a> Lowerer<'a> {
         if module == "web" && name.name == "render" {
             return self.render(args, rt, span);
         }
+        if module == "admin" && name.name == "pages" {
+            return self.admin_pages(args, span);
+        }
         if LIB_MODULES.contains(&module) {
             let sig = self
                 .p
@@ -1973,6 +2470,24 @@ impl Lowerer<'_> {
         )
     }
 
+    /// `admin.pages<Post>(app, prefix, site)` calls the function the
+    /// compiler wrote for that model (see [`crate::admin`]).
+    fn admin_pages(&mut self, args: &[ast::Arg], span: Span) -> (Expr, Option<Ty>) {
+        let Some(model) = self.p.admins.get(&span).cloned() else {
+            return (self.unsupported(span, "these admin pages"), None);
+        };
+        let fname = format!("__kiln_admin_{model}");
+        let Some(&(func, decl)) = self.fns.get(&fname) else {
+            return (
+                self.unsupported(span, format!("the admin's pages for `{model}`")),
+                None,
+            );
+        };
+        let sig = self.p.global_fns[&fname].clone();
+        let (func, sig) = self.instance(func, Template::Fn(fname), &sig, span, None);
+        self.user_call(func, &sig, decl, None, args, &Ty::Unit, span)
+    }
+
     /// `web.render("post.glaze", { post })` calls the function compiled from
     /// the glaze (see [`crate::glaze`]) with the data as named arguments,
     /// and makes an HTML response of what it returns.
@@ -2029,12 +2544,20 @@ impl Lowerer<'_> {
 /// Modules whose functions become [`ExprKind::Lib`] calls, for the
 /// backend to build.
 const LIB_MODULES: &[&str] = &[
-    "time", "fs", "os", "io", "web", "json", "html", "base64", "markdown", "ember", "js", "browser",
+    "time", "fs", "os", "io", "web", "json", "html", "base64", "markdown", "ember", "js",
+    "validate", "browser", "sql", "auth", "admin",
 ];
 
 /// Types of those modules whose methods are [`ExprKind::Lib`] calls too,
 /// named `Type.method`, with the receiver as the first argument.
-const LIB_TYPES: &[(&str, &str)] = &[("web", "App"), ("web", "Request"), ("js", "Value")];
+const LIB_TYPES: &[(&str, &str)] = &[
+    ("web", "App"),
+    ("web", "Request"),
+    ("js", "Value"),
+    ("sql", "Db"),
+    ("validate", "Checked"),
+    ("auth", "Sessions"),
+];
 
 /// The type of a library call: its declared return type, with a generic
 /// one's type arguments at this call filled in (`json.decode<Post>` has type
@@ -2048,6 +2571,14 @@ fn lib_ret(sig: &FnSig, inst: Option<&HashMap<String, Ty>>) -> Ty {
 
 fn is_generic(sig: &FnSig) -> bool {
     !sig.generics.is_empty() || !sig.impl_params.is_empty()
+}
+
+/// A second read of a local, such as one `hoist` stored a value in.
+fn reread(e: &Expr) -> Expr {
+    match &e.kind {
+        ExprKind::Local(id) => mk(ExprKind::Local(*id), e.ty.clone(), e.span),
+        _ => panic!("internal compiler error: only a local can be read again"),
+    }
 }
 
 fn mk(kind: ExprKind, ty: Ty, span: Span) -> Expr {

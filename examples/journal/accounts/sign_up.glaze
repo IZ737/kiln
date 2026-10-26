@@ -1,0 +1,13 @@
+{% props name: String, email: String, problems: List<String> %}
+{% layout "shared/layout.glaze" title: "Sign up" %}
+<h1>Sign up</h1>
+{% for problem in problems %}
+<p class="problem">{problem}</p>
+{% end %}
+<form method="post" action="/sign-up">
+  <label>Name <input name="name" value={name} required></label>
+  <label>Email <input type="email" name="email" value={email} required></label>
+  <label>Password <input type="password" name="password" minlength="10" required></label>
+  <button type="submit">Sign up</button>
+</form>
+<p>Already signed up? <a href="/sign-in">Sign in</a></p>

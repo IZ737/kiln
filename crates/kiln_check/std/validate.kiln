@@ -1,0 +1,45 @@
+// Checking submitted input, and saying what is wrong with it.
+//
+// A rule is a function that returns the problem it found, or `none` when
+// the value is fine, so a program's own functions are rules too.
+
+// One problem with one field.
+struct Problem {
+    // The field's name, as the form sends it.
+    field: String
+    message: String
+}
+
+// What checking found.
+struct Checked {
+    valid: Bool
+    problems: List<Problem>
+}
+
+impl Checked {
+    // The first message for a field, or `none` when the field is fine.
+    fn error(self, field: String) -> String? {}
+    // Every message, in the order the rules were written.
+    fn messages(self) -> List<String> {}
+}
+
+// The problems among these, in order. `none` means the rule passed.
+fn check(problems: List<Problem?>) -> Checked {}
+
+// A problem of the program's own.
+fn problem(field: String, message: String) -> Problem {}
+// The problem, when `wrong`. For a rule a program writes itself.
+fn when(wrong: Bool, field: String, message: String) -> Problem? {}
+
+// A value that is not empty, and not only spaces.
+fn required(field: String, value: String) -> Problem? {}
+// A length between `min` and `max` characters. A `max` of 0 is no limit.
+fn length(field: String, value: String, min: Int = 0, max: Int = 0) -> Problem? {}
+// A number between `min` and `max`.
+fn range(field: String, value: Int, min: Int, max: Int) -> Problem? {}
+// An email address, when there is one: an empty value is for `required`.
+fn email(field: String, value: String) -> Problem? {}
+// One of a list of values.
+fn one_of(field: String, value: String, choices: List<String>) -> Problem? {}
+// Two values that must match, such as a password and its confirmation.
+fn same(field: String, value: String, other: String) -> Problem? {}

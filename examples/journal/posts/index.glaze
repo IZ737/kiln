@@ -1,0 +1,16 @@
+{% props posts: List<shared.Post>, signed_in: Bool, csrf: String %}
+{% layout "shared/layout.glaze" title: "Posts" %}
+<h1>Posts</h1>
+{% if signed_in %}
+<p><a href="/posts/new">Write a post</a></p>
+<form class="inline" method="post" action="/sign-out"><input type="hidden" name="csrf" value={csrf}><button type="submit">Sign out</button></form>
+{% else %}
+<p><a href="/sign-in">Sign in</a> or <a href="/sign-up">sign up</a> to write.</p>
+{% end %}
+<ul class="posts">
+{% for post in posts %}
+  <li><a href="/posts/{post.id}">{post.title}</a>{% if post.user is some(u) %} by {u.name}{% end %}</li>
+{% empty %}
+  <li>Nothing published yet.</li>
+{% end %}
+</ul>

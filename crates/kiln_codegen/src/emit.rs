@@ -998,8 +998,11 @@ impl<'a> Gen<'a> {
                 self.store(&call, &e.ty)
             }
             ExprKind::Lib { module, name, args } => {
+                if let Some(rf) = kiln_ir::rt::rt_fn(module, name) {
+                    return self.rt_call(rf, args, &e.ty);
+                }
                 let vals: Vec<String> = args.iter().map(|a| self.expr(a)).collect();
-                let tys: Vec<Ty> = args.iter().map(|a| a.uncoerced().ty.clone()).collect();
+                let tys: Vec<Ty> = args.iter().map(|a| a.described().clone()).collect();
                 self.lib_call(module, name, &vals, &tys, &e.ty, e.span)
             }
             ExprKind::Print(v) => {
@@ -1650,15 +1653,57 @@ impl<'a> Gen<'a> {
             _ => return self.unsupported(span, format!("`{module}.{name}`")),
         };
         if fallible {
-            self.open("if (k_lib_error)");
-            let w = self.new_error();
-            self.line(&format!("{w}->f_message = k_lib_error;"));
-            self.line("k_lib_error = NULL;");
-            let show = self.error_message_fn();
-            self.line(&format!("k_fail(K_P2KV({w}), {show});"));
-            self.close();
+            self.check_lib_error();
         }
         v
+    }
+
+    /// After a library call that can fail: fails with a standard `Error`
+    /// when it stored a message in `k_lib_error`.
+    fn check_lib_error(&mut self) {
+        self.open("if (k_lib_error)");
+        let w = self.new_error();
+        self.line(&format!("{w}->f_message = k_lib_error;"));
+        self.line("k_lib_error = NULL;");
+        let show = self.error_message_fn();
+        self.line(&format!("k_fail(K_P2KV({w}), {show});"));
+        self.close();
+    }
+
+    /// A call of a function of the Rust runtime's table (see
+    /// [`kiln_ir::rt`]): every argument in a slot, after the type
+    /// description it asks for.
+    fn rt_call(&mut self, rf: &kiln_ir::rt::RtFn, args: &[Expr], ty: &Ty) -> String {
+        let mut vals = Vec::new();
+        let described = match rf.desc {
+            kiln_ir::rt::DescOf::None => None,
+            kiln_ir::rt::DescOf::Ret => Some(ty.clone()),
+            kiln_ir::rt::DescOf::Arg(i) => args.get(i).map(|a| a.described().clone()),
+        };
+        let mut params = Vec::new();
+        if let Some(t) = described {
+            vals.push(format!("&{}", self.desc(&t)));
+            params.push("const kdesc *");
+        }
+        for a in args {
+            let v = self.expr(a);
+            vals.push(self.to_kv(&v, &a.ty));
+            params.push("kv");
+        }
+        let (_, fresh) = self.helper(format!("rt:{}", rf.symbol), "rt");
+        if fresh {
+            let _ = writeln!(self.protos, "kv {}({});", rf.symbol, params.join(", "));
+        }
+        let raw = self.tmp_c("kv");
+        self.line(&format!("{raw} = {}({});", rf.symbol, vals.join(", ")));
+        if rf.fallible {
+            self.check_lib_error();
+        }
+        if self.is_void(ty) {
+            return "0".into();
+        }
+        let v = self.unkv(&raw, ty);
+        self.store(&v, ty)
     }
 
     // ----- showing, comparing and ordering values -----

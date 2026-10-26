@@ -1,0 +1,84 @@
+// Models: ordinary structs stored in tables, and queries on them that the
+// compiler checks and turns into SQL.
+//
+// A struct `Post` is stored in the table `posts` (the name in snake case,
+// in the plural), each field in the column of its name, and `id` is its
+// key. A field `author: User?` next to a field `author_id` is a relation
+// to the `User` whose key is `author_id`, and a field
+// `comments: List<Comment>` one to the comments whose `post_id` is the
+// post's key. Relations are not columns, and are loaded only when a query
+// asks for them with `include`: give them defaults (`= none`, `= []`).
+//
+// The conditions of `where` and the keys of `order_by` are written in
+// Kiln and become SQL when the program is compiled: fields, literals,
+// comparisons, `and`, `or`, `not`, arithmetic, `contains`, `starts_with`
+// and `ends_with` on a text field, and `list.contains(field)`. Any part
+// that does not name the model is computed in Kiln first and sent as a
+// value, never written into the SQL.
+
+
+// The mapping of a model, for a table that does not follow the
+// conventions: `const posts = orm.model<Post>(table: "blog_posts",
+// columns: { title: "post_title" })`. A constant like this anywhere in
+// the program applies to every query on the model. `key` names the key
+// field, `generated` fields the database fills in (left out of inserts),
+// and `readonly` fields are never written by `insert` or `update`.
+struct Model<T> {}
+fn model<T>(
+    table: String = "",
+    key: fn(T) -> Any = .id,
+    columns: Any = {},
+    generated: List<fn(T) -> Any> = [],
+    readonly: List<fn(T) -> Any> = [],
+) -> Model<T> {}
+
+// A query on the rows of a model. Each method returns a new query; none
+// runs anything until `all`, `first`, `count` or `delete`.
+struct Query<T> {}
+
+// Every row of the model `T`, to narrow with `where`.
+fn find<T>(db: sql.Db) -> Query<T> {}
+
+// The row whose key is `key`, or none.
+fn get<T>(db: sql.Db, key: Any) -> T? ! {}
+
+// Stores a new row, returning it with the key the database gave it when
+// its key is an `Int` that is 0.
+fn insert<T>(db: sql.Db, value: T) -> T ! {}
+
+// Writes every field of the row with the value's key, returning how many
+// rows changed (0 when there is no such row).
+fn update<T>(db: sql.Db, value: T) -> Int ! {}
+
+// Deletes the row with the value's key, returning how many rows went.
+fn delete<T>(db: sql.Db, value: T) -> Int ! {}
+
+impl Query<T> {
+    // Keeps the rows for which `test` is true.
+    fn where(self, test: fn(T) -> Bool) -> Query<T> {}
+    // Sorts by a field; several calls sort by each in turn.
+    fn order_by(self, key: fn(T) -> Any, descending: Bool = false) -> Query<T> {}
+    fn limit(self, count: Int) -> Query<T> {}
+    fn offset(self, count: Int) -> Query<T> {}
+    // Loads a relation of each row, with one more query for all of them.
+    fn include(self, relation: fn(T) -> Any) -> Query<T> {}
+    fn all(self) -> List<T> ! {}
+    fn first(self) -> T? ! {}
+    fn count(self) -> Int ! {}
+    // Deletes the rows the query selects, returning how many went.
+    fn delete(self) -> Int ! {}
+    // The SQL `all` runs, for reading.
+    fn sql(self) -> String {}
+}
+
+fn __like(value: String, mode: Int) -> String {}
+fn __include(
+    db: sql.Db,
+    rows: Any,
+    field: Int,
+    sql: String,
+    key_field: Int,
+    fk_field: Int,
+    list: Bool,
+) ! {}
+fn __insert<T>(db: sql.Db, value: T, sql: String, key_field: Int, params: List<sql.Value>) -> T ! {}

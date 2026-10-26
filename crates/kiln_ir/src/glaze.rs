@@ -841,7 +841,10 @@ impl<'a> Gen<'a> {
         for f in app.server_fns {
             let mut fields = Vec::new();
             let mut args = Vec::new();
-            for (name, ty, default) in &f.params {
+            if f.takes_request() {
+                args.push("req".to_string());
+            }
+            for (name, ty, default) in f.sent() {
                 match default {
                     Some(d) if !ty.trim_end().ends_with('?') => {
                         fields.push(format!("{name}: {ty}?"));
@@ -1557,7 +1560,7 @@ impl<'a> Gen<'a> {
                 for (k, arg) in args.iter().enumerate() {
                     let name = match &arg.name {
                         Some(n) => n.name.clone(),
-                        None => match f.params.get(k) {
+                        None => match f.sent().get(k) {
                             Some((n, _, _)) => n.clone(),
                             None => continue,
                         },
@@ -1702,6 +1705,23 @@ impl<'a> Gen<'a> {
 }
 
 impl ServerFn {
+    /// Whether its first parameter is the request it was called by, which
+    /// the server fills in and the browser does not send.
+    pub fn takes_request(&self) -> bool {
+        self.params
+            .first()
+            .is_some_and(|(_, ty, _)| ty.trim() == "web.Request")
+    }
+
+    /// The parameters the caller sends, without the request.
+    pub fn sent(&self) -> &[(String, String, Option<String>)] {
+        if self.takes_request() {
+            &self.params[1..]
+        } else {
+            &self.params
+        }
+    }
+
     /// The name the bridge calls it by: `add`, or `browser.fetch`.
     fn remote(&self) -> String {
         match &self.module {

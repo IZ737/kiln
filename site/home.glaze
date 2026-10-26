@@ -8,7 +8,7 @@
 <a href="/install" ui={theme.button(Tone.Primary)}>Install Kiln</a>
 <a href="/start" ui={theme.button(Tone.Quiet)}>Getting started</a>
 </div>
-<p>Current release: Kiln 0.9.1. Explicit Embers and local folder modules are available now; SQL, auth and Wares are planned.</p>
+<p>Current release: Kiln 0.10.0. SQL, the ORM, migrations, auth and admin pages are available now, alongside Embers and local folder modules; Wares are planned.</p>
 </section>
 <div class="features">
 <Feature title="One executable" featured={true}>

@@ -78,7 +78,9 @@ fn conformance_programs_produce_expected_output() {
 }
 
 /// Standard library modules the browser does not have yet.
-const NOT_IN_BROWSER: &[&str] = &["markdown", "time", "Instant", "Date"];
+const NOT_IN_BROWSER: &[&str] = &[
+    "markdown", "time", "Instant", "Date", "orm", "sql", "validate", "admin",
+];
 
 /// A Node.js that runs WasmGC: version 22 or later.
 fn node() -> Option<std::ffi::OsString> {

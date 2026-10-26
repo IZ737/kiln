@@ -1,0 +1,65 @@
+// The journal's tables. `kiln db diff` writes the migrations for them,
+// and `migrations/` holds the ones written so far.
+import validate, auth
+
+pub struct User {
+    id: Int
+    email: String
+    name: String
+    password: String
+    role: String = "writer"
+}
+
+pub struct Post {
+    id: Int
+    user_id: Int
+    title: String
+    body: String
+    published: Bool = false
+    // Relations: loaded with `include`, never by reading the field.
+    user: User? = none
+    comments: List<Comment> = []
+}
+
+pub struct Comment {
+    id: Int
+    post_id: Int
+    user_id: Int
+    body: String
+    post: Post? = none
+    user: User? = none
+}
+
+// The rules for a post, which the new and edit forms both check.
+pub fn post_problems(title: String, body: String) -> validate.Checked {
+    return validate.check([
+        validate.required("title", title),
+        validate.length("title", title, max: 120),
+        validate.required("body", body),
+    ])
+}
+
+// The rules for a comment, which the form a page posts and the ember's
+// call to `posts.add_comment` both check, on the server.
+pub fn comment_problems(body: String) -> validate.Checked {
+    return validate.check([
+        validate.required("body", body),
+        validate.length("body", body, max: 500),
+    ])
+}
+
+// Whether `who` may change `post`: the person who wrote it, or an editor.
+pub fn may_edit(who: auth.Identity, post: Post) -> Bool {
+    return who.subject == "${post.user_id}" or who.roles.contains("editor") or who.roles.contains("admin")
+}
+
+// Whether `who` may read `post`: anyone once it is published.
+pub fn may_read(who: auth.Identity?, post: Post) -> Bool {
+    if post.published {
+        return true
+    }
+    return match who {
+        some(w) => may_edit(w, post)
+        none => false
+    }
+}

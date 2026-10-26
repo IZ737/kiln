@@ -480,3 +480,108 @@ fn map_entries_are_assigned_values() {
         vec![codes::TYPE_MISMATCH]
     );
 }
+
+/// A program with a model and a query on it.
+fn with_model(body: &str) -> String {
+    format!(
+        "import sql, orm\n\nstruct Post {{\n    id: Int\n    title: String\n    published: Bool\n    author_id: Int\n    author: Author? = none\n}}\n\nstruct Author {{\n    id: Int\n    name: String\n    posts: List<Post> = []\n}}\n\nfn main() ! {{\n    let db = try sql.open(\"sqlite::memory:\")\n{body}\n}}\n"
+    )
+}
+
+#[test]
+fn queries_are_checked_against_the_model() {
+    ok(&with_model(
+        "    let word = \"kiln\"\n    let posts = try orm.find<Post>(db)\n        .where(.published)\n        .where(fn(p) { p.title.contains(word) and p.id > 2 })\n        .order_by(.id, descending: true)\n        .include(.author)\n        .limit(20)\n        .all()\n    print(posts.len())",
+    ));
+    ok(&with_model(
+        "    let post = try orm.insert<Post>(db, Post(id: 0, title: \"Hi\", published: true, author_id: 1))\n    print(try orm.update<Post>(db, post))\n    print(try orm.delete<Post>(db, post))\n    print(try orm.get<Post>(db, 1) == none)",
+    ));
+}
+
+#[test]
+fn a_query_that_cannot_become_sql_is_an_error() {
+    // A misspelled field is the type checker's own error, once.
+    let diags = check(&with_model(
+        "    print(try orm.find<Post>(db).where(.publshed).count())",
+    ));
+    assert_eq!(
+        diags.iter().map(|d| d.code).collect::<Vec<_>>(),
+        vec![codes::NO_SUCH_MEMBER]
+    );
+    // A field that is a relation is not a column to query on.
+    let diags = check(&with_model(
+        "    print(try orm.find<Post>(db).order_by(.author).count())",
+    ));
+    assert_eq!(
+        diags.iter().map(|d| d.code).collect::<Vec<_>>(),
+        vec![codes::BAD_QUERY]
+    );
+    // Work the compiler cannot do in SQL.
+    assert_eq!(
+        error_codes(&with_model(
+            "    print(try orm.find<Post>(db).where(fn(p) { p.title.split(\" \").len() > 2 }).count())",
+        )),
+        vec![codes::BAD_QUERY]
+    );
+    // An order that is decided while the program runs.
+    assert_eq!(
+        error_codes(&with_model(
+            "    var down = true\n    print(try orm.find<Post>(db).order_by(.id, descending: down).count())",
+        )),
+        vec![codes::BAD_QUERY]
+    );
+    // A relation that is not one.
+    assert_eq!(
+        error_codes(&with_model(
+            "    print(try orm.find<Post>(db).include(.title).count())",
+        )),
+        vec![codes::BAD_QUERY]
+    );
+    // A query must be built and run in one chain.
+    assert_eq!(
+        error_codes(&with_model(
+            "    let q = orm.find<Post>(db).where(.published)\n    print(try q.count())",
+        )),
+        vec![codes::BAD_QUERY, codes::BAD_QUERY]
+    );
+}
+
+#[test]
+fn a_struct_that_cannot_be_a_model_is_an_error() {
+    let src = "import sql, orm\n\nstruct Note {\n    text: String\n}\n\nfn main() ! {\n    let db = try sql.open(\"sqlite::memory:\")\n    print(try orm.find<Note>(db).count())\n}\n";
+    assert_eq!(error_codes(src), vec![codes::BAD_MODEL]);
+    // A relation needs the field that links the two models.
+    let src = "import sql, orm\n\nstruct Note {\n    id: Int\n    author: Writer? = none\n}\n\nstruct Writer {\n    id: Int\n}\n\nfn main() ! {\n    let db = try sql.open(\"sqlite::memory:\")\n    print(try orm.find<Note>(db).count())\n}\n";
+    assert_eq!(error_codes(src), vec![codes::BAD_MODEL]);
+    // A relation is loaded only on request, so it has a default.
+    let src = "import sql, orm\n\nstruct Note {\n    id: Int\n    writer_id: Int\n    writer: Writer\n}\n\nstruct Writer {\n    id: Int\n}\n\nfn main() ! {\n    let db = try sql.open(\"sqlite::memory:\")\n    print(try orm.find<Note>(db).count())\n}\n";
+    assert_eq!(error_codes(src), vec![codes::BAD_MODEL]);
+}
+
+#[test]
+fn a_model_can_name_its_table_and_columns() {
+    ok("import sql, orm\n\nstruct Entry {\n    id: Int\n    order: Int\n}\n\nconst entries = orm.model<Entry>(table: \"log_entries\", columns: { order: \"position\" })\n\nfn main() ! {\n    let db = try sql.open(\"sqlite::memory:\")\n    print(try orm.find<Entry>(db).where(fn(e) { e.order > 2 }).count())\n}\n");
+    // Without the mapping, `order` is a word SQL keeps for itself.
+    let src = "import sql, orm\n\nstruct Entry {\n    id: Int\n    order: Int\n}\n\nfn main() ! {\n    let db = try sql.open(\"sqlite::memory:\")\n    print(try orm.find<Entry>(db).count())\n}\n";
+    assert_eq!(error_codes(src), vec![codes::BAD_MODEL]);
+}
+
+#[test]
+fn admin_pages_need_a_model_with_an_int_key() {
+    let program = |key: &str| {
+        format!(
+            "import web, sql, orm, auth, admin\n\nstruct Tag {{\n    id: {key}\n    name: String\n}}\n\nfn main() ! {{\n    let db = try sql.open(\"sqlite::memory:\")\n    let sessions = try auth.sessions(db)\n    let site = admin.site(db, sessions, fn(who, action, model) {{ who.roles.contains(\"admin\") }})\n    admin.pages<Tag>(web.app(), \"/admin/tags\", site)\n}}\n"
+        )
+    };
+    ok(&program("Int"));
+    let diags = check(&program("String"));
+    assert_eq!(
+        diags.iter().map(|d| d.code).collect::<Vec<_>>(),
+        vec![codes::BAD_MODEL]
+    );
+    assert!(
+        diags[0].message.contains("`Tag.id` is `String`"),
+        "{}",
+        diags[0].message
+    );
+}

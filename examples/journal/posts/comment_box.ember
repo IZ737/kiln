@@ -1,0 +1,27 @@
+{# The comments under a post, and a form that adds one through the
+   server function `add_comment`. Without WebAssembly the form posts to
+   the page's own route, which checks the same rules. #}
+{% props post: Int, lines: List<String>, csrf: String %}
+{% state shown = lines %}
+{% state body = "" %}
+{% state problem = "" %}
+<div class="comments">
+  <ul id="comments">
+    {% for line in shown %}<li>{line}</li>{% empty %}<li class="none">No comments yet.</li>{% end %}
+  </ul>
+  <form method="post" action="/posts/{post}/comments" on:submit={
+      problem = ""
+      shown = add_comment(post, body) catch err {
+          problem = err.message
+          shown
+      }
+      if problem == "" {
+          body = ""
+      }
+  }>
+    <input type="hidden" name="csrf" value={csrf}>
+    <label>Comment <input id="comment" name="body" value={body} on:input={ body = event.value }></label>
+    {% if problem != "" %}<p class="problem" id="problem">{problem}</p>{% end %}
+    <button type="submit">Add comment</button>
+  </form>
+</div>

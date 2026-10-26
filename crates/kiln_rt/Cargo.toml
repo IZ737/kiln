@@ -33,3 +33,13 @@ pulldown-cmark = { version = "0.13", default-features = false, features = ["html
 html-escape = "0.3"
 # `float_roundtrip` reads every float exactly, as `strtod` does.
 serde_json = { version = "1", features = ["float_roundtrip"] }
+# The `sql` module: SQLite, compiled into every program that opens a
+# database, so it needs no library on the system.
+rusqlite = { version = "0.41", features = ["bundled"] }
+# PostgreSQL and MySQL, on sockets that wait on Kiln's tasks.
+kiln_dbwire = { path = "../kiln_dbwire" }
+# `auth`: Argon2id password hashes, session ids the system's random
+# numbers make, and their SHA-256 digests.
+argon2 = "0.6"
+getrandom = { version = "0.4", features = ["std"] }
+sha2 = "0.11"

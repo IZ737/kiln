@@ -1,0 +1,150 @@
+// The posts: a public list, each post with its comments, and the forms
+// that write and change them.
+import web, sql, orm, auth, shared
+
+pub fn routes(app: web.App, db: sql.Db, sessions: auth.Sessions) {
+    app.get("/", fn(req) {
+        let who = try sessions.current(req)
+        let posts = try orm.find<shared.Post>(db)
+            .where(.published)
+            .include(.user)
+            .order_by(.id, descending: true)
+            .limit(50)
+            .all()
+        let token = try sessions.csrf(req)
+        let name = match who {
+            some(w) => w.subject
+            none => ""
+        }
+        return web.render("index.glaze", { posts: posts, signed_in: name != "", csrf: token })
+    })
+
+    app.get("/posts/new", fn(req) {
+        if try sessions.current(req) == none {
+            return web.redirect("/sign-in")
+        }
+        let token = try sessions.csrf(req)
+        return web.render("edit.glaze", { heading: "New post", action: "/posts", title: "", body: "", published: false, problems: [], csrf: token })
+    })
+
+    app.post("/posts", fn(req) {
+        let who = try sessions.require(req)
+        let form = try req.form<{ csrf: String, title: String, body: String, published: Bool }>()
+        try sessions.check(req, form.csrf)
+        let checked = shared.post_problems(form.title, form.body)
+        if not checked.valid {
+            var res = web.render("edit.glaze", { heading: "New post", action: "/posts", title: form.title, body: form.body, published: form.published, problems: checked.messages(), csrf: form.csrf })
+            res.status = 422
+            return res
+        }
+        let author = who.subject.to_int() ?? 0
+        let post = try orm.insert<shared.Post>(db, shared.Post(id: 0, user_id: author, title: form.title.trim(), body: form.body, published: form.published))
+        return web.redirect("/posts/${post.id}", status: 303)
+    })
+
+    app.get("/posts/{id: Int}", fn(req, id) {
+        let who = try sessions.current(req)
+        let found = try orm.find<shared.Post>(db).where(fn(p) { p.id == id }).include(.user).first()
+        if not (found is some(post) and shared.may_read(who, post)) {
+            return web.not_found()
+        }
+        let post = found ?? shared.Post(id: 0, user_id: 0, title: "", body: "")
+        let lines = try comment_lines(db, id)
+        let editable = match who {
+            some(w) => shared.may_edit(w, post)
+            none => false
+        }
+        let token = try sessions.csrf(req)
+        let author = match post.user {
+            some(u) => u.name
+            none => "someone"
+        }
+        return web.render("post.glaze", { post: post, author: author, lines: lines, editable: editable, signed_in: who != none, csrf: token })
+    })
+
+    app.get("/posts/{id: Int}/edit", fn(req, id) {
+        let post = try editable_post(db, sessions, req, id)
+        let token = try sessions.csrf(req)
+        return web.render("edit.glaze", { heading: "Edit post", action: "/posts/${id}", title: post.title, body: post.body, published: post.published, problems: [], csrf: token })
+    })
+
+    app.post("/posts/{id: Int}", fn(req, id) {
+        let post = try editable_post(db, sessions, req, id)
+        let form = try req.form<{ csrf: String, title: String, body: String, published: Bool }>()
+        try sessions.check(req, form.csrf)
+        let checked = shared.post_problems(form.title, form.body)
+        if not checked.valid {
+            var res = web.render("edit.glaze", { heading: "Edit post", action: "/posts/${id}", title: form.title, body: form.body, published: form.published, problems: checked.messages(), csrf: form.csrf })
+            res.status = 422
+            return res
+        }
+        try orm.update<shared.Post>(db, shared.Post(id: post.id, user_id: post.user_id, title: form.title.trim(), body: form.body, published: form.published))
+        return web.redirect("/posts/${id}", status: 303)
+    })
+
+    // The comment form without WebAssembly: the same rules as the ember's
+    // call to `add_comment`.
+    app.post("/posts/{id: Int}/comments", fn(req, id) {
+        let form = try req.form<{ csrf: String, body: String }>()
+        try sessions.check(req, form.csrf)
+        try add(db, sessions, req, id, form.body)
+        return web.redirect("/posts/${id}", status: 303)
+    })
+}
+
+// The post `id`, for someone who may change it: 401 for no one, and 404
+// when it is not theirs, so a stranger cannot tell which posts exist.
+fn editable_post(db: sql.Db, sessions: auth.Sessions, req: web.Request, id: Int) -> shared.Post ! {
+    let who = try sessions.require(req)
+    let found = try orm.get<shared.Post>(db, id)
+    return match found {
+        some(post) => if shared.may_edit(who, post) { post } else { throw web.error(404, "not found") }
+        none => throw web.error(404, "not found")
+    }
+}
+
+// A post's comments, each as "name: text".
+fn comment_lines(db: sql.Db, post: Int) -> List<String> ! {
+    let comments = try orm.find<shared.Comment>(db)
+        .where(fn(c) { c.post_id == post })
+        .include(.user)
+        .order_by(.id)
+        .all()
+    return comments.map(fn(c) {
+        let name = match c.user {
+            some(u) => u.name
+            none => "someone"
+        }
+        return "${name}: ${c.body}"
+    })
+}
+
+// Adds a comment by the person `req` is from, to a post they can read.
+fn add(db: sql.Db, sessions: auth.Sessions, req: web.Request, id: Int, body: String) -> List<String> ! {
+    let who = try sessions.require(req)
+    let found = try orm.get<shared.Post>(db, id)
+    let post = match found {
+        some(p) => p
+        none => throw web.error(404, "there is no such post")
+    }
+    if not shared.may_read(who, post) {
+        throw web.error(404, "there is no such post")
+    }
+    let checked = shared.comment_problems(body)
+    if not checked.valid {
+        throw web.error(422, checked.messages().join(" "))
+    }
+    let author = who.subject.to_int() ?? 0
+    try orm.insert<shared.Comment>(db, shared.Comment(id: 0, post_id: id, user_id: author, body: body.trim()))
+    return try comment_lines(db, id)
+}
+
+// The ember's call: the browser sends `post` and `body`, and the server
+// gives the request, whose session says who is commenting. The routes for
+// calls take JSON only from this site's own pages, so a page on another
+// site cannot make one with the visitor's cookie.
+server fn add_comment(req: web.Request, post: Int, body: String) -> List<String> ! {
+    let db = try shared.database()
+    let sessions = try shared.sessions(db)
+    return try add(db, sessions, req, post, body)
+}

@@ -213,6 +213,9 @@ K_API kv k_take_error(void) {
  * returns; the generated code turns it into an `Error` and fails. */
 K_API kstr *k_lib_error = NULL;
 
+/* For `kiln_rt`: makes the library call that runs fail with `message`. */
+K_EXPORT void k_rt_fail(kstr *message) { k_lib_error = message; }
+
 K_API void k_lib_fail(const char *what, kstr *path) {
     char buf[512];
     snprintf(buf, sizeof buf, "cannot %s %s: %s", what, k_cstr(path), strerror(errno));
@@ -1090,6 +1093,7 @@ typedef struct ktask {
     kv error;
     kstr *(*error_show)(kv);
     kstr *lib_error, *client_error, *panic_message;
+    int64_t client_status;
     void *panic_jmp[5];
 #if K_TASK_FIBER
     void *fiber;
@@ -1100,9 +1104,29 @@ typedef struct ktask {
 
 enum { K_TASK_READY, K_TASK_RUNNING, K_TASK_WAITING, K_TASK_DONE };
 
-/* The message of the error `req.json` failed with for this request, which
- * the server answers with 400 if the handler passes it on. */
+/* The message of the error reading the request failed with, which the
+ * server answers with 400 if the handler passes it on. */
 K_API kstr *k_web_client_error = NULL;
+
+/* The status the server answers `k_web_client_error` with: 400 for a body
+ * it could not read, and what `k_rt_web_fail` says otherwise. */
+K_API int64_t k_web_client_status = 400;
+
+/* For `kiln_rt`: fails the library call that runs, and blames the client,
+ * as reading a request's body does. */
+K_EXPORT void k_rt_client_fail(kstr *message) {
+    k_lib_error = message;
+    k_web_client_error = message;
+    k_web_client_status = 400;
+}
+
+/* For `kiln_rt`: fails with an error the server answers `status` with, as
+ * `throw web.error(status, message)` does. */
+K_EXPORT void k_rt_web_fail(int64_t status, kstr *message) {
+    k_lib_error = message;
+    k_web_client_error = message;
+    k_web_client_status = status >= 400 && status <= 599 ? status : 500;
+}
 
 static ktask k_main_task = {.state = K_TASK_RUNNING, .fd = K_BAD_SOCK};
 static ktask *k_cur = &k_main_task;
@@ -1223,6 +1247,7 @@ static void k_task_switch(ktask *to) {
     from->error_show = k_error_show;
     from->lib_error = k_lib_error;
     from->client_error = k_web_client_error;
+    from->client_status = k_web_client_status;
     from->panic_trap = k_panic_trap;
     from->panic_message = k_panic_message;
     memcpy(from->panic_jmp, k_panic_jmp, sizeof k_panic_jmp);
@@ -1233,6 +1258,7 @@ static void k_task_switch(ktask *to) {
     k_error_show = to->error_show;
     k_lib_error = to->lib_error;
     k_web_client_error = to->client_error;
+    k_web_client_status = to->client_status;
     k_panic_trap = to->panic_trap;
     k_panic_message = to->panic_message;
     memcpy(k_panic_jmp, to->panic_jmp, sizeof k_panic_jmp);
@@ -1348,6 +1374,7 @@ K_API void k_task_spawn(void (*fn)(void *), void *arg) {
         t->error = 0;
         t->error_show = NULL;
         t->lib_error = t->client_error = t->panic_message = NULL;
+        t->client_status = 400;
     } else {
         t = GC_MALLOC_UNCOLLECTABLE(sizeof *t);
         if (!t) { fputs("panic: out of memory\n", stderr); exit(101); }
@@ -1452,6 +1479,9 @@ K_API void k_time_sleep(int64_t ns) {
     if (k_tasks_on) k_task_sleep(ns);
     else k_time_sleep_os(ns);
 }
+
+/* For `kiln_rt`: waits without holding up the other tasks. */
+K_EXPORT void k_rt_sleep(int64_t ns) { k_time_sleep(ns); }
 
 /* Days since 1970-01-01 to a civil date and back (Howard Hinnant's
  * algorithms, valid for every day an int64_t can hold here). */
@@ -2061,6 +2091,12 @@ K_API kbox *k_web_header(void *request, kstr *name) {
     return k_map_get(h, K_P2KV(k_web_lower(name->data, name->len)));
 }
 
+/* For `kiln_rt`: a request header, as `req.header` reads it. */
+K_EXPORT kstr *k_rt_header(void *request, kstr *name) {
+    kbox *found = k_web_header(request, name);
+    return found ? K_KV2P(kstr *, found->v) : NULL;
+}
+
 K_API kbox *k_web_cookie(void *request, kstr *name) {
     kbox *header = k_web_header(request, k_str("cookie"));
     if (!header) return NULL;
@@ -2219,7 +2255,8 @@ K_API kv *k_web_call(kroute *r, kv *req, kv *args, int64_t *status, kstr **messa
     kstr *shown = k_error_show(err);
     if (k_web_client_error && shown == k_web_client_error) {
         k_web_client_error = NULL;
-        *status = 400;
+        *status = k_web_client_status;
+        k_web_client_status = 400;
         *message = shown;
         *json = true;
     } else if (k_web_marked(err, 1)) {

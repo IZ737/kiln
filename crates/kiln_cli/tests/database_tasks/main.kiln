@@ -1,0 +1,18 @@
+// A query that waits for the database server holds up only its own
+// request: `tests/databases.rs` asks for `/slow` and then `/fast`.
+import web, sql, os
+
+fn main() ! {
+    let db = try sql.open(env("DATABASE_URL"), max_connections: 4)
+    let sleep = if db.dialect() == "postgres" { "select pg_sleep(1)" } else { "select sleep(1)" }
+    let app = web.app(access_log: false)
+    app.get("/slow", fn(req) {
+        try db.exec(sleep)
+        return web.text("slow")
+    })
+    app.get("/fast", fn(req) {
+        return web.text("fast ${try db.scalar<Int>("select 1 + 1")}")
+    })
+    app.get("/quit", fn(req) { os.exit(0) })
+    try app.listen("127.0.0.1:${env("PORT")}")
+}

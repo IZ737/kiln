@@ -1,0 +1,4 @@
+[package]
+name = "journal"
+kind = "app"
+entry = "main.kiln"

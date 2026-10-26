@@ -1,0 +1,47 @@
+POST /signup HTTP/1.1
+Content-Type: application/x-www-form-urlencoded
+
+name=Ada+Lovelace&email=ada%40example.com&age=36&plan=paid&topics=glazes&topics=embers&newsletter=on&about=Hello%2C+Kiln%21
+###
+POST /signup HTTP/1.1
+Content-Type: application/x-www-form-urlencoded
+
+name=A&email=nope&age=9&plan=gold&topics=a&topics=b&topics=c&topics=d
+###
+POST /signup HTTP/1.1
+Content-Type: multipart/form-data; boundary=kiln
+
+--kiln
+Content-Disposition: form-data; name="name"
+
+Grace
+--kiln
+Content-Disposition: form-data; name="email"
+
+grace@example.com
+--kiln
+Content-Disposition: form-data; name="age"
+
+45
+--kiln
+Content-Disposition: form-data; name="plan"
+
+free
+--kiln--
+###
+POST /signup HTTP/1.1
+Content-Type: application/json
+
+{"name": "Ada"}
+###
+POST /signup HTTP/1.1
+Content-Type: application/x-www-form-urlencoded
+
+name=Ada&email=ada%40example.com&age=old&plan=free
+###
+POST /signup HTTP/1.1
+Content-Type: application/x-www-form-urlencoded
+
+email=ada%40example.com&age=36&plan=free
+###
+GET /quit HTTP/1.1

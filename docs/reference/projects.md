@@ -80,6 +80,11 @@ segments retain their exact spelling; the final capitalized component name uses
 the existing snake-case filename convention. Other modules' same-named files
 cannot hijack local lookup.
 
+A glaze has no imports of its own. It sees the folder modules that its
+folder's `.kiln` files import, so in a folder whose routes import `shared`,
+a page can take `{% props post: shared.Post %}` and call
+`shared.may_edit(...)`.
+
 `.glaze` remains server-only. `.ember` retains selective hydration and typed
 RPC. A page without an Ember loads no Ember JS or Wasm. Stylesheet imports and
 scoped CSS URLs resolve relative to the owning component; CSS asset paths remain
@@ -94,6 +99,16 @@ submission. `/accounts` is an SSR-only route. Run it with:
 
 ```sh
 kiln run crates/kiln_cli/tests/fieldnotes
+```
+
+A larger one is [`examples/journal`](../../examples/journal): `shared` holds
+the models, the rules and the database, `accounts` signing up and in, and
+`posts` the pages, with an ember that adds comments through a `server fn`.
+Its migrations are committed, and its admin is generated:
+
+```sh
+kiln db migrate --url sqlite:journal.db --path examples/journal
+JOURNAL_HTTP=1 JOURNAL_ADMIN=you@example.com kiln run examples/journal
 ```
 
 The LSP follows the project graph with unsaved editor text, resolves public

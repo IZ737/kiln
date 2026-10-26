@@ -54,6 +54,8 @@ server fn like_post(id: Int) -> Int ! web.Error { ... }   // callable from the b
 ```
 
 - Function parameters always have types. Closure parameters may omit them.
+- `where` is a keyword only in `for` loops, so it can also name a method or
+  field after `.`, and a method in an `impl`: `orm.find<Post>(db).where(.published)`.
 - Members of a `struct`, `enum` or `impl` are separated by newlines or commas.
 
 ## Types

@@ -4,9 +4,9 @@ The standard library's signatures are Kiln files in
 [`crates/kiln_check/std/`](../../crates/kiln_check/std). The prelude is visible
 everywhere; every other module is imported by name (`import fs`). This page
 lists the modules the compiler can build into native programs today. The
-others (`sql`, `auth`), and the parts of `web` not listed here,
-type-check, and building a program that uses them reports E0401 until their
-phase arrives.
+parts of `web` not listed here type-check, and building a program that uses
+them reports E0401 until their phase arrives. `sql`, `orm` and `admin` have a
+page of their own: [databases, models and migrations](data.md).
 
 ## Prelude
 
@@ -184,10 +184,29 @@ lower case) and `body`.
 | `req.header(name) -> String?` | A header; the name is not case-sensitive |
 | `req.cookie(name) -> String?` | A cookie from the `cookie` header |
 | `req.json<T>() -> T !` | The body read as JSON into a `T` (see [`json`](#json)) |
+| `req.form<T>() -> T !` | A submitted form read into a `T` (see [`validate`](#validate)) |
 
-When `req.json` fails and the handler passes the error on with `try`, the
-server answers 400 with `{"error": "..."}` naming what was wrong, instead
-of 500.
+When `req.json` or `req.form` fails and the handler passes the error on
+with `try`, the server answers 400 with `{"error": "..."}` naming what was
+wrong, instead of 500.
+
+**Forms.** `req.form<T>()` reads a body sent as
+`application/x-www-form-urlencoded` or `multipart/form-data` into a
+struct. A form carries text, and the fields' types say what to make of it:
+
+| Field type | |
+| --- | --- |
+| `String` | The value as it was sent |
+| `Int`, `Float` | The value as a number, or 400 when it is not one |
+| `Bool` | `on`, `true`, `1` or `yes` is true; a box nobody ticked is not sent at all, so a missing `Bool` is `false` |
+| `T?` | `none` when the field is missing or empty |
+| `List<T>` | Every value sent with that name, in order |
+| an enum | The name of a variant without fields |
+
+A field of another type, or a field that is missing and is neither
+optional, a `Bool` nor a `List`, is the client's mistake and answers 400.
+A `multipart` part's file name is read but its bytes are kept as the
+field's `String`; uploads to disk are not implemented yet.
 
 **Responses.** A `web.Response` has `status`, `headers` and `body`, and can
 be changed before it is returned (`res.headers["cache-control"] = "no-store"`)
@@ -302,6 +321,168 @@ several handlers is safe: today's single-core scheduler only switches
 tasks where they wait, and a later one will run tasks on several cores.
 Keep shared values immutable; `Mutex`, `Atomic` and channels will come for
 the rest.
+
+## `auth`
+
+Passwords, sessions kept in the database, and the identity of a request.
+A password is stored as an Argon2id hash, never in a form it can be read
+back from. A session is a long random value the browser keeps in a
+cookie, and the database holds only its digest, so a copy of the table is
+not a set of usable sessions.
+
+```kiln
+import web, sql, orm, auth
+
+struct Account {
+    id: Int
+    email: String
+    password: String
+    role: String
+}
+
+fn main() ! {
+    let db = try sql.open(env("DATABASE_URL"))
+    let sessions = try auth.sessions(db)
+    let app = web.app()
+
+    app.post("/sign-in", fn(req) {
+        let form = try req.form<{ email: String, password: String }>()
+        let found = try orm.find<Account>(db).where(fn(a) { a.email == form.email }).first()
+        if found is some(account) and auth.verify_password(form.password, account.password) {
+            let home = web.redirect("/", status: 303)
+            return try sessions.sign_in(home, account.id.to_string(), roles: [account.role])
+        }
+        // The same answer either way, so the form cannot be used to find
+        // out which addresses have accounts.
+        return web.render("sign-in.glaze", { wrong: true }, status: 401)
+    })
+
+    app.get("/notes", fn(req) {
+        let who = try sessions.require(req)
+        let notes = try orm.find<Note>(db).where(fn(n) { n.author == who.subject }).all()
+        return web.render("notes.glaze", { notes, csrf: try sessions.csrf(req) })
+    })
+
+    try app.listen(":8080")
+}
+```
+
+| Function | |
+| --- | --- |
+| `auth.hash_password(password) -> String !` | The hash to store; a different one every time |
+| `auth.verify_password(password, hash) -> Bool` | Whether the password is the one the hash was made from |
+| `auth.token(bytes: Int = 32) -> String` | A value no one can guess, for a link in an email or an API key |
+| `auth.sessions(db, cookie: "kiln_session", idle: 12h, lifetime: 720h, secure: true) -> Sessions !` | Sessions in `db` |
+
+`auth.sessions` makes its table, `kiln_sessions`, when it is not there
+yet, and never changes it when it is; the migrations of
+[`kiln db`](data.md#migrations) do not describe it, because it is the runtime's and
+not one of the program's models. `idle` is how long a session may sit
+unused and `lifetime` how long it may last at all; `0s` is no limit.
+Keep `secure` on, so the cookie is only ever sent over HTTPS.
+
+| Method | |
+| --- | --- |
+| `sessions.sign_in(res, subject, roles: []) -> web.Response !` | A new session, and its cookie on `res` |
+| `sessions.sign_out(req, res) -> web.Response !` | Ends this request's session and clears its cookie |
+| `sessions.sign_out_all(subject) -> Int !` | Ends every session of a subject, after a password change |
+| `sessions.current(req) -> Identity?` ! | Who the request is from, or `none` |
+| `sessions.require(req) -> Identity !` | The same, or an error the server answers 401 with |
+| `sessions.csrf(req) -> String !` | The token a form on this page must send back |
+| `sessions.check(req, token) !` | Lets the request through only with this session's token, and otherwise fails with 403 |
+| `sessions.sweep() -> Int !` | Deletes the sessions that are over |
+
+An `Identity` has `subject` (what `sign_in` was given, usually a user's
+key as text), `roles` and `started`. Identity is a request's, never the
+program's: a server answers many requests at the same time, so there is no
+ambient signed-in user.
+
+**Forms that only this site can post.** Put `sessions.csrf(req)` in a
+hidden field of every form that changes something, and call
+`sessions.check(req, form.csrf)` in the handler before the change. Signing
+in starts a session of its own and leaves any old one behind, so a session
+someone else put in the browser cannot become a signed-in one, and
+`sign_out_all` ends the sessions a changed password should not keep.
+
+**Who an ember's call is from.** A `server fn` whose first parameter is a
+`web.Request` is given the request it was called by, and the browser sends
+the rest:
+
+```kiln
+server fn publish(req: web.Request, id: Int) -> Bool ! {
+    let who = try sessions.require(req)
+    ...
+}
+```
+
+```glaze
+<button on:click={ done = publish(post.id) catch err { false } }>Publish</button>
+```
+
+## `validate`
+
+Checking submitted input. A rule is a function that returns the problem it
+found, or `none` when the value is fine, so a program's own functions are
+rules too: `validate.check` keeps the problems that are there.
+
+```kiln
+import web, validate
+
+struct Signup {
+    name: String
+    email: String
+    age: Int
+    plan: String
+    newsletter: Bool
+}
+
+fn main() ! {
+    let app = web.app()
+    app.post("/signup", fn(req) {
+        let input = try req.form<Signup>()
+        let checked = validate.check([
+            validate.required("name", input.name),
+            validate.length("name", input.name, min: 2, max: 60),
+            validate.email("email", input.email),
+            validate.range("age", input.age, 13, 120),
+            validate.one_of("plan", input.plan, ["free", "paid"]),
+            validate.when(input.plan == "paid" and not input.newsletter,
+                "newsletter", "a paid plan comes with the newsletter"),
+        ])
+        if not checked.valid {
+            // The same form again, with the problems in it.
+            return web.render("signup.glaze", { input, checked }, status: 422)
+        }
+        return web.redirect("/welcome", status: 303)
+    })
+    try app.listen(":8080")
+}
+```
+
+A form the server cannot read at all is the client's mistake, and answers
+400; input that reads but breaks a rule is the person's, and the handler
+shows the form again, usually with 422.
+
+| Rule | The problem it finds |
+| --- | --- |
+| `validate.required(field, value)` | Empty, or only spaces |
+| `validate.length(field, value, min: 0, max: 0)` | Too short or too long in characters; a `max` of 0 is no limit |
+| `validate.range(field, value, min, max)` | A number outside the range |
+| `validate.email(field, value)` | Not an email address. An empty value is for `required` |
+| `validate.one_of(field, value, choices)` | Not one of the choices |
+| `validate.same(field, value, other)` | Two values that must match, such as a password and its confirmation |
+| `validate.when(wrong, field, message)` | `message`, when `wrong`. For a rule of the program's own |
+| `validate.problem(field, message)` | A `Problem` directly, for a check that is not a rule |
+
+`validate.check(problems) -> Checked` keeps the problems in the order they
+were written. A `Checked` has `valid` and `problems` (a
+`List<Problem>`, each with a `field` and a `message`), `checked.error(field)`
+for the first message about one field, next to the field in a Glaze, and
+`checked.messages()` for every message.
+
+Rules run on the server, where every write is checked. An ember gets the
+same answers by calling a `server fn` that runs these rules, rather than
+checking in the browser, which a client can skip.
 
 ## `html`
 
