@@ -32,7 +32,7 @@ fn setup(db: sql.Db) ! {
     let flag = if db.dialect() == "sqlite" { "integer" } else { "boolean" }
     let text = if db.dialect() == "mysql" { "varchar(200)" } else { "text" }
     try db.exec("create table authors (id ${key}, name ${text} not null unique)")
-    try db.exec("create table posts (id ${key}, title ${text} not null, score double precision not null, published ${flag} not null, author_id bigint not null references authors(id), note ${text})")
+    try db.exec("create table posts (id ${key}, title ${text} not null, score double precision not null, published ${flag} not null, author_id bigint not null, note ${text}, foreign key (author_id) references authors(id))")
 }
 
 fn main() ! {
