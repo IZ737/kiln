@@ -17,6 +17,7 @@ kiln_ir = { path = "crates/kiln_ir" }
 kiln_css = { path = "crates/kiln_css" }
 kiln_codegen = { path = "crates/kiln_codegen" }
 kiln_native = { path = "crates/kiln_native" }
+kiln_wasm = { path = "crates/kiln_wasm" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 

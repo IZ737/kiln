@@ -71,6 +71,7 @@ pub const BAD_CSS: &str = "E0312";
 
 pub const NOT_COMPILED_YET: &str = "E0401";
 pub const NO_MAIN: &str = "E0402";
+pub const SERVER_CALL_PLACE: &str = "E0403";
 
 pub static ALL: &[ErrorCode] = &[
     ErrorCode {
@@ -436,6 +437,13 @@ pub static ALL: &[ErrorCode] = &[
         explanation: "A program that is built or run starts at `fn main()`, which takes no parameters. Files without `main` can still be checked with `kiln check`.",
         wrong: "fn greet() {\n    print(\"hi\")\n}",
         right: "fn main() {\n    print(\"hi\")\n}",
+    },
+    ErrorCode {
+        code: SERVER_CALL_PLACE,
+        title: "a `server fn` called where the browser cannot wait for it",
+        explanation: "A `server fn` runs on the server. Code in an ember calls it with a request, so the call must be a statement of its own in an `on:` handler, where the handler can wait for the answer: `x = f(...)`, `let x = f(...)` or `f(...)`, optionally with `catch`. Elsewhere in browser code, such as in the ember's markup or inside an expression, there is nothing to wait with.",
+        wrong: "<p>{like_count(post.id)}</p>",
+        right: "{% state count = 0 %}\n<button on:click={ count = like_count(post.id) catch { count } }>{count}</button>",
     },
 ];
 

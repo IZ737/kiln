@@ -72,11 +72,12 @@ enum Command {
         /// this kiln supports it.
         #[arg(long, value_enum)]
         backend: Option<Backend>,
-        /// The system to build for: `linux` or `windows` (x86-64). Defaults
-        /// to the one kiln runs on. Only the native backend builds for
-        /// other systems.
+        /// The system to build for: `linux` or `windows` (x86-64), or
+        /// `wasm` for a WebAssembly module run by Node.js (22 or later),
+        /// which tests the browser's backend. Defaults to the one kiln runs
+        /// on. Only the native backend builds for other systems.
         #[arg(long, value_parser = parse_target)]
-        target: Option<Target>,
+        target: Option<BuildTarget>,
     },
     /// Compile a program and run it.
     Run {
@@ -145,12 +146,26 @@ fn dispatch(command: Command) -> ExitCode {
             backend,
             target,
         } => {
-            let target = target.unwrap_or_else(Target::host);
-            let out = output.unwrap_or_else(|| default_output(&file, target));
             let emit = Emit {
                 c: emit_c.as_deref(),
                 ir: emit_ir.as_deref(),
+                wasm: false,
             };
+            let target = match target {
+                Some(BuildTarget::Wasm) => {
+                    let out = output.unwrap_or_else(|| {
+                        default_output(&file, Target::Linux).with_extension("mjs")
+                    });
+                    let emit = Emit { wasm: true, ..emit };
+                    return match build(&file, &out, emit, Backend::Native, Target::host()) {
+                        Ok(()) => ExitCode::SUCCESS,
+                        Err(code) => code,
+                    };
+                }
+                Some(BuildTarget::System(t)) => t,
+                None => Target::host(),
+            };
+            let out = output.unwrap_or_else(|| default_output(&file, target));
             let backend = Backend::or_default(backend, target);
             match build(&file, &out, emit, backend, target) {
                 Ok(()) => ExitCode::SUCCESS,
@@ -428,11 +443,25 @@ fn app_files(path: &Path) -> std::io::Result<(PathBuf, Vec<PathBuf>)> {
 
 /// Where `kiln build` writes the executable by default: the program's
 /// folder name, in the current directory.
-fn parse_target(name: &str) -> Result<Target, String> {
-    Target::from_name(name).ok_or_else(|| {
-        let names: Vec<&str> = Target::ALL.iter().map(|t| t.name()).collect();
-        format!("expected one of: {}", names.join(", "))
-    })
+fn parse_target(name: &str) -> Result<BuildTarget, String> {
+    if name == "wasm" {
+        return Ok(BuildTarget::Wasm);
+    }
+    Target::from_name(name)
+        .map(BuildTarget::System)
+        .ok_or_else(|| {
+            let mut names: Vec<&str> = Target::ALL.iter().map(|t| t.name()).collect();
+            names.push("wasm");
+            format!("expected one of: {}", names.join(", "))
+        })
+}
+
+/// What `kiln build --target` names.
+#[derive(Clone, Copy)]
+enum BuildTarget {
+    System(Target),
+    /// A WebAssembly module and its runtime, as one script for Node.js.
+    Wasm,
 }
 
 /// The executable `kiln build` writes when no `--output` is given: the
@@ -457,6 +486,8 @@ fn default_output(path: &Path, target: Target) -> PathBuf {
 struct Emit<'a> {
     c: Option<&'a Path>,
     ir: Option<&'a Path>,
+    /// Build the program for WebAssembly instead, as a Node.js script.
+    wasm: bool,
 }
 
 /// Checks and compiles the program in a folder into an executable at `out`.
@@ -639,6 +670,10 @@ fn build(
     let ir = kiln_ir::lower(&parsed.module, &program).map_err(report)?;
     if let Some(ir_path) = emit.ir {
         write(ir_path, &ir.to_string())?;
+    }
+    if emit.wasm {
+        let module = kiln_wasm::compile(&ir, &kiln_wasm::Roots::Main).map_err(report)?;
+        return write(out, &kiln_wasm::node_runner(&module));
     }
     let c = match (backend, emit.c) {
         (Backend::C, _) | (_, Some(_)) => Some(kiln_codegen::emit_c(&ir).map_err(report)?),

@@ -413,6 +413,7 @@ impl<'a> Lowerer<'a> {
         self.finish(id, decl.name.name.clone(), kind, params, ret, body);
         if let Some(f) = self.funcs[id].as_mut() {
             f.type_args = type_args;
+            f.server = decl.is_server;
         }
     }
 
@@ -462,6 +463,7 @@ impl<'a> Lowerer<'a> {
             throws: ctx.throws,
             locals,
             body,
+            server: false,
         });
         ctx.captures.iter().map(|c| c.0).collect()
     }

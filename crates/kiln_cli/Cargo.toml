@@ -19,6 +19,7 @@ kiln_ir.workspace = true
 kiln_css.workspace = true
 kiln_codegen.workspace = true
 kiln_native.workspace = true
+kiln_wasm.workspace = true
 serde_json.workspace = true
 clap = { version = "4", features = ["derive"] }
 # For `kiln upgrade`: HTTPS with rustls (ring, so no cmake), the system's

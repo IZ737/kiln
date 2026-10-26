@@ -114,6 +114,9 @@ pub struct Func {
     pub throws: Option<Ty>,
     pub locals: Vec<Local>,
     pub body: Block,
+    /// A `server fn`: it runs only on the server, and browser code calls
+    /// it through a request.
+    pub server: bool,
 }
 
 #[derive(Clone)]
