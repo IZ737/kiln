@@ -1103,9 +1103,16 @@ typedef struct ktask {
 
 enum { K_TASK_READY, K_TASK_RUNNING, K_TASK_WAITING, K_TASK_DONE };
 
-/* The message of the error `req.json` failed with for this request, which
- * the server answers with 400 if the handler passes it on. */
+/* The message of the error reading the request failed with, which the
+ * server answers with 400 if the handler passes it on. */
 K_API kstr *k_web_client_error = NULL;
+
+/* For `kiln_rt`: fails the library call that runs, and blames the client,
+ * as reading a request's body does. */
+K_EXPORT void k_rt_client_fail(kstr *message) {
+    k_lib_error = message;
+    k_web_client_error = message;
+}
 
 static ktask k_main_task = {.state = K_TASK_RUNNING, .fd = K_BAD_SOCK};
 static ktask *k_cur = &k_main_task;
@@ -2065,6 +2072,12 @@ K_API kbox *k_web_header(void *request, kstr *name) {
     kv *req = request;
     kmap *h = K_KV2P(kmap *, req[K_REQ_HEADERS]);
     return k_map_get(h, K_P2KV(k_web_lower(name->data, name->len)));
+}
+
+/* For `kiln_rt`: a request header, as `req.header` reads it. */
+K_EXPORT kstr *k_rt_header(void *request, kstr *name) {
+    kbox *found = k_web_header(request, name);
+    return found ? K_KV2P(kstr *, found->v) : NULL;
 }
 
 K_API kbox *k_web_cookie(void *request, kstr *name) {

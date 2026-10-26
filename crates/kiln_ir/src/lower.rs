@@ -2507,7 +2507,7 @@ impl Lowerer<'_> {
 /// backend to build.
 const LIB_MODULES: &[&str] = &[
     "time", "fs", "os", "io", "web", "json", "html", "base64", "markdown", "ember", "js",
-    "browser", "sql",
+    "validate", "browser", "sql",
 ];
 
 /// Types of those modules whose methods are [`ExprKind::Lib`] calls too,
@@ -2517,6 +2517,7 @@ const LIB_TYPES: &[(&str, &str)] = &[
     ("web", "Request"),
     ("js", "Value"),
     ("sql", "Db"),
+    ("validate", "Checked"),
 ];
 
 /// The type of a library call: its declared return type, with a generic

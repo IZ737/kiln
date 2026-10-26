@@ -1,0 +1,43 @@
+### POST /signup HTTP/1.1
+HTTP/1.1 200 OK
+content-type: text/plain; charset=utf-8
+content-length: 83
+connection: close
+
+Ada Lovelace <ada@example.com> 36 paid [glazes embers] news=true about=Hello, Kiln!
+### POST /signup HTTP/1.1
+HTTP/1.1 422 Unprocessable Content
+content-type: text/plain; charset=utf-8
+content-length: 197
+connection: close
+
+not yet: name needs at least 2 characters; email is not an email address; age cannot be less than 13; plan should be free or paid; pick at most three topics (name: name needs at least 2 characters)
+### POST /signup HTTP/1.1
+HTTP/1.1 200 OK
+content-type: text/plain; charset=utf-8
+content-length: 61
+connection: close
+
+Grace <grace@example.com> 45 free [] news=false about=nothing
+### POST /signup HTTP/1.1
+HTTP/1.1 400 Bad Request
+content-type: application/json
+content-length: 124
+connection: close
+
+{"error":"cannot read a form sent as application/json: send it as application/x-www-form-urlencoded or multipart/form-data"}
+### POST /signup HTTP/1.1
+HTTP/1.1 400 Bad Request
+content-type: application/json
+content-length: 54
+connection: close
+
+{"error":"the form field `age` is not a whole number"}
+### POST /signup HTTP/1.1
+HTTP/1.1 400 Bad Request
+content-type: application/json
+content-length: 40
+connection: close
+
+{"error":"the form has no field `name`"}
+### GET /quit HTTP/1.1

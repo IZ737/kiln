@@ -17,6 +17,7 @@
 //!   generated code.
 
 mod base64;
+mod form;
 mod html;
 mod json;
 mod markdown;
@@ -26,10 +27,12 @@ mod server;
 mod sql;
 mod timefmt;
 mod ui;
+mod validate;
 mod value;
 mod web;
 
 pub use base64::{k_rt_base64_decode, k_rt_base64_encode};
+pub use form::k_rt_web_form;
 pub use html::{k_rt_html_escape, k_rt_html_safe_url};
 pub use json::{k_json_encode, k_rt_json_decode};
 pub use markdown::k_rt_markdown_to_html;
@@ -41,4 +44,9 @@ pub use sql::{
     k_rt_sql_scalar, k_rt_sql_value,
 };
 pub use ui::k_rt_ui_merge;
+pub use validate::{
+    k_rt_validate_check, k_rt_validate_email, k_rt_validate_error, k_rt_validate_length,
+    k_rt_validate_messages, k_rt_validate_one_of, k_rt_validate_problem, k_rt_validate_range,
+    k_rt_validate_required, k_rt_validate_same, k_rt_validate_when,
+};
 pub use web::{k_rt_cookie, k_rt_path_decode, k_rt_query, k_web_reason};

@@ -1,0 +1,48 @@
+// A submitted form: read as a struct, checked with rules, and shown again
+// with what is wrong with it. A form the server cannot read at all is the
+// client's mistake, and gets 400.
+import web, validate, os
+
+struct Signup {
+    name: String
+    email: String
+    age: Int
+    plan: String
+    topics: List<String>
+    newsletter: Bool
+    about: String? = none
+}
+
+fn problems(input: Signup) -> validate.Checked {
+    validate.check([
+        validate.required("name", input.name),
+        validate.length("name", input.name, min: 2, max: 20),
+        validate.email("email", input.email),
+        validate.range("age", input.age, 13, 120),
+        validate.one_of("plan", input.plan, ["free", "paid"]),
+        validate.when(input.topics.len() > 3, "topics", "pick at most three topics"),
+    ])
+}
+
+fn main() ! {
+    let app = web.app()
+
+    app.post("/signup", fn(req) {
+        let input = try req.form<Signup>()
+        let checked = problems(input)
+        if not checked.valid {
+            // The form again, with the problems in it and the input kept.
+            let shown = checked.messages().join("; ")
+            let name = checked.error("name") ?? "-"
+            return web.text("not yet: ${shown} (name: ${name})", status: 422)
+        }
+        let about = input.about ?? "nothing"
+        return web.text("${input.name} <${input.email}> ${input.age} ${input.plan} [${input.topics.join(" ")}] news=${input.newsletter} about=${about}")
+    })
+
+    app.get("/quit", fn(req) {
+        os.exit(0)
+    })
+
+    try app.listen("127.0.0.1:${env("PORT")}")
+}

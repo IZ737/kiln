@@ -164,6 +164,7 @@ const STD_MODULES: &[(&str, &str)] = &[
     ("web", include_str!("../std/web.kiln")),
     ("sql", include_str!("../std/sql.kiln")),
     ("orm", include_str!("../std/orm.kiln")),
+    ("validate", include_str!("../std/validate.kiln")),
     ("auth", include_str!("../std/auth.kiln")),
     ("log", include_str!("../std/log.kiln")),
     ("json", include_str!("../std/json.kiln")),
