@@ -20,7 +20,7 @@ This plan refines the [vision for Embers](../vision.md#embers-interactivity-when
 6. **`server fn` is a checked network boundary.** Derive client proxy, request/response types, codecs and server handler from one declaration. Validate every request, explicitly expose allowed functions and provide policy hooks. Phase 4 can use public pure functions; Phase 5 supplies identity and per-record authorization.
 7. **Explicit async state.** Network failures, cancellation, stale responses, optimistic updates and error recovery must be observable. Never silently repeat unsafe mutations.
 8. **Use browser standards and existing tools.** Reuse maintained Wasm and JS interop libraries/bundlers, and permit ordinary HTML/CSS/JS integrations. The implementation is replaceable; Kiln developer-facing semantics are the durable contract.
-9. **No premature ecosystem scope.** General multi-folder modules, Wares, official UI Ware, `kiln.toml`, public `kiln test`, formatter and compiler MCP follow in Phase 6.
+9. **No premature ecosystem scope.** Local multi-folder modules and an optional minimal `kiln.toml` follow in [Phase 4.2](phase-4.2.md); Wares, official UI Ware, lockfiles, public `kiln test`, formatter and compiler MCP remain Phase 6.
 10. **Testing now, polished runner later.** Extend compiler conformance and real-browser CI during Phase 4. Phase 6 supplies the unified public test runner, **including Ember hydration/RPC from its first release**.
 11. **WasmGC-only browser target for Phase 4.** Do not build or require a JavaScript code-generation fallback in this phase. When browser feature detection shows missing WasmGC support, preserve usable SSR HTML and native link/form navigation wherever possible; Ember-only functionality may be unavailable. A JavaScript fallback backend is a [long-term vision item](../vision.md#future-javascript-compiler-fallback), not a 1.0 gate. The minimal JavaScript bootstrap/interop bridge for WasmGC is not such a backend.
 
@@ -220,7 +220,8 @@ Each step is a separately reviewable milestone with diagnostics, conformance/bro
 ## 12. Explicit boundaries
 
 - **Phase 5:** SQL/ORM, schema import/migrations, typed forms/validation, sessions/auth, generated admin and authenticated database-backed Ember/RPC applications.
-- **Phase 6:** Multi-folder modules, `kiln.toml`/`kiln.lock`, Wares/registry/global cache, official accessible UI Ware, public `kiln test` (with Ember tests **at launch**), formatter/live reload/refactoring and compiler MCP.
+- **Phase 4.2:** Local multi-folder modules, optional minimal `kiln.toml`, and compiler/editor module support.
+- **Phase 6:** Extended manifest dependency fields, `kiln.lock`, Wares/registry/global cache, official accessible UI Ware, public `kiln test` (with Ember tests **at launch**), formatter/live reload/refactoring and compiler MCP.
 - **Phase 7:** Deployment, static-site export, extensive optimization/hardening and long-term compatibility guarantees.
 - **Later:** Optional JavaScript fallback code generation for browsers without WasmGC (from the same checked Kiln semantics, subject to feasibility and cross-backend conformance), PWA offline/sync, advanced desktop reuse, arbitrary npm/React/Node compatibility, freestanding targets and complete debugger.
 - **Non-goals:** Forced SPA routing, client-side access to server data stores/secrets, runtime template interpretation or a mandatory second JavaScript framework.
