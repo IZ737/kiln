@@ -323,6 +323,8 @@ and building again changes the site, layout included.
 
 ## Embers
 
+**Current implemented syntax:** Embers are still inferred from interactive `.glaze` content. The planned [Phase 4.1 explicit source model](../plans/phase-4.1.md) will require `.ember` for browser-capable components and disallow state/handlers in `.glaze`. The change has **not** been implemented yet.
+
 A glaze with `{% state %}` or an `on:` handler is an ember. The server
 renders it like any glaze, inside a `<kiln-island>` element that carries
 its props and state as JSON, and the browser takes it over with the
