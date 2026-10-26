@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.8.0 (2026-10-26)
 
 Phase 4: embers. Glazes with state and event handlers render on the
 server and hydrate in the browser as WasmGC, call `server fn`s through
