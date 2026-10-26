@@ -105,43 +105,30 @@ A folder is one program, as in Go. All of its `.kiln` files share one
 namespace, so splitting a file in two never needs an import, and the
 folder's glazes see the same types and functions. Imports stay per file.
 
-**Phase 6 plan:** [projects, Wares, testing, tooling and agent integration](plans/phase-6.md) covers the full five-subphase implementation sequence and acceptance gates. Examples in that plan are proposed APIs, not current executable syntax.
+**Phase 4.2 plan:** [multi-folder projects and local modules](plans/phase-4.2.md) moves project structure **before Phase 5 data/ORM/auth**. A subfolder is a separate local module, imported with `import posts` (nested: `import posts.search`), and `pub` exports its API. Same-folder `.kiln` files still share declarations, but imports remain per source file. Compiler resolution, type checking, builds, Glazes/Embers and assets, diagnostics and LSP navigation must work across folder boundaries; local imports require no registry, Ware installation, lockfile or compulsory manifest.
 
-**Phase 6 explicitly adds multi-folder projects and local modules.** A
-subfolder is a module, imported by its name, with `pub` items defining its
-interface. Compiler resolution, type checking, builds, Glaze/component
-references, diagnostics and LSP navigation must work across module folders.
-Local imports work **without publishing, installing or configuring a Ware
-registry**. Wares will reuse compatible module-resolution concepts for
-external versioned packages, but are not a prerequisite for organizing
-one app into multiple folders. Phase 6 is complete on this dimension when
-a multi-folder app builds and runs, access control through `pub` is checked,
-and cross-folder editing/navigation works.
+**Phase 4.2 completion:** A manifest-free multi-folder application builds and runs offline with protected module visibility, deterministic path/cycle/name diagnostics and working module-local server Glazes and client Embers. The optional minimal `kiln.toml` may identify a project root and entrypoint; no project file is necessary for an unambiguous simple or multi-folder program.
 
-### Phase 6: project manifests and Ware dependencies
+### Phase 4.2: minimal project manifest
 
-Phase 6 adds an **optional `kiln.toml`** in the project root. It is a
-declarative TOML manifest for project identity, module/application
-entrypoint, build defaults, optional test settings and local/external
-dependencies. Its purpose is to give `kiln run`, `kiln build`,
-`kiln check`, `kiln test` and future release/publish commands a
-consistent project context. The manifest should be **optional** for
-single-file scripts and simple same-folder programs; for larger
-projects, it identifies the root without requiring one manifest in
-every subfolder.
+A declarative optional `kiln.toml` helps select the app entrypoint without procedural configuration or scripts:
 
-A **`kiln.lock`** records the fully resolved dependency graph, exact
-versions and integrity/source information for reproducible builds.
-Kiln should generate/update it through dependency operations and
-validate it in locked CI/release workflows. Local modules work with
-no registry and do not need package versions. `kiln.toml` may also
-declare local-path or Git Wares, without requiring the official registry
-to be online.
+~~~toml
+[package]
+name = "fieldnotes"
+kind = "app"
+entry = "main.kiln"
+~~~
 
-Indicative `kiln.toml` shape (**planned, exact keys subject to
-implementation**):
+Explicit CLI arguments take precedence over manifest defaults. Manifest-relative entry paths must stay inside the project root; parsing/diagnostics should be source-linked. No plaintext secrets, per-folder manifests or automatic dependency installation. `kiln-deploy.toml` remains separate in Phase 7.
 
-```toml
+### Phase 6: extending the project manifest for Wares
+
+The [Phase 6 implementation plan](plans/phase-6.md) **reuses** Phase 4.2's folder/import/visibility model and extends the existing `kiln.toml` schema with package version/publishing identity, build/test defaults and versioned local/Git/registry **Wares**. It also adds `kiln.lock`: the resolved external dependency graph, exact releases/commits and integrity/source information for reproducible builds. Ordinary local folder modules require neither `[wares]` nor a lockfile.
+
+Illustrative future Phase 6 extension (these `[wares]` names and fields are proposals, not current working syntax):
+
+~~~toml
 [package]
 name = "fieldnotes"
 version = "0.1.0"
@@ -157,39 +144,9 @@ target = "linux"
 
 [test]
 browser = true
-```
+~~~
 
-The `[wares]` entries are conceptual, not published package names;
-`kiln/ui` refers to the planned official accessible component Ware.
-Configuration must not require arbitrary install scripts or contain
-plaintext secrets. Document precedence for manifest defaults versus
-explicit CLI flags and environment overrides. Keep errors for invalid
-TOML, package conflicts, missing local modules and lockfile mismatches
-specific and source-linked; editors should recognize the project root.
-
-Proposed dependency UX: `kiln add` and `kiln remove` update the
-manifest and lockfile consistently, with an explicitly named
-dependency-update command chosen during implementation. **Do not
-overload the existing `kiln upgrade` command**, which already updates
-the installed Kiln compiler. Avoid making developers hand-edit the
-lockfile or write their own dependency scripts.
-
-Support an optional later `[workspace]` model for multiple packages
-in a monorepo, using shared resolution where appropriate, but **do
-not block Phase 6's ordinary multi-folder projects on full workspace
-publishing semantics**.
-
-Keep `kiln-deploy.toml` **separate**: it configures deploy targets,
-infrastructure and release activation; `kiln.toml` describes the
-project/dependencies/build and test defaults, while `kiln.lock`
-pins dependencies. None is a procedural `Kilnfile` or an executable
-configuration DSL.
-
-Acceptance for this part of Phase 6: manifest-free `kiln run hello.kiln`
-continues to work; a multi-folder project builds with optional
-`kiln.toml`; local imports work offline without a Ware registry;
-an app depending on Wares produces/obeys a reproducible `kiln.lock`;
-and manifest plus dependency diagnostics are usable from CLI/LSP.
+`kiln add` / `kiln remove` should mutate the manifest and lockfile together, with explicit safe resolution. **`kiln upgrade` is for upgrading the compiler**, not Ware dependencies. Dependency verification and publishing do not execute arbitrary install scripts. Future `[workspace]` and multi-package publishing are optional later scope, not requirements for Phase 4.2 or basic Phase 6 Wares.
 
 ### Phase 6: global Ware storage and caching
 
