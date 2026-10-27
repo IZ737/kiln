@@ -44,6 +44,10 @@ pub(crate) struct FnCtx {
     bang_at: Option<Span>,
     /// Inference variables from generic calls that must be solved by the end.
     pending: Vec<(u32, Span, String, String)>,
+    /// Inference variables that must fit an interface, checked once the
+    /// function's types are known: the variable, the interface, the call
+    /// and the type parameter's name.
+    bound_checks: Vec<(u32, usize, Span, String)>,
 }
 
 pub struct Checker {
@@ -51,6 +55,10 @@ pub struct Checker {
     pub(crate) modules: Vec<ModuleDef>,
     pub(crate) global_fns: HashMap<String, FnSig>,
     pub(crate) global_types: HashMap<String, AdtId>,
+    pub(crate) interfaces: Vec<InterfaceDef>,
+    pub(crate) global_interfaces: HashMap<String, usize>,
+    /// The interfaces of the bounded type parameters in scope.
+    pub(crate) type_bounds: HashMap<String, Vec<usize>>,
     pub(crate) imports: HashMap<String, ModId>,
     pub(crate) consts: HashMap<String, Ty>,
     /// The names of the program's own types, and of its functions and
@@ -196,6 +204,9 @@ impl Checker {
             modules: Vec::new(),
             global_fns: HashMap::new(),
             global_types: HashMap::new(),
+            interfaces: Vec::new(),
+            global_interfaces: HashMap::new(),
+            type_bounds: HashMap::new(),
             imports: HashMap::new(),
             consts: HashMap::new(),
             declared_types: HashSet::new(),
@@ -789,6 +800,11 @@ impl Checker {
                         self.refer(m.name.span, Ref::Method(id, m.name.name.clone()));
                     }
                 }
+                Item::Interface(i) => {
+                    if let Some(&id) = self.global_interfaces.get(&i.name.name) {
+                        self.refer(i.name.span, Ref::Interface(id));
+                    }
+                }
                 Item::Import(_) => {}
             }
         }
@@ -805,6 +821,7 @@ impl Checker {
             infer_throws: None,
             bang_at,
             pending: Vec::new(),
+            bound_checks: Vec::new(),
         });
         self.push_scope();
     }
@@ -824,7 +841,163 @@ impl Checker {
                 );
             }
         }
+        for (v, iface, span, param) in &ctx.bound_checks {
+            let ty = self.resolve(&Ty::Var(*v));
+            self.check_bound(&ty, *iface, *span, param);
+        }
         ctx
+    }
+
+    /// Checks that `ty`, given for the type parameter `param` at `span`,
+    /// fits interface `iface`, or defers it while `ty` is not known yet.
+    pub(crate) fn check_bound(&mut self, ty: &Ty, iface: usize, span: Span, param: &str) {
+        let ty = self.resolve(ty);
+        let def = self.interfaces[iface].clone();
+        let problem = match &ty {
+            Ty::Var(v) => {
+                if let Some(ctx) = self.fns.last_mut() {
+                    ctx.bound_checks.push((*v, iface, span, param.to_string()));
+                }
+                return;
+            }
+            Ty::Unknown | Ty::Never | Ty::Any => return,
+            Ty::Param(name) => {
+                let fits = self.type_bounds.get(name).is_some_and(|have| {
+                    have.contains(&iface)
+                        || def.methods.iter().all(|m| {
+                            have.iter().any(|&h| {
+                                self.interfaces[h]
+                                    .methods
+                                    .iter()
+                                    .any(|n| self.same_method(n, m, &HashMap::new()))
+                            })
+                        })
+                });
+                if fits {
+                    return;
+                }
+                self.error(
+                    Diagnostic::error(
+                        codes::UNMET_BOUND,
+                        format!(
+                            "`{param}` must fit `{}`, but the type parameter `{name}` is not bounded by it",
+                            def.name
+                        ),
+                        span,
+                    )
+                    .with_help(format!("declare it as `{name}: {}`", def.name)),
+                );
+                return;
+            }
+            Ty::Adt(id, args) => {
+                let adt = self.adts[*id].clone();
+                let map: HashMap<String, Ty> = adt
+                    .params
+                    .iter()
+                    .cloned()
+                    .zip(args.iter().cloned())
+                    .collect();
+                let mut problem = None;
+                for m in &def.methods {
+                    match adt.methods.iter().find(|n| n.name == m.name) {
+                        None => {
+                            problem = Some(format!(
+                                "it has no method `{}`",
+                                self.show_method(m, &HashMap::new())
+                            ));
+                            break;
+                        }
+                        Some(n) if !self.same_method(n, m, &map) => {
+                            problem = Some(format!(
+                                "its method is `{}`, not `{}`",
+                                self.show_method(n, &map),
+                                self.show_method(m, &HashMap::new())
+                            ));
+                            break;
+                        }
+                        Some(_) => {}
+                    }
+                }
+                match problem {
+                    Some(p) => p,
+                    None => return,
+                }
+            }
+            _ if def.methods.is_empty() => return,
+            _ => "it has no methods".to_string(),
+        };
+        let shown = self.show(&ty);
+        self.error(Diagnostic::error(
+            codes::UNMET_BOUND,
+            format!(
+                "`{shown}` does not fit `{}`, which `{param}` must: {problem}",
+                def.name
+            ),
+            span,
+        ));
+    }
+
+    /// Whether `have`, a type's method with its type parameters in `map`,
+    /// has the signature of the interface method `want`.
+    fn same_method(&self, have: &FnSig, want: &FnSig, map: &HashMap<String, Ty>) -> bool {
+        have.has_self
+            && have.generics.is_empty()
+            && have.params.len() == want.params.len()
+            && have
+                .params
+                .iter()
+                .zip(&want.params)
+                .all(|(a, b)| substitute(&a.ty, map) == b.ty)
+            && substitute(&have.ret, map) == want.ret
+            && have.throws.as_ref().map(|t| substitute(t, map)) == want.throws
+    }
+
+    /// `name(self, x: Int) -> String !`, as a method is written.
+    fn show_method(&self, sig: &FnSig, map: &HashMap<String, Ty>) -> String {
+        let mut params = vec!["self".to_string()];
+        for p in &sig.params {
+            let ty = self.show(&substitute(&p.ty, map));
+            params.push(match &p.name {
+                Some(n) => format!("{n}: {ty}"),
+                None => ty,
+            });
+        }
+        let mut out = format!("{}({})", sig.name, params.join(", "));
+        let ret = substitute(&sig.ret, map);
+        if ret != Ty::Unit {
+            out.push_str(&format!(" -> {}", self.show(&ret)));
+        }
+        if sig.throws.is_some() {
+            out.push_str(" !");
+        }
+        out
+    }
+
+    /// Checks the bounds of a generic call's type arguments.
+    fn check_call_bounds(&mut self, sig: &FnSig, span: Span) {
+        if sig.bounds.is_empty() {
+            return;
+        }
+        let Some(map) = self.instantiations.get(&span).cloned() else {
+            return;
+        };
+        for (param, ifaces) in &sig.bounds {
+            let Some(ty) = map.get(param) else { continue };
+            for &iface in ifaces {
+                self.check_bound(ty, iface, span, param);
+            }
+        }
+    }
+
+    /// A method an interface gives a bounded type parameter.
+    fn bound_method(&self, param: &str, name: &str) -> Option<FnSig> {
+        self.type_bounds.get(param)?.iter().find_map(|&i| {
+            self.interfaces[i]
+                .methods
+                .iter()
+                .find(|m| m.name == name)
+                .cloned()
+        })
     }
 
     fn check_fn(&mut self, f: &FnDecl, self_ty: Option<Ty>, outer: &[String]) {
@@ -871,9 +1044,13 @@ impl Checker {
             self.must_cross(&ret, "what a `server fn` returns", t.span);
         }
         let outer_params = std::mem::replace(&mut self.type_params, generics);
+        let bounds: HashMap<String, Vec<usize>> =
+            self.resolve_bounds(f, Scope::Global).into_iter().collect();
+        let outer_bounds = std::mem::replace(&mut self.type_bounds, bounds);
         self.check_body(&f.body, &ret);
         self.type_params = outer_params;
         self.exit_fn();
+        self.type_bounds = outer_bounds;
     }
 
     fn check_body(&mut self, body: &Block, ret: &Ty) {
@@ -2185,6 +2362,7 @@ impl Checker {
                 if let Some(sig) = self.modules[m].fns.get(&name.name).cloned() {
                     let (params, ret, throws) = self.instantiate(&sig, &[], &explicit, e.span);
                     self.check_args(&params, args, e.span, &fn_name, None);
+                    self.check_call_bounds(&sig, e.span);
                     if self.modules[m].name == "orm" {
                         self.orm_call(&name.name, args, &explicit, e.span);
                     }
@@ -2212,6 +2390,7 @@ impl Checker {
                     self.refer(name.span, Ref::Method(id, name.name.clone()));
                     let (params, ret, throws) = self.instantiate(&sig, &[], &explicit, e.span);
                     self.check_args(&params, args, e.span, &fn_name, None);
+                    self.check_call_bounds(&sig, e.span);
                     return (ret, throws);
                 }
                 // `Enum.Variant(...)`
@@ -2232,6 +2411,7 @@ impl Checker {
                         params.remove(0);
                     }
                     self.check_args(&params, args, e.span, &fn_name, None);
+                    self.check_call_bounds(&sig, e.span);
                     if rpc && throws.is_none() {
                         throws = Some(self.error_ty());
                     }
@@ -2260,6 +2440,37 @@ impl Checker {
                     if changes && id < self.std_adts {
                         self.changes_const(&constant, callee.span);
                     }
+                }
+            }
+            if let Ty::Param(param) = self.resolve(&base_ty) {
+                if let Some(sig) = self.bound_method(&param, &name.name) {
+                    let (params, ret, throws) = self.instantiate(&sig, &[], &explicit, e.span);
+                    self.check_args(&params, args, e.span, &fn_name, None);
+                    return (ret, throws);
+                }
+                if !self.is_marker(&name.name) {
+                    let mut diag = Diagnostic::error(
+                        codes::NO_SUCH_MEMBER,
+                        format!("the type parameter `{param}` has no method `{}`", name.name),
+                        name.span,
+                    );
+                    let offer: Vec<String> = self
+                        .interfaces
+                        .iter()
+                        .filter(|i| i.methods.iter().any(|m| m.name == name.name))
+                        .map(|i| format!("`{param}: {}`", i.name))
+                        .collect();
+                    diag = diag.with_help(if offer.is_empty() {
+                        format!(
+                            "a bound gives it methods: declare `interface Name {{ fn {}(self) }}` and write `{param}: Name`",
+                            name.name
+                        )
+                    } else {
+                        format!("bound it, as in {}", offer.join(" or "))
+                    });
+                    self.error(diag);
+                    self.infer_args_loosely(args);
+                    return (Ty::Unknown, None);
                 }
             }
             if let Ty::Adt(id, recv_args) = self.resolve(&base_ty) {
@@ -2291,6 +2502,7 @@ impl Checker {
                         self.instantiate(sig, &recv_args, &explicit, e.span);
                     let route = self.route_handler_type(id, &name.name, args);
                     self.check_args(&params, args, e.span, &fn_name, route);
+                    self.check_call_bounds(sig, e.span);
                     if self.is_query_ty(&base_ty) {
                         self.orm_step(base, &name.name, args, e.span);
                     }
@@ -3139,6 +3351,7 @@ pub(crate) fn item_name(item: &Item) -> &str {
             TypeKind::Named { path, .. } => path.last().map_or("", |n| n.name.as_str()),
             _ => "",
         },
+        Item::Interface(i) => &i.name.name,
         Item::Import(_) => "",
     }
 }

@@ -109,6 +109,14 @@ this with tests.
 - Named arguments and defaults: `web.json(post, status: 201)`.
 - Generic calls name the type: `req.form<{ title: String }>()`,
   `orm.find<Post>(db)`, `json.decode<Post>(text)`.
+- A generic function that calls methods on `T` bounds it with an
+  interface: `interface Named { fn name(self) -> String }` and
+  `fn label<T: Named>(x: T)`. Any type with those methods fits; an
+  interface is never a parameter's type itself.
+- `String` is text and `Bytes` is binary data: `text.bytes()`,
+  `data.text()` (can fail), `fs.read_bytes`, `web.bytes(data,
+  content_type: "image/png")`, `req.bytes()`, and `Bytes` form fields for
+  uploads.
 - Map literals: `["Ada": 36, "Grace": 45]`. Empty collections need a
   type: `let tags: List<String> = []`, `let form: Map<String, String> = Map()`.
 - Multi-line text is a `"""` string: its lines start on the line after the

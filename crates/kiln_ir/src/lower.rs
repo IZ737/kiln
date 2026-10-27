@@ -359,6 +359,7 @@ impl<'a> Lowerer<'a> {
         let inst = FnSig {
             generics: Vec::new(),
             impl_params: Vec::new(),
+            bounds: Vec::new(),
             params: sig
                 .params
                 .iter()

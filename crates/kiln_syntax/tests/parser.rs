@@ -385,3 +385,39 @@ fn map_literals_and_spreads() {
         1
     );
 }
+
+#[test]
+fn interfaces_and_bounds() {
+    let src = "pub interface Named {\n    fn name(self) -> String\n    fn rename(self, to: String) !\n}\n\nfn label<T: Named, U: Named + Sized>(x: T, y: U) -> String {\n    return x.name()\n}\n";
+    let result = parse(src);
+    assert!(result.diagnostics.is_empty(), "{:#?}", result.diagnostics);
+    let Item::Interface(i) = &result.module.items[0] else {
+        panic!("expected an interface")
+    };
+    assert!(i.is_pub);
+    assert_eq!(i.name.name, "Named");
+    let names: Vec<&str> = i.methods.iter().map(|m| m.name.name.as_str()).collect();
+    assert_eq!(names, ["name", "rename"]);
+    assert!(i.methods.iter().all(|m| m.body.stmts.is_empty()));
+    assert_eq!(i.methods[1].throws, Throws::Default);
+    let Item::Fn(f) = &result.module.items[1] else {
+        panic!("expected a function")
+    };
+    assert_eq!(f.generics.len(), 2);
+    let bounds: Vec<(&str, usize)> = f
+        .bounds
+        .iter()
+        .map(|b| (b.param.name.as_str(), b.interfaces.len()))
+        .collect();
+    assert_eq!(bounds, [("T", 1), ("U", 2)]);
+    // `interface` is a word like any other where it is not a declaration.
+    assert!(error_codes("fn main() {\n    let interface = 1\n}\n").is_empty());
+}
+
+#[test]
+fn bounds_belong_to_functions() {
+    let src = "struct Shelf<T: Named> {\n    items: List<T>\n}\n";
+    assert_eq!(error_codes(src), vec![codes::MISPLACED_BOUND]);
+    let src = "interface Named {\n    fn name(self) -> String {\n        return \"\"\n    }\n}\n";
+    assert_eq!(error_codes(src), vec![codes::EXPECTED_TOKEN]);
+}

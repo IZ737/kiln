@@ -17,6 +17,37 @@ the details of any error.
   (E0212). Inside a generic function, its type parameters can be used in
   annotations: `var best: T? = none`.
 
+## Interfaces
+
+An interface lists methods, and a bound on a type parameter says the
+function calls them:
+
+```kiln
+interface Named {
+    fn name(self) -> String
+}
+
+fn label<T: Named>(x: T) -> String {
+    return "<${x.name()}>"
+}
+```
+
+- A type fits an interface when it has each method with `self` and the same
+  parameter, result and error types. Nothing declares that it fits: a
+  struct's `impl` method fits, and so does a built-in type's, so
+  `interface Sized { fn len(self) -> Int }` fits `String`, `Bytes` and
+  `List<T>`. A type that does not fit is E0234, naming the missing method.
+- Inside the function, `x.name()` is allowed because of the bound; a type
+  parameter without one has no methods (E0208). `T: Named + Sized` needs
+  both.
+- A generic function that calls a bounded one passes its own bound on:
+  `fn twice<T: Named>(x: T)` can call `label(x)`; `fn twice<T>(x: T)` cannot
+  (E0234).
+- An interface is not a type: there are no interface values, so
+  `fn label(x: Named)` is E0235. Each call is compiled for the type it is
+  given, like other generics; for a list of different kinds of things, use an
+  enum, or a struct of functions.
+
 ## Bindings and values
 
 - `let` cannot be rebound and `var` can; neither copies. Structs, records,

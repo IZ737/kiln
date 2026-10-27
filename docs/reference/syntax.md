@@ -51,12 +51,24 @@ fn load(id: Int) -> Post ! DbError { ... }   // can fail with DbError
 fn main() ! { ... }                            // can fail with the default error
 
 server fn like_post(id: Int) -> Int ! web.Error { ... }   // callable from the browser
+
+interface Named {
+    fn name(self) -> String                    // methods without bodies
+}
+
+fn label<T: Named>(x: T) -> String { x.name() }   // T must fit Named
+fn show_all<T: Named + Sized>(xs: List<T>) { ... }
 ```
 
 - Function parameters always have types. Closure parameters may omit them.
 - `where` is a keyword only in `for` loops, so it can also name a method or
   field after `.`, and a method in an `impl`: `orm.find<Post>(db).where(.published)`.
-- Members of a `struct`, `enum` or `impl` are separated by newlines or commas.
+- Members of a `struct`, `enum`, `impl` or `interface` are separated by newlines or commas.
+- `interface` is a keyword only at the start of a declaration, so it can still
+  name a variable or field. An interface's methods take `self` and have no
+  body or type parameters (E0235).
+- Only the type parameters of functions and methods take bounds; a struct's
+  or enum's stay plain (E0112).
 
 ## Types
 

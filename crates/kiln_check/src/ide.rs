@@ -28,6 +28,8 @@ pub enum Ref {
     Fn(String),
     Const(String),
     Type(AdtId),
+    /// An interface, by its index in the checker's interfaces.
+    Interface(usize),
     Field(AdtId, String),
     Method(AdtId, String),
     Variant(AdtId, String),
@@ -102,6 +104,7 @@ pub struct Analysis {
     pub std_adts: usize,
     pub global_fns: HashMap<String, FnSig>,
     pub global_types: HashMap<String, AdtId>,
+    pub interfaces: Vec<InterfaceDef>,
     pub consts: HashMap<String, Ty>,
     /// The modules the file imports, by the name it uses.
     pub imports: HashMap<String, ModId>,
@@ -145,6 +148,7 @@ pub fn analyze_app(
         std_adts: checker.std_adts,
         global_fns: checker.global_fns,
         global_types: checker.global_types,
+        interfaces: checker.interfaces,
         consts: checker.consts,
         imports: checker.imports,
         modules: checker.modules,
@@ -156,6 +160,17 @@ pub fn analyze_app(
 }
 
 impl Analysis {
+    /// An interface as it is declared, its methods one per line.
+    pub fn show_interface(&self, id: usize) -> String {
+        let def = &self.interfaces[id];
+        let mut out = format!("interface {} {{\n", def.name);
+        for m in &def.methods {
+            out.push_str(&format!("    {}\n", self.show_fn(m)));
+        }
+        out.push('}');
+        out
+    }
+
     /// How a type is written.
     pub fn show(&self, ty: &Ty) -> String {
         show_type(&self.adts, ty, &|t| t.clone())

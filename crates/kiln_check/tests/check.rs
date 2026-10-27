@@ -675,3 +675,32 @@ fn standard_library_internals_are_hidden() {
     // The compiler's own declarations, named `__`, may use them.
     ok("import sql\nfn __glue() {\n    let v = sql.__value(1)\n}\nfn main() {}\n");
 }
+
+#[test]
+fn interfaces_bound_type_parameters() {
+    let decls = "interface Named {\n    fn name(self) -> String\n}\nstruct Dog {\n    nick: String\n}\nimpl Dog {\n    fn name(self) -> String {\n        return self.nick\n    }\n}\nstruct Rock {}\nfn label<T: Named>(x: T) -> String {\n    return x.name()\n}\n";
+    let ok = format!("{decls}fn main() {{\n    print(label(Dog(nick: \"Rex\")))\n}}\n");
+    assert!(error_codes(&ok).is_empty(), "{:?}", error_codes(&ok));
+    // A type without the method does not fit.
+    let src = format!("{decls}fn main() {{\n    print(label(Rock()))\n}}\n");
+    assert_eq!(error_codes(&src), vec![codes::UNMET_BOUND]);
+    // A generic caller passes the bound on.
+    let src =
+        format!("{decls}fn twice<T>(x: T) -> String {{\n    return label(x)\n}}\nfn main() {{}}\n");
+    assert_eq!(error_codes(&src), vec![codes::UNMET_BOUND]);
+    let src = format!(
+        "{decls}fn twice<T: Named>(x: T) -> String {{\n    return label(x)\n}}\nfn main() {{}}\n"
+    );
+    assert!(error_codes(&src).is_empty());
+    // Methods come from bounds, and an interface is not a type.
+    let src =
+        format!("{decls}fn f<T>(x: T) -> String {{\n    return x.name()\n}}\nfn main() {{}}\n");
+    assert_eq!(error_codes(&src), vec![codes::NO_SUCH_MEMBER]);
+    let src = format!("{decls}fn f(x: Named) {{}}\nfn main() {{}}\n");
+    assert_eq!(error_codes(&src), vec![codes::INTERFACE_MISUSE]);
+    let src = format!("{decls}fn f<T: Dog>(x: T) {{}}\nfn main() {{}}\n");
+    assert_eq!(error_codes(&src), vec![codes::INTERFACE_MISUSE]);
+    // Built-in types fit by their methods too.
+    let src = "interface Sized {\n    fn len(self) -> Int\n}\nfn total<T: Sized>(xs: List<T>) -> Int {\n    return xs.fold(0, fn(a, x) { a + x.len() })\n}\nfn main() {\n    print(total([\"a\", \"bc\"]))\n    print(total([[1], [2, 3]]))\n}\n";
+    assert!(error_codes(src).is_empty(), "{:?}", error_codes(src));
+}

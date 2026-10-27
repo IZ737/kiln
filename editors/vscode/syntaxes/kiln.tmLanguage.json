@@ -241,7 +241,7 @@
           }
         },
         {
-          "match": "\\b(struct|enum)\\s+([\\p{L}_][\\p{L}\\p{N}_]*)",
+          "match": "\\b(struct|enum|interface)\\s+([\\p{L}_][\\p{L}\\p{N}_]*)",
           "captures": {
             "1": {
               "name": "storage.type.$1.kiln"
@@ -319,7 +319,7 @@
       "patterns": [
         {
           "name": "support.type.primitive.kiln",
-          "match": "\\b(Int|Float|Bool|String|Duration|List|Map)\\b"
+          "match": "\\b(Int|Float|Bool|String|Bytes|Duration|List|Map)\\b"
         },
         {
           "name": "entity.name.type.kiln",

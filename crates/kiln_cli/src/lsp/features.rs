@@ -243,6 +243,7 @@ fn describe(a: &Analysis, target: &Ref, text: &str) -> String {
             None => format!("const {name}"),
         },
         Ref::Type(id) => a.show_adt(*id),
+        Ref::Interface(id) => a.show_interface(*id),
         Ref::Field(id, name) => match a.field(*id, name) {
             Some(f) => format!("{}.{name}: {}", a.adts[*id].name, a.show(&f.ty)),
             None => name.clone(),
@@ -492,7 +493,7 @@ fn find_decl(
         }
         Ref::Fn(name) => !program.modules().any(|(_, m)| declares_fn(m, name)),
         Ref::Module(_) | Ref::ModuleFn(..) => true,
-        Ref::Const(_) | Ref::Local(_) | Ref::Component(_) => false,
+        Ref::Const(_) | Ref::Local(_) | Ref::Component(_) | Ref::Interface(_) => false,
         Ref::StyleKey { .. } | Ref::Token { .. } | Ref::Theme(_) => return None,
     };
     if !is_std {
@@ -541,6 +542,12 @@ fn find_in(module: &Module, a: &Analysis, target: &Ref) -> Option<Decl> {
             name: c.name.span,
             item: c.span,
         }),
+        (Item::Interface(i), Ref::Interface(id)) if i.name.name == a.interfaces[*id].name => {
+            Some(Decl {
+                name: i.name.span,
+                item: i.span,
+            })
+        }
         (Item::Struct(s), Ref::Type(id)) if s.name.name == adt_name(id) => Some(Decl {
             name: s.name.span,
             item: s.span,
@@ -834,6 +841,7 @@ const SYM_CLASS: u32 = 5;
 const SYM_METHOD: u32 = 6;
 const SYM_FIELD: u32 = 8;
 const SYM_ENUM: u32 = 10;
+const SYM_INTERFACE: u32 = 11;
 const SYM_FUNCTION: u32 = 12;
 const SYM_VARIABLE: u32 = 13;
 const SYM_CONSTANT: u32 = 14;
@@ -898,6 +906,15 @@ fn symbols(path: &Path, text: &str) -> Vec<Symbol> {
                 let name = format!("impl {}", &text[target.start as usize..target.end as usize]);
                 let mut sym = symbol(&name, SYM_CLASS, imp.span, imp.target.span);
                 sym.children = imp
+                    .methods
+                    .iter()
+                    .map(|m| symbol(&m.name.name, SYM_METHOD, m.span, m.name.span))
+                    .collect();
+                out.push(sym);
+            }
+            Item::Interface(i) => {
+                let mut sym = symbol(&i.name.name, SYM_INTERFACE, i.span, i.name.span);
+                sym.children = i
                     .methods
                     .iter()
                     .map(|m| symbol(&m.name.name, SYM_METHOD, m.span, m.name.span))

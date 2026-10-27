@@ -24,6 +24,7 @@ pub enum Item {
     Enum(EnumDecl),
     Impl(ImplDecl),
     Const(ConstDecl),
+    Interface(InterfaceDecl),
 }
 
 /// `import web, sql` or `import web.router`
@@ -40,10 +41,29 @@ pub struct FnDecl {
     pub is_server: bool,
     pub name: Ident,
     pub generics: Vec<Ident>,
+    /// `T: Named` in `fn label<T: Named>(x: T)`.
+    pub bounds: Vec<Bound>,
     pub params: Vec<Param>,
     pub ret: Option<TypeExpr>,
     pub throws: Throws,
     pub body: Block,
+    pub span: Span,
+}
+
+/// A type parameter's interfaces: `T: Named` or `T: Named + Sized`.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Bound {
+    pub param: Ident,
+    pub interfaces: Vec<TypeExpr>,
+}
+
+/// `interface Named { fn name(self) -> String }`: methods a type has, used
+/// only as a bound on a type parameter. The methods have no bodies.
+#[derive(Clone, Debug, PartialEq)]
+pub struct InterfaceDecl {
+    pub is_pub: bool,
+    pub name: Ident,
+    pub methods: Vec<FnDecl>,
     pub span: Span,
 }
 

@@ -100,7 +100,9 @@ bindings).
   (binary data), `Duration` (`250ms`, `2s`). Money is whole cents in an
   `Int` until a decimal type is designed.
 - `List<T>`, `Map<K, V>`, `Set<T>`; structs with defaults; enums with payloads
-  and exhaustive `match`; structural interfaces; generics by monomorphization.
+  and exhaustive `match`; structural interfaces as bounds on generic
+  functions (`fn label<T: Named>(x: T)`), with no interface values; generics
+  by monomorphization.
 - No null. `T?` is optional and the missing value is `none`.
 - Errors are values: `fn f() -> T ! E`, propagated with `try`, handled with
   `catch`. A bare `!` uses the standard `Error` and accepts any error; `! E`

@@ -298,6 +298,7 @@ impl Parser {
                 {
                     return
                 }
+                TokenKind::Ident(word) if at_line_start && word == "interface" => return,
                 _ => self.pos += 1,
             }
         }
@@ -351,6 +352,11 @@ impl Parser {
                 );
                 Some(Item::Fn(self.parse_fn(is_pub, false, start)))
             }
+            TokenKind::Ident(word)
+                if word == "interface" && matches!(self.lookahead(1), TokenKind::Ident(_)) =>
+            {
+                Some(Item::Interface(self.parse_interface(is_pub, start)))
+            }
             TokenKind::Struct => Some(Item::Struct(self.parse_struct(is_pub, start))),
             TokenKind::Enum => Some(Item::Enum(self.parse_enum(is_pub, start))),
             TokenKind::Impl if !is_pub => Some(Item::Impl(self.parse_impl())),
@@ -395,20 +401,65 @@ impl Parser {
         }
     }
 
-    fn parse_generic_params(&mut self) -> Vec<Ident> {
-        if self.at(&TokenKind::Lt) {
-            self.delimited(TokenKind::Lt, TokenKind::Gt, |p| {
-                p.expect_ident("a type parameter")
-            })
-        } else {
-            Vec::new()
+    /// `<T, U: Named + Sized>`: the parameters, and the bounds of those
+    /// that have them.
+    fn parse_bounded_params(&mut self) -> (Vec<Ident>, Vec<Bound>) {
+        if !self.at(&TokenKind::Lt) {
+            return (Vec::new(), Vec::new());
         }
+        let mut bounds = Vec::new();
+        let generics = self.delimited(TokenKind::Lt, TokenKind::Gt, |p| {
+            let param = p.expect_ident("a type parameter");
+            if p.eat(&TokenKind::Colon) {
+                let mut interfaces = vec![p.parse_type()];
+                while p.eat(&TokenKind::Plus) {
+                    interfaces.push(p.parse_type());
+                }
+                bounds.push(Bound {
+                    param: param.clone(),
+                    interfaces,
+                });
+            }
+            param
+        });
+        (generics, bounds)
+    }
+
+    /// The type parameters of a struct or enum, which take no bounds.
+    fn parse_generic_params(&mut self) -> Vec<Ident> {
+        let (generics, bounds) = self.parse_bounded_params();
+        if let Some(b) = bounds.first() {
+            let span = b
+                .param
+                .span
+                .to(b.interfaces.last().map_or(b.param.span, |t| t.span));
+            self.error(
+                Diagnostic::error(
+                    codes::MISPLACED_BOUND,
+                    "only a function's type parameters take interfaces",
+                    span,
+                )
+                .with_help(format!(
+                    "write `{}` here, and the bound on the functions that need it",
+                    b.param.name
+                )),
+            );
+        }
+        generics
     }
 
     /// Parses a function after its `fn` keyword.
     fn parse_fn(&mut self, is_pub: bool, is_server: bool, start: Span) -> FnDecl {
+        let mut f = self.parse_fn_head(is_pub, is_server, start);
+        f.body = self.parse_block();
+        f.span = start.to(self.previous_span());
+        f
+    }
+
+    /// A function's name, parameters, result and error, with an empty body.
+    fn parse_fn_head(&mut self, is_pub: bool, is_server: bool, start: Span) -> FnDecl {
         let name = self.expect_member("a function name");
-        let generics = self.parse_generic_params();
+        let (generics, bounds) = self.parse_bounded_params();
         let params = self.parse_params(true);
         let ret = if self.eat(&TokenKind::Arrow) {
             Some(self.parse_type())
@@ -416,16 +467,61 @@ impl Parser {
             None
         };
         let throws = self.parse_throws();
-        let body = self.parse_block();
+        let span = start.to(self.previous_span());
         FnDecl {
             is_pub,
             is_server,
             name,
             generics,
+            bounds,
             params,
             ret,
             throws,
-            body,
+            body: Block {
+                stmts: Vec::new(),
+                span: Span::new(span.end as usize, span.end as usize),
+            },
+            span,
+        }
+    }
+
+    fn parse_interface(&mut self, is_pub: bool, start: Span) -> InterfaceDecl {
+        self.bump();
+        let name = self.expect_ident("an interface name");
+        if self.at(&TokenKind::Lt) {
+            let span = self.span();
+            self.error(Diagnostic::error(
+                codes::EXPECTED_TOKEN,
+                "an interface has no type parameters",
+                span,
+            ));
+            self.parse_generic_params();
+        }
+        let methods = self.member_list(|p| {
+            let start = p.span();
+            if !p.eat(&TokenKind::Fn) {
+                p.error_expected("`fn`");
+                return None;
+            }
+            let f = p.parse_fn_head(false, false, start);
+            if p.at(&TokenKind::LBrace) {
+                let span = p.span();
+                p.error(
+                    Diagnostic::error(
+                        codes::EXPECTED_TOKEN,
+                        "an interface's methods have no bodies",
+                        span,
+                    )
+                    .with_help("the types that fit the interface give the bodies"),
+                );
+                p.parse_block();
+            }
+            Some(f)
+        });
+        InterfaceDecl {
+            is_pub,
+            name,
+            methods,
             span: start.to(self.previous_span()),
         }
     }

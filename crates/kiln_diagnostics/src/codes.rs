@@ -33,6 +33,7 @@ pub const WRONG_KEYWORD: &str = "E0108";
 pub const NO_STRICT_EQUALITY: &str = "E0109";
 pub const NO_SYMBOL_LOGIC: &str = "E0110";
 pub const LET_ELSE_MUST_LEAVE: &str = "E0111";
+pub const MISPLACED_BOUND: &str = "E0112";
 
 pub const LOCAL_MODULE: &str = "E0230";
 pub const UNDEFINED_NAME: &str = "E0201";
@@ -62,6 +63,8 @@ pub const NOT_SERIALIZABLE: &str = "E0224";
 pub const BAD_MODEL: &str = "E0231";
 pub const BAD_QUERY: &str = "E0232";
 pub const RESERVED_TYPE: &str = "E0233";
+pub const UNMET_BOUND: &str = "E0234";
+pub const INTERFACE_MISUSE: &str = "E0235";
 
 pub const UNCLOSED_GLAZE_TAG: &str = "E0301";
 pub const MISMATCHED_CLOSING_TAG: &str = "E0302";
@@ -91,6 +94,20 @@ pub static ALL: &[ErrorCode] = &[
         explanation: "`Any` and `Rest` let the standard library describe functions Kiln's types cannot express yet, such as `json.encode`, which takes a value of any type with a JSON form. A program that used them would turn off type checking, so they are reserved. A function that works on values of any type is generic instead.",
         wrong: "fn describe(value: Any) -> String {\n    return \"${value}\"\n}",
         right: "fn describe<T>(value: T) -> String {\n    return \"${value}\"\n}",
+    },
+    ErrorCode {
+        code: UNMET_BOUND,
+        title: "A type that does not fit an interface",
+        explanation: "A generic function's bound, as in `fn label<T: Named>(x: T)`, lists the methods its body calls on `T`. A type fits an interface when it has each of them, with `self` and the same parameter and result types; nothing else declares that it fits. The error names the first method the type is missing or has with another signature.",
+        wrong: "interface Named {\n    fn name(self) -> String\n}\n\nstruct Dog {\n    nick: String\n}\n\nfn label<T: Named>(x: T) -> String {\n    return x.name()\n}\n\nfn main() {\n    print(label(Dog(nick: \"Rex\")))\n}",
+        right: "interface Named {\n    fn name(self) -> String\n}\n\nstruct Dog {\n    nick: String\n}\n\nimpl Dog {\n    fn name(self) -> String {\n        return self.nick\n    }\n}\n\nfn label<T: Named>(x: T) -> String {\n    return x.name()\n}\n\nfn main() {\n    print(label(Dog(nick: \"Rex\")))\n}",
+    },
+    ErrorCode {
+        code: INTERFACE_MISUSE,
+        title: "An interface where a type belongs",
+        explanation: "An interface is only a bound on a type parameter: each call of a generic function is compiled for the type it is given, so there are no interface values to pass around. Take a type parameter with the interface as its bound instead. A bound, in turn, names an interface, not a struct or another type.",
+        wrong: "fn label(x: Named) -> String {\n    return x.name()\n}",
+        right: "fn label<T: Named>(x: T) -> String {\n    return x.name()\n}",
     },
     ErrorCode {
         code: BAD_MODEL,
@@ -252,6 +269,13 @@ pub static ALL: &[ErrorCode] = &[
         explanation: "`let some(x) = value else { ... }` binds `x` for the code after it, so when the value does not match, that code cannot run: the `else` block must end by leaving, with `return`, `throw`, `break`, `continue` or `panic(...)`.",
         wrong: "let some(user) = found else {\n    print(\"missing\")\n}",
         right: "let some(user) = found else {\n    return web.not_found()\n}",
+    },
+    ErrorCode {
+        code: MISPLACED_BOUND,
+        title: "a bound on a struct or enum",
+        explanation: "Interfaces bound the type parameters of functions and methods, where the code that calls the methods is. A struct or enum keeps its type parameters plain, and the functions that need more of `T` say so.",
+        wrong: "struct Shelf<T: Named> {\n    items: List<T>\n}",
+        right: "struct Shelf<T> {\n    items: List<T>\n}\n\nfn labels<T: Named>(shelf: Shelf<T>) -> List<String> {\n    return shelf.items.map(fn(x) { x.name() })\n}",
     },
     ErrorCode {
         code: UNDEFINED_NAME,
