@@ -51,6 +51,7 @@ These are decisions reached in the design discussion, not claims of implemented 
 | Loader arguments | **Optional `req: web.Request` first**, followed by **typed path parameters matched by name**; request-free loaders need not mention `req` |
 | Glaze prop assembly | **Automatically combine typed URL path parameters with the `load` return record**; duplicate field names are a compile-time error |
 | Parameter typing | **Infer `[id]` from the Glaze, `load`, or route handler declarations**, defaulting to `String` when no explicit type is supplied; conflicting declarations are compile-time errors |
+| Dynamic filename syntax | **Square-bracket `[name]` segments** in both `.glaze` filenames and route directories, mapping to ordinary Kiln `{name}` URL parameters; no curly-brace filenames or encoded types |
 | Loader failures | **Reuse ordinary Kiln error propagation**: `web.error(status, message)` for intentional HTTP failures, existing 500 handling for unexpected errors, and `app.on_error` for custom responses; **no implicit `none` → 404** |
 | Static parameter enumeration | **Route-local** `static_params()` in `route.kiln` supplies finite typed values; a route-local `dynamic` marker opts out of static export; use existing Phase 6.6 implementation |
 | Server-mode static pages | **`static_params()` also pre-renders its enumerated pages when the server starts**, matching explicit `.static(...)`; reuse existing in-memory response serving, hook ordering and fallback behaviour |
@@ -96,7 +97,7 @@ app.file_routes("admin/pages", at: "/admin", ignore: ["components", "partials"])
 - Ignore rules apply per mount, not globally. Nested files in an ignored directory do not claim URLs. The compiler/LSP must still be able to resolve and import those files when referenced.
 - Define and reject overlapping/ambiguous mounts deterministically; do not silently hijack routes.
 
-## 4. File-first layout: provisional naming convention
+## 4. File-first layout: agreed dynamic syntax; other naming rules provisional
 
 ```text
 my-app/
@@ -124,7 +125,9 @@ my-app/
 - `index.glaze` maps to the directory's URL; a top-level index maps to `/`.
 - `about.glaze` maps to `/about`.
 - `blog/index.glaze` maps to `/blog`.
-- `[slug].glaze` maps to a parameter segment named `slug`. **Agreed: the segment's type comes from matching Glaze, loader or handler declarations**, not filename type markers; where none specifies a type, it defaults to `String`. The exact `[name]` delimiter convention remains subject to final route-naming review.
+- **Dynamic filename syntax — DECIDED (Option A, 2026-10-27): use square brackets.** A dynamic segment is written **`[name]`** in a directory or the stem of a `.glaze` filename; `[slug].glaze` and `[slug]/index.glaze` both map to the same URL parameter segment, `/blog/{slug}`. Use the existing Kiln `{slug}` syntax only in generated/explicit URL patterns, **not** `{slug}` filesystem names.
+- The bracketed filename supplies **only the parameter name**, not its type. The inferred type comes from matching Glaze, loader or handler declarations, defaulting to `String` when nothing declares it; do not introduce `[slug-int]`, `{slug}` or inline filename type annotations.
+- `[name]` represents a **whole path segment**, not embedded wildcard fragments such as `post-[slug].glaze`, for the initial convention. Validate that the name is a supported Kiln parameter identifier; malformed or empty bracket groups and duplicate names in one URL must receive source-linked diagnostics. Catch-all or optional segment syntax is a **separate future design decision**, not implied by `[name]`.
 - For complex **page routes**, a directory may contain `index.glaze` plus **`route.kiln`** when route-specific code is needed (see §5). For **API-only routes**, `route.kiln` may exist **without** an `index.glaze` and register its exported HTTP methods directly (see §5). For instance `blog/[slug]/index.glaze` would map to the same path as `blog/[slug].glaze`; including both is an error.
 - Plain components outside mounted directories are not route candidates. Only **mounted directories** are scanned.
 - **Agreed (2026-10-27): automatic filesystem page discovery is restricted to `.glaze` files.** A standalone `.ember` file does **not** define a page or claim a URL. For an interactive page, create a `.glaze` page that embeds the Ember normally. This keeps `.glaze` responsible for page composition/SSR and `.ember` responsible for browser-side interactivity. API-only `route.kiln` HTTP methods remain valid without a Glaze.
@@ -533,6 +536,7 @@ If adopted as **Phase 6.7**, a reviewable breakdown might be:
 - [ ] Loader functions work without `req` when only typed path data is needed, and with an explicitly declared first `req: web.Request` when request context is required.
 - [ ] URL parameter binding uses names and compatible types; invalid names, types, duplicate/misplaced request parameters and mismatches report precise errors.
 - [ ] `[id]` derives its type from matching Glaze, `load` or handler declarations, or defaults to `String`; conflicting annotations produce compile-time errors with both relevant source locations.
+- [ ] Bracketed dynamic `.glaze` filenames and route directories (e.g. `[slug].glaze`, `[slug]/index.glaze`) map consistently to Kiln `{slug}` route patterns. Curly-brace filename syntax, embedded partial segments and filename type annotations are not recognized as dynamic routes; malformed brackets/names report useful diagnostics.
 - [ ] No filename-encoded type syntax is required; generated route matching uses the same typed conversion rules as explicit Kiln routes.
 - [ ] A full GET handler may directly return `web.Response` without bypassing existing hooks, validation or SSG integration.
 - [ ] Route directories discover their `route.kiln` consistently; its `load` and HTTP-method functions retain the ordinary language's type checking.
@@ -578,12 +582,13 @@ If adopted as **Phase 6.7**, a reviewable breakdown might be:
 - **API-only routes (Option A):** a directory with `route.kiln` alone can register typed HTTP methods without `index.glaze`. A `load` export requires a sibling `index.glaze` and is an error without one. A view plus only non-GET exports retains normal implicit GET rendering; JSON APIs are subject to existing static-export restrictions.
 - **Standalone Ember pages (Option A):** `.ember` files never automatically register filesystem routes. A `.glaze` page embeds an Ember for interaction; API-only `route.kiln` methods remain independently routable.
 - **Explicit vs filesystem route precedence (Option A):** preserve the existing **first matching route wins** rule using registration order. `app.file_routes` occupies its call position; earlier explicit routes shadow matching filesystem routes and earlier filesystem routes can shadow later explicit routes. Provide nonfatal shadowing diagnostics where detectable. Do not alter the separate duplicate-error rule inside a single mount.
+- **Dynamic route filenames (Option A):** use square-bracket `[name]` path segments in `.glaze` filenames or route directories (both flat and nested forms), translating to ordinary `{name}` URL parameters. No curly-brace filenames or encoded types; validate identifiers and duplicate parameter names.
 
 **Needs an explicit decision before locking the specification:**
 1. **Remaining loader contract:** admissible successful return record shapes, unused/extra field policy and unused parameter rules (§§5–6). Named parameter binding, optional first `req`, automatic props merging, duplicate-name errors, type inference/default `String` and ordinary error/404 propagation are settled.
 2. **`route.kiln` contracts:** exact function signatures, module boundaries, exports and how flat Glaze files graduate to route directories (§5). The filename and permission for handler-only API routes are settled.
 3. **SSG refinements:** exact export/marker signatures, contradictory declarations and unusual handler results (§8). Route-local enumeration, server-startup pre-render, `static_refresh` alone on zero-parameter routes and rejection of request-dependent cached output (including explicit `.static(...)`) are settled.
-4. **Route file naming:** confirm `[slug]` spelling, permitted filename/path characters, static-file extensions and other edge cases (§4). Standalone `.ember` page files are explicitly excluded.
+4. **Remaining route file naming:** filename/path character restrictions, handling reserved names, static-file extensions, catch-all or optional patterns and other edge cases (§4). Square-bracket `[name]` dynamic segments are now settled; standalone `.ember` pages are excluded.
 5. **Remaining collision policy:** collisions *between two separate filesystem mounts*, route parameter overlaps, and reserved paths (§4). Explicit-versus-filesystem precedence by call registration order is settled.
 6. **Ignore API details:** confirm `ignore` name and replacement rather than additive semantics; currently recorded as proposed in §3.
 7. **Roadmap:** candidate Phase 6.7 before 1.0, or a post-1.0 compatible addition? (§10)
