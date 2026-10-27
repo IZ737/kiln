@@ -2112,6 +2112,26 @@ impl<'a> Lowerer<'a> {
                 return self.sql_call(recv, sig, name, k, args, rt, span);
             }
         }
+        // A generic type's methods, such as `Route<P>`'s, with the
+        // receiver's type arguments in place of its parameters.
+        let generic = match &recv.ty {
+            Ty::Adt(id, targs) if !targs.is_empty() => {
+                let map: HashMap<String, Ty> = self.p.adts[*id]
+                    .params
+                    .iter()
+                    .cloned()
+                    .zip(targs.iter().cloned())
+                    .collect();
+                let mut sig = sig.clone();
+                for p in &mut sig.params {
+                    p.ty = substitute(&p.ty, &map);
+                }
+                sig.ret = substitute(&sig.ret, &map);
+                Some(sig)
+            }
+            _ => None,
+        };
+        let sig = generic.as_ref().unwrap_or(sig);
         let (prelude, recv, mut vals) = self.arrange(&sig.params, &[], Some(recv), args);
         let module = LIB_TYPES
             .iter()
@@ -3038,6 +3058,7 @@ const LIB_TYPES: &[(&str, &str)] = &[
     ("sql", "Db"),
     ("validate", "Checked"),
     ("auth", "Sessions"),
+    ("web", "Route"),
 ];
 
 /// The type of a library call: its declared return type, with a generic
@@ -3128,9 +3149,7 @@ fn duration_ns(s: &str) -> Option<i64> {
 
 fn type_expr_name(t: &ast::TypeExpr) -> Option<&str> {
     match &t.kind {
-        ast::TypeKind::Named { path, args } if path.len() == 1 && args.is_empty() => {
-            Some(&path[0].name)
-        }
+        ast::TypeKind::Named { path, .. } if path.len() == 1 => Some(&path[0].name),
         _ => None,
     }
 }

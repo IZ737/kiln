@@ -1,0 +1,3 @@
+{% layout "layout.glaze" title: "About" %}
+<h1>About</h1>
+<p>This site is a Kiln program. <code>kiln fire --static</code> wrote it as files.</p>

@@ -158,6 +158,10 @@ pub struct GlazeSource {
     map: Vec<Segment>,
     /// Parts of glazes the compiler cannot build yet, by glaze index.
     pub diagnostics: Vec<(usize, Diagnostic)>,
+    /// In the browser's code: each call an ember's handler makes and waits
+    /// for, by glaze index, with its span in the glaze and the function's
+    /// name. A static site cannot answer the ones to `server fn`s.
+    pub server_calls: Vec<(usize, Span, ServerFn)>,
 }
 
 /// A part of the generated text and the glaze source it comes from.
@@ -337,6 +341,7 @@ fn generate_for(glazes: &[GlazeInput], app: &App, client: bool) -> GlazeSource {
         is_ember: false,
         state_types: HashMap::new(),
         server_fns: app.server_fns.to_vec(),
+        server_calls: Vec::new(),
     };
     if client {
         g.server_fns.extend(browser_waits());
@@ -461,7 +466,14 @@ fn generate_for(glazes: &[GlazeInput], app: &App, client: bool) -> GlazeSource {
         text: g.text,
         map: g.map,
         diagnostics: g.diagnostics,
+        server_calls: g.server_calls,
     }
+}
+
+/// The name a page's `<kiln-island data-k-ember="...">` gives the ember in
+/// this file.
+pub fn island_name(file: &str) -> String {
+    stem(file)
 }
 
 struct Gen<'a> {
@@ -494,6 +506,8 @@ struct Gen<'a> {
     /// The functions handlers wait for: the `server fn`s, and in the
     /// browser the others too.
     server_fns: Vec<ServerFn>,
+    /// See [`GlazeSource::server_calls`].
+    server_calls: Vec<(usize, Span, ServerFn)>,
 }
 
 impl<'a> Gen<'a> {
@@ -1652,6 +1666,7 @@ impl<'a> Gen<'a> {
         for (i, stmt) in stmts.iter().enumerate() {
             let span = stmt_span(stmt);
             if let Some((call, f, args)) = self.rpc_call(stmt) {
+                self.server_calls.push((self.glaze, call, f.clone()));
                 let mut fields = Vec::new();
                 for (k, arg) in args.iter().enumerate() {
                     let name = match &arg.name {

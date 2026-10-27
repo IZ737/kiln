@@ -1,0 +1,11 @@
+{% props post: Post %}
+{% layout "layout.glaze" title: post.title %}
+<article>
+<h1>{post.title}</h1>
+<p><time>{post.date}</time></p>
+{% for paragraph in post.paragraphs %}
+<p>{paragraph}</p>
+{% end %}
+</article>
+<Likes client:visible />
+<p><a href="/">All posts</a></p>

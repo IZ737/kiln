@@ -2480,6 +2480,19 @@ impl Fx<'_, '_, '_> {
                 (self.call_rt("k_web_json", &[addr, a[0], a[1]]), false)
             }
             ("web", "App.listen") => (self.call_rt("k_web_listen", a), true),
+            ("web", "Route.static") => {
+                let list = match &tys[1] {
+                    Ty::Fn(f) => f.ret.clone(),
+                    other => other.clone(),
+                };
+                let d = self.g.desc(&list);
+                let addr = self.data_addr(d);
+                (
+                    self.call_rt("k_web_route_static", &[a[0], a[1], a[2], addr]),
+                    false,
+                )
+            }
+            ("web", "Route.dynamic") => (self.call_rt("k_web_route_dynamic", a), false),
             ("stores", "enter") => (self.call_rt("k_store_enter", a), false),
             ("stores", "leave") => (self.call_rt("k_store_leave", a), false),
             ("web", _) => {

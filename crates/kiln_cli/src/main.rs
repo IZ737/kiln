@@ -3,6 +3,7 @@
 
 mod db;
 mod dev;
+mod fire;
 mod fmt;
 mod lsp;
 mod mcp;
@@ -92,6 +93,25 @@ enum Command {
         /// on. Only the native backend builds for other systems.
         #[arg(long, value_parser = parse_target)]
         target: Option<BuildTarget>,
+    },
+    /// Make a release of a program: an executable, as `kiln build` makes
+    /// it, or with `--static` a static site of its pages.
+    Fire {
+        /// The program's folder. Defaults to the current directory.
+        #[arg(default_value = ".")]
+        dir: PathBuf,
+        /// Write the site's pages, styles, files and embers to a folder,
+        /// for any static host: every `GET` route without parameters, and
+        /// the pages `.static(...)` lists. The program runs to render them.
+        #[arg(long = "static")]
+        static_site: bool,
+        /// Where to write: the executable, or the site's folder (by
+        /// default `dist` in the program's folder).
+        #[arg(short, long)]
+        output: Option<PathBuf>,
+        /// How to generate code, as for `kiln build`.
+        #[arg(long, value_enum)]
+        backend: Option<Backend>,
     },
     /// Compile a program and run it.
     Run {
@@ -555,7 +575,7 @@ fn dispatch(command: Command) -> ExitCode {
             let emit = Emit {
                 c: emit_c.as_deref(),
                 ir: emit_ir.as_deref(),
-                wasm: false,
+                ..Emit::default()
             };
             let target = match target {
                 Some(BuildTarget::Wasm) => {
@@ -576,6 +596,23 @@ fn dispatch(command: Command) -> ExitCode {
             match build(&file, &out, emit, backend, target) {
                 Ok(()) => ExitCode::SUCCESS,
                 Err(code) => code,
+            }
+        }
+        Command::Fire {
+            dir,
+            static_site,
+            output,
+            backend,
+        } => {
+            let opts = fire::Options {
+                dir,
+                output,
+                backend: Backend::or_default(backend, Target::host()),
+            };
+            if static_site {
+                fire::static_site(opts)
+            } else {
+                fire::release(opts)
             }
         }
         Command::Run {
@@ -1207,6 +1244,10 @@ struct Emit<'a> {
     ir: Option<&'a Path>,
     /// Build the program for WebAssembly instead, as a Node.js script.
     wasm: bool,
+    /// Where to put, for `kiln fire --static`, each call an ember makes to
+    /// a `server fn`: the ember's island name, and the error to report if
+    /// a static page has it.
+    server_calls: Option<&'a std::cell::RefCell<Vec<(String, String)>>>,
 }
 
 /// Checks and compiles the program in a folder into an executable at `out`.
@@ -1405,6 +1446,26 @@ fn build_project(
         let client = kiln_ir::glaze::generate_client(&inputs, &client_app);
         if !client.diagnostics.is_empty() {
             return Err(failed_in_glazes(&client.diagnostics));
+        }
+        if let Some(calls) = emit.server_calls {
+            for (i, span, f) in &client.server_calls {
+                if !server_fns.contains(f) {
+                    continue;
+                }
+                let diag = Diagnostic::error(
+                    codes::STATIC_EMBER,
+                    format!(
+                        "this ember calls the server function `{}`, which a static site has no server to answer",
+                        f.name
+                    ),
+                    *span,
+                )
+                .with_help("do the work in the ember, render what it needs into the page, or leave the page out with `.dynamic()`");
+                calls.borrow_mut().push((
+                    kiln_ir::glaze::island_name(&glaze_names[*i]),
+                    render_original(&diag, glaze_files[*i], &info),
+                ));
+            }
         }
         let mut text = format!("{combined}{}{}", client.text, npm::calls_source(&info.npm));
         // The readers of `event.form<T>()`, written from the structs the

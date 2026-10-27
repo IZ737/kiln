@@ -67,14 +67,20 @@ fn not_found() -> Response {}
 // The request being handled, for a glaze's `request` prop.
 fn __request() -> Request {}
 
+// A route, as `app.get` and the other methods return it. `P` is what one
+// of its pages is told by: `Unit` for a route without parameters, the
+// parameter's type for a route with one (`Int` for `/posts/{id: Int}`), and
+// a record for more (`{ dir: String, page: String }`).
+struct Route<P> {}
+
 // A handler takes the request, then one parameter per `{name}` in the route
 // pattern. The type checker reads the pattern to type those parameters.
 impl App {
-    fn get(self, path: String, handler: fn(Request, Rest) -> Response !) {}
-    fn post(self, path: String, handler: fn(Request, Rest) -> Response !) {}
-    fn put(self, path: String, handler: fn(Request, Rest) -> Response !) {}
-    fn patch(self, path: String, handler: fn(Request, Rest) -> Response !) {}
-    fn delete(self, path: String, handler: fn(Request, Rest) -> Response !) {}
+    fn get<P>(self, path: String, handler: fn(Request, Rest) -> Response !) -> Route<P> {}
+    fn post<P>(self, path: String, handler: fn(Request, Rest) -> Response !) -> Route<P> {}
+    fn put<P>(self, path: String, handler: fn(Request, Rest) -> Response !) -> Route<P> {}
+    fn patch<P>(self, path: String, handler: fn(Request, Rest) -> Response !) -> Route<P> {}
+    fn delete<P>(self, path: String, handler: fn(Request, Rest) -> Response !) -> Route<P> {}
     // Makes the server's error responses: 404 and 405 when no route
     // matches, `web.not_found()`, errors handlers fail with, and requests
     // the server cannot read. It gets the request, the status and a
@@ -89,6 +95,19 @@ impl App {
     // added, so register them before anything they guard is reached.
     fn before(self, prefix: String, hook: fn(Request) -> Response? !) {}
     fn listen(self, address: String) ! {}
+}
+
+// Static pages. `kiln fire --static` writes every `GET` route without
+// parameters to a file, and the pages a route with parameters lists here:
+// `app.get("/posts/{id: Int}", show).static(fn() { all_ids() })`. A
+// running server renders a `.static` route's pages once, when it starts,
+// and serves them from memory; with `refresh` it renders a page again on
+// the first request after that long. `.dynamic()` leaves a `GET` route out
+// of a static export.
+impl Route<P> {
+    // `pages` is left out for a route without parameters.
+    fn static(self, pages: fn() -> List<P> ! = none, refresh: Duration? = none) -> Route<P> {}
+    fn dynamic(self) -> Route<P> {}
 }
 
 // Where a browser sends a cookie from: `.Lax` (the default) keeps it off

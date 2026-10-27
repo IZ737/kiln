@@ -1,0 +1,19 @@
+GET / HTTP/1.1
+###
+GET / HTTP/1.1
+###
+GET /posts/1 HTTP/1.1
+###
+GET /posts/2?draft=1 HTTP/1.1
+###
+GET /posts/3 HTTP/1.1
+###
+GET /posts/9 HTTP/1.1
+###
+GET /pairs/x%20y/true HTTP/1.1
+###
+GET /clock HTTP/1.1
+###
+GET /search?q=kiln HTTP/1.1
+###
+GET /quit HTTP/1.1

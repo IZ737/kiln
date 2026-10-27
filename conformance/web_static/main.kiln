@@ -1,0 +1,35 @@
+// Static pages in a running server: the pages of `.static` routes are
+// rendered once, when the server starts, and served from memory; a route
+// with parameters renders the pages it does not list on each request, and
+// `refresh` renders a page again once that long has passed.
+import web, os, time
+
+fn main() ! {
+    let app = web.app(access_log: false)
+    app.get("/", fn(req) {
+        print("rendered /")
+        web.html("<h1>Home</h1>")
+    }).static()
+    app.get("/posts/{id: Int}", fn(req, id) {
+        print("rendered /posts/${id}")
+        if id > 5 {
+            return web.not_found()
+        }
+        web.html("<h1>Post ${id}</h1>")
+    }).static(fn() { [1, 2] })
+    app.get("/pairs/{a}/{b: Bool}", fn(req, a, b) {
+        print("rendered /pairs/${a}/${b}")
+        web.text("${a} ${b}")
+    }).static(fn() { [{ a: "x y", b: true }] })
+    app.get("/clock", fn(req) {
+        print("rendered /clock")
+        web.text("tick")
+    }).static(refresh: 1ms)
+    app.get("/search", fn(req) {
+        web.text(req.query("q") ?? "")
+    }).dynamic()
+    app.get("/quit", fn(req) {
+        os.exit(0)
+    })
+    try app.listen("127.0.0.1:${env("PORT") ?? "8080"}")
+}

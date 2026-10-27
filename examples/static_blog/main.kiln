@@ -1,0 +1,74 @@
+// A small blog that needs no server. `kiln run examples/static_blog` serves
+// it while you write; `kiln fire --static examples/static_blog` writes its
+// pages, stylesheet, image, feed and ember to `dist/`, for any static host.
+import web, html
+
+struct Post {
+    slug: String
+    title: String
+    date: String
+    paragraphs: List<String>
+}
+
+fn posts() -> List<Post> {
+    return [
+        Post(
+            slug: "first-firing",
+            title: "The first firing",
+            date: "2026-10-20",
+            paragraphs: [
+                "A kiln turns soft clay into something that lasts. This blog is the same idea: pages written as Kiln, fired once into plain files.",
+                "Nothing here runs on a server. The pages are HTML, the styles are a stylesheet, and the like button is an ember that runs in your browser.",
+            ],
+        ),
+        Post(
+            slug: "glazes-and-embers",
+            title: "Glazes & embers",
+            date: "2026-10-27",
+            paragraphs: [
+                "Glazes render on the server, or here at build time. Embers wake up in the browser.",
+                "A static site keeps both: the markup is written ahead of time, and the embers hydrate when the page loads.",
+            ],
+        ),
+    ]
+}
+
+fn find_post(slug: String) -> Post? {
+    return posts().find(fn(p) { p.slug == slug })
+}
+
+// The posts as an Atom feed.
+fn feed() -> String {
+    let entries = posts().map(fn(p) {
+        "<entry><title>${html.escape(p.title)}</title><link href=\"/posts/${p.slug}\"/><id>/posts/${p.slug}</id><updated>${p.date}T00:00:00Z</updated></entry>"
+    })
+    return "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<feed xmlns=\"http://www.w3.org/2005/Atom\"><title>Kiln notes</title><id>/</id><updated>2026-10-27T00:00:00Z</updated>${entries.join("")}</feed>\n"
+}
+
+fn main() ! {
+    let app = web.app()
+    app.get("/", fn(req) { web.render("index.glaze", { posts: posts() }) })
+    app.get("/about", fn(req) { web.render("about.glaze") })
+    // A route with a parameter lists its pages for the static site.
+    app.get("/posts/{slug}", fn(req, slug) {
+        let found = find_post(slug)
+        if found is some(post) {
+            return web.render("post.glaze", { post: post })
+        }
+        return web.not_found()
+    }).static(fn() { posts().map(fn(p) { p.slug }) })
+    app.get("/feed.xml", fn(req) {
+        var res = web.text(feed())
+        res.headers["content-type"] = "application/atom+xml; charset=utf-8"
+        return res
+    })
+    // Becomes a page that sends the browser on.
+    app.get("/about-us", fn(req) { web.redirect("/about", 301) })
+    // Becomes 404.html, which static hosts show for a missing page.
+    app.on_error(fn(req, status, message) {
+        let r = web.render("error.glaze", { status: status })
+        return web.Response(status: status, headers: r.headers, body: r.body)
+    })
+    let port = env("PORT") ?? "8080"
+    try app.listen("127.0.0.1:${port}")
+}

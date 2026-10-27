@@ -1,0 +1,5 @@
+body { font-family: system-ui, sans-serif; max-width: 40rem; margin: 2rem auto; padding: 0 1rem; color: #1F232B; background: #F7F3EC; }
+.top { display: flex; justify-content: space-between; align-items: center; }
+.brand { display: flex; gap: .5rem; align-items: center; font-weight: 700; color: #C65A34; text-decoration: none; }
+.posts time { color: #666; margin-left: .5rem; }
+.likes { font: inherit; padding: .4rem .8rem; border: 1px solid #C65A34; border-radius: .4rem; background: white; }

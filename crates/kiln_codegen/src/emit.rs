@@ -1629,6 +1629,24 @@ impl<'a> Gen<'a> {
                 let call = format!("k_web_route({}, {method}, {}, {})", arg(0), arg(1), arg(2));
                 (self.store(&call, ty), false)
             }
+            ("web", "Route.static") => {
+                let list = match &tys[1] {
+                    Ty::Fn(f) => f.ret.clone(),
+                    other => other.clone(),
+                };
+                let d = self.desc(&list);
+                let call = format!(
+                    "k_web_route_static({}, {}, {}, &{d})",
+                    arg(0),
+                    arg(1),
+                    arg(2)
+                );
+                (self.store(&call, ty), false)
+            }
+            ("web", "Route.dynamic") => (
+                self.store(&format!("k_web_route_dynamic({})", arg(0)), ty),
+                false,
+            ),
             ("web", "App.listen") => (
                 self.store(&format!("k_web_listen({}, {})", arg(0), arg(1)), ty),
                 true,
