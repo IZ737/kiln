@@ -113,10 +113,7 @@ pub fn send(
 
 pub fn dechunk(mut data: &[u8]) -> Vec<u8> {
     let mut out = Vec::new();
-    loop {
-        let Some(end) = data.windows(2).position(|w| w == b"\r\n") else {
-            break;
-        };
+    while let Some(end) = data.windows(2).position(|w| w == b"\r\n") {
         let size = std::str::from_utf8(&data[..end])
             .ok()
             .and_then(|s| usize::from_str_radix(s.split(';').next()?.trim(), 16).ok())

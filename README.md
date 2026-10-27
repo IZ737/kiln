@@ -205,7 +205,19 @@ cargo run -p kiln_cli -- parse examples/hello/main.kiln
 cargo run -p kiln_cli -- explain E0106
 ```
 
+For a whole site, start with [Your first Kiln site](docs/guides/first-site.md):
+
+```sh
+kiln new mysite        # an app with a page, a module and tests
+kiln dev mysite        # serve it, rebuilding and reloading as you save
+kiln test mysite       # unit, integration and browser tests
+kiln fmt mysite        # one layout
+kiln ui add button     # a kiln/ui component, to own and change
+```
+
 For errors and quick fixes in your editor, see [docs/guides/editors.md](docs/guides/editors.md).
+Coding agents can read [the agent guide](docs/guides/agents.md) (`kiln docs --llm`)
+and use the compiler through `kiln mcp`.
 
 ## Repository layout
 
@@ -221,13 +233,16 @@ For errors and quick fixes in your editor, see [docs/guides/editors.md](docs/gui
 | `crates/kiln_native` | The native backend: Cranelift code generation, built-in linking for Linux and Windows, and the bundled runtime, Boehm GC (`vendor/bdwgc`) and C libraries |
 | `crates/kiln_cli` | The `kiln` command |
 | `examples/` | Example programs and glazes; every one is checked in CI |
+| `wares/ui` | kiln/ui, the official UI Ware |
+| `registry/` | A Ware registry, written in Kiln |
+| `bench/agents/` | Benchmark tasks for coding agents, with hidden checks and a runner |
 | `conformance/` | Programs with their expected output; every one is compiled and run in CI |
 | `site/` | Kiln's documentation website, written in Kiln: `kiln run site` serves it |
 | `assets/brand/` | Logo, symbol and the vocabulary icons (`.kiln`, glaze, ware, ember, `kiln fire`), as SVG and PNG |
-| `editors/vscode` | The VS Code extension: Kiln and Glaze highlighting and file icons |
+| `editors/vscode` | The VS Code extension: highlighting, file icons, the language server and Kiln's commands |
 | [Documentation index](docs/README.md) | Navigate language reference, editor guides and implementation plans |
-| [`docs/reference/`](docs/reference/) | Language reference: syntax, type rules, Glazes, standard library |
-| [`docs/guides/`](docs/guides/) | Editor installation and setup |
+| [`docs/reference/`](docs/reference/) | Language reference: syntax, type rules, Glazes, standard library, Wares and testing |
+| [`docs/guides/`](docs/guides/) | Your first site, editor setup, tooling and the agent guide |
 | [`docs/plans/`](docs/plans/) | Implementation plans: runtime migration, Phases 2.5–6 and testing |
 | `docs/design.md` | Language design and technical decisions |
 | `docs/vision.md` | Full product vision: frontend DX, performance, interop, ecosystem and adoption |
@@ -249,7 +264,7 @@ For errors and quick fixes in your editor, see [docs/guides/editors.md](docs/gui
 | ✅ 4.1 | **Explicit Ember files**: make `.glaze` server-only and `.ember` the sole source for browser-capable components; enforce compile-time boundaries, migrate examples and update editor/LSP; [implementation plan](docs/plans/phase-4.1.md) | `.ember` islands SSR/hydrate with Phase 4 behavior, plain Glazes never silently become Embers, and compiler/IDE/browser tests pass |
 | ✅ 4.2 | **Multi-folder projects**: local modules, `pub` exports, nested imports, optional basic `kiln.toml`, module-aware Glaze/Ember/assets and cross-folder LSP; [implementation plan](docs/plans/phase-4.2.md) | A manifest-free multi-folder app builds and runs with safe local modules, SSR/Ember routes and editor navigation on Linux/Windows |
 | ✅ 5 | **SQL/ORM and application framework**: SQLite then PostgreSQL/MySQL, typed queries, schema import (`kiln db pull`), reviewed migrations, forms/validation, sessions/auth and generated admin; [implementation plan](docs/plans/phase-5.md) | A native multi-folder database-backed app works with protected SSR/admin and an authenticated Ember calling ORM-backed typed RPC |
-| 6 | **Developer ecosystem**: Wares/registry/global cache, extended `kiln.toml` dependency fields and `kiln.lock`, official UI Ware, integrated `kiln test` (including Embers), formatter/hot reload, advanced LSP, MCP; [implementation plan](docs/plans/phase-6.md) | A multi-folder app consumes a versioned Ware, rebuilds offline, passes real-browser tests and works in the editor/agent toolchain |
+| ✅ 6 | **Developer ecosystem**: Wares/registry/global cache, extended `kiln.toml` dependency fields and `kiln.lock`, official UI Ware, integrated `kiln test` (including Embers), formatter/hot reload, advanced LSP, MCP; [implementation plan](docs/plans/phase-6.md) | A multi-folder app consumes a versioned Ware, rebuilds offline, passes real-browser tests and works in the editor/agent toolchain |
 | 7 | Production hardening, static site generation (`kiln fire --static`), deployment, performance (precise GC, LLVM release builds), stability | Kiln 1.0: stable and ready for personal production projects |
 | 8+ | Installable PWAs with local-first data that syncs with the server, advanced optimization, interoperability improvements, desktop apps, additional targets, request arenas, self-hosting | Independent milestones after 1.0 |
 

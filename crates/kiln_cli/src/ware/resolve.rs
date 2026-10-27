@@ -42,6 +42,18 @@ impl Options {
     }
 }
 
+/// A dependency still to resolve: the Ware that asks for it (none for the
+/// project), who that is in words, the folder its paths are relative to,
+/// its default registry, the alias it uses, and the dependency.
+type Pending = (
+    Option<WareName>,
+    String,
+    PathBuf,
+    Option<String>,
+    String,
+    Dependency,
+);
+
 /// Where a requirement says a Ware comes from, to compare two of them.
 #[derive(Clone, Debug, PartialEq, Eq)]
 enum Origin {
@@ -189,14 +201,7 @@ impl<'a> Resolver<'a> {
         let mut origins: BTreeMap<WareName, (Origin, String)> = BTreeMap::new();
         let mut edges: BTreeMap<WareName, BTreeMap<String, WareName>> = BTreeMap::new();
         let mut lock = Lock::default();
-        let mut queue: VecDeque<(
-            Option<WareName>,
-            String,
-            PathBuf,
-            Option<String>,
-            String,
-            Dependency,
-        )> = VecDeque::new();
+        let mut queue: VecDeque<Pending> = VecDeque::new();
         for (alias, dep) in &manifest.dependencies {
             queue.push_back((
                 None,

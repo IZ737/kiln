@@ -411,9 +411,14 @@ impl Expr {
     /// `xs.map(f)` is a `List<U>` under its coercion to `List<String>`, so
     /// only a type with nothing left to solve is looked under.
     pub fn described(&self) -> &Ty {
+        &self.described_expr().ty
+    }
+
+    /// The expression whose type [`Expr::described`] gives.
+    pub fn described_expr(&self) -> &Expr {
         match &self.kind {
-            ExprKind::Coerce(inner) if concrete(&inner.ty) => inner.described(),
-            _ => &self.ty,
+            ExprKind::Coerce(inner) if concrete(&inner.ty) => inner.described_expr(),
+            _ => self,
         }
     }
 }

@@ -225,6 +225,22 @@ impl Diagnostic {
     }
 }
 
+static PATH_DISPLAY: std::sync::OnceLock<fn(&str) -> String> = std::sync::OnceLock::new();
+
+/// Sets how file names are shown in diagnostics: a compiler can build
+/// files under names of its own (such as a dependency's source mounted in
+/// a project) and show where they really are.
+pub fn set_path_display(display: fn(&str) -> String) {
+    let _ = PATH_DISPLAY.set(display);
+}
+
+fn display_path(name: &str) -> String {
+    match PATH_DISPLAY.get() {
+        Some(display) => display(name),
+        None => name.to_string(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -262,21 +278,5 @@ mod tests {
         assert_eq!(json["code"], "E0101");
         assert_eq!(json["start"]["column"], 5);
         assert!(json["explanation"].is_string());
-    }
-}
-
-static PATH_DISPLAY: std::sync::OnceLock<fn(&str) -> String> = std::sync::OnceLock::new();
-
-/// Sets how file names are shown in diagnostics: a compiler can build
-/// files under names of its own (such as a dependency's source mounted in
-/// a project) and show where they really are.
-pub fn set_path_display(display: fn(&str) -> String) {
-    let _ = PATH_DISPLAY.set(display);
-}
-
-fn display_path(name: &str) -> String {
-    match PATH_DISPLAY.get() {
-        Some(display) => display(name),
-        None => name.to_string(),
     }
 }

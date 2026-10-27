@@ -818,7 +818,9 @@ impl Env<'_, '_> {
     fn keep_evidence(&mut self) -> Vec<String> {
         let dir = self.shared.results.join(&self.case.id);
         let mut kept = Vec::new();
-        if let Ok(browser) = self.shared.browser() {
+        // Only a test that opened pages has a browser to ask; asking
+        // otherwise would start one.
+        if let Some(Ok(browser)) = self.shared.browser.get() {
             if !self.pages.is_empty() {
                 for (i, page) in self.pages.iter().enumerate() {
                     if let Ok(path) = browser.screenshot(page, &dir, &format!("failure-{}", i + 1))
@@ -858,7 +860,7 @@ impl Env<'_, '_> {
     }
 
     fn finish(&mut self) {
-        if let Ok(browser) = self.shared.browser() {
+        if let Some(Ok(browser)) = self.shared.browser.get() {
             for page in self.pages.drain(..) {
                 browser.close_page(&page);
             }

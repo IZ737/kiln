@@ -794,6 +794,15 @@ pub(crate) fn check_paths(paths: Vec<PathBuf>) -> Result<CheckReport, String> {
             .map_err(|err| format!("cannot read {}: {err}", path.display()))?;
     }
     files.sort();
+    // Tests are built by `kiln test`, with the module they test and the
+    // harness, so a folder of them alone is not a program to check.
+    let named: Vec<&PathBuf> = paths.iter().filter(|p| p.is_file()).collect();
+    files.retain(|f| {
+        named.contains(&f)
+            || !(f.extension().is_some_and(|e| e == "kiln")
+                && f.file_name()
+                    .is_some_and(|n| n.to_string_lossy().starts_with("test_")))
+    });
     // Files are type-checked with the other files in their directory,
     // which form one app: glazes use the types of the `.kiln` files there.
     let mut dirs: BTreeMap<PathBuf, Vec<PathBuf>> = BTreeMap::new();
@@ -1535,11 +1544,12 @@ fn caller_locations(
     info: &AppInfo,
     root: &Path,
 ) -> Box<dyn Fn(u32) -> String + Send> {
-    let files: Vec<(
+    type Placed = (
         u32,
         SourceFile,
         Option<(SourceFile, project::bind::SourceMap)>,
-    )> = kiln_files
+    );
+    let files: Vec<Placed> = kiln_files
         .iter()
         .zip(offsets)
         .map(|(f, &o)| ((*f).clone(), o, info.source_maps.get(&f.name).cloned()))

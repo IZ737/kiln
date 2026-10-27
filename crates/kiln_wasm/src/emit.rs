@@ -1937,8 +1937,9 @@ impl<'a> Gen<'a> {
             }
             ("json", "encode") => {
                 let Some(a) = args.first() else { return };
-                let vt = a.uncoerced().ty.clone();
-                self.expr(a.uncoerced());
+                let value = a.described_expr();
+                let vt = value.ty.clone();
+                self.expr(value);
                 self.in_slot(&vt);
                 let f = json::encode_fn(self, &vt, span);
                 self.line(&format!("call {f}"));

@@ -113,6 +113,11 @@ pub fn add(spec: &str, dir: &Path, o: AddOptions, allow: bool) -> Result<String,
         Some((n, v)) => (n, Some(v.to_string())),
         None => (spec, None),
     };
+    if !name.contains('/') {
+        return Err(format!(
+            "`{name}` is not a Ware name: Ware names are `publisher/name`, such as `kiln/ui`; for an npm package, write `npm:<package>@<version>`"
+        ));
+    }
     let name = WareName::parse(name)?;
     let version = o.version.clone().or(inline_version);
     let alias = o.alias.clone().unwrap_or_else(|| name.name.clone());

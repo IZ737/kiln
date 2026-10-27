@@ -176,6 +176,12 @@ jobs:
         shell: bash
         # Only Git's own tools (bash, diff) on the PATH: no C compiler.
         run: PATH=/usr/bin scripts/windows-check.sh kiln.exe
+      - name: kiln test, kiln fmt and a locked Ware with kiln.exe
+        shell: bash
+        run: |
+          ./kiln.exe fmt --check examples
+          ./kiln.exe test examples/guestbook --unit --integration --locked
+          ./kiln.exe test examples/journal --unit --integration
       # Windows cannot overwrite a running executable, so kiln.exe moves
       # itself aside first.
       - name: kiln upgrade replaces the running kiln.exe

@@ -260,8 +260,7 @@ fn layout(src: &str, tokens: &[Token], base: usize) -> String {
             if wrote_comment && blanks > 1 {
                 out.push('\n');
             }
-        } else if newlines == 0 {
-            let p = prev.unwrap();
+        } else if let (0, Some(p)) = (newlines, prev) {
             // Same line: a block comment may sit between.
             let comments: Vec<&str> = ps
                 .iter()
@@ -281,9 +280,8 @@ fn layout(src: &str, tokens: &[Token], base: usize) -> String {
                 }
                 out.push(' ');
             }
-        } else {
+        } else if let Some(p) = prev {
             // Line breaks: comments on their own lines, at most one blank line.
-            let p = prev.unwrap();
             let mut first = true;
             let mut breaks = 0;
             let next_indent = indent_for(&stack, t, base, p);
