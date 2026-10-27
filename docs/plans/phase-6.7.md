@@ -176,7 +176,7 @@ Open details: typed `[id]` parameters (`Int`, `Bool`, etc.), optional versus req
 Discovered routes must enter the existing route/export machinery, not implement a second exporter:
 
 - A discovered `GET /about` with no route parameters is exported automatically by `kiln fire --static`, just like an explicit nonparameterised GET route.
-- A discovered `GET /blog/{slug}` must have a **finite, typed enumeration** of export values; how a filesystem route supplies this through existing `.static(...)()` semantics is to be designed. Do **not** guess all database records or URLs at build time.
+- A discovered `GET /blog/{slug}` must have a **finite, typed enumeration** of export values; how a filesystem route supplies this through existing `.static(...)` semantics is to be designed. Do **not** guess all database records or URLs at build time.
 - Need a file-routing equivalent of opt-out `.dynamic()` where appropriate, rather than forcing dynamic endpoints into a static export.
 - Use existing HTML/asset/Ember generation and validation, including the established error for client code needing server RPC, broken links, non-static request-dependent behaviour and invalid output.
 - Mixed-mode pre-rendering, route hooks, 404/error behaviour, redirects and output path conventions must remain consistent.
