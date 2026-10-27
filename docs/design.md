@@ -505,6 +505,15 @@ See the [Phase 4 implementation plan](plans/phase-4.md).
 Phase 5 adds database-backed and authenticated uses of those RPC contracts,
 sharing validation across SSR and reactive forms.
 
+**Phase 6.5.1 (planned):** Complete the earlier agreed Ember shared-state
+contract before 1.0: importable provider-free typed stores, automatic deep
+reactivity inside explicit roots, batched invalidation, per-request SSR
+isolation, optional scoped overrides, and opt-in client navigation with
+retained stores but no automatic persistence. The existing `{% state %}`
+syntax differs from the earlier agreed top-level `{% var %}` proposal; the
+phase must record and reconcile that difference rather than silently
+changing the shipped syntax. See [the plan](plans/phase-6.5.1.md).
+
 ### Phase 3: native styling, Finishes and themes
 
 See [the full Phase 3 plan](plans/phase-3.md) for the ordered implementation steps,
