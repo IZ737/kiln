@@ -29,10 +29,15 @@ See [projects](../reference/projects.md) for module paths and visibility. It giv
 - **Symbols**: the outline of a file (document symbols), and the
   declarations of every `.kiln` file in the workspace (workspace symbols).
 
+- **Find references and rename**: every use of a function, type, field,
+  method, variant or constant across the project's folders, and renaming
+  one everywhere at once. Names that come from a cached Ware cannot be
+  renamed, since their source is not yours to change.
+- **Formatting**: Format Document uses [`kiln fmt`](tooling.md#kiln-fmt).
+
 Code that does not parse yet still gets answers: whatever the parser
 recovered is analyzed, so completing `post.` on an unfinished line works.
-Find references, rename and deeper Glaze semantics come in phase 6; a
-debugger is not part of phase 2.5. See [the phase 2.5 plan](../plans/phase-2.5.md).
+A debugger is not part of Kiln yet. See [the phase 2.5 plan](../plans/phase-2.5.md).
 
 Install the `kiln` binary first:
 
@@ -44,8 +49,9 @@ cargo install --path crates/kiln_cli
 
 The extension in [editors/vscode](../../editors/vscode) starts `kiln lsp` for
 you, highlights `.kiln`, `.glaze` and `.ember` files, gives them Kiln's file icons,
-and adds **Kiln: Check Program**, **Run Program** and **Build Program**
-commands and tasks. It finds `kiln` on your `PATH` or in `~/.kiln/bin`, or
+and adds **Kiln: Check Program**, **Run Program**, **Build Program**,
+**Test Program**, **Start Dev Server** and **Format Program** commands and
+tasks. It finds `kiln` on your `PATH` or in `~/.kiln/bin`, or
 where the `kiln.path` setting says; its README shows how to install it. Its
 TextMate grammars (`editors/vscode/syntaxes`) also work in other editors
 that read them, such as Sublime Text.

@@ -60,14 +60,18 @@ entry = "app/main.kiln"
 ```
 
 The entry must name an existing `.kiln` file within the root; its folder's
-source files form the entry module. Explicit file targets override this default.
-`name` and `kind` are optional strings; the only supported kind is `app`.
-`entry` is required when a manifest exists. Absolute paths, parent traversal,
-unknown keys, unsupported sections and wrong value types are errors with source
-locations. This initial schema is unversioned and strict. Phase 6 will extend
-this same file for dependencies; `[wares]`, lockfiles and workspaces are not
-implemented here. No manifest or dependency installation is needed for local
-modules.
+source files form the entry module. Explicit file targets override this
+default, and without `entry` the root folder is the entry module. `name`,
+`kind`, `version`, `description` and `license` are optional for an app; the
+kinds are `app` and `ware`. Absolute paths, parent traversal, unknown keys,
+unsupported sections and wrong value types are errors with source
+locations.
+
+The same file declares the project's Wares in `[dependencies]`, the
+registry they come from, a `[policy]` limiting them, and `[test]` settings
+for `kiln test`; `kiln.lock` pins the exact Wares. See [Wares](wares.md)
+and [Testing](testing.md). No manifest or dependency installation is
+needed for local modules.
 
 ## Components and assets
 

@@ -139,9 +139,20 @@ fn every_page_and_file_is_served() {
     // The landing page, install and getting started, and every page of
     // docs/ that the generator carries.
     assert!(pages >= 21, "only {pages} pages: {seen:?}");
-    for path in ["/docs/plans/phase-4.1", "/docs/plans/phase-4.2"] {
+    for path in [
+        "/docs/plans/phase-4.1",
+        "/docs/plans/phase-4.2",
+        "/docs/reference/wares",
+        "/docs/reference/testing",
+        "/docs/guides/first-site",
+        "/docs/guides/agents",
+    ] {
         assert!(seen.contains(path), "missing current milestone page {path}");
     }
+    // Agents find the guide where they look for it.
+    let llms = server.get("/llms.txt");
+    assert_eq!(llms.status, 200);
+    assert!(llms.body.starts_with("# Kiln for coding agents"));
 
     // Copy the actual tutorial as a reader would, then compile and serve it.
     // This catches stale sample syntax, missing files and unexported imports.

@@ -684,16 +684,17 @@ impl Browser {
         let parts: Vec<&str> = key.split('+').collect();
         if parts.len() > 1 && !key.ends_with('+') {
             for m in &parts[..parts.len() - 1] {
-                modifiers |=
-                    match *m {
-                        "Alt" => 1,
-                        "Control" | "Ctrl" => 2,
-                        "Meta" => 4,
-                        "Shift" => 8,
-                        other => return Err(format!(
+                modifiers |= match *m {
+                    "Alt" => 1,
+                    "Control" | "Ctrl" => 2,
+                    "Meta" => 4,
+                    "Shift" => 8,
+                    other => {
+                        return Err(format!(
                             "`{other}` is not a modifier key: expected Alt, Control, Meta or Shift"
-                        )),
-                    };
+                        ))
+                    }
+                };
             }
             name = parts[parts.len() - 1];
         }

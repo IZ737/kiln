@@ -16,10 +16,15 @@ are not yet executable. Check their status notes before relying on a feature.
 - [Databases, models and migrations](reference/data.md) — `sql`, `orm` and `kiln db`
 - [Type rules](reference/types.md) — inference, records, optionals and more
 - [Standard library](reference/stdlib.md) — available modules and APIs
+- [Wares](reference/wares.md) — packages, `kiln.lock`, the cache and registries
+- [Testing](reference/testing.md) — `kiln test`: unit, integration and browser tests
 
 ## Guides
 
+- [Your first Kiln site](guides/first-site.md) — from install to a tested multi-folder site
 - [Editor setup](guides/editors.md) — LSP, VS Code, Neovim and Helix
+- [Formatting, live reload and agents](guides/tooling.md) — `kiln fmt`, `kiln dev` and `kiln mcp`
+- [Kiln for coding agents](guides/agents.md) — the guide `kiln docs --llm` prints
 
 ## Project direction
 
@@ -38,9 +43,9 @@ APIs. **Proposed syntax in a plan is not automatically implemented syntax.**
 - [Phase 4.1 — Explicit `.ember` files and server/client component boundaries](plans/phase-4.1.md) (complete; included in v0.9.0)
 - [Phase 4.2 — Multi-folder projects and local modules](plans/phase-4.2.md) (complete; included in v0.9.0)
 - [Phase 5 — SQL, ORM, migrations, forms, authentication and admin](plans/phase-5.md)
-- [Phase 6 — Wares, testing, tooling and agent integration](plans/phase-6.md)
+- [Phase 6 — Wares, testing, tooling and agent integration](plans/phase-6.md) (complete; included in v0.11.0)
 - [Moving the runtime to Rust](plans/runtime-rust.md)
-- [Integrated testing — unit, integration and browser](plans/testing.md)
+- [Integrated testing — unit, integration and browser](plans/testing.md) (implemented as `kiln test`)
 
 For changes to the language, update the relevant reference page as the
 feature lands. For scope/sequence changes, update the appropriate plan and
