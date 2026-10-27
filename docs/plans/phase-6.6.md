@@ -1,6 +1,6 @@
 # Phase 6.6 — Static site generation
 
-**Status:** Planned. This phase comes after completed Phase 6.5 and before Phase 7 (Kiln 1.0 production hardening). It moves static site generation out of Phase 7; deployment automation is explicitly Phase 8.
+**Status:** Planned. This phase comes after completed Phase 6.5 **and planned Phase 6.5.1 Ember shared stores/reactivity**, and before Phase 7 (Kiln 1.0 production hardening). It moves static site generation out of Phase 7; deployment automation is explicitly Phase 8.
 
 ## Goal
 
