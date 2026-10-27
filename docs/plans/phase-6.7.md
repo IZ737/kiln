@@ -52,6 +52,7 @@ These are decisions reached in the design discussion, not claims of implemented 
 | Loader arguments | **Optional `req: web.Request` first**, followed by **typed path parameters matched by name**; request-free loaders need not mention `req` |
 | Glaze prop assembly | **Automatically combine typed URL path parameters with the `load` return record**; duplicate field names are a compile-time error |
 | Loader return-field matching | **Strict by name and type:** every field returned by `load` must match a declared Glaze prop; unexpected fields are compile-time errors. Glaze defaults need not be returned, and URL parameters are supplied separately |
+| Loader return types | **Allow both anonymous records and named structs** with statically known fields matching Glaze props. No forced manual reconstruction or relaxation of strict field checking |
 | Parameter typing | **Infer `[id]` from the Glaze, `load`, or route handler declarations**, defaulting to `String` when no explicit type is supplied; conflicting declarations are compile-time errors |
 | Dynamic filename syntax | **Square-bracket `[name]` segments** in both `.glaze` filenames and route directories, mapping to ordinary Kiln `{name}` URL parameters; no curly-brace filenames or encoded types |
 | Loader failures | **Reuse ordinary Kiln error propagation**: `web.error(status, message)` for intentional HTTP failures, existing 500 handling for unexpected errors, and `app.on_error` for custom responses; **no implicit `none` → 404** |
@@ -210,10 +211,30 @@ pub fn load(slug: String) -> { post: posts.Post } ! {
 - The combined prop names/types are checked against the Glaze's declared props; required props that cannot be supplied remain build errors.
 - Glaze defaults continue to work for props not supplied by either source. **Decision (2026-10-27) — strict loader field matching, Option A:** every returned loader field must correspond to a **declared Glaze prop** with a compatible type. An unexpected/unused field is a compile-time error, even if it would otherwise be harmless; require developers to return only the data the page contract declares. This applies to named fields of the loader's statically known return type, not only to literals, and includes fields supplied through aliases or shared records.
 - This rule does **not** require the loader to return every Glaze prop: typed URL path params are already supplied automatically, defaulted Glaze props may be omitted, and the existing Glaze mechanism may provide a declared `request: web.Request` prop independently. Every **required** prop must still be satisfiable after combining all legitimate sources. A loader must never duplicate a URL parameter field.
-- Diagnose extra fields, missing required fields, duplicate URL/loader fields and incompatible types with source-linked errors. Suggest removing/renaming the returned field or declaring it in the Glaze when appropriate. The exact set of admissible *return record forms* remains a separate decision.
+- Diagnose extra fields, missing required fields, duplicate URL/loader fields and incompatible types with source-linked errors. Suggest removing/renaming the returned field or declaring it in the Glaze when appropriate. **Decision (2026-10-27) — named-struct loader returns, Option A:** a loader may return **either an anonymous typed record or a named struct** whose statically known fields exactly match its contributions to the paired Glaze's declared props. The compiler checks fields individually by name and compatible type; it does **not** require reconstructing a duplicate anonymous record. A struct with an additional field is still rejected, even when that field was intended for other callers. URL path parameters remain separately supplied and cannot be repeated as struct fields.
 - Parameter name uniqueness and type compatibility should be enforced in the shared route/compiler checker, not by runtime maps with silent shadowing.
 
-Kiln type-checks that the returned record satisfies the paired Glaze's required props and renders it automatically.
+Kiln type-checks that the returned record or named struct satisfies the paired Glaze's required props and renders it automatically.
+
+**Illustrative named-struct return (Option A):**
+
+```kiln
+struct BlogPageData {
+    post: Post,
+    author: User,
+}
+
+pub fn load(slug: String) -> BlogPageData ! {
+    return try posts.page_data(slug)
+}
+```
+
+```glaze
+{% props post: Post, author: User, slug: String %}
+<h1>{post.title}</h1>
+```
+
+The `post` and `author` struct fields are automatically passed to Glaze, while `slug` is sourced from the URL. The syntax is illustrative; no automatic arbitrary struct-to-record conversion beyond statically checked page-prop delivery is implied. Field visibility/access rules must honour normal Kiln module privacy and be confirmed during implementation.
 
 **Decision (2026-10-27) — loader input contract, Option A:** the loader may declare an **optional first argument** of type `web.Request`; after that, it declares whichever typed URL path parameters it needs, bound **by parameter name**, rather than by positional URL order. A loader that only needs URL parameters may omit the request entirely:
 
@@ -324,7 +345,7 @@ The main contract is the error semantics, not the particular lookup API or examp
 The **three levels above are agreed**; their other exact contracts need decisions:
 
 - **Route parameters — DECIDED:** the filename supplies **only a parameter name**, e.g. `[id]`; the compiler **infers its type** from matching declarations in the Glaze, `load` or full route handler. If no declaration supplies an explicit type, the parameter is a **`String`**. If two or more declarations disagree (e.g. `id: Int` in a loader and `id: String` in the Glaze), this is a **compile-time error**, not implicit coercion or precedence. Keep existing route matching/conversion rules for supported types (`Int`, `Float`, `Bool`, `String`). `load` still binds by parameter name and accepts optional first `req: web.Request`. Whether unused path parameters must appear in a handler signature remains open; all explicit declarations must agree.
-- **Prop combination and exact loader fields — DECIDED:** the Glaze receives the **union of URL parameter props and the loader-returned typed record**. Duplicate names across those sources are **compile-time errors**, even for equal values/types. **Every loader return field must match a declared Glaze prop by name with a compatible type**; extra/unused loader fields are compile-time errors. Missing required props are errors, but Glaze defaults, URL param props and an existing implicit request prop can satisfy their corresponding declared inputs without loader forwarding. Still decide what *shapes* of loader return type qualify (e.g. named records versus named struct types); do not relax field checking when the record comes from a helper.
+- **Prop combination and exact loader fields — DECIDED:** the Glaze receives the **union of URL parameter props and the loader-returned typed record or named struct fields**. Duplicate names across those sources are **compile-time errors**, even for equal values/types. **Every loader return field must match a declared Glaze prop by name with a compatible type**; extra/unused loader fields are compile-time errors. Missing required props are errors, but Glaze defaults, URL param props and an existing implicit request prop can satisfy their corresponding declared inputs without loader forwarding. **Named structs and anonymous typed records are both allowed** (Option A); strict matching applies to both, including fields defined in a reusable struct. Normal module access/privacy rules still apply.
 - **Handler discovery:** **`route.kiln` in the route directory is settled.** Determine its visibility/export rules, signature typing, how it participates in ordinary folder-module imports/privacy and which declarations may be used as route handlers.
 - **`load` vs `get` — DECIDED:** they are **mutually exclusive per route** and must trigger a **compile-time error** when both are defined. `load` may coexist with non-GET method exports (`post`, `put`, `patch`, `delete`). Do not invent fallback or invocation ordering between `load` and `get`.
 - **Failure handling — DECIDED:** reuse `web.error(status, message)`, ordinary `try`/`throw`, existing unexpected-error (500) handling, and `app.on_error`; **do not** convert `none` to 404 automatically. Authentication and authorization failures must be propagated through this same path. Exact examples and language type signatures still require implementation-time validation.
@@ -538,6 +559,7 @@ If adopted as **Phase 6.7**, a reviewable breakdown might be:
 - [ ] A handler-free dynamic Glaze receives declared URL parameters with type checking; unexpected/missing required props produce clear diagnostics.
 - [ ] A typed optional loader supplies a record of Glaze props, automatically rendered with consistent error handling.
 - [ ] An unexpected `load` return field not declared by the paired Glaze is a compile-time error, whether from an inline record or another statically known record type; compatible declared fields succeed.
+- [ ] A `load` function returning a named struct passes its compatible named fields directly to Glaze without reconstructing an anonymous record; extra, duplicate, inaccessible or mismatched fields remain diagnostic errors, and ordinary Kiln field/module visibility is respected.
 - [ ] Defaulted or automatically supplied Glaze props need not appear in `load` results, and every required prop must be satisfied by a valid source; no unused return data is silently forwarded.
 - [ ] Loader `throw web.error(404, ...)` and other intentional statuses use existing HTTP error handling and `app.on_error`; unexpected errors use existing safe 500 handling.
 - [ ] An optional/absent loader result is not silently converted to a 404 or an empty page; no routing-specific error protocol is introduced.
@@ -584,6 +606,7 @@ If adopted as **Phase 6.7**, a reviewable breakdown might be:
 - **Loader inputs (Option A):** loaders may optionally declare `req: web.Request` **first**, followed by typed URL path parameters bound by name. Request-free loaders remain concise.
 - **Glaze props (Option A):** combine typed URL route parameters with the typed record returned by `load`; duplicate names cause compile-time errors and required Glaze props are type-checked against that combination.
 - **Strict loader return fields (Option A):** extra/unused fields from `load` that are not declared by the Glaze are compile-time errors, even if they are part of a shared record type. Matching remains by name and type; URL params and defaulted props need not be forwarded by the loader.
+- **Named-struct loader returns (Option A):** loaders may return either anonymous typed records or named structs directly. Both use the same strict field name/type matching, duplicate detection and normal access/privacy rules; no redundant anonymous-record reconstruction required.
 - **Parameter typing (Option A):** `[id]` is only a name; infer the route parameter type from matching Glaze, `load` or handler declarations, defaulting to `String` without an annotation. Conflicting declarations are compiler errors. Do not encode types in route filenames.
 - **Loader error handling (Option A):** use existing Kiln `try`/`throw`, `web.error`, unexpected-error 500 and `app.on_error` behaviour. No special `none` → 404 conversion.
 - **Filesystem SSG (Option A):** parameterised routes enumerate typed pages with route-local `static_params()` in `route.kiln`, or opt out through a route-local `dynamic` marker. The implementation must reuse the existing `.static(...)`/`.dynamic()` and static-export pipeline, not add a second exporter.
@@ -597,7 +620,7 @@ If adopted as **Phase 6.7**, a reviewable breakdown might be:
 - **Multiple filesystem mounts (Option A):** cross-mount overlaps resolve by mount registration order, with nonfatal shadowing warnings. Do not turn cross-mount overlaps into compile errors; retain hard duplicate checks only for claims *within* a single mount.
 
 **Needs an explicit decision before locking the specification:**
-1. **Remaining loader contract:** admissible successful return record shapes and unused URL parameter rules (§§5–6). Named parameter binding, optional first `req`, automatic props merging, **strict no-extra-fields matching**, duplicate-name errors, type inference/default `String` and ordinary error/404 propagation are settled.
+1. **Remaining loader contract:** unused URL parameter rules and final precise return-type restrictions (§§5–6). Named parameter binding, optional first `req`, automatic props merging, **strict no-extra-fields matching**, named-struct/anonymous-record success returns, duplicate-name errors, type inference/default `String` and ordinary error/404 propagation are settled.
 2. **`route.kiln` contracts:** exact function signatures, module boundaries, exports and how flat Glaze files graduate to route directories (§5). The filename and permission for handler-only API routes are settled.
 3. **SSG refinements:** exact export/marker signatures, contradictory declarations and unusual handler results (§8). Route-local enumeration, server-startup pre-render, `static_refresh` alone on zero-parameter routes and rejection of request-dependent cached output (including explicit `.static(...)`) are settled.
 4. **Remaining route file naming:** filename/path character restrictions, handling reserved names, static-file extensions, catch-all or optional patterns and other edge cases (§4). Square-bracket `[name]` dynamic segments are now settled; standalone `.ember` pages are excluded.
