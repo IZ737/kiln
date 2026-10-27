@@ -53,6 +53,7 @@ impl Checker {
     pub(crate) fn define_items(&mut self, module: &Module, scope: Scope) {
         let mut seen_fns: HashMap<String, Span> = HashMap::new();
         for item in &module.items {
+            self.internal = self.std_adts == 0 || crate::checker::item_name(item).starts_with("__");
             match item {
                 Item::Struct(s) => {
                     if self.is_duplicate_type(&s.name) {
@@ -142,6 +143,7 @@ impl Checker {
                 Item::Import(_) => {}
             }
         }
+        self.internal = true;
     }
 
     fn define_impl(&mut self, imp: &ast::ImplDecl, scope: Scope) {
@@ -289,6 +291,21 @@ impl Checker {
                     if generics.iter().any(|g| g == name) {
                         return Ty::Param(name.to_string());
                     }
+                    // The standard library describes what Kiln cannot say
+                    // yet with `Any` and `Rest`; programs use generics.
+                    if matches!(name, "Any" | "Rest") && self.std_adts > 0 {
+                        self.error(
+                            Diagnostic::error(
+                                codes::RESERVED_TYPE,
+                                format!("`{name}` is reserved for the standard library"),
+                                t.span,
+                            )
+                            .with_help(
+                                "a function that takes any type is generic: `fn show<T>(value: T)`",
+                            ),
+                        );
+                        return Ty::Unknown;
+                    }
                     match name {
                         "Any" => return Ty::Any,
                         "Rest" => return Ty::Rest,
@@ -359,6 +376,14 @@ impl Checker {
                     Scope::Global => self.imports.get(&module.name).copied(),
                     Scope::Module(_) => self.modules.iter().position(|d| d.name == module.name),
                 };
+                if let Some(m) = m {
+                    if !self.internal
+                        && crate::checker::internal_name(&self.modules[m].name, &name.name)
+                    {
+                        let what = format!("{}.{}", module.name, name.name);
+                        self.internal_error(&what, name.span);
+                    }
+                }
                 m.and_then(|m| self.modules[m].types.get(&name.name).copied())
             }
             _ => None,

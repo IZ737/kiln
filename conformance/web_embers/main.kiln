@@ -22,12 +22,13 @@ server fn reset() {
     print("reset")
 }
 
-// Every call of a `server fn` passes this first: an error it throws is
-// the answer.
-fn rpc_guard(req: web.Request, name: String) ! {
-    if name == "reset" and (req.headers["x-admin"] ?? "") != "yes" {
+// A call of `reset` passes this first, from `app.before`: an error it
+// throws is the answer.
+fn admins_only(req: web.Request) -> web.Response? ! {
+    if (req.headers["x-admin"] ?? "") != "yes" {
         throw web.error(403, "only admins reset")
     }
+    return none
 }
 
 // Not a `server fn`, so the browser cannot call it.
@@ -37,6 +38,7 @@ fn secret() -> String {
 
 fn main() ! {
     let app = web.app()
+    app.before("/_kiln/rpc/reset", admins_only)
     app.get("/", fn(req) {
         return web.render("index.glaze", { title: "Embers <&>" })
     })
@@ -46,5 +48,5 @@ fn main() ! {
     app.get("/quit", fn(req) {
         os.exit(0)
     })
-    try app.listen("127.0.0.1:${env("PORT")}")
+    try app.listen("127.0.0.1:${env("PORT") ?? "8080"}")
 }

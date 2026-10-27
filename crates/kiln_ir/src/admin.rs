@@ -19,7 +19,7 @@ use kiln_syntax::ast;
 
 /// What a field can be in a form.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
-enum Kind {
+pub(crate) enum Kind {
     Str,
     Int,
     Float,
@@ -231,7 +231,7 @@ fn type_name(t: &ast::TypeExpr) -> Option<String> {
 }
 
 /// What a field's written type is in a form.
-fn field_kind(t: &ast::TypeExpr) -> (Kind, bool) {
+pub(crate) fn field_kind(t: &ast::TypeExpr) -> (Kind, bool) {
     match &t.kind {
         ast::TypeKind::Optional(inner) => (field_kind(inner).0, true),
         ast::TypeKind::Named { path, args } if args.is_empty() => {
@@ -249,7 +249,7 @@ fn field_kind(t: &ast::TypeExpr) -> (Kind, bool) {
 }
 
 /// A Kiln string literal holding `text`.
-fn quote(text: &str) -> String {
+pub(crate) fn quote(text: &str) -> String {
     let mut out = String::with_capacity(text.len() + 2);
     out.push('"');
     for c in text.chars() {

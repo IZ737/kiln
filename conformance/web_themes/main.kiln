@@ -43,15 +43,15 @@ fn editorial_page() -> PageFinish {
 
 fn editorial_card(featured: Bool) -> CardFinish {
     return CardFinish(
-        root: ui({ p: space.md, border: true, borderColor: if featured { color.accent } else { color.muted } }),
-        title: ui({ font: font.heading, textSize: .lg, weight: .normal }),
+        root: ui({ p: space.md, border: true, border_color: if featured { color.accent } else { color.muted } }),
+        title: ui({ font: font.heading, text_size: .lg, weight: .normal }),
     )
 }
 
 fn editorial_button(tone: Tone) -> Ui {
     return match tone {
-        Tone.Plain => ui({ underline: true, fg: color.accent })
-        Tone.Loud => ui({ underline: true, fg: color.accent, weight: .bold })
+        .Plain => ui({ underline: true, fg: color.accent })
+        .Loud => ui({ underline: true, fg: color.accent, weight: .bold })
     }
 }
 
@@ -70,15 +70,15 @@ fn vibrant_card(featured: Bool) -> CardFinish {
     let base = ui({ p: space.lg, rounded: radius.card, bg: color.muted })
     return CardFinish(
         root: if featured { ui.merge(base, ui({ bg: color.accent, fg: color.surface })) } else { base },
-        title: ui({ font: font.heading, textSize: .xl, weight: .black }),
+        title: ui({ font: font.heading, text_size: .xl, weight: .black }),
     )
 }
 
 fn vibrant_button(tone: Tone) -> Ui {
     let base = ui({ px: space.md, py: space.sm, rounded: .full, bg: color.accent, fg: color.surface })
     return match tone {
-        Tone.Plain => base
-        Tone.Loud => ui.merge(base, ui({ textSize: .lg, hover: { opacity: 0.8 } }))
+        .Plain => base
+        .Loud => ui.merge(base, ui({ text_size: .lg, hover: { opacity: 0.8 } }))
     }
 }
 
@@ -107,6 +107,6 @@ fn main() ! {
         os.exit(0)
         return web.text("bye")
     })
-    let port = os.env("PORT") ?? "8080"
+    let port = env("PORT") ?? "8080"
     try app.listen("127.0.0.1:${port}")
 }

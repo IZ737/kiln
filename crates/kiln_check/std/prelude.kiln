@@ -29,7 +29,8 @@ struct Set<T> {}
 struct Ui {}
 
 fn print(value: Any) {}
-fn env(name: String) -> String {}
+// An environment variable, or none when it is not set.
+fn env(name: String) -> String? {}
 fn panic(message: String) -> Never {}
 
 impl Int {

@@ -2,8 +2,6 @@
 
 // The command-line arguments, without the program's name.
 fn args() -> List<String> {}
-// An environment variable, or none when it is not set.
-fn env(name: String) -> String? {}
 // Ends the program with an exit code.
 fn exit(code: Int) -> Never {}
 // The working directory.

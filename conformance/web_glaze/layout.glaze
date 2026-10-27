@@ -1,6 +1,7 @@
-{% props title: String %}
+{% props title: String, request: web.Request %}
 <!doctype html>
 <title>{title}</title>
+<nav data-path="{request.path}">{request.method}</nav>
 <main>
   {% slot %}
 </main>

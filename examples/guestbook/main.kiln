@@ -16,11 +16,10 @@ fn main() ! {
     app.post("/theme", fn(req) {
         let form = try req.form<{ theme: String }>()
         let theme = if form.theme == "dark" { "dark" } else { "light" }
-        var res = web.redirect("/", status: 303)
-        res.headers["set-cookie"] = "theme=${theme}; Path=/; SameSite=Lax; Max-Age=31536000"
-        return res
+        return web.redirect("/", status: 303)
+            .set_cookie("theme", theme, max_age: 8760h, secure: env("GUESTBOOK_HTTP") != "1")
     })
 
-    let port = if env("PORT") == "" { "8080" } else { env("PORT") }
+    let port = env("PORT") ?? "8080"
     try app.listen("127.0.0.1:${port}")
 }

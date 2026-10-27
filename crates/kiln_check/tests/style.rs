@@ -30,7 +30,7 @@ fn codes(src: &str) -> Vec<String> {
 
 #[test]
 fn styles_with_tokens_keywords_and_branches_check() {
-    let src = "fn s(big: Bool, n: Int) -> Ui {\n    let a = ui({ p: space.md, bg: color.accent, weight: .bold, cols: 2, hover: { fg: color.text }, at: { tablet: { cols: 3 } } })\n    let b: Ui = { textSize: \"1.2rem\", opacity: 0.5, m: if big { .auto } else { 0 }, w: match n { 1 => .full, _ => \"20rem\" } }\n    return ui.merge(a, b)\n}\n\nfn c(s: Ui) -> String {\n    return ui.classes(s)\n}\n";
+    let src = "fn s(big: Bool, n: Int) -> Ui {\n    let a = ui({ p: space.md, bg: color.accent, weight: .bold, cols: 2, hover: { fg: color.text }, at: { tablet: { cols: 3 } } })\n    let b: Ui = { text_size: \"1.2rem\", opacity: 0.5, m: if big { .auto } else { 0 }, w: match n { 1 => .full, _ => \"20rem\" } }\n    return ui.merge(a, b)\n}\n\nfn c(s: Ui) -> String {\n    return ui.classes(s)\n}\n";
     assert_eq!(errors(src), []);
 }
 
@@ -59,7 +59,7 @@ fn unknown_tokens_and_breakpoints_are_errors() {
 fn a_local_named_like_a_category_is_not_a_token() {
     // `text` is a local here, so `text.len` is not a token.
     assert_eq!(
-        codes("fn s(text: String) -> Ui {\n    return ui({ textSize: text.len })\n}\n"),
+        codes("fn s(text: String) -> Ui {\n    return ui({ text_size: text.len })\n}\n"),
         ["E0220"]
     );
 }
@@ -131,4 +131,19 @@ fn themes_must_set_the_same_tokens_with_fitting_values() {
         "theme `dark` does not set `--color-text`, which theme `light` sets",
     ];
     assert_eq!(found, expected);
+}
+
+#[test]
+fn keys_and_words_are_snake_case() {
+    let src = "fn s() -> Ui {\n    return ui({ maxW: \"40rem\", direction: .rowReverse, focus_visible: { border_color: color.accent } })\n}\n";
+    let module = kiln_syntax::parse(src);
+    let checked = check_app_with_css(&[&module.module], &[], &styling());
+    let fixes: Vec<String> = checked.modules[0]
+        .iter()
+        .map(|d| {
+            assert_eq!(d.code, "E0220");
+            d.suggestion.as_ref().expect("a fix").replacement.clone()
+        })
+        .collect();
+    assert_eq!(fixes, ["max_w", "row_reverse"]);
 }

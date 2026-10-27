@@ -24,10 +24,10 @@ pub fn choice(value: String, label: String) -> Choice {
 // The class a tone adds to a component.
 pub fn tone_class(tone: Tone) -> String {
     return match tone {
-        Tone.Neutral => "neutral"
-        Tone.Primary => "primary"
-        Tone.Danger => "danger"
-        Tone.Success => "success"
+        .Neutral => "neutral"
+        .Primary => "primary"
+        .Danger => "danger"
+        .Success => "success"
     }
 }
 

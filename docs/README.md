@@ -15,6 +15,7 @@ are not yet executable. Check their status notes before relying on a feature.
 - [Glazes](reference/glazes.md) — template/component syntax and type checking
 - [Databases, models and migrations](reference/data.md) — `sql`, `orm` and `kiln db`
 - [Type rules](reference/types.md) — inference, records, optionals and more
+- [Semantics](reference/semantics.md) — values and references, evaluation, numbers and failure
 - [Standard library](reference/stdlib.md) — available modules and APIs
 - [Wares](reference/wares.md) — packages, `kiln.lock`, the cache and registries
 - [Testing](reference/testing.md) — `kiln test`: unit, integration and browser tests

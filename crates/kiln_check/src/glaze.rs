@@ -34,17 +34,30 @@ enum PropValue<'a> {
 impl Checker {
     /// Records the props of `glaze`, so other files can check their uses.
     pub(crate) fn register_glaze(&mut self, file: &str, glaze: &Glaze) {
+        let request = self
+            .modules
+            .iter()
+            .find(|m| m.name == "web")
+            .and_then(|m| m.types.get("Request").copied());
         let props = glaze
             .props
             .iter()
             .flat_map(|p| &p.params)
-            .map(|p| ParamSig {
-                name: Some(p.name.name.clone()),
-                ty: match &p.ty {
+            .map(|p| {
+                let ty = match &p.ty {
                     Some(t) => self.resolve_type(t, &[], Scope::Global),
                     None => Ty::Unknown,
-                },
-                has_default: p.default.is_some(),
+                };
+                // A glaze's `request: web.Request` is filled in with the
+                // request being handled.
+                let filled = !glaze.is_ember()
+                    && p.name.name == "request"
+                    && matches!(&ty, Ty::Adt(id, _) if Some(*id) == request);
+                ParamSig {
+                    name: Some(p.name.name.clone()),
+                    ty,
+                    has_default: p.default.is_some() || filled,
+                }
             })
             .collect();
         let mut slots = Vec::new();
@@ -809,7 +822,26 @@ impl Checker {
 
     /// `web.render("post.glaze", { post })`: the data must match the page's
     /// props.
-    pub(crate) fn check_render(&mut self, args: &[Arg], span: Span) {
+    pub(crate) fn check_render(&mut self, all: &[Arg], params: &[ParamSig], span: Span) {
+        // `status` and `headers` are checked like any named argument; the
+        // rest are the glaze and its data.
+        let mut args = Vec::new();
+        for a in all {
+            let param = a.name.as_ref().and_then(|n| {
+                params
+                    .iter()
+                    .skip(2)
+                    .find(|p| p.name.as_deref() == Some(n.name.as_str()))
+            });
+            match param {
+                Some(p) => {
+                    let ty = p.ty.clone();
+                    self.check(&a.value, &ty);
+                }
+                None => args.push(a.clone()),
+            }
+        }
+        let args = args.as_slice();
         let Some(template) = args.first() else {
             self.error(Diagnostic::error(
                 codes::BAD_ARGUMENTS,
@@ -832,7 +864,7 @@ impl Checker {
         if let Some(extra) = args.get(2) {
             self.error(Diagnostic::error(
                 codes::BAD_ARGUMENTS,
-                "too many arguments: `render` takes the glaze and its data",
+                "too many arguments: `render` takes the glaze, its data, `status:` and `headers:`",
                 extra.value.span,
             ));
         }

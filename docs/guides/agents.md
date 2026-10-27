@@ -97,11 +97,22 @@ this with tests.
   fails instead.
 - Patterns: `match x { some(v) => ..., none => ..., _ => ... }` and
   `if found is some(post) and post.published { ... }`.
+- Unwrap or leave with let-else: `let some(post) = found else { return
+  web.not_found() }`; the `else` block must `return`, `break`,
+  `continue` or `throw`.
+- Where the enum is known, a variant can drop its name: `.Accent`,
+  `.Custom(name: "x")`, and `.Accent =>` in a `match`.
+- `let` stops rebinding, not changes: structs, records, lists and maps
+  are shared references, so a function that pushes to a list it was given
+  changes the caller's list. Copy with `Post(..post, title: "New")` or
+  `{ ..record, x: 0 }`. A `const` cannot be changed at all (E0207).
 - Named arguments and defaults: `web.json(post, status: 201)`.
 - Generic calls name the type: `req.form<{ title: String }>()`,
   `orm.find<Post>(db)`, `json.decode<Post>(text)`.
-- Empty collections need a type: `let tags: List<String> = []`,
-  `let form: Map<String, String> = Map()`.
+- Map literals: `["Ada": 36, "Grace": 45]`. Empty collections need a
+  type: `let tags: List<String> = []`, `let form: Map<String, String> = Map()`.
+- Multi-line text is a `"""` string: its lines start on the line after the
+  opening quotes, and the closing `"""` line's indentation is removed.
 
 ## Modules
 
@@ -148,7 +159,7 @@ pub struct Post {
     user: User? = none      // a relation: loaded with .include(.user)
 }
 
-let db = try sql.open(env("DATABASE_URL"))
+let db = try sql.open(env("DATABASE_URL") ?? "sqlite:app.db")
 let posts = try orm.find<Post>(db).where(.published).order_by(.id, descending: true).limit(20).all()
 let post = try orm.find<Post>(db).where(fn(p) { p.id == id }).first()     // Post?
 let saved = try orm.insert(db, Post(user_id: 1, title: "Hi"))
@@ -205,7 +216,7 @@ during tests.
 | Using another folder's private name | mark it `pub` | E0230 |
 
 Also: `return` cannot be a `match` arm's value (E0102); write
-`if x is some(v) { ... }` instead.
+`let some(v) = x else { return ... }` instead.
 
 ## More
 

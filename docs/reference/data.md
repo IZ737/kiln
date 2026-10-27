@@ -28,7 +28,7 @@ database the program opens.
 import sql
 
 fn main() ! {
-    let db = try sql.open(env("DATABASE_URL"))
+    let db = try sql.open(env("DATABASE_URL") ?? "sqlite:app.db")
     let posts = try db.query<Post>("select * from posts where published = $1", true)
     let one = try db.one<Post>("select * from posts where id = $1", id)
     let many = try db.scalar<Int>("select count(*) from posts")
@@ -51,7 +51,7 @@ fn main() ! {
 
 Opening a URL that is already open gives the same pool, with the settings
 it was first opened with, so a `server fn` can call
-`sql.open(env("DATABASE_URL"))` on every call without opening new
+`sql.open(env("DATABASE_URL") ?? "sqlite:app.db")` on every call without opening new
 connections each time. `db.close()` closes it for everyone.
 
 Values go in `$1`, `$2`, ... whatever the database, and the extra

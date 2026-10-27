@@ -374,7 +374,7 @@ fn completes_in_unsaved_and_unfinished_code() {
     assert!(types.contains(&"Post".to_string()) && !types.contains(&"helper".to_string()));
     assert_eq!(
         complete(&with("    let y: web.Re|")),
-        ["App", "Request", "Response"]
+        ["App", "Request", "Response", "SameSite"]
     );
     // Nothing in comments and strings.
     assert!(complete(&with("    // po|")).is_empty());

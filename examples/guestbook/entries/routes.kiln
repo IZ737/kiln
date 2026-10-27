@@ -29,7 +29,7 @@ fn page(db: sql.Db, sessions: auth.Sessions, req: web.Request, message: String, 
         .limit(100)
         .all()
     let token = try sessions.csrf(req)
-    var res = web.render("index.glaze", { entries: entries, signed_in: who != none, csrf: token, message: message, problems: problems, dark: shared.dark(req) })
+    var res = web.render("index.glaze", { entries: entries, signed_in: who != none, csrf: token, message: message, problems: problems })
     res.status = status
     return res
 }

@@ -17,7 +17,8 @@ fn home(req: web.Request) -> web.Response ! {
 }
 
 fn main() ! {
-    let app = web.app()
+    // Webhooks come from other sites, so they are let through.
+    let app = web.app(cross_site: ["/hooks"])
     app.get("/", home)
 
     app.get("/todos/{id: Int}", fn(req, id) {
@@ -85,10 +86,44 @@ fn main() ! {
         return web.text("${items[7]}")
     })
 
+    // Two cookies are two `set-cookie` headers; `req.cookie` decodes what
+    // `set_cookie` encoded.
+    app.get("/cookies", fn(req) {
+        let theme = req.cookie("theme") ?? "none"
+        return web.text("theme: ${theme}", headers: ["cache-control": "no-store"])
+            .set_cookie("theme", "dark mode")
+            .set_cookie("seen", "1", max_age: 1h, same_site: .Strict)
+    })
+
+    // `app.before` guards everything under a prefix, at a `/`.
+    app.before("/admin", fn(req) {
+        if req.header("x-admin") != "yes" {
+            return web.text("sign in first", status: 401)
+        }
+        return none
+    })
+    app.before("/admin/fail", fn(req) {
+        throw web.error(403, "never")
+    })
+    app.get("/admin/{page}", fn(req, page) {
+        return web.text("admin ${page}")
+    })
+    app.get("/administrators", fn(req) {
+        return web.text("not guarded")
+    })
+
+    // A browser's form from another site is refused before it gets here.
+    app.post("/notes", fn(req) {
+        return web.text("noted", status: 201)
+    })
+    app.post("/hooks/payment", fn(req) {
+        return web.text("hook")
+    })
+
     app.get("/quit", fn(req) {
         print("bye")
         os.exit(0)
     })
 
-    try app.listen("127.0.0.1:${env("PORT")}")
+    try app.listen("127.0.0.1:${env("PORT") ?? "8080"}")
 }

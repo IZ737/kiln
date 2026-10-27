@@ -194,7 +194,7 @@ pub fn harness(cases: &[Case]) -> Result<String, String> {
         }
     }
     let mut out = format!(
-        "// Written by `kiln test`: runs the test that KILN_TEST names.\nimport {}\n\nfn main() {{\n    let name = os.env(\"KILN_TEST\") ?? \"\"\n",
+        "// Written by `kiln test`: runs the test that KILN_TEST names.\nimport {}\n\nfn main() {{\n    let name = env(\"KILN_TEST\") ?? \"\"\n",
         imports.join(", ")
     );
     for c in cases {

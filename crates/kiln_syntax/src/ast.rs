@@ -218,6 +218,11 @@ pub enum ExprKind {
     None,
     Ident(String),
     List(Vec<Expr>),
+    /// `["a": 1, "b": 2]`, a map.
+    Map(Vec<(Expr, Expr)>),
+    /// `..value` as an argument of a struct construction, or `{ ..value }`
+    /// in a record (its field is named `..`): the fields not written.
+    Spread(Box<Expr>),
     /// `{ posts, title: "Home" }`
     Record(Vec<RecordField>),
     Unary {

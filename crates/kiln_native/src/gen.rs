@@ -1821,7 +1821,7 @@ impl Fx<'_, '_, '_> {
             }
             ExprKind::Env(v) => {
                 let x = self.expr(v);
-                self.call_rt("k_env", &[x])
+                self.call_rt("k_os_env", &[x])
             }
             ExprKind::Panic(v) => {
                 let x = self.expr(v);
@@ -2414,7 +2414,6 @@ impl Fx<'_, '_, '_> {
                     "temp_dir" => "k_os_temp_dir",
                     "pid" => "k_os_pid",
                     "platform" => "k_os_platform",
-                    "env" => "k_os_env",
                     "exit" => "k_os_exit",
                     _ => return self.unsupported(span, format!("`{module}.{name}`")),
                 };
@@ -2464,11 +2463,14 @@ impl Fx<'_, '_, '_> {
                 let f: &'static str = match name {
                     "app" => "k_web_app",
                     "not_found" => "k_web_not_found",
+                    "__request" => "k_web_current_request",
                     "error" => "k_web_error",
                     "App.on_error" => "k_web_on_error",
+                    "App.before" => "k_web_before",
                     "text" => "k_web_text",
                     "html" => "k_web_html",
                     "redirect" => "k_web_redirect",
+                    "__with_headers" => "k_web_with_headers",
                     "Request.query" => "k_web_query",
                     "Request.header" => "k_web_header",
                     "Request.cookie" => "k_web_cookie",

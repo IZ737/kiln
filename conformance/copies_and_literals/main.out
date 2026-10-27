@@ -1,0 +1,17 @@
+Post(id: 0, title: "Draft", tags: ["a"], published: true)
+false
+["a", "b"]
+7 Made 1
+{ x: 10, y: 2 }
+{ x: 1, y: 2 }
+45
+2
+{1: "one", 2: "two"}
+0
+0
+Hello, Kiln!
+  indented "quoted" line
+
+a 	 tab and ${not interpolated}
+4
+[]

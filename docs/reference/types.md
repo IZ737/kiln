@@ -17,6 +17,22 @@ the details of any error.
   (E0212). Inside a generic function, its type parameters can be used in
   annotations: `var best: T? = none`.
 
+## Bindings and values
+
+- `let` cannot be rebound and `var` can; neither copies. Structs, records,
+  lists, maps and sets are shared references: `let b = a` and passing `a`
+  to a function give the same value, and a change through one name is seen
+  through the other. Numbers, strings, booleans, optionals of them and
+  enums are values. See [semantics.md](semantics.md).
+- A `const` is read-only all the way down to its own value: assigning to
+  it, to one of its fields or entries, or calling a method that changes it
+  (`push`, `insert`, `set`, `remove`, ...) is E0207. Copy it to change it.
+- `Post(..p, title: "x")` and `{ ..r, x: 1 }` make a new value; the base
+  must have the type being made (E0202), and a record copy may only name
+  fields the base has.
+- `Any` and `Rest` are the standard library's own (E0233). A function that
+  takes any type is generic: `fn show<T>(value: T)`.
+
 ## Optionals
 
 - A `T` can be used where a `T?` is expected, but not the reverse (E0202).
@@ -51,6 +67,8 @@ the details of any error.
   records, structs and enums, compared by value: two structs with equal
   fields are the same key. Maps, sets and functions cannot be keys. Don't
   change a list or struct while it is a key.
+- `["a": 1, "b": 2]` is a `Map<String, Int>`: the keys share one type and
+  the values another (E0202).
 - `[3, none]` is a `List<Int?>`: like the branches of an `if`, the items of
   a list share one type.
 - Maps and sets keep their keys in the order they were first added, so
@@ -88,6 +106,14 @@ the details of any error.
   `Post(title: "Hi")`. Fields with defaults may be left out.
 - Methods with `self` are called on a value (`post.slug()`); methods without
   `self` are called on the type (`Post.untitled()`).
+
+## Variants
+
+- `.Name` and `.Name(args)` make a variant of the enum the surrounding code
+  expects: an annotated `let`, an argument, a return value, a comparison
+  with an enum value, or a list whose type is known. Where no enum is
+  expected, write it out: `Tone.Accent` (E0212). The same short form works
+  in patterns.
 
 ## Match
 

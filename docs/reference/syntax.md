@@ -73,8 +73,8 @@ There is no `null`.
 ## Statements
 
 ```kiln
-let name = "Kiln"          // immutable
-var count: Int = 0         // mutable
+let name = "Kiln"          // cannot be rebound
+var count: Int = 0         // can be rebound
 count += 1                 // also -=, *=, /=, =
 return value
 for post in posts where post.published { ... }
@@ -82,7 +82,17 @@ for i in 0..10 { ... }                        // 0 to 9: the end is excluded
 while count < 10 { ... }
 break
 continue
+let some(post) = find(id) else {   // let-else: bind or leave
+    return web.text("not found", status: 404)
+}
 ```
+
+`let pattern = value else { ... }` binds the pattern's names for the rest of
+the block, or runs the `else` block when the value does not match. That
+block must leave: it ends in `return`, `break`, `continue`, `throw`,
+`panic(...)` or `os.exit(...)`, or in an `if` whose branches all do
+(E0111). The pattern starts with a variant: `some(x)`, `.Custom(name)`,
+`Role.Admin`.
 
 ## Expressions
 
@@ -106,15 +116,23 @@ Other forms:
 
 ```kiln
 "Hi ${user.name}"                        // string interpolation
+"""
+    Dear ${name},
+      thanks for writing.
+    """                                  // multi-line string
 250ms  2s  5m  1h                        // durations
 [1, 2, 3]                                // list
+["Ada": 36, "Grace": 45]                 // map; `Map()` is an empty one
+Post(..post, title: "New")               // a copy of `post` with a new title
+{ ..point, x: 0 }                        // a copy of a record
 { posts, title: "Home" }                 // record; `posts` means `posts: posts`
 web.json(post, status: 201)              // named arguments
 fn(p) { p.published }                    // closure
 .title                                   // field shorthand, same as fn(x) { x.title }
+.Accent  .Custom(name: "x")              // a variant, where the enum is known
 if a { 1 } else if b { 2 } else { 3 }
 match role {
-    Admin => "admin"
+    .Admin => "admin"
     Viewer(since) if since.year < 2020 => "veteran"
     some(x) => x
     _ => "member"
@@ -124,13 +142,25 @@ try db.one<Post>(sql, id)                // propagate an error
 row ?? throw DbError.NotFound            // default, or fail
 ```
 
+A `"""` string's text starts on the line after the opening quotes and ends
+on the line before the closing ones, which stand alone on their line; the
+closing line's indentation is taken off every line (it is an error when a line has
+less: E0002). Escapes and `${...}` work as in `"` strings.
+
+`..base` comes first in a struct call or a record, and fills every field
+the call does not name from `base`, which must be the same type. The copy
+is shallow: a list field is the same list in both.
+
 A `{` in expression position always starts a record. Blocks appear only as
 the bodies of functions, closures, `if`, loops, `catch` and `match` arms.
 
 ## Patterns
 
 `_`, a literal, a lowercase name (binds the value), `none`, and variants:
-`Admin`, `Role.Admin`, `some(x)`, `Viewer(since)`.
+`Admin`, `Role.Admin`, `.Admin`, `some(x)`, `Viewer(since)`, `.Viewer(since)`.
+
+A line starting with `.Name =>`, `.Name(...) =>` or `.Name if` is a match
+arm; any other line starting with `.` continues the expression above it.
 
 ## Habits from other languages
 

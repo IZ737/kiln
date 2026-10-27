@@ -241,7 +241,7 @@ mod tests {
     #[test]
     fn env_calls() {
         assert!(calls_env("let x = env(\"A\")"));
-        assert!(!calls_env("let x = os.env(\"A\")"));
+        assert!(!calls_env("let x = config.env(\"A\")"));
         assert!(!calls_env("// env(\"A\")"));
         assert!(!calls_env("fn myenv() {}\nmyenv()"));
     }

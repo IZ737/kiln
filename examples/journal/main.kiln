@@ -27,6 +27,6 @@ fn main() ! {
     admin.pages<shared.Post>(app, "/admin/posts", site)
     admin.pages<shared.Comment>(app, "/admin/comments", site)
 
-    let port = if env("PORT") == "" { "8080" } else { env("PORT") }
+    let port = env("PORT") ?? "8080"
     try app.listen("127.0.0.1:${port}")
 }

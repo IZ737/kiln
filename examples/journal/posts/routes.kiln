@@ -45,10 +45,12 @@ pub fn routes(app: web.App, db: sql.Db, sessions: auth.Sessions) {
     app.get("/posts/{id: Int}", fn(req, id) {
         let who = try sessions.current(req)
         let found = try orm.find<shared.Post>(db).where(fn(p) { p.id == id }).include(.user).first()
-        if not (found is some(post) and shared.may_read(who, post)) {
+        let some(post) = found else {
             return web.not_found()
         }
-        let post = found ?? shared.Post(id: 0, user_id: 0, title: "", body: "")
+        if not shared.may_read(who, post) {
+            return web.not_found()
+        }
         let lines = try comment_lines(db, id)
         let editable = match who {
             some(w) => shared.may_edit(w, post)

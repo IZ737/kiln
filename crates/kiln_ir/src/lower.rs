@@ -906,6 +906,69 @@ impl<'a> Lowerer<'a> {
                         .collect(),
                 )
             }
+            E::Map(entries) => {
+                let (kt, vt) = match &ty {
+                    Ty::Adt(_, args) if args.len() == 2 => (args[0].clone(), args[1].clone()),
+                    _ => (Ty::Unknown, Ty::Unknown),
+                };
+                let map = self.new_local("map", ty.clone(), false);
+                let mut stmts = vec![Stmt::Let(map, mk(ExprKind::NewMap, ty.clone(), span))];
+                for (k, v) in entries {
+                    let key = self.expr(k);
+                    let value = self.expr(v);
+                    stmts.push(Stmt::Assign {
+                        place: Place::MapEntry {
+                            map: mk(ExprKind::Local(map), ty.clone(), span),
+                            key: coerce(key, &kt),
+                        },
+                        op: None,
+                        value: coerce(value, &vt),
+                    });
+                }
+                ExprKind::Block(Block {
+                    stmts,
+                    value: Some(Box::new(mk(ExprKind::Local(map), ty.clone(), span))),
+                })
+            }
+            E::Spread(_) => return self.unsupported(span, "`..` here"),
+            E::Record(fields) if fields.first().is_some_and(|f| f.name.name == "..") => {
+                let Some(E::Spread(b)) = fields[0].value.as_ref().map(|v| &v.kind) else {
+                    return self.unsupported(span, "this record");
+                };
+                let Ty::Record(fs) = ty.clone() else {
+                    return self.unsupported(span, "this record");
+                };
+                let mut stmts = Vec::new();
+                let v = self.expr(b);
+                let base = self.hoist(v, &mut stmts);
+                let values = fs
+                    .iter()
+                    .enumerate()
+                    .map(|(i, (name, fty))| {
+                        match fields[1..].iter().find(|f| f.name.name == *name) {
+                            Some(f) => {
+                                let v = match &f.value {
+                                    Some(v) => self.expr(v),
+                                    None => self.ident(&f.name.name, fty.clone(), f.name.span),
+                                };
+                                coerce(v, &Ty::Any)
+                            }
+                            None => mk(
+                                ExprKind::Field {
+                                    base: Box::new(reread(&base)),
+                                    field: i,
+                                },
+                                Ty::Any,
+                                span,
+                            ),
+                        }
+                    })
+                    .collect();
+                ExprKind::Block(Block {
+                    stmts,
+                    value: Some(Box::new(mk(ExprKind::Record(values), ty.clone(), span))),
+                })
+            }
             E::Record(fields) => {
                 let tys: Vec<Ty> = match &ty {
                     Ty::Record(fs) => fs.iter().map(|f| f.1.clone()).collect(),
@@ -953,7 +1016,23 @@ impl<'a> Lowerer<'a> {
                     _ => return self.unsupported(span, "indexing into this value"),
                 }
             }
-            E::FieldShorthand(name) => return self.shorthand(name, ty, span),
+            E::FieldShorthand(name) => {
+                if let Ty::Adt(id, _) = &ty {
+                    if let AdtKind::Enum(variants) = &self.p.adts[*id].kind {
+                        let index = variants
+                            .iter()
+                            .position(|v| v.name == name.name)
+                            .unwrap_or(0);
+                        let kind = ExprKind::Variant {
+                            adt: *id,
+                            index,
+                            fields: Vec::new(),
+                        };
+                        return mk(kind, ty, span);
+                    }
+                }
+                return self.shorthand(name, ty, span);
+            }
             E::Closure { params, body, .. } => return self.closure(params, body, ty, span),
             E::If {
                 cond,
@@ -1363,6 +1442,11 @@ impl<'a> Lowerer<'a> {
         if let Some(query) = self.p.queries.get(&span).cloned() {
             return self.orm_run(&query, &rt, span);
         }
+        if let (E::FieldShorthand(name), Ty::Adt(id, _)) = (&callee.kind, &rt) {
+            if matches!(self.p.adts[*id].kind, AdtKind::Enum(_)) {
+                return self.type_call(*id, name, args, &rt, span);
+            }
+        }
         match &callee.kind {
             E::Field { expr: base, name } => {
                 if let E::Ident(m) = &base.kind {
@@ -1637,9 +1721,29 @@ impl<'a> Lowerer<'a> {
                 return self.unsupported(span, what);
             }
         }
+        // `Post(..post, title: t)`: `post` first, then the fields given;
+        // the others are read from it.
+        let mut spread_prelude = Vec::new();
+        let spread = args.iter().find_map(|a| match &a.value.kind {
+            E::Spread(base) if a.name.is_none() => Some(base),
+            _ => None,
+        });
+        let base = spread.map(|b| {
+            let v = self.expr(b);
+            self.hoist(v, &mut spread_prelude)
+        });
+        let own: Vec<ast::Arg> = args
+            .iter()
+            .filter(|a| !(a.name.is_none() && matches!(a.value.kind, E::Spread(_))))
+            .cloned()
+            .collect();
+        let args = &own[..];
         let defaults: Vec<Option<&ast::Expr>> = fields
             .iter()
             .map(|f| {
+                if base.is_some() {
+                    return None;
+                }
                 decl.and_then(|d| d.fields.iter().find(|df| df.name.name == f.name))
                     .and_then(|df| df.default.as_ref())
             })
@@ -1652,7 +1756,23 @@ impl<'a> Lowerer<'a> {
                 has_default: f.has_default,
             })
             .collect();
-        let (prelude, _, vals) = self.arrange(&params, &defaults, None, args);
+        let (mut prelude, _, mut vals) = self.arrange(&params, &defaults, None, args);
+        if let Some(base) = base {
+            for (i, f) in fields.iter().enumerate() {
+                let given = args
+                    .iter()
+                    .any(|a| a.name.as_ref().is_some_and(|n| n.name == f.name));
+                if !given {
+                    let read = ExprKind::Field {
+                        base: Box::new(reread(&base)),
+                        field: i,
+                    };
+                    vals[i] = mk(read, f.ty.clone(), span);
+                }
+            }
+            spread_prelude.append(&mut prelude);
+            prelude = spread_prelude;
+        }
         let s = mk(
             ExprKind::Struct {
                 adt: id,
@@ -1782,6 +1902,9 @@ impl<'a> Lowerer<'a> {
         rt: &Ty,
         span: Span,
     ) -> (Expr, Option<Ty>) {
+        if type_name == "Event" && name == "form" {
+            return self.event_form(recv, span);
+        }
         if type_name == "Db" {
             if name == "transaction" {
                 return self.sql_transaction(recv, sig, args, rt, span);
@@ -1815,6 +1938,56 @@ impl<'a> Lowerer<'a> {
         );
         let call = coerce_value(call, rt);
         (with_prelude(prelude, call), sig.throws.clone())
+    }
+
+    /// `event.form<T>()`: a call of the reader the compiler wrote for `T`
+    /// (see [`crate::forms`]) with the event's fields.
+    fn event_form(&mut self, recv: Expr, span: Span) -> (Expr, Option<Ty>) {
+        let target = self
+            .p
+            .instantiations
+            .get(&span)
+            .and_then(|m| m.get("T"))
+            .cloned();
+        let Some(Ty::Adt(id, _)) = target else {
+            return (
+                self.unsupported(span, "`event.form` of a type that is not a struct"),
+                None,
+            );
+        };
+        let fname = crate::forms::reader(&self.p.adts[id].name);
+        let Some(&(func, _)) = self.fns.get(&fname) else {
+            return (self.unsupported(span, "`event.form` of this type"), None);
+        };
+        let Ty::Adt(event, _) = recv.ty.clone() else {
+            return (self.unsupported(span, "`event.form`"), None);
+        };
+        let AdtKind::Struct(fields) = &self.p.adts[event].kind else {
+            return (self.unsupported(span, "`event.form`"), None);
+        };
+        let Some(index) = fields.iter().position(|f| f.name == "fields") else {
+            return (self.unsupported(span, "`event.form`"), None);
+        };
+        let field_ty = fields[index].ty.clone();
+        let fields = mk(
+            ExprKind::Field {
+                base: Box::new(recv),
+                field: index,
+            },
+            field_ty,
+            span,
+        );
+        let sig = self.p.global_fns[&fname].clone();
+        let (func, sig) = self.instance(func, Template::Fn(fname), &sig, span, None);
+        let call = mk(
+            ExprKind::Call {
+                func,
+                args: vec![fields],
+            },
+            sig.ret.clone(),
+            span,
+        );
+        (call, sig.throws.clone())
     }
 
     /// A query method of `sql.Db`, whose arguments after the first `k`
@@ -2333,6 +2506,26 @@ impl<'a> Lowerer<'a> {
                 E::Duration(text) => duration_ns(text).map(ExprKind::Int),
                 E::None => Some(ExprKind::None),
                 E::List(items) if items.is_empty() => Some(ExprKind::List(Vec::new())),
+                E::Call { callee, args, .. }
+                    if args.is_empty() && matches!(&callee.kind, E::Ident(n) if n == "Map") =>
+                {
+                    Some(ExprKind::NewMap)
+                }
+                // A unit variant of the parameter's enum: `SameSite.Lax`.
+                E::Field { name: variant, .. } => match &ty {
+                    Ty::Adt(id, _) => match &self.p.adts[*id].kind {
+                        AdtKind::Enum(variants) => variants
+                            .iter()
+                            .position(|v| v.name == variant.name)
+                            .map(|index| ExprKind::Variant {
+                                adt: *id,
+                                index,
+                                fields: Vec::new(),
+                            }),
+                        _ => None,
+                    },
+                    _ => None,
+                },
                 E::Str(pieces) => match pieces.as_slice() {
                     [] => Some(ExprKind::Str(String::new())),
                     [ast::StrPiece::Text(t)] => Some(ExprKind::Str(t.clone())),
@@ -2423,6 +2616,8 @@ impl<'a> Lowerer<'a> {
                 );
                 let call = if module == "web" && name.name == "app" {
                     self.with_assets(call)
+                } else if module == "web" && RESPONSES.contains(&name.name.as_str()) {
+                    with_headers(call)
                 } else {
                     call
                 };
@@ -2549,8 +2744,16 @@ impl Lowerer<'_> {
         let Some(&(func, decl)) = self.fns.get(&fname) else {
             return (self.unsupported(span, format!("rendering `{file}`")), None);
         };
+        let named = |n: &str| {
+            args.iter()
+                .find(|a| a.name.as_ref().is_some_and(|x| x.name == n))
+        };
+        let (status_arg, headers_arg) = (named("status"), named("headers"));
         let mut data = Vec::new();
-        if let Some(arg) = args.get(1) {
+        if let Some(arg) = args
+            .get(1)
+            .filter(|a| a.name.as_ref().is_none_or(|n| n.name == "data"))
+        {
             let E::Record(fields) = &arg.value.kind else {
                 return (
                     self.unsupported(arg.value.span, "render data that is not a record literal"),
@@ -2573,14 +2776,46 @@ impl Lowerer<'_> {
         let (func, sig) = self.instance(func, Template::Fn(fname), &sig, span, None);
         let (html, _) = self.user_call(func, &sig, decl, None, &data, &string, span);
         let int = Ty::Adt(self.prims.int, Vec::new());
-        let status = mk(ExprKind::Int(200), int, span);
+        let status = match status_arg {
+            Some(a) => self.expr(&a.value),
+            None => mk(ExprKind::Int(200), int, span),
+        };
+        let headers = match headers_arg {
+            Some(a) => self.expr(&a.value),
+            None => mk(ExprKind::NewMap, Ty::Unknown, span),
+        };
         let kind = ExprKind::Lib {
             module: "web".into(),
             name: "html".into(),
-            args: vec![html, status],
+            args: vec![html, status, headers],
         };
-        (mk(kind, rt.clone(), span), None)
+        (with_headers(mk(kind, rt.clone(), span)), None)
     }
+}
+
+/// `web` functions that make a response and take `status` and `headers`.
+const RESPONSES: &[&str] = &["json", "text", "html", "redirect"];
+
+/// Takes a response call's last argument, its headers, off the call, and
+/// adds them to the response it makes unless there are none to add.
+fn with_headers(mut call: Expr) -> Expr {
+    let ExprKind::Lib { args, .. } = &mut call.kind else {
+        return call;
+    };
+    let headers = args.pop().expect("a response call has headers");
+    if matches!(headers.kind, ExprKind::NewMap) {
+        return call;
+    }
+    let (ty, span) = (call.ty.clone(), call.span);
+    mk(
+        ExprKind::Lib {
+            module: "web".into(),
+            name: "__with_headers".into(),
+            args: vec![call, headers],
+        },
+        ty,
+        span,
+    )
 }
 
 /// Modules whose functions become [`ExprKind::Lib`] calls, for the
@@ -2595,6 +2830,8 @@ const LIB_MODULES: &[&str] = &[
 const LIB_TYPES: &[(&str, &str)] = &[
     ("web", "App"),
     ("web", "Request"),
+    ("web", "Response"),
+    ("ember", "Event"),
     ("js", "Value"),
     ("sql", "Db"),
     ("validate", "Checked"),

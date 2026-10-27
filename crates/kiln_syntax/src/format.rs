@@ -233,7 +233,7 @@ fn layout(src: &str, tokens: &[Token], base: usize) -> String {
     let mut prev: Option<&Token> = None;
     // Whether the token before `prev` makes it a name: `x.where`, `fn where`.
     let mut before_prev_names = false;
-    for t in &toks {
+    for (i, t) in toks.iter().enumerate() {
         let start = prev.map_or(0, |p| p.span.end as usize);
         let gap = &src[start..t.span.start as usize];
         let ps = pieces(gap);
@@ -284,7 +284,7 @@ fn layout(src: &str, tokens: &[Token], base: usize) -> String {
             // Line breaks: comments on their own lines, at most one blank line.
             let mut first = true;
             let mut breaks = 0;
-            let next_indent = indent_for(&stack, t, base, p);
+            let next_indent = indent_for(&stack, t, base, p, variant_arm(src, &toks[i..]));
             for piece in &ps {
                 match piece {
                     Piece::Comment(c) => {
@@ -367,19 +367,52 @@ fn layout(src: &str, tokens: &[Token], base: usize) -> String {
 }
 
 /// The indentation of a line that starts with `t`, after `prev`.
-fn indent_for(stack: &[usize], t: &Token, base: usize, prev: &Token) -> usize {
+fn indent_for(stack: &[usize], t: &Token, base: usize, prev: &Token, arm: bool) -> usize {
     if is_close(&t.kind) {
         // A closing bracket lines up with the line that opened it; a line
         // of several, such as `})`, with the first one's.
         return stack.last().copied().unwrap_or(base);
     }
     let inner = stack.last().map_or(base, |l| l + 1);
-    let continued = continues(&prev.kind) || matches!(t.kind, TokenKind::Dot);
+    let continued = continues(&prev.kind) || (matches!(t.kind, TokenKind::Dot) && !arm);
     if continued && !is_open(&prev.kind) && !matches!(prev.kind, TokenKind::Comma) {
         inner + 1
     } else {
         inner
     }
+}
+
+/// Whether `toks` starts a match arm such as `.Some(x) =>` on one line,
+/// rather than a method chain's next step.
+fn variant_arm(src: &str, toks: &[&Token]) -> bool {
+    if toks.len() < 3 || toks[0].kind != TokenKind::Dot {
+        return false;
+    }
+    if !matches!(toks[1].kind, TokenKind::Ident(_)) {
+        return false;
+    }
+    let mut i = 2;
+    if toks[i].kind == TokenKind::LParen {
+        let mut depth = 0;
+        while i < toks.len() {
+            match toks[i].kind {
+                TokenKind::LParen => depth += 1,
+                TokenKind::RParen => {
+                    depth -= 1;
+                    if depth == 0 {
+                        break;
+                    }
+                }
+                _ => {}
+            }
+            i += 1;
+        }
+        i += 1;
+    }
+    toks.get(i).is_some_and(|end| {
+        matches!(end.kind, TokenKind::FatArrow | TokenKind::If)
+            && !src[toks[0].span.start as usize..end.span.start as usize].contains('\n')
+    })
 }
 
 /// Formats the code in a glaze's one-line `{% ... %}` tags; the markup is
@@ -476,6 +509,11 @@ mod tests {
     #[test]
     fn match_arms_and_records() {
         same("fn f(t: Tone) -> String {\n    return match t {\n        Tone.A => \"a\"\n        _ => \"b\"\n    }\n}\n\nfn g() {\n    web.render(\"x.glaze\", { posts: [], title: \"Home\" })\n    x.tone(.Primary)\n}\n");
+    }
+
+    #[test]
+    fn phase_six_and_a_half_syntax() {
+        same("fn f(t: Tone?) -> String {\n    let some(tone) = t else {\n        return \"\"\n    }\n    let post = Post(..base, title: \"x\")\n    let ages = [\"Ada\": 36]\n    return match tone {\n        .Plain => \"a\"\n        .Custom(name) if name != \"\" => name\n        _ => \"b\"\n    }\n}\n");
     }
 
     #[test]

@@ -489,7 +489,7 @@ fn publish_add_yank_through_the_registry() {
         "jake/greet",
         "1.1.0",
         "capabilities = [\"environment\"]\n",
-        "pub fn hello(name: String) -> String {\n    return \"${env(\"GREETING\")}${name}\"\n}\n",
+        "pub fn hello(name: String) -> String {\n    return \"${env(\"GREETING\") ?? \"\"}${name}\"\n}\n",
     );
     s.ok("greet", &["publish", ".", "--registry", &url]);
     s.fails("app", &["update"], "--allow-capabilities");

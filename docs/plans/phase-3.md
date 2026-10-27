@@ -115,7 +115,7 @@ fn editorial_post_card(featured: Bool) -> PostCardFinish {
         title: ui({
             fg: color.heading,
             weight: .bold,
-            textSize: if featured { .xl } else { .lg }
+            text_size: if featured { .xl } else { .lg }
         }),
         action: ui({ fg: color.accent, underline: true })
     }
@@ -176,18 +176,18 @@ and CSS generator, not parallel styling systems.
 
 | Area | Keys | Intended semantics |
 | --- | --- | --- |
-| Colour | `bg`, `fg`, `borderColor` | Background, foreground/text and border colour |
+| Colour | `bg`, `fg`, `border_color` | Background, foreground/text and border colour |
 | Spacing | `p`, `px`, `py`, `pt`, `pr`, `pb`, `pl`, `m`, `mx`, `my`, `gap` | Typed spacing and margins |
-| Sizing | `w`, `h`, `minW`, `maxW`, `minH`, `maxH` | Typed dimensions |
+| Sizing | `w`, `h`, `min_w`, `max_w`, `min_h`, `max_h` | Typed dimensions |
 | Surface | `rounded`, `border`, `shadow` | Radius, border and elevation |
 | Layout | `flex`, `grid`, `direction`, `cols`, `rows`, `items`, `justify`, `wrap` | Common flex/grid patterns |
-| Typography | `font`, `textSize`, `weight`, `lineHeight`, `align`, `tracking` | Type and readability |
+| Typography | `font`, `text_size`, `weight`, `line_height`, `align`, `tracking` | Type and readability |
 | Effects | `opacity`, `overflow`, `transition`, `cursor`, `transform`, `underline` | Common visual interaction |
-| States | `hover`, `focus`, `focusVisible`, `disabled` | Nested typed style records |
+| States | `hover`, `focus`, `focus_visible`, `disabled` | Nested typed style records |
 | Responsive | `at: { tablet: { ... } }` | Named breakpoints from token declarations |
 
 Names use Tailwind-inspired brevity for common operations, but prefer
-unambiguous words such as `textSize` over introducing dozens of obscure
+unambiguous words such as `text_size` over introducing dozens of obscure
 one-letter aliases. `fg` always means text colour; `bg` means the
 background paint. Rare CSS properties belong in ordinary CSS, not in an
 ever-growing duplicated CSS vocabulary.
@@ -203,7 +203,7 @@ ever-growing duplicated CSS vocabulary.
     rounded: radius.card,
     hover: { shadow: shadow.lg },
     at: { tablet: { cols: 2 } },
-    borderColor: if featured {
+    border_color: if featured {
         color.accent
     } else {
         color.transparent
@@ -238,7 +238,7 @@ ever-growing duplicated CSS vocabulary.
   Deduplicate identical rules and ship them as standard CSS assets.
 - Request-time conditions choose among **finite precompiled variants**,
   switching class IDs rather than generating a stylesheet per request.
-- `hover`, `focusVisible` etc. become standard CSS selectors;
+- `hover`, `focus_visible` etc. become standard CSS selectors;
   responsive `at` blocks become media queries. No JavaScript required.
 - Truly arbitrary dynamically computed CSS values may be deferred or
   supported only through safe typed CSS custom-property bindings;
@@ -253,7 +253,7 @@ ui.merge(
     ui({ p: space.lg, bg: color.surface }),
     ui({ px: space.sm }),
     if selected {
-        ui({ borderColor: color.accent })
+        ui({ border_color: color.accent })
     } else {
         ui({})
     }

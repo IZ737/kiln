@@ -177,4 +177,77 @@ HTTP/1.1 400 Bad Request
 connection: close
 content-length: 0
 
+### GET /cookies HTTP/1.1
+HTTP/1.1 200 OK
+content-type: text/plain; charset=utf-8
+cache-control: no-store
+set-cookie: theme=dark%20mode; Path=/; SameSite=Lax; HttpOnly; Secure
+set-cookie: seen=1; Max-Age=3600; Path=/; SameSite=Strict; HttpOnly; Secure
+content-length: 16
+connection: close
+
+theme: dark mode
+### GET /admin/users HTTP/1.1
+HTTP/1.1 401 Unauthorized
+content-type: text/plain; charset=utf-8
+content-length: 13
+connection: close
+
+sign in first
+### GET /admin/users HTTP/1.1
+HTTP/1.1 200 OK
+content-type: text/plain; charset=utf-8
+content-length: 11
+connection: close
+
+admin users
+### GET /admin/fail HTTP/1.1
+HTTP/1.1 403 Forbidden
+content-type: text/plain; charset=utf-8
+content-length: 5
+connection: close
+
+never
+### GET /administrators HTTP/1.1
+HTTP/1.1 200 OK
+content-type: text/plain; charset=utf-8
+content-length: 11
+connection: close
+
+not guarded
+### POST /notes HTTP/1.1
+HTTP/1.1 403 Forbidden
+content-type: text/plain; charset=utf-8
+content-length: 39
+connection: close
+
+this request was sent from another site
+### POST /notes HTTP/1.1
+HTTP/1.1 403 Forbidden
+content-type: text/plain; charset=utf-8
+content-length: 39
+connection: close
+
+this request was sent from another site
+### POST /notes HTTP/1.1
+HTTP/1.1 201 Created
+content-type: text/plain; charset=utf-8
+content-length: 5
+connection: close
+
+noted
+### POST /notes HTTP/1.1
+HTTP/1.1 201 Created
+content-type: text/plain; charset=utf-8
+content-length: 5
+connection: close
+
+noted
+### POST /hooks/payment HTTP/1.1
+HTTP/1.1 200 OK
+content-type: text/plain; charset=utf-8
+content-length: 4
+connection: close
+
+hook
 ### GET /quit HTTP/1.1

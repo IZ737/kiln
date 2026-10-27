@@ -189,7 +189,7 @@ K_API _Noreturn void k_panic(kstr *message) {
     exit(101);
 }
 
-K_API _Noreturn void k_panic_c(const char *message) { k_panic(k_str(message)); }
+K_EXPORT _Noreturn void k_panic_c(const char *message) { k_panic(k_str(message)); }
 
 /* A failing call sets `k_failed` and stores the error; the caller checks the
  * flag at `try` or `catch`. `k_error_show` renders the error if it reaches
@@ -1002,11 +1002,6 @@ K_API void k_print(kstr *s) {
     fputc('\n', stdout);
 }
 
-K_API kstr *k_env(kstr *name) {
-    const char *v = getenv(k_cstr(name));
-    return k_str(v ? v : "");
-}
-
 K_API void k_log(const char *level, kstr *message, int n, kstr **data) {
     fflush(stdout);
     fprintf(stderr, "%s %s", level, k_cstr(message));
@@ -1094,6 +1089,7 @@ typedef struct ktask {
     kstr *(*error_show)(kv);
     kstr *lib_error, *client_error, *panic_message;
     int64_t client_status;
+    void *request;
     void *panic_jmp[5];
 #if K_TASK_FIBER
     void *fiber;
@@ -1111,6 +1107,16 @@ K_API kstr *k_web_client_error = NULL;
 /* The status the server answers `k_web_client_error` with: 400 for a body
  * it could not read, and what `k_rt_web_fail` says otherwise. */
 K_API int64_t k_web_client_status = 400;
+
+/* The request the running task is handling, for glazes whose `request`
+ * prop is filled in (`web.__request()`), or NULL. */
+K_API void *k_web_request = NULL;
+
+K_API void *k_web_current_request(void) {
+    if (!k_web_request)
+        k_panic_c("this glaze takes the request, but it is rendered outside a request: pass `request:`");
+    return k_web_request;
+}
 
 /* For `kiln_rt`: fails the library call that runs, and blames the client,
  * as reading a request's body does. */
@@ -1248,6 +1254,7 @@ static void k_task_switch(ktask *to) {
     from->lib_error = k_lib_error;
     from->client_error = k_web_client_error;
     from->client_status = k_web_client_status;
+    from->request = k_web_request;
     from->panic_trap = k_panic_trap;
     from->panic_message = k_panic_message;
     memcpy(from->panic_jmp, k_panic_jmp, sizeof k_panic_jmp);
@@ -1259,6 +1266,7 @@ static void k_task_switch(ktask *to) {
     k_lib_error = to->lib_error;
     k_web_client_error = to->client_error;
     k_web_client_status = to->client_status;
+    k_web_request = to->request;
     k_panic_trap = to->panic_trap;
     k_panic_message = to->panic_message;
     memcpy(k_panic_jmp, to->panic_jmp, sizeof k_panic_jmp);
@@ -1965,6 +1973,10 @@ typedef struct kroute {
 typedef struct kapp {
     int64_t n, cap;
     kroute **routes;
+    /* `app.before(prefix, hook)`: the prefixes and hooks, in order. */
+    klist *before_prefixes, *before_hooks;
+    /* Path prefixes that take requests from other sites. */
+    klist *cross_site;
     kclosure *on_error;
     int64_t max_body, max_header, timeout, keep_alive;
     bool access_log;
@@ -1983,7 +1995,8 @@ K_API kstr *k_web_lower(const char *s, int64_t n) {
     return r;
 }
 
-K_API void *k_web_app(int64_t max_body, int64_t max_header, int64_t timeout, int64_t keep_alive, bool access_log) {
+K_API void *k_web_app(int64_t max_body, int64_t max_header, int64_t timeout, int64_t keep_alive, bool access_log,
+                      klist *cross_site) {
     kapp *a = k_alloc(sizeof(kapp));
     a->cap = 8;
     a->routes = k_alloc(sizeof(kroute *) * 8);
@@ -1992,10 +2005,30 @@ K_API void *k_web_app(int64_t max_body, int64_t max_header, int64_t timeout, int
     a->timeout = timeout <= 0 ? 10 * K_NS_PER_SEC : timeout;
     a->keep_alive = keep_alive;
     a->access_log = access_log;
+    a->cross_site = cross_site;
     return a;
 }
 
 K_API void k_web_on_error(void *app, kclosure *handler) { ((kapp *)app)->on_error = handler; }
+
+K_API void k_web_before(void *app, kstr *prefix, kclosure *hook) {
+    kapp *a = app;
+    if (!a->before_hooks) {
+        a->before_prefixes = k_list(0, NULL);
+        a->before_hooks = k_list(0, NULL);
+    }
+    k_list_push(a->before_prefixes, K_P2KV(prefix));
+    k_list_push(a->before_hooks, K_P2KV(hook));
+}
+
+/* Whether `path` is under `prefix`: equal to it, or below it at a `/`, so
+ * that `/admin` covers `/admin/users` but not `/administrators`. */
+K_API bool k_web_under(kstr *path, kstr *prefix) {
+    if (prefix->len > path->len || memcmp(path->data, prefix->data, (size_t)prefix->len) != 0)
+        return false;
+    return path->len == prefix->len || (prefix->len > 0 && prefix->data[prefix->len - 1] == '/') ||
+           path->data[prefix->len] == '/';
+}
 
 /* The segments of a path after its leading `/`: `/a/b` has `a` and `b`,
  * and `/` has one empty segment. */
@@ -2060,6 +2093,16 @@ K_API kv *k_web_html(kstr *body, int64_t status) {
 K_API kv *k_web_redirect(kstr *to, int64_t status) {
     kv *r = k_web_response(status, k_str(""), NULL);
     k_map_set(K_KV2P(kmap *, r[K_RES_HEADERS]), K_P2KV(k_str("location")), K_P2KV(to));
+    return r;
+}
+
+/* `headers:` on a response: added to its own, replacing those with the
+ * same name. */
+K_API kv *k_web_with_headers(kv *r, kmap *h) {
+    kmap *m = K_KV2P(kmap *, r[K_RES_HEADERS]);
+    for (int64_t i = 0; i < h->used; i++) {
+        if (h->live[i]) k_map_set(m, h->keys[i], h->vals[i]);
+    }
     return r;
 }
 
@@ -2239,7 +2282,7 @@ K_API bool k_web_marked(kv p, int64_t fields) {
  * own because `__builtin_setjmp` must not return to a frame whose locals
  * changed after it. Returns the response, or NULL with the error in
  * `*status`, `*message` and `*json`. */
-K_API kv *k_web_call(kroute *r, kv *req, kv *args, int64_t *status, kstr **message, bool *json) {
+K_API kv *k_web_call(kclosure *handler, kv *req, kv *args, int64_t *status, kstr **message, bool *json) {
     if (__builtin_setjmp(k_panic_jmp) != 0) {
         k_failed = false;
         k_web_log("error", req, "panicked", k_panic_message);
@@ -2248,7 +2291,7 @@ K_API kv *k_web_call(kroute *r, kv *req, kv *args, int64_t *status, kstr **messa
         return NULL;
     }
     k_panic_trap = true;
-    kv res = r->handler->fn(r->handler->env, args);
+    kv res = handler->fn(handler->env, args);
     k_panic_trap = false;
     if (!k_failed) return K_KV2P(kv *, res);
     kv err = k_take_error();
@@ -2279,6 +2322,30 @@ K_API kv *k_web_call(kroute *r, kv *req, kv *args, int64_t *status, kstr **messa
     return NULL;
 }
 
+/* Whether a request that changes something came from another site's page:
+ * a browser says so in `sec-fetch-site`, or else in an `origin` that is
+ * not this host. A request with neither, such as one from curl or another
+ * server, is not a browser's, and passes. */
+K_API bool k_web_cross_site(kapp *a, kv *req, kstr *method, kstr *path) {
+    if (!(k_str_eq(method, k_str("POST")) || k_str_eq(method, k_str("PUT")) ||
+          k_str_eq(method, k_str("PATCH")) || k_str_eq(method, k_str("DELETE"))))
+        return false;
+    for (int64_t i = 0; a->cross_site && i < a->cross_site->len; i++)
+        if (k_web_under(path, K_KV2P(kstr *, a->cross_site->items[i]))) return false;
+    kbox *site = k_web_header(req, k_str("sec-fetch-site"));
+    if (site) {
+        kstr *s = K_KV2P(kstr *, site->v);
+        return !(k_str_eq(s, k_str("same-origin")) || k_str_eq(s, k_str("none")));
+    }
+    kbox *origin = k_web_header(req, k_str("origin"));
+    if (!origin) return false;
+    kbox *host = k_web_header(req, k_str("host"));
+    if (!host) return true;
+    kstr *o = K_KV2P(kstr *, origin->v);
+    kstr *h = K_KV2P(kstr *, host->v);
+    return !(k_str_eq(o, k_concat(k_str("http://"), h)) || k_str_eq(o, k_concat(k_str("https://"), h)));
+}
+
 /* The response to a request: the first route whose method and pattern
  * match handles it. `HEAD` requests go to `GET` routes. */
 K_API kv *k_web_dispatch(kapp *a, kv *req) {
@@ -2289,6 +2356,25 @@ K_API kv *k_web_dispatch(kapp *a, kv *req) {
     for (int64_t i = 0; i < raw->len; i++) {
         kstr *s = K_KV2P(kstr *, raw->items[i]);
         k_list_push(segs, K_P2KV(k_rt_path_decode(s)));
+    }
+    if (k_web_cross_site(a, req, method, path))
+        return k_web_error_response(a, req, 403, k_str("this request was sent from another site"), false);
+    /* `app.before` hooks run first, in order; the first to answer with a
+     * response, or to fail, answers the request. */
+    for (int64_t i = 0; a->before_hooks && i < a->before_hooks->len; i++) {
+        if (!k_web_under(path, K_KV2P(kstr *, a->before_prefixes->items[i]))) continue;
+        int64_t status = 0;
+        kstr *message = NULL;
+        bool json = false;
+        kv args[1] = {K_P2KV(req)};
+        kv *answer = k_web_call(K_KV2P(kclosure *, a->before_hooks->items[i]), req, args, &status,
+                                &message, &json);
+        if (status) return k_web_error_response(a, req, status, message, json);
+        if (!answer) continue;
+        kv *res = K_KV2P(kv *, ((kbox *)answer)->v);
+        if (k_web_marked(K_P2KV(res), K_RES_FIELDS))
+            return k_web_error_response(a, req, 404, k_str("Not Found"), false);
+        return res;
     }
     bool head = k_str_eq(method, k_str("HEAD"));
     kstr *allow = NULL;
@@ -2307,7 +2393,7 @@ K_API kv *k_web_dispatch(kapp *a, kv *req) {
         int64_t status = 0;
         kstr *message = NULL;
         bool json = false;
-        kv *res = k_web_call(r, req, args, &status, &message, &json);
+        kv *res = k_web_call(r->handler, req, args, &status, &message, &json);
         if (res && k_web_marked(K_P2KV(res), K_RES_FIELDS)) {
             /* `web.not_found()` */
             status = 404;
@@ -2389,6 +2475,7 @@ K_EXPORT void k_web_access_log(kapp *a, kv *req, int64_t status, int64_t start) 
  * status is one a response can have. */
 K_EXPORT kv *k_web_handle(kapp *a, kv *req, int64_t status) {
     kv *res;
+    k_web_request = req;
     if (status) {
         res = k_web_error_response(a, req, status, k_str(k_web_reason(status)), false);
     } else {

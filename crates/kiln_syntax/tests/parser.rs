@@ -323,3 +323,65 @@ fn where_names_a_method_after_a_dot() {
     )
     .is_empty());
 }
+
+#[test]
+fn let_else_becomes_a_match_over_the_rest_of_the_block() {
+    let body = stmts("let some(post) = find(id) else {\n    return 0\n}\nprint(post)\npost.id");
+    assert_eq!(body.len(), 1, "{body:?}");
+    let Stmt::Expr(e) = &body[0] else {
+        panic!("expected the match, got {:?}", body[0])
+    };
+    let ExprKind::Match { arms, .. } = &e.kind else {
+        panic!("expected a match, got {e:?}")
+    };
+    assert_eq!(arms.len(), 2);
+    assert!(matches!(&arms[0].pattern.kind, PatternKind::Variant { args, .. } if args.len() == 1));
+    let ExprKind::Block(rest) = &arms[0].body.kind else {
+        panic!("expected the rest of the block")
+    };
+    assert_eq!(rest.stmts.len(), 2);
+    assert_eq!(arms[1].pattern.kind, PatternKind::Wildcard);
+}
+
+#[test]
+fn let_else_must_leave() {
+    let src = "fn f(x: Int?) -> Int {\n    let some(n) = x else {\n        print(1)\n    }\n    return n\n}\n";
+    assert_eq!(error_codes(src), vec![codes::LET_ELSE_MUST_LEAVE]);
+    let src = "fn f(x: Int?) -> Int {\n    let some(n) = x else {\n        if true { return 1 } else { panic(\"no\") }\n    }\n    return n\n}\n";
+    assert!(error_codes(src).is_empty());
+}
+
+#[test]
+fn variants_without_their_enum() {
+    let e =
+        expr("match t {\n    .Plain => 1\n    .Custom(name) if name != \"\" => 2\n    _ => 3\n}");
+    let ExprKind::Match { arms, .. } = &e.kind else {
+        panic!()
+    };
+    assert_eq!(arms.len(), 3);
+    assert!(matches!(&arms[1].pattern.kind, PatternKind::Variant { args, .. } if args.len() == 1));
+    assert!(arms[1].guard.is_some());
+    // A `.` line that is not an arm still continues a chain.
+    assert_eq!(show(&expr("names\n    .first()")), "names.first()");
+}
+
+#[test]
+fn map_literals_and_spreads() {
+    let ExprKind::Map(entries) = expr("[\"a\": 1, \"b\": 2]").kind else {
+        panic!("expected a map")
+    };
+    assert_eq!(entries.len(), 2);
+    assert!(matches!(expr("[1, 2]").kind, ExprKind::List(_)));
+    let ExprKind::Call { args, .. } = expr("Post(..post, title: \"x\")").kind else {
+        panic!("expected a call")
+    };
+    assert!(matches!(args[0].value.kind, ExprKind::Spread(_)));
+    let ExprKind::Record(fields) = expr("{ ..point, x: 1 }").kind else {
+        panic!("expected a record")
+    };
+    assert_eq!(fields[0].name.name, "..");
+    assert_eq!(
+        error_codes("fn f() {\n    let m = [\"a\": 1, 2]\n}\n").len(),
+        1
+    );
+}

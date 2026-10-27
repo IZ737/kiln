@@ -1012,7 +1012,7 @@ impl<'a> Gen<'a> {
             }
             ExprKind::Env(v) => {
                 let x = self.expr(v);
-                self.store(&format!("k_env({x})"), &e.ty)
+                self.store(&format!("k_os_env({x})"), &e.ty)
             }
             ExprKind::Panic(v) => {
                 let x = self.expr(v);
@@ -1571,8 +1571,9 @@ impl<'a> Gen<'a> {
             ("io", "write" | "print_err") => {
                 (self.store(&format!("k_io_{name}({})", arg(0)), ty), false)
             }
-            ("os", "env" | "exit") => (self.store(&format!("k_os_{name}({})", arg(0)), ty), false),
+            ("os", "exit") => (self.store(&format!("k_os_{name}({})", arg(0)), ty), false),
             ("web", "not_found") => (self.store("(void *)k_web_not_found()", ty), false),
+            ("web", "__request") => (self.store("k_web_current_request()", ty), false),
             ("web", "app") => {
                 let call = format!("(void *)k_web_app({})", a.join(", "));
                 (self.store(&call, ty), false)
@@ -1581,10 +1582,21 @@ impl<'a> Gen<'a> {
                 let call = format!("(void *)k_web_error({}, {})", arg(0), arg(1));
                 (self.store(&call, ty), false)
             }
+            ("web", "App.before") => (
+                self.store(
+                    &format!("k_web_before({}, {}, {})", arg(0), arg(1), arg(2)),
+                    ty,
+                ),
+                false,
+            ),
             ("web", "App.on_error") => (
                 self.store(&format!("k_web_on_error({}, {})", arg(0), arg(1)), ty),
                 false,
             ),
+            ("web", "__with_headers") => {
+                let call = format!("(void *)k_web_with_headers((kv *){}, {})", arg(0), arg(1));
+                (self.store(&call, ty), false)
+            }
             ("web", "text" | "html" | "redirect") => {
                 let call = format!("(void *)k_web_{name}({}, {})", arg(0), arg(1));
                 (self.store(&call, ty), false)

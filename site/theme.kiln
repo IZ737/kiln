@@ -64,14 +64,14 @@ fn forge() -> SiteTheme {
 
 fn forge_shell() -> ShellFinish {
     return ShellFinish(
-        body: ui({ theme: .forge, bg: color.page, fg: color.text, font: font.body, lineHeight: leading.body }),
-        header: ui({ flex: true, items: .center, justify: .between, px: space.lg, py: space.md, bg: color.chrome, borderColor: color.line }),
+        body: ui({ theme: .forge, bg: color.page, fg: color.text, font: font.body, line_height: leading.body }),
+        header: ui({ flex: true, items: .center, justify: .between, px: space.lg, py: space.md, bg: color.chrome, border_color: color.line }),
         frame: ui({ grid: true, cols: 1, at: { wide: { cols: "16rem minmax(0, 1fr)" } } }),
-        sidebar: ui({ p: space.lg, bg: color.chrome, at: { wide: { minH: "100vh" } } }),
+        sidebar: ui({ p: space.lg, bg: color.chrome, at: { wide: { min_h: "100vh" } } }),
         nav: ui({ flex: true, direction: .column, gap: space.lg }),
         nav_group: ui({ flex: true, direction: .column }),
-        main: ui({ px: space.lg, py: space.xl, maxW: size.page, w: .full }),
-        footer: ui({ px: space.lg, py: space.lg, fg: color.muted, textSize: .sm, bg: color.chrome }),
+        main: ui({ px: space.lg, py: space.xl, max_w: size.page, w: .full }),
+        footer: ui({ px: space.lg, py: space.lg, fg: color.muted, text_size: .sm, bg: color.chrome }),
     )
 }
 
@@ -82,25 +82,25 @@ fn forge_nav_link(current: Bool) -> Ui {
 
 fn forge_hero() -> HeroFinish {
     return HeroFinish(
-        root: ui({ py: space.xl, maxW: size.prose }),
-        title: ui({ font: font.display, textSize: .hero, lineHeight: leading.tight, weight: .bold, mt: 0, mb: space.md }),
-        lead: ui({ textSize: .lg, fg: color.muted, mb: space.lg }),
+        root: ui({ py: space.xl, max_w: size.prose }),
+        title: ui({ font: font.display, text_size: .hero, line_height: leading.tight, weight: .bold, mt: 0, mb: space.md }),
+        lead: ui({ text_size: .lg, fg: color.muted, mb: space.lg }),
         actions: ui({ flex: true, wrap: true, gap: space.sm }),
     )
 }
 
 fn forge_card(featured: Bool) -> CardFinish {
     return CardFinish(
-        root: ui({ p: space.lg, rounded: radius.card, bg: color.raised, border: true, borderColor: if featured { color.accent } else { color.line } }),
-        title: ui({ font: font.display, textSize: .lg, weight: .semibold, mb: space.xs }),
+        root: ui({ p: space.lg, rounded: radius.card, bg: color.raised, border: true, border_color: if featured { color.accent } else { color.line } }),
+        title: ui({ font: font.display, text_size: .lg, weight: .semibold, mb: space.xs }),
     )
 }
 
 fn forge_button(tone: Tone) -> Ui {
     let base = ui({ px: space.md, py: space.sm, rounded: radius.control, weight: .semibold, transition: motion.quick })
     return ui.merge(base, match tone {
-        Tone.Primary => ui({ bg: color.accent, fg: color.on_accent, hover: { opacity: 0.9 } })
-        Tone.Quiet => ui({ border: true, borderColor: color.line, fg: color.text, hover: { bg: color.raised } })
+        .Primary => ui({ bg: color.accent, fg: color.on_accent, hover: { opacity: 0.9 } })
+        .Quiet => ui({ border: true, border_color: color.line, fg: color.text, hover: { bg: color.raised } })
     })
 }
 
@@ -119,14 +119,14 @@ fn paper() -> SiteTheme {
 
 fn paper_shell() -> ShellFinish {
     return ShellFinish(
-        body: ui({ theme: .paper, bg: color.page, fg: color.text, font: font.body, lineHeight: leading.body }),
-        header: ui({ flex: true, direction: .column, items: .center, gap: space.sm, py: space.lg, borderColor: color.line }),
+        body: ui({ theme: .paper, bg: color.page, fg: color.text, font: font.body, line_height: leading.body }),
+        header: ui({ flex: true, direction: .column, items: .center, gap: space.sm, py: space.lg, border_color: color.line }),
         frame: ui({ flex: true, direction: .column, items: .center }),
         sidebar: ui({ w: .full, px: space.md, py: space.sm, bg: color.chrome }),
-        nav: ui({ flex: true, wrap: true, justify: .center, items: .baseline, gap: space.md, maxW: size.page, mx: .auto }),
+        nav: ui({ flex: true, wrap: true, justify: .center, items: .baseline, gap: space.md, max_w: size.page, mx: .auto }),
         nav_group: ui({ flex: true, wrap: true, items: .baseline, gap: space.sm }),
-        main: ui({ px: space.md, py: space.xl, maxW: size.prose, w: .full }),
-        footer: ui({ py: space.lg, align: .center, fg: color.muted, textSize: .sm }),
+        main: ui({ px: space.md, py: space.xl, max_w: size.prose, w: .full }),
+        footer: ui({ py: space.lg, align: .center, fg: color.muted, text_size: .sm }),
     )
 }
 
@@ -138,22 +138,22 @@ fn paper_nav_link(current: Bool) -> Ui {
 fn paper_hero() -> HeroFinish {
     return HeroFinish(
         root: ui({ py: space.lg, align: .center }),
-        title: ui({ font: font.display, textSize: .hero, lineHeight: leading.tight, weight: .normal, mt: 0, mb: space.sm }),
-        lead: ui({ textSize: .lg, fg: color.muted, mb: space.lg }),
+        title: ui({ font: font.display, text_size: .hero, line_height: leading.tight, weight: .normal, mt: 0, mb: space.sm }),
+        lead: ui({ text_size: .lg, fg: color.muted, mb: space.lg }),
         actions: ui({ flex: true, justify: .center, gap: space.md }),
     )
 }
 
 fn paper_card(featured: Bool) -> CardFinish {
     return CardFinish(
-        root: ui({ py: space.md, borderColor: color.line, bg: if featured { color.chrome } else { .transparent }, px: if featured { space.md } else { 0 } }),
-        title: ui({ font: font.display, textSize: .lg, weight: .normal, mb: space.xs }),
+        root: ui({ py: space.md, border_color: color.line, bg: if featured { color.chrome } else { .transparent }, px: if featured { space.md } else { 0 } }),
+        title: ui({ font: font.display, text_size: .lg, weight: .normal, mb: space.xs }),
     )
 }
 
 fn paper_button(tone: Tone) -> Ui {
     return match tone {
-        Tone.Primary => ui({ fg: color.accent, underline: true, weight: .semibold })
-        Tone.Quiet => ui({ fg: color.text, underline: true })
+        .Primary => ui({ fg: color.accent, underline: true, weight: .semibold })
+        .Quiet => ui({ fg: color.text, underline: true })
     }
 }

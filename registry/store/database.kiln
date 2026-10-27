@@ -2,7 +2,7 @@ import sql, orm, auth, web, time
 
 // The database `DATABASE_URL` names, or `registry.db`.
 pub fn database() -> sql.Db ! {
-    let url = if env("DATABASE_URL") == "" { "sqlite:registry.db" } else { env("DATABASE_URL") }
+    let url = env("DATABASE_URL") ?? "sqlite:registry.db"
     return try sql.open(url)
 }
 
@@ -88,14 +88,4 @@ pub fn valid_version(version: String) -> Bool {
         return false
     }
     return parts.all(fn(p) { p.len() > 0 and p.to_int() != none and (p == "0" or not p.starts_with("0")) })
-}
-
-// Whether a form came from a page of this site.
-pub fn same_origin(req: web.Request) -> Bool {
-    let origin = req.header("origin") ?? ""
-    if origin == "" {
-        return true
-    }
-    let host = req.header("host") ?? ""
-    return origin == "http://${host}" or origin == "https://${host}"
 }

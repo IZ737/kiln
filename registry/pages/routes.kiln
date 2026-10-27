@@ -61,9 +61,6 @@ pub fn routes(app: web.App, db: sql.Db, sessions: auth.Sessions) {
     })
 
     app.post("/sign-up", fn(req) {
-        if not store.same_origin(req) {
-            throw web.error(403, "this form was sent from another site")
-        }
         let form = try req.form<{ name: String, email: String, password: String }>()
         let name = form.name.trim()
         let email = form.email.trim().lower()
@@ -92,9 +89,6 @@ pub fn routes(app: web.App, db: sql.Db, sessions: auth.Sessions) {
     })
 
     app.post("/sign-in", fn(req) {
-        if not store.same_origin(req) {
-            throw web.error(403, "this form was sent from another site")
-        }
         let form = try req.form<{ email: String, password: String }>()
         let email = form.email.trim().lower()
         let found = try orm.find<store.Account>(db).where(fn(a) { a.email == email }).first()
@@ -114,19 +108,17 @@ pub fn routes(app: web.App, db: sql.Db, sessions: auth.Sessions) {
 
     app.get("/tokens", fn(req) {
         let account_found = try signed_in(db, sessions, req)
-        if not (account_found is some(_)) {
+        let some(account) = account_found else {
             return web.redirect("/sign-in")
         }
-        let account = account_found ?? throw "unreachable"
         return try tokens_page(db, sessions, req, account, "")
     })
 
     app.post("/tokens", fn(req) {
         let account_found = try signed_in(db, sessions, req)
-        if not (account_found is some(_)) {
+        let some(account) = account_found else {
             return web.redirect("/sign-in")
         }
-        let account = account_found ?? throw "unreachable"
         let form = try req.form<{ csrf: String, label: String }>()
         try sessions.check(req, form.csrf)
         let label = if form.label.trim() == "" { "kiln publish" } else { form.label.trim() }

@@ -66,4 +66,44 @@ GET /nowhere HTTP/1.1
 ###
 NONSENSE
 ###
+GET /cookies HTTP/1.1
+cookie: theme=dark%20mode; other=x
+###
+GET /admin/users HTTP/1.1
+###
+GET /admin/users HTTP/1.1
+x-admin: yes
+###
+GET /admin/fail HTTP/1.1
+x-admin: yes
+###
+GET /administrators HTTP/1.1
+###
+POST /notes HTTP/1.1
+host: example.test
+origin: https://evil.example
+
+x=1
+###
+POST /notes HTTP/1.1
+sec-fetch-site: cross-site
+
+x=1
+###
+POST /notes HTTP/1.1
+host: example.test
+origin: http://example.test
+sec-fetch-site: same-origin
+
+x=1
+###
+POST /notes HTTP/1.1
+
+x=1
+###
+POST /hooks/payment HTTP/1.1
+origin: https://payments.example
+
+{}
+###
 GET /quit HTTP/1.1

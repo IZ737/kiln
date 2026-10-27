@@ -54,9 +54,23 @@ JavaScript, not values.
 ## Rendering
 
 `web.render("post.glaze", { post })` renders a glaze into a `200` response
-with `content-type: text/html; charset=utf-8`. Glazes are compiled into the
+with `content-type: text/html; charset=utf-8`, or another status with
+`status:` and more headers with `headers:`. Glazes are compiled into the
 program like any other code, with nothing interpreted at run time; the
 glaze must be named in quotes, so the compiler knows which one it is.
+
+A glaze, layout or component that declares `request: web.Request` in its
+props gets the request being handled without anyone passing it, so a
+layout can show who is signed in or pick a theme from a cookie:
+
+```glaze
+{% props title: String, request: web.Request %}
+<body class="{theme_of(request)}">
+```
+
+A caller may still pass `request:` itself, and must when there is no
+request, as in a test that renders a glaze directly. Embers cannot take
+the request, since it does not go to the browser.
 
 - **Values are escaped.** `{value}` and values in attributes have `&`, `<`,
   `>`, `"` and `'` escaped, so a value cannot add markup or end an
@@ -188,7 +202,7 @@ Tailwind:
 <article class="card" ui={{
     grid: true, cols: 1, gap: space.md, p: space.lg,
     bg: color.surface, rounded: radius.card,
-    borderColor: if featured { color.accent } else { .transparent },
+    border_color: if featured { color.accent } else { .transparent },
     hover: { shadow: shadow.lg },
     at: { tablet: { cols: 2 } },
 }}>
@@ -216,31 +230,31 @@ and right padding. `ui.classes(style)` is a style's class names as a
 
 | Keys | Values |
 | --- | --- |
-| `bg`, `fg` (text colour), `borderColor` | `color.*` tokens, `.transparent`, `.current` |
+| `bg`, `fg` (text colour), `border_color` | `color.*` tokens, `.transparent`, `.current` |
 | `p`, `px`, `py`, `pt`, `pr`, `pb`, `pl`, `gap` | `space.*` tokens, `0` |
 | `m`, `mx`, `my`, `mt`, `mr`, `mb`, `ml` | `space.*` tokens, `0`, `.auto` |
-| `w`, `h`, `minW`, `maxW`, `minH`, `maxH` | `size.*` or `space.*` tokens, `0`, `.auto`, `.full`, `.min`, `.max`, `.fit` |
+| `w`, `h`, `min_w`, `max_w`, `min_h`, `max_h` | `size.*` or `space.*` tokens, `0`, `.auto`, `.full`, `.min`, `.max`, `.fit` |
 | `rounded` | `radius.*` tokens, `.none`, `.full` |
 | `border` | `true` (1px solid), or a width |
 | `shadow` | `shadow.*` tokens, `.none` |
 | `flex`, `grid` | `true` (not both in one style) |
-| `direction` | `.row`, `.column`, `.rowReverse`, `.columnReverse` |
+| `direction` | `.row`, `.column`, `.row_reverse`, `.column_reverse` |
 | `cols`, `rows` | `1` to `12` equal tracks, `.none` |
 | `items` | `.start`, `.center`, `.end`, `.stretch`, `.baseline` |
 | `justify` | `.start`, `.center`, `.end`, `.between`, `.around`, `.evenly`, `.stretch` |
 | `wrap`, `underline` | `true` or `false` |
 | `font` | `font.*` tokens |
-| `textSize` | `text.*` tokens; `.lg` is `text.lg` |
+| `text_size` | `text.*` tokens; `.lg` is `text.lg` |
 | `weight` | `.thin`, `.light`, `.normal`, `.medium`, `.semibold`, `.bold`, `.black`, `100`-`1000`, `weight.*` |
-| `lineHeight` | a number, `leading.*` tokens |
+| `line_height` | a number, `leading.*` tokens |
 | `align` | `.left`, `.center`, `.right`, `.justify`, `.start`, `.end` |
 | `tracking` | `tracking.*` tokens |
 | `opacity` | `0` to `1` |
 | `overflow` | `.hidden`, `.auto`, `.scroll`, `.visible`, `.clip` |
 | `transition` | `motion.*` tokens, `.none` |
-| `cursor` | `.pointer`, `.default`, `.text`, `.notAllowed`, `.grab`, `.move`, `.wait`, `.help`, `.none` |
+| `cursor` | `.pointer`, `.default`, `.text`, `.not_allowed`, `.grab`, `.move`, `.wait`, `.help`, `.none` |
 | `transform` | a CSS string, `.none` |
-| `hover`, `focus`, `focusVisible`, `disabled` | a record of the keys above |
+| `hover`, `focus`, `focus_visible`, `disabled` | a record of the keys above |
 | `at` | a record of breakpoints, each a record of keys (and states) |
 
 Every key also takes a CSS string written out, such as `p: "1rem 2px"`,
@@ -372,8 +386,12 @@ from the browser build. Layout files must be `.glaze` (E0316).
 - **Handlers.** `on:<event>={ statements }` runs in the browser when the
   element gets the event (`click`, `input`, `change`, `submit`, `keydown`
   and so on). `event` is an `ember.Event`: its `kind`, the element's
-  `value` and `checked`, the `key` pressed, and a form's fields as `form`.
-  A form's `submit` never reloads the page.
+  `value` and `checked`, the `key` pressed, and a form's fields as
+  `fields`, a `Map<String, String>`. `event.form<T>()` reads the fields as
+  a struct the way `req.form<T>()` does on the server (numbers parsed, a
+  ticked box `true`, an empty optional `none`), and fails with a message
+  naming the field that does not fit. A form's `submit` never reloads the
+  page.
 - **Modifiers.** `.prevent` stops the browser's own action, `.stop`
   keeps the event from outer handlers, and `.latest` lets a new event
   replace a call that is still waiting. Others are E0313.
@@ -389,10 +407,11 @@ from the browser build. Layout files must be `.glaze` (E0316).
 - **Server checks.** The routes accept only JSON from the page's own origin
   (`Origin` and `Sec-Fetch-Site`), up to 1 MiB, from a build of the same
   functions (the `x-kiln-rpc` header), and decode the arguments as
-  untrusted input (400 when they do not fit). A program that defines
-  `fn rpc_guard(req: web.Request, name: String) !` has it
-  called first: an error it throws is the answer, such as
-  `throw web.error(403, "...")`.
+  untrusted input (400 when they do not fit). Each function's route is
+  `/_kiln/rpc/<name>`, so `app.before("/_kiln/rpc", hook)` guards every
+  call and `app.before("/_kiln/rpc/reset", hook)` one function: a response
+  or an error from the hook is the answer, such as
+  `throw web.error(403, "...")` (see [Before hooks](stdlib.md#web)).
 - **Hydration hints**, on the component's tag: `client:load` (the
   default), `client:idle` when the browser is idle, `client:visible` when
   the ember is on screen, and `client:only`, which the server does not

@@ -12,7 +12,9 @@ import `test`, which `kiln test` provides: see [Testing](testing.md).
 ## Prelude
 
 `print`, `env` and `panic`, and the methods of `Int`, `Float`, `String`,
-`Duration`, `List`, `Map` and `Set`. The full list is in
+`Duration`, `List`, `Map` and `Set`. `env(name) -> String?` reads an
+environment variable, which is `none` when it is not set:
+`env("PORT") ?? "8080"`. The full list is in
 [`prelude.kiln`](../../crates/kiln_check/std/prelude.kiln); the ones most
 programs reach for:
 
@@ -91,7 +93,6 @@ as `cannot read notes.txt: No such file or directory`.
 | Function | |
 | --- | --- |
 | `os.args() -> List<String>` | Command-line arguments, without the program's name |
-| `os.env(name) -> String?` | An environment variable, or none when unset |
 | `os.exit(code: Int) -> Never` | Ends the program |
 | `os.cwd() -> String` | The working directory |
 | `os.temp_dir() -> String` | `$TMPDIR`, or `/tmp` |
@@ -175,6 +176,30 @@ that no route matches gets 404, and a path that matches only with other
 methods gets 405 with an `allow` header. A handler can also be a function:
 `app.get("/", home)` with `fn home(req: web.Request) -> web.Response !`.
 
+**Before hooks.** `app.before(prefix, hook)` runs `hook` ahead of the
+routes for every request whose path is `prefix` or below it at a `/`, so
+`/admin` covers `/admin/users` but not `/administrators`. The hook takes
+the request and returns a `web.Response?`: a response answers the request
+then and there, `none` lets it go on to the next hook and then its route,
+and an error answers as a handler's would. Hooks run in the order they
+were added.
+
+```kiln
+app.before("/admin", fn(req) {
+    let some(who) = try sessions.current(req) else {
+        return web.redirect("/sign-in")
+    }
+    if not who.roles.contains("admin") {
+        throw web.error(403, "admins only")
+    }
+    return none
+})
+```
+
+The routes of `server fn`s are under `/_kiln/rpc/<name>`, so a hook on
+`/_kiln/rpc` guards every call from an ember, and one on
+`/_kiln/rpc/reset` guards one function.
+
 **Requests.** A `web.Request` has `method`, `path` (without the query
 string), `query_string`, `headers` (a `Map<String, String>` with names in
 lower case) and `body`.
@@ -183,7 +208,7 @@ lower case) and `body`.
 | --- | --- |
 | `req.query(name) -> String?` | A query parameter, decoded (`+` is a space) |
 | `req.header(name) -> String?` | A header; the name is not case-sensitive |
-| `req.cookie(name) -> String?` | A cookie from the `cookie` header |
+| `req.cookie(name) -> String?` | A cookie from the `cookie` header, with `%XX` escapes decoded |
 | `req.json<T>() -> T !` | The body read as JSON into a `T` (see [`json`](#json)) |
 | `req.form<T>() -> T !` | A submitted form read into a `T` (see [`validate`](#validate)) |
 
@@ -215,12 +240,34 @@ or made directly with `web.Response(status: 204, headers: Map(), body: "")`.
 
 | Function | |
 | --- | --- |
-| `web.json(value, status: 200)` | `value` as JSON, `application/json` |
-| `web.text(body, status: 200)` | `text/plain; charset=utf-8` |
-| `web.html(body, status: 200)` | `text/html; charset=utf-8` |
-| `web.render("page.glaze", { props })` | The glaze rendered as HTML (see [Rendering](glazes.md#rendering)) |
-| `web.redirect(to, status: 302)` | Sends the client to `to` |
+| `web.json(value, status: 200, headers: Map())` | `value` as JSON, `application/json` |
+| `web.text(body, status: 200, headers: Map())` | `text/plain; charset=utf-8` |
+| `web.html(body, status: 200, headers: Map())` | `text/html; charset=utf-8` |
+| `web.render("page.glaze", { props }, status: 200, headers: Map())` | The glaze rendered as HTML (see [Rendering](glazes.md#rendering)) |
+| `web.redirect(to, status: 302, headers: Map())` | Sends the client to `to` |
 | `web.not_found()` | 404, made like the server's own (see Errors) |
+
+`headers` are added to the ones the function sets itself and replace
+those with the same name: `web.json(page, headers: ["cache-control":
+"no-store"])`. Write header names in lower case.
+
+**Cookies.** `res.set_cookie(name, value, max_age: none, path: "/",
+same_site: .Lax, http_only: true, secure: true)` adds a `set-cookie`
+header and returns the response, so calls chain:
+
+```kiln
+return web.redirect("/", status: 303)
+    .set_cookie("theme", "dark", max_age: 720h)
+    .set_cookie("seen_intro", "1", same_site: .Strict)
+```
+
+The defaults are the safe ones: scripts cannot read the cookie, it is
+sent only over HTTPS, and not with requests from other sites except
+top-level links (`web.SameSite` is `.Lax`, `.Strict` or `.None`, and
+`.None` always adds `Secure`). Without `max_age` the cookie lasts until
+the browser closes, and `max_age: 0s` deletes it. A value is
+percent-encoded where a cookie cannot hold it as it is, and
+`req.cookie` decodes it; a name that is not an HTTP token panics.
 
 The server adds `content-length` and `date`, and `connection: close` when it
 will close the connection.
@@ -303,6 +350,17 @@ settings for when the defaults do not fit:
 | `timeout` | `10s` | How long a client has to send a request's head (408 after that), and how long it may stall while sending the body or reading the response |
 | `keep_alive` | `5s` | How long an idle connection stays open; `0s` closes each after one response |
 | `access_log` | `true` | Whether to log each request |
+| `cross_site` | `[]` | Path prefixes that take `POST`, `PUT`, `PATCH` and `DELETE` from other sites, such as `["/webhooks"]` |
+
+**Requests from other sites.** A browser says where a request comes from
+(`sec-fetch-site`, or else `origin`). The server answers 403 to a
+`POST`, `PUT`, `PATCH` or `DELETE` that a page on another site sent,
+before any hook or route sees it, so a form on someone else's page cannot
+act as the person signed in here. Requests without those headers, such as
+those from curl, servers and `kiln test`, pass. Paths under a prefix in
+`cross_site` take requests from anywhere, for webhooks and public APIs.
+Session tokens (`sessions.check`) still protect against a page on a
+sibling subdomain.
 
 ```kiln
 let app = web.app(max_body: 1_048_576, timeout: 30s)
@@ -341,7 +399,7 @@ struct Account {
 }
 
 fn main() ! {
-    let db = try sql.open(env("DATABASE_URL"))
+    let db = try sql.open(env("DATABASE_URL") ?? "sqlite:app.db")
     let sessions = try auth.sessions(db)
     let app = web.app()
 

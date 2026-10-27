@@ -1,0 +1,20 @@
+import web
+
+fn main() {
+    let r = web.text("hi", status: 201, headers: ["x-a": "1", "content-type": "text/csv"])
+    print("${r.status} ${r.headers} ${r.body}")
+    let j = web.json({ a: 1 }, headers: ["cache-control": "no-store"])
+    print("${j.status} ${j.headers} ${j.body}")
+    let d = web.redirect("/x", status: 303)
+    print("${d.status} ${d.headers}")
+    let h = web.html("<p>", status: 422)
+    print("${h.status} ${h.headers}")
+    let p = web.render("page.glaze", { name: "Ada" }, status: 404, headers: ["x-b": "2"])
+    print("${p.status} ${p.headers} ${p.body}")
+    let c = web.redirect("/home", status: 303)
+        .set_cookie("theme", "dark mode;1")
+        .set_cookie("seen", "1", max_age: 1h, path: "/docs", same_site: .Strict, http_only: false, secure: false)
+    print(c.headers)
+    let gone = web.text("bye").set_cookie("theme", "", max_age: 0s, same_site: .None)
+    print(gone.headers["set-cookie"] ?? "")
+}

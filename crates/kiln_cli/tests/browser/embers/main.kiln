@@ -1,10 +1,13 @@
 // The app `tests/browser.rs` drives in Chromium: a page of independent
 // embers with different hydration hints, next to static content, and the
 // `server fn`s they call.
-import web, os, time, html
+import web, os, time, html, fs
 
-// How many times `slow` ran, to check that a double click calls it once.
-const SLOW_CALLS: List<Int> = [0]
+// A file with a line for each time `slow` ran, to check that a double
+// click calls it once. Constants never change, so the count lives here.
+fn slow_log() -> String {
+    "${os.temp_dir()}/kiln-browser-slow-${os.pid()}"
+}
 
 struct Signup {
     name: String
@@ -16,13 +19,14 @@ server fn add(a: Int, b: Int) -> Int {
 }
 
 server fn slow(n: Int) -> Int {
-    SLOW_CALLS[0] = SLOW_CALLS[0] + 1
+    fs.append(slow_log(), "x\n") catch _ { panic("cannot write the call log") }
     time.sleep(300ms)
     return n + 1
 }
 
 server fn slow_calls() -> Int {
-    SLOW_CALLS[0]
+    let lines = fs.read_lines(slow_log()) catch _ { [] }
+    lines.len()
 }
 
 // Short queries answer later, so their replies come back out of order.
@@ -65,5 +69,5 @@ fn main() ! {
     app.get("/quit", fn(req) {
         os.exit(0)
     })
-    try app.listen("127.0.0.1:${env("PORT")}")
+    try app.listen("127.0.0.1:${env("PORT") ?? "8080"}")
 }

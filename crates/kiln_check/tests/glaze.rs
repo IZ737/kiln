@@ -18,7 +18,7 @@ enum Role {
 }
 
 server fn like_post(id: Int) -> Int ! {
-    let db = try sql.open(env("DATABASE_URL"))
+    let db = try sql.open(env("DATABASE_URL") ?? "sqlite::memory:")
     try db.scalar<Int>("select count(*) from likes where post_id = $1", id)
 }
 

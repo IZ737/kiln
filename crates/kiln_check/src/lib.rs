@@ -14,6 +14,7 @@ mod query;
 pub mod style;
 pub mod types;
 
+pub use checker::internal_name;
 pub use glaze::ValueKind;
 pub use query::Query;
 

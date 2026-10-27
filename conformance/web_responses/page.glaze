@@ -1,0 +1,2 @@
+{% props name: String %}
+<p>{name}</p>

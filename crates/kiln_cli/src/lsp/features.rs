@@ -753,7 +753,11 @@ fn items(a: &Analysis, completion: &Completion, glaze: bool) -> Vec<Value> {
                         out.push(item(&f.name, FIELD, a.show(&ty), 0));
                     }
                 }
-                for m in adt.methods.iter().filter(|m| m.has_self) {
+                for m in adt
+                    .methods
+                    .iter()
+                    .filter(|m| m.has_self && !m.name.starts_with("__"))
+                {
                     out.push(item(&m.name, METHOD, a.show_fn(m), 1));
                 }
             }
@@ -766,10 +770,11 @@ fn items(a: &Analysis, completion: &Completion, glaze: bool) -> Vec<Value> {
         },
         Completion::Module(m) => {
             let module = &a.modules[*m];
-            for (name, sig) in &module.fns {
+            let shown = |name: &&String| !kiln_check::internal_name(&module.name, name);
+            for (name, sig) in module.fns.iter().filter(|(n, _)| shown(n)) {
                 out.push(item(name, FUNCTION, a.show_fn(sig), 0));
             }
-            for (name, &id) in &module.types {
+            for (name, &id) in module.types.iter().filter(|(n, _)| shown(n)) {
                 out.push(item(name, adt_kind(a, id), a.show_adt(id), 1));
             }
         }
@@ -798,7 +803,12 @@ fn items(a: &Analysis, completion: &Completion, glaze: bool) -> Vec<Value> {
             }
         }
         Completion::ModuleTypes(m) => {
-            for (name, &id) in &a.modules[*m].types {
+            let module = &a.modules[*m];
+            for (name, &id) in module
+                .types
+                .iter()
+                .filter(|(n, _)| !kiln_check::internal_name(&module.name, n))
+            {
                 out.push(item(name, adt_kind(a, id), a.show_adt(id), 0));
             }
         }

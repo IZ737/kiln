@@ -34,6 +34,7 @@
 //! ```
 
 pub mod admin;
+pub mod forms;
 pub mod glaze;
 mod lower;
 mod print;

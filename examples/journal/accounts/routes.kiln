@@ -7,9 +7,6 @@ pub fn routes(app: web.App, db: sql.Db, sessions: auth.Sessions) {
     })
 
     app.post("/sign-up", fn(req) {
-        if not shared.same_origin(req) {
-            throw web.error(403, "this form was sent from another site")
-        }
         let form = try req.form<{ name: String, email: String, password: String }>()
         let email = form.email.trim().lower()
         let taken = try orm.find<shared.User>(db).where(fn(u) { u.email == email }).count()
@@ -37,9 +34,6 @@ pub fn routes(app: web.App, db: sql.Db, sessions: auth.Sessions) {
     })
 
     app.post("/sign-in", fn(req) {
-        if not shared.same_origin(req) {
-            throw web.error(403, "this form was sent from another site")
-        }
         let form = try req.form<{ email: String, password: String }>()
         let email = form.email.trim().lower()
         let found = try orm.find<shared.User>(db).where(fn(u) { u.email == email }).first()

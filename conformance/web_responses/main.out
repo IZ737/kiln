@@ -1,0 +1,7 @@
+201 {"content-type": "text/csv", "x-a": "1"} hi
+200 {"content-type": "application/json", "cache-control": "no-store"} {"a":1}
+303 {"location": "/x"}
+422 {"content-type": "text/html; charset=utf-8"}
+404 {"content-type": "text/html; charset=utf-8", "x-b": "2"} <p>Ada</p>
+{"location": "/home", "set-cookie": "theme=dark%20mode%3B1; Path=/; SameSite=Lax; HttpOnly; Secure\nseen=1; Max-Age=3600; Path=/docs; SameSite=Strict"}
+theme=; Max-Age=0; Path=/; SameSite=None; HttpOnly; Secure

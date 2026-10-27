@@ -122,7 +122,7 @@ pub fn fails<T>(run: fn() -> T !, at: String = "@caller") -> String {
 // A folder of the test's own, empty when the test starts and removed
 // after it.
 pub fn temp_dir() -> String {
-    os.env("KILN_TEST_TMP") ?? os.temp_dir()
+    env("KILN_TEST_TMP") ?? os.temp_dir()
 }
 
 // A database of the test's own, with the project's migrations applied:

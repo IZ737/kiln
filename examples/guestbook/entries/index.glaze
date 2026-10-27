@@ -1,5 +1,5 @@
-{% props entries: List<shared.Entry>, signed_in: Bool, csrf: String, message: String, problems: List<String>, dark: Bool %}
-{% layout "shared/layout.glaze" title: "The book", dark: dark %}
+{% props entries: List<shared.Entry>, signed_in: Bool, csrf: String, message: String, problems: List<String> %}
+{% layout "shared/layout.glaze" title: "The book" %}
 <h1>The book</h1>
 {% if signed_in %}
 <ui.FormErrors problems={problems} />

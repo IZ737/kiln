@@ -1,0 +1,58 @@
+// Copies with `..`, map literals and multi-line strings.
+
+struct Post {
+    id: Int = 0
+    title: String
+    tags: List<String> = []
+    published: Bool = false
+}
+
+fn main() {
+    // A struct copy with changes: the fields not named come from the base.
+    let draft = Post(title: "Draft", tags: ["a"])
+    let live = Post(..draft, published: true)
+    print(live)
+    print(draft.published)
+    // Fields are shared, not deep-copied: the list is the same list.
+    live.tags.push("b")
+    print(draft.tags)
+    // The base is read once, even when it is a call.
+    var calls = 0
+    let next = fn() {
+        calls += 1
+        return Post(title: "Made")
+    }
+    let made = Post(..next(), id: 7)
+    print("${made.id} ${made.title} ${calls}")
+
+    // A record copy.
+    let point = { x: 1, y: 2 }
+    let moved = { ..point, x: 10 }
+    print(moved)
+    print(point)
+
+    // Map literals.
+    let ages = ["Ada": 36, "Grace": 45]
+    print(ages["Grace"] ?? 0)
+    print(ages.len())
+    let by_id = [1: "one", 2: "two"]
+    print(by_id)
+    let empty: Map<String, Int> = Map()
+    print(empty.len())
+    let names: List<String> = []
+    print(names.len())
+
+    // Multi-line strings: the closing quotes' indentation is removed.
+    let who = "Kiln"
+    let text = """
+        Hello, ${who}!
+          indented "quoted" line
+
+        a \t tab and \${not interpolated}
+        """
+    print(text)
+    print(text.lines().len())
+    let blank = """
+        """
+    print("[${blank}]")
+}

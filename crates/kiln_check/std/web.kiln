@@ -28,26 +28,37 @@ struct Response {
 // requests up to 16 MiB of body and 64 KiB of headers, 10 seconds for a
 // client to send a request's head (and to keep sending its body and
 // reading the response), kept-alive connections closed after 5 idle
-// seconds (0s turns keep-alive off), and a line on standard error per
-// request.
+// seconds (0s turns keep-alive off), a line on standard error per
+// request, and 403 for a `POST`, `PUT`, `PATCH` or `DELETE` a browser
+// sent from another site, except under the path prefixes in `cross_site`.
 fn app(
     max_body: Int = 16_777_216,
     max_header: Int = 65_536,
     timeout: Duration = 10s,
     keep_alive: Duration = 5s,
     access_log: Bool = true,
+    cross_site: List<String> = [],
 ) -> App {}
 
 // An error the server answers with `status` (400 to 599) and `message`,
 // which, unlike other errors' messages, is shown to the client:
 // `throw web.error(404, "no post ${id}")`.
 fn error(status: Int, message: String) -> Error {}
-fn render(template: String, data: Any = {}) -> Response {}
-fn json(value: Any, status: Int = 200) -> Response {}
-fn text(body: String, status: Int = 200) -> Response {}
-fn html(body: String, status: Int = 200) -> Response {}
-fn redirect(to: String, status: Int = 302) -> Response {}
+// Responses. `headers` are added to the ones each sets itself, such as
+// `content-type`, and replace those with the same name.
+fn render(
+    template: String,
+    data: Any = {},
+    status: Int = 200,
+    headers: Map<String, String> = Map(),
+) -> Response {}
+fn json(value: Any, status: Int = 200, headers: Map<String, String> = Map()) -> Response {}
+fn text(body: String, status: Int = 200, headers: Map<String, String> = Map()) -> Response {}
+fn html(body: String, status: Int = 200, headers: Map<String, String> = Map()) -> Response {}
+fn redirect(to: String, status: Int = 302, headers: Map<String, String> = Map()) -> Response {}
 fn not_found() -> Response {}
+// The request being handled, for a glaze's `request` prop.
+fn __request() -> Request {}
 
 // A handler takes the request, then one parameter per `{name}` in the route
 // pattern. The type checker reads the pattern to type those parameters.
@@ -63,7 +74,40 @@ impl App {
     // message: a `web.error`'s message, or else the status's reason, such
     // as "Not Found".
     fn on_error(self, handler: fn(Request, Int, String) -> Response) {}
+    // Runs `hook` before the routes for every request whose path is
+    // `prefix` or below it (`/admin` covers `/admin/users`). A hook that
+    // returns a response answers the request, and one that fails answers
+    // with the error, as a handler would; `none` lets the request go on to
+    // the next hook and then its route. Hooks run in the order they were
+    // added, so register them before anything they guard is reached.
+    fn before(self, prefix: String, hook: fn(Request) -> Response? !) {}
     fn listen(self, address: String) ! {}
+}
+
+// Where a browser sends a cookie from: `.Lax` (the default) keeps it off
+// cross-site requests except top-level links, `.Strict` off all of them,
+// and `.None` sends it everywhere, which needs `secure`.
+enum SameSite {
+    Lax
+    Strict
+    None
+}
+
+impl Response {
+    // Adds a `set-cookie` header and returns the response. The value is
+    // percent-encoded where a cookie cannot hold it, and `req.cookie`
+    // decodes it. `max_age: 0s` deletes the cookie; without `max_age` it
+    // lasts until the browser closes.
+    fn set_cookie(
+        self,
+        name: String,
+        value: String,
+        max_age: Duration? = none,
+        path: String = "/",
+        same_site: SameSite = SameSite.Lax,
+        http_only: Bool = true,
+        secure: Bool = true,
+    ) -> Response {}
 }
 
 impl Request {

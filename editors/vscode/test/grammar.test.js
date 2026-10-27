@@ -173,3 +173,15 @@ test("qualified folder component tags", async () => {
   const { lines } = await tokenize("text.html.glaze", "<posts.search.Result title=\"Found\" />");
   assertScope(lines, 0, "posts.search.Result", "support.class.component.glaze");
 });
+
+test("triple-quoted Kiln strings span lines and interpolate", async () => {
+  const { lines } = await tokenize(
+    "source.kiln",
+    'let s = """\n    Hi ${name}, "quoted"\n    """\nlet t = 1',
+  );
+  assertScope(lines, 1, "    Hi ", "string.quoted.triple.kiln");
+  assertScope(lines, 1, "name", "meta.interpolation.kiln");
+  assertScope(lines, 1, ', "quoted"', "string.quoted.triple.kiln");
+  assertScope(lines, 2, '"""', "punctuation.definition.string.end.kiln");
+  assertScope(lines, 3, "let", "storage.type.let.kiln");
+});

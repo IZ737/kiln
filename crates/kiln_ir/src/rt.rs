@@ -85,6 +85,14 @@ pub static RT_FNS: &[RtFn] = &[
         false,
         None,
     ),
+    f(
+        "web",
+        "Response.set_cookie",
+        "k_rt_web_set_cookie",
+        8,
+        false,
+        None,
+    ),
     f("auth", "token", "k_rt_auth_token", 1, false, None),
     f("auth", "sha256", "k_rt_auth_sha256", 1, false, None),
     f(

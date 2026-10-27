@@ -585,3 +585,75 @@ fn admin_pages_need_a_model_with_an_int_key() {
         diags[0].message
     );
 }
+
+#[test]
+fn phase_six_and_a_half_language() {
+    ok(r#"
+enum Tone {
+    Plain
+    Custom(name: String)
+}
+
+struct Post {
+    id: Int = 0
+    title: String
+}
+
+fn label(t: Tone?) -> String {
+    let some(tone) = t else {
+        return "none"
+    }
+    return match tone {
+        .Plain => "plain"
+        .Custom(name) => name
+    }
+}
+
+fn main() {
+    print(label(.Custom(name: "x")))
+    let p = Post(title: "a")
+    let q = Post(..p, title: "b")
+    let r = { x: 1, y: 2 }
+    let s = { ..r, y: 3 }
+    let m = ["a": q.id, "b": s.y]
+    let n: Int = m["a"] ?? 0
+    print(n)
+}
+"#);
+}
+
+#[test]
+fn phase_six_and_a_half_language_errors() {
+    // `Any` and `Rest` belong to the standard library.
+    assert_eq!(
+        error_codes("fn f(x: Any) -> Int {\n    return 1\n}\n"),
+        vec![codes::RESERVED_TYPE]
+    );
+    // A constant cannot be changed, through a method or an assignment.
+    assert_eq!(
+        error_codes("const XS: List<Int> = [1]\nfn main() {\n    XS.push(2)\n}\n"),
+        vec![codes::ASSIGN_TO_IMMUTABLE]
+    );
+    // A spread base must be the type being made.
+    let src = "struct A {\n    x: Int\n}\nstruct B {\n    x: Int\n}\nfn main() {\n    let b = B(x: 1)\n    let a = A(..b)\n}\n";
+    assert_eq!(error_codes(src), vec![codes::TYPE_MISMATCH]);
+    // A record copy names fields its base has.
+    let src = "fn main() {\n    let r = { x: 1 }\n    let s = { ..r, z: 2 }\n}\n";
+    assert_eq!(error_codes(src).len(), 1);
+    // A map's values share one type.
+    let src = "fn main() {\n    let m = [\"a\": 1, \"b\": \"two\"]\n}\n";
+    assert_eq!(error_codes(src), vec![codes::TYPE_MISMATCH]);
+    // `.Variant` needs a known enum.
+    let src = "fn main() {\n    let t = .Plain\n}\n";
+    assert_eq!(error_codes(src).len(), 1);
+}
+
+#[test]
+fn standard_library_internals_are_hidden() {
+    let src = "import sql\nfn main() {\n    let v = sql.__value(1)\n}\n";
+    assert_eq!(error_codes(src), vec![codes::LOCAL_MODULE]);
+    let src = "import ember\nfn f(r: ember.Reply) {}\nfn main() {}\n";
+    assert_eq!(error_codes(src), vec![codes::LOCAL_MODULE]);
+    // The compiler's own declarations, named `__`, may use them.
+    ok("import sql\nfn __glue() {\n    let v = sql.__value(1)\n}\nfn main() {}\n");
+}

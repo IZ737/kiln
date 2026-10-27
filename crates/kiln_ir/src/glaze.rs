@@ -57,9 +57,6 @@ pub struct App<'a> {
     /// Changes whenever the embers' code does, so a page loaded before a
     /// deploy cannot call the new server with the old arguments.
     pub rpc_version: &'a str,
-    /// Whether the program defines `fn rpc_guard(req: web.Request, name:
-    /// String) !`, which every call of a `server fn` passes first.
-    pub rpc_guard: bool,
 }
 
 /// A `server fn`, as its declaration writes it, or another function a
@@ -455,7 +452,7 @@ impl<'a> Gen<'a> {
         }
         for p in props {
             self.text.push_str(", ");
-            self.copy(p.span, false);
+            self.copy_prop(p);
         }
         for slot in &slots {
             self.text.push_str(&format!(
@@ -499,7 +496,7 @@ impl<'a> Gen<'a> {
             if i > 0 {
                 self.text.push_str(", ");
             }
-            self.copy(p.span, false);
+            self.copy_prop(p);
         }
         self.text.push_str(") -> String {\n");
         self.text.push_str("    let __out: List<String> = []\n");
@@ -523,6 +520,22 @@ impl<'a> Gen<'a> {
                 .push_str(")\n    __kiln_hydrate_page(__out.join(\"\"))\n}\n");
         }
         self.segment(start, whole);
+    }
+
+    /// A prop as a parameter. A glaze's `request: web.Request` is the
+    /// request being handled unless the caller passes one.
+    fn copy_prop(&mut self, p: &Param) {
+        self.copy(p.span, false);
+        let ty =
+            p.ty.as_ref()
+                .map(|t| &self.src[t.span.start as usize..t.span.end as usize]);
+        if !self.is_ember
+            && p.name.name == "request"
+            && p.default.is_none()
+            && ty.map(str::trim) == Some("web.Request")
+        {
+            self.text.push_str(" = web.__request()");
+        }
     }
 
     /// The type of a slot's parameter.
@@ -783,7 +796,7 @@ impl<'a> Gen<'a> {
              }\n\
              \nfn __kiln_fire(id: Int, index: Int, kind: String, value: String, checked: Bool, key: String, form: String) {\n\
              \x20   let fields = json.decode<Map<String, String>>(form) catch err { Map() }\n\
-             \x20   let event = ember.Event(kind: kind, value: value, checked: checked, key: key, form: fields)\n\
+             \x20   let event = ember.Event(kind: kind, value: value, checked: checked, key: key, fields: fields)\n\
              \x20   if __KILN_ISLANDS[id] is some(island) {\n\
              \x20       island.fire(index, event)\n\
              \x20   }\n\
@@ -856,11 +869,6 @@ impl<'a> Gen<'a> {
                     }
                 }
             }
-            let guard = if app.rpc_guard {
-                format!("        try rpc_guard(req, {})\n", kiln_string(&f.name))
-            } else {
-                String::new()
-            };
             let read = if fields.is_empty() {
                 String::new()
             } else {
@@ -883,7 +891,7 @@ impl<'a> Gen<'a> {
                 format!("        {call}\n        return web.json({{ ok: true }})\n")
             };
             self.text.push_str(&format!(
-                "    app.post({}, fn(req) {{\n        try __kiln_rpc_check(req)\n{guard}{read}{reply}    }})\n",
+                "    app.post({}, fn(req) {{\n        try __kiln_rpc_check(req)\n{read}{reply}    }})\n",
                 kiln_string(&format!("/_kiln/rpc/{}", f.name)),
             ));
         }

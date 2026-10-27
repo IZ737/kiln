@@ -32,6 +32,7 @@ pub const NO_SEMICOLONS: &str = "E0107";
 pub const WRONG_KEYWORD: &str = "E0108";
 pub const NO_STRICT_EQUALITY: &str = "E0109";
 pub const NO_SYMBOL_LOGIC: &str = "E0110";
+pub const LET_ELSE_MUST_LEAVE: &str = "E0111";
 
 pub const LOCAL_MODULE: &str = "E0230";
 pub const UNDEFINED_NAME: &str = "E0201";
@@ -60,6 +61,7 @@ pub const BROWSER_ONLY: &str = "E0223";
 pub const NOT_SERIALIZABLE: &str = "E0224";
 pub const BAD_MODEL: &str = "E0231";
 pub const BAD_QUERY: &str = "E0232";
+pub const RESERVED_TYPE: &str = "E0233";
 
 pub const UNCLOSED_GLAZE_TAG: &str = "E0301";
 pub const MISMATCHED_CLOSING_TAG: &str = "E0302";
@@ -83,6 +85,13 @@ pub const NO_MAIN: &str = "E0402";
 pub const SERVER_CALL_PLACE: &str = "E0403";
 
 pub static ALL: &[ErrorCode] = &[
+    ErrorCode {
+        code: RESERVED_TYPE,
+        title: "A type only the standard library can use",
+        explanation: "`Any` and `Rest` let the standard library describe functions Kiln's types cannot express yet, such as `json.encode`, which takes a value of any type with a JSON form. A program that used them would turn off type checking, so they are reserved. A function that works on values of any type is generic instead.",
+        wrong: "fn describe(value: Any) -> String {\n    return \"${value}\"\n}",
+        right: "fn describe<T>(value: T) -> String {\n    return \"${value}\"\n}",
+    },
     ErrorCode {
         code: BAD_MODEL,
         title: "Not a model",
@@ -135,7 +144,7 @@ pub static ALL: &[ErrorCode] = &[
     ErrorCode {
         code: UNTERMINATED_STRING,
         title: "unterminated string literal",
-        explanation: "A string literal was opened with `\"` but never closed on the same line. Strings cannot span lines; use `\\n` for a line break.",
+        explanation: "A string literal was opened with `\"` but never closed on the same line. A `\"` string stays on one line; use `\\n` for a line break, or a `\"\"\"` string, whose text starts on the line after its opening quotes and ends before a line holding only the closing `\"\"\"`. That line's indentation is taken off every line, so no line may be indented less.",
         wrong: "let name = \"Jake",
         right: "let name = \"Jake\"",
     },
@@ -236,6 +245,13 @@ pub static ALL: &[ErrorCode] = &[
         explanation: "Logical operators are words: `and`, `or` and `not`. The symbols `&&`, `||` and prefix `!` are not used.",
         wrong: "if a && !b { }",
         right: "if a and not b { }",
+    },
+    ErrorCode {
+        code: LET_ELSE_MUST_LEAVE,
+        title: "the `else` of `let ... else` must leave",
+        explanation: "`let some(x) = value else { ... }` binds `x` for the code after it, so when the value does not match, that code cannot run: the `else` block must end by leaving, with `return`, `throw`, `break`, `continue` or `panic(...)`.",
+        wrong: "let some(user) = found else {\n    print(\"missing\")\n}",
+        right: "let some(user) = found else {\n    return web.not_found()\n}",
     },
     ErrorCode {
         code: UNDEFINED_NAME,

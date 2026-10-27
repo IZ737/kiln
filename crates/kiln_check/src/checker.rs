@@ -106,6 +106,10 @@ pub struct Checker {
     /// Types and functions with ids or names below these come from the
     /// standard library.
     pub(crate) std_adts: usize,
+    /// Whether the declaration being read may use the standard library's
+    /// internals: the library itself, and code the compiler writes, whose
+    /// declarations' names start with `__`.
+    pub(crate) internal: bool,
     /// Whether to record what names refer to, for the language server.
     pub(crate) recording: bool,
     pub(crate) references: Vec<(Span, Ref)>,
@@ -217,6 +221,7 @@ impl Checker {
             expr_types: HashMap::new(),
             binding_types: HashMap::new(),
             std_adts: 0,
+            internal: true,
             recording: false,
             references: Vec::new(),
             models: HashMap::new(),
@@ -328,6 +333,7 @@ impl Checker {
     pub(crate) fn check_consts(&mut self, module: &Module) {
         for item in &module.items {
             if let Item::Const(c) = item {
+                self.internal = self.std_adts == 0 || c.name.name.starts_with("__");
                 self.enter_fn(Ty::Unit, None, None);
                 let ty = match &c.ty {
                     Some(t) => {
@@ -341,6 +347,7 @@ impl Checker {
                 self.consts.insert(c.name.name.clone(), ty);
             }
         }
+        self.internal = true;
     }
 
     /// Constants, function bodies and field defaults.
@@ -349,6 +356,7 @@ impl Checker {
         self.collect_mappings(module);
         self.check_consts(module);
         for item in &module.items {
+            self.internal = self.std_adts == 0 || item_name(item).starts_with("__");
             match item {
                 Item::Fn(f) => self.check_fn(f, None, &[]),
                 Item::Impl(imp) => {
@@ -983,6 +991,9 @@ impl Checker {
                         }
                     }
                 }
+                if let Some(name) = self.const_root(target) {
+                    self.changes_const(&name, target.span);
+                }
                 let mut target_ty = self.infer(target, &Expect::Value(None));
                 // `map[key]` reads a `V?`, but `map[key] = value` stores a `V`.
                 if let ExprKind::Index { expr, .. } = &target.kind {
@@ -1060,6 +1071,51 @@ impl Checker {
     pub(crate) fn check(&mut self, e: &Expr, expected: &Ty) {
         let ty = self.infer(e, &Expect::Value(Some(expected.clone())));
         self.coerce(&ty, expected, e.span);
+    }
+
+    /// The constant an assignment target or receiver is part of, such as
+    /// `LIMITS` in `LIMITS[0]` or `DEFAULTS.page.size`.
+    fn const_root(&self, e: &Expr) -> Option<String> {
+        match &e.kind {
+            // The compiler's own tables (`__` names) are state it manages.
+            ExprKind::Ident(name)
+                if self.local(name).is_none()
+                    && self.consts.contains_key(name)
+                    && !name.starts_with("__") =>
+            {
+                Some(name.clone())
+            }
+            ExprKind::Field { expr, .. } | ExprKind::Index { expr, .. } => self.const_root(expr),
+            _ => None,
+        }
+    }
+
+    /// A constant is the same value everywhere and always: nothing may
+    /// change it, or what is inside it.
+    fn changes_const(&mut self, name: &str, span: Span) {
+        self.error(
+            Diagnostic::error(
+                codes::ASSIGN_TO_IMMUTABLE,
+                format!("cannot change `{name}`: it is a constant, and constants never change"),
+                span,
+            )
+            .with_help(format!(
+                "change a copy instead: `var mine = {name}.slice(0, {name}.len())` for a list, or `Type(..{name})` for a struct"
+            )),
+        );
+    }
+
+    /// The enum a `.Variant` names: the expected type's, through an
+    /// optional.
+    fn expected_enum(&self, expect: &Expect) -> Option<AdtId> {
+        let ty = match self.expected_ty(expect)? {
+            Ty::Opt(inner) => self.resolve(&inner),
+            other => other,
+        };
+        match ty {
+            Ty::Adt(id, _) if matches!(self.adts[id].kind, AdtKind::Enum(_)) => Some(id),
+            _ => None,
+        }
     }
 
     fn expected_ty(&self, expect: &Expect) -> Option<Ty> {
@@ -1159,9 +1215,51 @@ impl Checker {
                 }
                 self.list_of(elem)
             }
+            ExprKind::Map(entries) => {
+                let (key, value) = match self.expected_ty(expect) {
+                    Some(Ty::Adt(id, args)) if id == self.global_types["Map"] => {
+                        (args[0].clone(), args[1].clone())
+                    }
+                    _ => {
+                        let keys = entries
+                            .iter()
+                            .map(|(k, _)| (self.infer(k, &Expect::Value(None)), k.span))
+                            .collect();
+                        let values = entries
+                            .iter()
+                            .map(|(_, v)| (self.infer(v, &Expect::Value(None)), v.span))
+                            .collect();
+                        let key = self.join(keys, &Expect::Value(None));
+                        let value = self.join(values, &Expect::Value(None));
+                        let map = self.global_types["Map"];
+                        return Ty::Adt(map, vec![key, value]);
+                    }
+                };
+                for (k, v) in entries {
+                    self.check(k, &key);
+                    self.check(v, &value);
+                }
+                Ty::Adt(self.global_types["Map"], vec![key, value])
+            }
+            ExprKind::Spread(inner) => {
+                self.error(Diagnostic::error(
+                    codes::BAD_ARGUMENTS,
+                    "`..value` belongs in a struct construction, as in `Post(..post, title: t)`, or first in a record, as in `{ ..r, n: 1 }`",
+                    e.span,
+                ));
+                self.infer(inner, &Expect::Value(None));
+                Ty::Unknown
+            }
+            ExprKind::Record(fields) if fields.first().is_some_and(|f| f.name.name == "..") => {
+                self.infer_record_update(fields, e.span)
+            }
             ExprKind::Record(fields) => {
                 let mut tys = Vec::new();
                 for f in fields {
+                    if f.name.name == ".." {
+                        self.infer(f.value.as_ref().unwrap(), &Expect::Value(None));
+                        continue;
+                    }
                     let ty = match &f.value {
                         Some(v) => self.infer(v, &Expect::Value(None)),
                         None => self.infer_ident(&f.name.name, f.name.span),
@@ -1194,6 +1292,19 @@ impl Checker {
                 ty
             }
             ExprKind::Binary { op, lhs, rhs } => self.infer_binary(*op, lhs, rhs, e.span),
+            // `.Viewer(since: d)` where a `Role` is expected.
+            ExprKind::Call { callee, args, .. }
+                if matches!(callee.kind, ExprKind::FieldShorthand(_))
+                    && self.expected_enum(expect).is_some() =>
+            {
+                let ExprKind::FieldShorthand(name) = &callee.kind else {
+                    unreachable!()
+                };
+                let id = self.expected_enum(expect).unwrap();
+                let ty = self.construct_variant(id, name, args, e.span);
+                self.expr_types.insert(callee.span, ty.clone());
+                ty
+            }
             ExprKind::Call { .. } => {
                 let (ty, throws) = self.infer_call(e);
                 if throws.is_some() {
@@ -1237,6 +1348,10 @@ impl Checker {
                         Ty::Unknown
                     }
                 }
+            }
+            ExprKind::FieldShorthand(name) if self.expected_enum(expect).is_some() => {
+                let id = self.expected_enum(expect).unwrap();
+                self.variant_value(id, name, e.span)
             }
             ExprKind::FieldShorthand(name) => {
                 let Some(Ty::Fn(f)) = self.expected_ty(expect) else {
@@ -1714,6 +1829,24 @@ impl Checker {
         }
     }
 
+    /// Reports a use of the standard library's internals outside it: its
+    /// `__` names, and the `ember` functions and types that generated
+    /// code uses.
+    pub(crate) fn std_internal(&mut self, m: ModId, name: &Ident) {
+        let module = self.modules[m].name.clone();
+        if !self.internal && internal_name(&module, &name.name) {
+            self.internal_error(&format!("{module}.{}", name.name), name.span);
+        }
+    }
+
+    pub(crate) fn internal_error(&mut self, what: &str, span: Span) {
+        self.error(Diagnostic::error(
+            codes::LOCAL_MODULE,
+            format!("`{what}` is internal to the standard library; programs cannot use it"),
+            span,
+        ));
+    }
+
     fn infer_field(&mut self, base: &Expr, name: &Ident, span: Span) -> Ty {
         if self.is_marker(&name.name) {
             self.complete_member(base);
@@ -2036,6 +2169,7 @@ impl Checker {
             }
             if let Some(m) = self.module_named(base) {
                 self.refer(base.span, Ref::Module(m));
+                self.std_internal(m, name);
                 if self.modules[m].fns.contains_key(&name.name) {
                     self.refer(name.span, Ref::ModuleFn(m, name.name.clone()));
                 } else if let Some(&id) = self.modules[m].types.get(&name.name) {
@@ -2043,8 +2177,9 @@ impl Checker {
                 }
                 self.use_module(m, base.span);
                 if self.modules[m].name == "web" && name.name == "render" && self.glazes.is_some() {
-                    let ret = self.modules[m].fns["render"].ret.clone();
-                    self.check_render(args, e.span);
+                    let sig = self.modules[m].fns["render"].clone();
+                    self.check_render(args, &sig.params, e.span);
+                    let ret = sig.ret;
                     return (ret, None);
                 }
                 if let Some(sig) = self.modules[m].fns.get(&name.name).cloned() {
@@ -2112,10 +2247,28 @@ impl Checker {
         // `value.method(...)`
         if let ExprKind::Field { expr: base, name } = &callee.kind {
             let base_ty = self.infer(base, &Expect::Value(None));
+            if let Some(constant) = self.const_root(base) {
+                if let Ty::Adt(id, _) = self.resolve(&base_ty) {
+                    let changes = match self.adts[id].name.as_str() {
+                        "List" => {
+                            ["push", "pop", "insert", "remove_at"].contains(&name.name.as_str())
+                        }
+                        "Map" => ["set", "remove"].contains(&name.name.as_str()),
+                        "Set" => ["add", "remove"].contains(&name.name.as_str()),
+                        _ => false,
+                    };
+                    if changes && id < self.std_adts {
+                        self.changes_const(&constant, callee.span);
+                    }
+                }
+            }
             if let Ty::Adt(id, recv_args) = self.resolve(&base_ty) {
                 let adt = self.adts[id].clone();
                 if let Some(sig) = adt.methods.iter().find(|m| m.name == name.name) {
                     self.refer(name.span, Ref::Method(id, name.name.clone()));
+                    if !self.internal && id < self.std_adts && name.name.starts_with("__") {
+                        self.internal_error(&format!("{}.{}", adt.name, name.name), name.span);
+                    }
                     if !sig.has_self {
                         let call = format!("{}.{}", adt.name, sig.name);
                         self.error(
@@ -2222,12 +2375,46 @@ impl Checker {
             .cloned()
             .zip(type_args.iter().cloned())
             .collect();
+        // `Post(..post, title: t)`: the fields not given come from `post`.
+        let spread = args
+            .iter()
+            .position(|a| a.name.is_none() && matches!(a.value.kind, ExprKind::Spread(_)));
+        let own;
+        let args = match spread {
+            Some(i) => {
+                if let ExprKind::Spread(base) = &args[i].value.kind {
+                    let ty = Ty::Adt(id, type_args.clone());
+                    self.check(base, &ty);
+                    self.expr_types.insert(args[i].value.span, ty);
+                }
+                for extra in args.iter().skip(i + 1) {
+                    if extra.name.is_none() && matches!(extra.value.kind, ExprKind::Spread(_)) {
+                        self.error(Diagnostic::error(
+                            codes::BAD_ARGUMENTS,
+                            "a construction takes one `..value`",
+                            extra.value.span,
+                        ));
+                    }
+                }
+                own = args
+                    .iter()
+                    .enumerate()
+                    .filter(|(j, a)| {
+                        *j != i
+                            && !(a.name.is_none() && matches!(a.value.kind, ExprKind::Spread(_)))
+                    })
+                    .map(|(_, a)| a.clone())
+                    .collect::<Vec<_>>();
+                &own[..]
+            }
+            None => args,
+        };
         let params: Vec<ParamSig> = fields
             .iter()
             .map(|f| ParamSig {
                 name: Some(f.name.clone()),
                 ty: substitute(&f.ty, &map),
-                has_default: f.has_default,
+                has_default: f.has_default || spread.is_some(),
             })
             .collect();
         for arg in args {
@@ -2241,6 +2428,74 @@ impl Checker {
         }
         self.check_args(&params, args, span, &adt.name, None);
         Ty::Adt(id, type_args)
+    }
+
+    /// `{ ..base, name: value }`: the record `base` with some fields
+    /// replaced by values of the same types.
+    fn infer_record_update(&mut self, fields: &[RecordField], span: Span) -> Ty {
+        let Some(ExprKind::Spread(base)) = fields[0].value.as_ref().map(|v| &v.kind) else {
+            return Ty::Unknown;
+        };
+        let base_ty = self.infer(base, &Expect::Value(None));
+        let base_fields = match self.resolve(&base_ty) {
+            Ty::Record(fs) => fs,
+            Ty::Unknown => {
+                for f in &fields[1..] {
+                    if let Some(v) = &f.value {
+                        self.infer(v, &Expect::Value(None));
+                    }
+                }
+                return Ty::Unknown;
+            }
+            other => {
+                let shown = self.show(&other);
+                self.error(Diagnostic::error(
+                    codes::TYPE_MISMATCH,
+                    format!("`{{ ..value }}` copies a record, but this is a `{shown}`; a struct is copied with `{shown}(..value)`"),
+                    base.span,
+                ));
+                return Ty::Unknown;
+            }
+        };
+        for f in &fields[1..] {
+            if f.name.name == ".." {
+                self.error(Diagnostic::error(
+                    codes::BAD_ARGUMENTS,
+                    "a record takes one `..value`, before its fields",
+                    f.name.span,
+                ));
+                continue;
+            }
+            match base_fields.iter().find(|(n, _)| *n == f.name.name) {
+                Some((_, ty)) => {
+                    let ty = ty.clone();
+                    match &f.value {
+                        Some(v) => self.check(v, &ty),
+                        None => {
+                            let t = self.infer_ident(&f.name.name, f.name.span);
+                            self.coerce(&t, &ty, f.name.span);
+                        }
+                    }
+                }
+                None => {
+                    let names: Vec<&str> = base_fields.iter().map(|(n, _)| n.as_str()).collect();
+                    let mut diag = Diagnostic::error(
+                        codes::NO_SUCH_MEMBER,
+                        format!("the record has no field `{}` to replace", f.name.name),
+                        f.name.span,
+                    );
+                    if let Some(s) = similar(&f.name.name, names) {
+                        diag = diag.with_suggestion(format!("did you mean `{s}`?"), f.name.span, s);
+                    }
+                    self.error(diag);
+                    if let Some(v) = &f.value {
+                        self.infer(v, &Expect::Value(None));
+                    }
+                }
+            }
+        }
+        let _ = span;
+        Ty::Record(base_fields)
     }
 
     /// `DbError.Timeout(after: 5s)`
@@ -2871,4 +3126,26 @@ impl Default for Checker {
     fn default() -> Self {
         Self::new()
     }
+}
+
+/// The name a declaration declares, or "" for an import.
+pub(crate) fn item_name(item: &Item) -> &str {
+    match item {
+        Item::Fn(f) => &f.name.name,
+        Item::Const(c) => &c.name.name,
+        Item::Struct(s) => &s.name.name,
+        Item::Enum(e) => &e.name.name,
+        Item::Impl(imp) => match &imp.target.kind {
+            TypeKind::Named { path, .. } => path.last().map_or("", |n| n.name.as_str()),
+            _ => "",
+        },
+        Item::Import(_) => "",
+    }
+}
+
+/// Whether `module.name` is internal to the standard library.
+pub fn internal_name(module: &str, name: &str) -> bool {
+    STD_MODULES.iter().any(|(m, _)| *m == module)
+        && (name.starts_with("__")
+            || (module == "ember" && matches!(name, "call" | "npm" | "Island" | "Reply")))
 }

@@ -18,9 +18,9 @@ fn main() {
     print(flag(args, "--name") ?? "nobody")
     print(flag(args, "--age") ?? "unknown")
 
-    print(os.env("PATH") is some(_))
-    print(os.env("KILN_SURELY_UNSET_VARIABLE"))
-    print(os.env("KILN_SURELY_UNSET_VARIABLE") ?? "default")
+    print(env("PATH") is some(_))
+    print(env("KILN_SURELY_UNSET_VARIABLE"))
+    print(env("KILN_SURELY_UNSET_VARIABLE") ?? "default")
 
     print(os.cwd().len() > 0)
     print(os.temp_dir().len() > 0)
