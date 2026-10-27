@@ -51,6 +51,7 @@ These are decisions reached in the design discussion, not claims of implemented 
 | Loader arguments | **Optional `req: web.Request` first**, followed by **typed path parameters matched by name**; request-free loaders need not mention `req` |
 | Glaze prop assembly | **Automatically combine typed URL path parameters with the `load` return record**; duplicate field names are a compile-time error |
 | Parameter typing | **Infer `[id]` from the Glaze, `load`, or route handler declarations**, defaulting to `String` when no explicit type is supplied; conflicting declarations are compile-time errors |
+| Loader failures | **Reuse ordinary Kiln error propagation**: `web.error(status, message)` for intentional HTTP failures, existing 500 handling for unexpected errors, and `app.on_error` for custom responses; **no implicit `none` → 404** |
 
 The mount API, URL filename conventions and exact handler signatures below are **provisional** until decided. The **`route.kiln`** file name and its use for the `load`/HTTP-method exports are agreed.
 
@@ -140,7 +141,7 @@ my-app/
 
 **The convention is agreed:** route-specific logic lives in a file named **`route.kiln`** inside the relevant route directory. That file may export **`load`** for typed page data or ordinary HTTP-method functions such as **`get`**, **`post`**, **`put`**, **`patch`** and **`delete`** for direct request/response handling. 
 
-The **filename, general roles, `load`/`get` exclusivity, and optional request/typed path-parameter argument model** are decided; detailed return contracts, exports/visibility, error behaviour and edge cases remain open. Examples below are illustrative Kiln-like pseudocode and **are not currently implemented**.
+The **filename, general roles, `load`/`get` exclusivity, optional request/typed path-parameter argument model, and standard Kiln error propagation** are decided; detailed return contracts, exports/visibility and other edge cases remain open. Examples below are illustrative Kiln-like pseudocode and **are not currently implemented**.
 
 ### Level 1 — just a Glaze
 
@@ -215,7 +216,7 @@ pub fn load(req: web.Request, slug: String) -> { post: Post } ! {
 
 A valid path parameter must match a named segment in the discovered URL pattern and have a compatible type with Kiln's existing typed route rules. Unsupported types, unknown names, duplicate parameter declarations, and a misplaced request parameter must fail with clear source-linked diagnostics. The **special request argument is explicitly opt-in**; it is not made available implicitly through magic globals. **The type is inferred from declarations in the Glaze, loader or route handler; otherwise it defaults to `String`.** Whether every URL parameter must be consumed by the loader/handler remains under design.
 
-The presence of `req` does **not** imply a page is exportable as a static file: reuse existing Phase 6.6 analysis/checks of request-dependent behaviour. Conversely, merely accepting an optional `req` does not itself define a new static-export policy. Loader failure/404 behaviour remains open.
+The presence of `req` does **not** imply a page is exportable as a static file: reuse existing Phase 6.6 analysis/checks of request-dependent behaviour. Conversely, merely accepting an optional `req` does not itself define a new static-export policy. Loader error handling is defined in §6 and uses existing Kiln semantics.
 
 A loader is **optional**, not required for a parameterised route whose Glaze can render from URL props alone. Prefer no implicit database calls, request mutation or hidden runtime conventions.
 
@@ -239,13 +240,41 @@ This handler uses the existing request, typed path parameters, response types, h
 
 ## 6. Parameters, props, precedence and errors — remaining design work
 
-The **three levels above are agreed**; their exact contract needs decisions:
+### Loader errors — decided (Option A, 2026-10-27)
+
+**A loader uses the same error mechanism as any ordinary Kiln function called by a route handler.** No filesystem-routing-specific result/error protocol is introduced.
+
+- A loader can use `try`, `throw` and the usual fallible function semantics. An intentional HTTP failure uses **`web.error(status, message)`**. For example, `throw web.error(404, "Post not found")` produces the existing 404 handling, and `web.error(403, "Forbidden")` uses the existing forbidden response.
+- **Unexpected errors** follow the ordinary server error path (normally 500, with internal error details not exposed). `app.on_error` applies to loader-generated responses just as it does for explicitly registered routes; other existing error middleware and hooks remain in effect.
+- **Returning `none` does not implicitly produce HTTP 404.** Kiln must not silently treat optional loader results as missing pages. The loader should deliberately fail with `web.error(404, ...)` or use a full `get` handler for custom response construction.
+- Loader success returns a typed record to be merged with route parameters for Glaze rendering. Whether the compiler should accept or reject an optional *successful* record return type is a separate typing decision; it must never silently implement a 404 conversion.
+- Preserve current response formatting and content negotiation for errors; do not create parallel Glaze/file-route errors. Static export continues to obey existing Phase 6.6 error/output checks, so exporting an error page is not silently considered a successful route.
+
+**Conceptual example (error type/signature spelling to be verified against current language rules):**
+
+```kiln
+import web, posts
+
+pub fn load(slug: String) -> { post: posts.Post } ! {
+    let post = try posts.find(slug)
+    if not post.is_some() {
+        throw web.error(404, "Post not found")
+    }
+    return { post: post.unwrap() }
+}
+```
+
+The main contract is the error semantics, not the particular lookup API or example's optional-value syntax.
+
+### Remaining contracts
+
+The **three levels above are agreed**; their other exact contracts need decisions:
 
 - **Route parameters — DECIDED:** the filename supplies **only a parameter name**, e.g. `[id]`; the compiler **infers its type** from matching declarations in the Glaze, `load` or full route handler. If no declaration supplies an explicit type, the parameter is a **`String`**. If two or more declarations disagree (e.g. `id: Int` in a loader and `id: String` in the Glaze), this is a **compile-time error**, not implicit coercion or precedence. Keep existing route matching/conversion rules for supported types (`Int`, `Float`, `Bool`, `String`). `load` still binds by parameter name and accepts optional first `req: web.Request`. Whether unused path parameters must appear in a handler signature remains open; all explicit declarations must agree.
 - **Prop combination — DECIDED:** the Glaze receives the **union of URL parameter props and the loader-returned typed record**. Duplicate names across those sources are **compile-time errors**, even for equal values/types. Missing required props are errors and existing Glaze defaults apply when a prop is not supplied. Still decide whether unused/extra loader fields are allowed and what loader return types qualify.
 - **Handler discovery:** **`route.kiln` in the route directory is settled.** Determine its visibility/export rules, signature typing, how it participates in ordinary folder-module imports/privacy and which declarations may be used as route handlers.
 - **`load` vs `get` — DECIDED:** they are **mutually exclusive per route** and must trigger a **compile-time error** when both are defined. `load` may coexist with non-GET method exports (`post`, `put`, `patch`, `delete`). Do not invent fallback or invocation ordering between `load` and `get`.
-- **Failure handling:** map loader errors to meaningful HTTP status/redirect/error responses without concealing errors or weakening server-side auth; `not found` must not become a successful empty HTML page.
+- **Failure handling — DECIDED:** reuse `web.error(status, message)`, ordinary `try`/`throw`, existing unexpected-error (500) handling, and `app.on_error`; **do not** convert `none` to 404 automatically. Authentication and authorization failures must be propagated through this same path. Exact examples and language type signatures still require implementation-time validation.
 - **HTML and non-HTML:** only a route designed for page rendering should receive automatic Glaze behaviour. A full handler can return arbitrary `web.Response`.
 - **Upgrade path:** moving `blog/[slug].glaze` to `blog/[slug]/index.glaze` plus `route.kiln` should preserve `/blog/{slug}`; defining both forms simultaneously is a deterministic collision error.
 - **Testing:** include simple direct parameter props, typed loader props, full handlers, invalid prop/type contracts, access control, errors, cross-folder imports and consistent static export behaviour.
@@ -300,6 +329,8 @@ If adopted as **Phase 6.7**, a reviewable breakdown might be:
 - [ ] Parameter routes and complex handlers use the same type-checked request/response behaviour as the explicit router.
 - [ ] A handler-free dynamic Glaze receives declared URL parameters with type checking; unexpected/missing required props produce clear diagnostics.
 - [ ] A typed optional loader supplies a record of Glaze props, automatically rendered with consistent error handling.
+- [ ] Loader `throw web.error(404, ...)` and other intentional statuses use existing HTTP error handling and `app.on_error`; unexpected errors use existing safe 500 handling.
+- [ ] An optional/absent loader result is not silently converted to a 404 or an empty page; no routing-specific error protocol is introduced.
 - [ ] The generated Glaze receives the type-checked combination of URL path props and loader result fields; the loader need not return an already-supplied URL parameter.
 - [ ] A duplicate prop name between a URL segment and loader result causes a source-linked compile error, never silent overriding; missing required Glaze props also fail clearly.
 - [ ] Loader functions work without `req` when only typed path data is needed, and with an explicitly declared first `req: web.Request` when request context is required.
@@ -327,9 +358,10 @@ If adopted as **Phase 6.7**, a reviewable breakdown might be:
 - **Loader inputs (Option A):** loaders may optionally declare `req: web.Request` **first**, followed by typed URL path parameters bound by name. Request-free loaders remain concise.
 - **Glaze props (Option A):** combine typed URL route parameters with the typed record returned by `load`; duplicate names cause compile-time errors and required Glaze props are type-checked against that combination.
 - **Parameter typing (Option A):** `[id]` is only a name; infer the route parameter type from matching Glaze, `load` or handler declarations, defaulting to `String` without an annotation. Conflicting declarations are compiler errors. Do not encode types in route filenames.
+- **Loader error handling (Option A):** use existing Kiln `try`/`throw`, `web.error`, unexpected-error 500 and `app.on_error` behaviour. No special `none` → 404 conversion.
 
 **Needs an explicit decision before locking the specification:**
-1. **Remaining loader contract:** admissible return record shapes, unused/extra field policy, unused parameter rules and error/404 semantics (§§5–6). Named parameter binding, optional first `req`, automatic props merging, duplicate-name errors and type inference from declarations/default `String` are settled.
+1. **Remaining loader contract:** admissible successful return record shapes, unused/extra field policy and unused parameter rules (§§5–6). Named parameter binding, optional first `req`, automatic props merging, duplicate-name errors, type inference/default `String` and ordinary error/404 propagation are settled.
 2. **`route.kiln` contracts:** exact function signatures, module boundaries, exports and how flat Glaze files graduate to route directories (§5). The filename is settled.
 3. **Dynamic static export:** what supplies `.static(...)` values and allows `.dynamic()` for filesystem routes? (§8)
 4. **Route file naming:** `[slug]` spelling, typed parameters, extensions and optional `.ember` page files? (§4)
