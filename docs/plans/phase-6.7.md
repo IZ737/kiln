@@ -43,7 +43,7 @@ These are decisions reached in the design discussion, not claims of implemented 
 | Override | The mount may specify an **`ignore` list**, replacing the default exclusions with developer-selected directory names |
 | Reuse | Excluded files are still importable/compilable; exclusion only changes route discovery |
 | Scope | The `_components` convention is specific to filesystem routing; it is **not** a reserved Kiln folder elsewhere |
-| Explicit routes | Coexist with discovered routes; preserve the current router's registration-order behaviour |
+| Explicit routes | **Registration order determines precedence** between code-defined and filesystem routes; the first matching route wins regardless of origin. Shadowed-route diagnostics are advisory, not a new override rule |
 | Shared infrastructure | Reuse current typed handlers, Glazes, Embers, hooks, SSG and error reporting |
 | Page data model | **Three levels:** automatic Glaze with typed URL props → optional typed `load` returning page props → ordinary full `get` handler |
 | GET ownership | **`load` and `get` are mutually exclusive within one route**; `post`, `put`, `patch` and `delete` may coexist with `load` |
@@ -133,7 +133,11 @@ my-app/
 
 - Reject duplicate method/URL mappings discovered in the same mount, including file-versus-directory equivalents.
 - Within one mount, a literal path (e.g. `/blog/new`) must take precedence over the corresponding parameterised path (e.g. `/blog/{slug}`). Specify the ordering during route-table generation.
-- The existing router dispatches **the first matching route**. Do not silently change global precedence for applications using explicit `app.get` etc. A mount occupies its position in explicit registration order; interactions between multiple mounts need precise tests and documented rules.
+- **Agreed (2026-10-27): explicit versus filesystem routes follow registration order.** The existing router dispatches **the first matching route**, regardless of which registration mechanism produced it. An `app.file_routes(...)` mount expands to its discovered route registrations **at that call's position** in the application's route-registration sequence. A preceding `app.get("/about", ...)` wins over a later `pages/about.glaze`; putting the mount first reverses the precedence. Do **not** give code-defined routes implicit priority or globally reorder mounts.
+- **Method-specific matching:** a preceding `app.post("/about", ...)` must not suppress a later filesystem GET for `/about`; the first *matching method and path* wins according to the existing router semantics. Likewise, route parameters and methods retain existing type/matching rules.
+- **Within one filesystem mount**, keep the separate already documented rules: true duplicate method/URL claims (e.g. `about.glaze` vs `about/index.glaze`) are **compile-time errors**, and generated literal routes precede matching parameter routes. This internal deterministic ordering does not override the relative placement of the mount against explicit route registrations.
+- If an explicit route shadows a discovered route, or vice versa, offer a **useful non-blocking diagnostic** (warning/editor hint) with both source locations when statically detectable. Shadowing may be intentional; do not reject it as a duplicate error across the explicit/file boundary. Explain which route wins based on registration order. Whether universally unreachable paths are an error remains out of scope pending a general route-analysis policy.
+- **Still open:** whether two *separate* filesystem mounts with overlapping method/URL patterns behave like explicit/mount shadowing or should be rejected as a configuration mistake. Resolve separately; do not silently equate this with duplicates *inside* one mount.
 - Preserve URL percent-decoding, typed route parameter matching, HEAD→GET behaviour, 404/405 responses, `app.before` hooks, and server-side security rules.
 - Reject path traversal, unexpected symlinks, case-folded collisions and invalid parameter names. Treat case sensitivity consistently across supported operating systems.
 - Consider overlap/conflicts with reserved Kiln endpoints such as `/_kiln/rpc` during implementation review.
@@ -516,6 +520,9 @@ If adopted as **Phase 6.7**, a reviewable breakdown might be:
 - [ ] A mount's `at:` prefix works without unexpectedly altering explicit routes or module paths.
 - [ ] Nested `_components` directories are excluded by default; `ignore:` changes the exclusion convention per mount; excluded components are still importable.
 - [ ] Collision and malformed path cases produce precise, source-linked diagnostics on Linux and Windows.
+- [ ] For overlapping explicit `app.get` and discovered GET routes, registration order chooses the first matching route; swapping call order swaps the winner, without inventing explicit-route priority.
+- [ ] Shadowing between explicit and discovered routes can be diagnosed non-fatally with source information, while duplicate claims within a single mount remain compile-time errors.
+- [ ] Different HTTP methods at the same path coexist, and internal literal-before-parameter route sorting does not change a mount's relative position among explicit registrations.
 - [ ] Parameter routes and complex handlers use the same type-checked request/response behaviour as the explicit router.
 - [ ] A handler-free dynamic Glaze receives declared URL parameters with type checking; unexpected/missing required props produce clear diagnostics.
 - [ ] A typed optional loader supplies a record of Glaze props, automatically rendered with consistent error handling.
@@ -570,13 +577,14 @@ If adopted as **Phase 6.7**, a reviewable breakdown might be:
 - **Route-local refresh (Option A):** support an optional `static_refresh` duration in `route.kiln` with the same server-mode first-request-after-expiry re-render semantics as `.static(refresh: ...)`. For a route with **no URL parameters**, `static_refresh` alone triggers startup pre-rendering: no `static_params()` or extra `static` declaration needed. A static export is still a snapshot; refresh does not override safe-cache restrictions.
 - **API-only routes (Option A):** a directory with `route.kiln` alone can register typed HTTP methods without `index.glaze`. A `load` export requires a sibling `index.glaze` and is an error without one. A view plus only non-GET exports retains normal implicit GET rendering; JSON APIs are subject to existing static-export restrictions.
 - **Standalone Ember pages (Option A):** `.ember` files never automatically register filesystem routes. A `.glaze` page embeds an Ember for interaction; API-only `route.kiln` methods remain independently routable.
+- **Explicit vs filesystem route precedence (Option A):** preserve the existing **first matching route wins** rule using registration order. `app.file_routes` occupies its call position; earlier explicit routes shadow matching filesystem routes and earlier filesystem routes can shadow later explicit routes. Provide nonfatal shadowing diagnostics where detectable. Do not alter the separate duplicate-error rule inside a single mount.
 
 **Needs an explicit decision before locking the specification:**
 1. **Remaining loader contract:** admissible successful return record shapes, unused/extra field policy and unused parameter rules (§§5–6). Named parameter binding, optional first `req`, automatic props merging, duplicate-name errors, type inference/default `String` and ordinary error/404 propagation are settled.
 2. **`route.kiln` contracts:** exact function signatures, module boundaries, exports and how flat Glaze files graduate to route directories (§5). The filename and permission for handler-only API routes are settled.
 3. **SSG refinements:** exact export/marker signatures, contradictory declarations and unusual handler results (§8). Route-local enumeration, server-startup pre-render, `static_refresh` alone on zero-parameter routes and rejection of request-dependent cached output (including explicit `.static(...)`) are settled.
 4. **Route file naming:** confirm `[slug]` spelling, permitted filename/path characters, static-file extensions and other edge cases (§4). Standalone `.ember` page files are explicitly excluded.
-5. **Collision policy:** explicit route versus filesystem mount interactions, duplicate mount URL scope, and reserved paths? (§4)
+5. **Remaining collision policy:** collisions *between two separate filesystem mounts*, route parameter overlaps, and reserved paths (§4). Explicit-versus-filesystem precedence by call registration order is settled.
 6. **Ignore API details:** confirm `ignore` name and replacement rather than additive semantics; currently recorded as proposed in §3.
 7. **Roadmap:** candidate Phase 6.7 before 1.0, or a post-1.0 compatible addition? (§10)
 
