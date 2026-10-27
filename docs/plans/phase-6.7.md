@@ -40,7 +40,7 @@ These are decisions reached in the design discussion, not claims of implemented 
 | Route discovery | **Build-time/project-aware**, not per-request directory scanning |
 | Mounting | Explicit mount such as `app.file_routes("pages")`; optional URL prefix per mount |
 | Default excluded directory | Directories named **`_components`** are excluded from route discovery at **any depth** under a mounted directory |
-| Override | The mount may specify an **`ignore` list**, replacing the default exclusions with developer-selected directory names |
+| Override | **Option A: mount-specific `ignore` replaces default exclusions** rather than extending them; `ignore: []` disables all directory exclusions and `_components` is no longer special unless listed explicitly |
 | Reuse | Excluded files are still importable/compilable; exclusion only changes route discovery |
 | Scope | The `_components` convention is specific to filesystem routing; it is **not** a reserved Kiln folder elsewhere |
 | Explicit routes | **Registration order determines precedence** between code-defined and filesystem routes; the first matching route wins regardless of origin. Shadowed-route diagnostics are advisory, not a new override rule |
@@ -96,14 +96,15 @@ Mounting another directory under a URL prefix, and choosing another exclusion co
 app.file_routes("admin/pages", at: "/admin", ignore: ["components", "partials"])
 ```
 
-**Proposed semantics**
+**Mount semantics** (the `ignore` replacement behaviour is agreed; other mount API details remain provisional)
 
 - The directory operand is resolved against the **Kiln project root**, not process working directory. It must remain within the allowed project/workspace boundary.
 - A mount specifies where routes come from and (optionally) the URL path prefix; a mount does **not** change Kiln's module/import rules.
 - Both source directory and route prefix should be statically knowable to the compiler. Precise syntax/validation of constant expressions is TBD.
 - **Default:** exclude every directory named `_components`, recursively. No need to write an option for normal usage.
-- **Override:** `ignore: ["components", "partials"]` replaces the default list, so `_components` is no longer excluded unless included explicitly. `ignore: []` opts out of this exclusion rule. Names are **directory basenames**, not globs or arbitrary path expressions, for the first version.
-- Ignore rules apply per mount, not globally. Nested files in an ignored directory do not claim URLs. The compiler/LSP must still be able to resolve and import those files when referenced.
+- **Override — DECIDED (Option A, 2026-10-27):** specifying `ignore` **replaces** the default `_components` exclusion list; it never implicitly adds to it. `app.file_routes("pages", ignore: ["partials"])` excludes `partials` directories recursively but does **not** exclude `_components`, which can now contain discoverable pages. To keep both exclusions, list both explicitly: `ignore: ["_components", "partials"]`. `ignore: []` means **no directory-basename exclusions at all**. With no `ignore` argument, `_components` remains excluded by default. The exact spelling is `ignore` as shown here.
+- The candidate initial matching scope is **directory basenames**, not globs or arbitrary path expressions; whether glob patterns should be supported is a **separate open design decision**. Whichever matching syntax is chosen, the replacement-vs-additive rule above is settled.
+- Ignore rules apply **per mount**, not globally. Ignoring a directory skips route discovery recursively under it, but does not suppress normal compilation/import of its files if referenced. A second mount may apply a different `ignore` list to the same source folder. The compiler/LSP must still be able to resolve and import those files when referenced. Do not treat `_components` as a reserved keyword or force its exclusion if a mount's explicit list omits it.
 - **Across separate mounts — agreed:** overlapping registrations use normal **first matching route wins** behaviour in mount-call registration order. They are allowed with non-blocking source-linked warnings when detectable; they are **not** compilation errors simply because two mounts map to the same URL. True duplicate routes *within one mount* remain errors. Distinct URL-prefix mounts and methods can coexist normally. Still reject malformed mount paths, unsafe source traversal and invalid configuration; reserved endpoint interactions require an explicit policy.
 
 ## 4. File-first layout: agreed dynamic syntax; other naming rules provisional
@@ -668,7 +669,8 @@ If adopted as **Phase 6.7**, a reviewable breakdown might be:
 - [ ] Ordinary applications without `file_routes` retain their current behaviour.
 - [ ] Adding `app.file_routes("pages")` makes `pages/index.glaze` available at `/` and `pages/about.glaze` at `/about`.
 - [ ] A mount's `at:` prefix works without unexpectedly altering explicit routes or module paths.
-- [ ] Nested `_components` directories are excluded by default; `ignore:` changes the exclusion convention per mount; excluded components are still importable.
+- [ ] Nested `_components` directories are excluded by default; **`ignore:` replaces** the exclusion list for its mount rather than extending it. `ignore: ["partials"]` makes `_components` discoverable, `ignore: ["_components", "partials"]` excludes both, and `ignore: []` excludes no directories by name; ignored components remain importable.
+- [ ] Ignore lists apply recursively and independently to each filesystem mount, without changing ordinary source imports or silently suppressing diagnostics for imported files.
 - [ ] Collision and malformed path cases produce precise, source-linked diagnostics on Linux and Windows.
 - [ ] For overlapping explicit `app.get` and discovered GET routes, registration order chooses the first matching route; swapping call order swaps the winner, without inventing explicit-route priority.
 - [ ] Shadowing between explicit and discovered routes can be diagnosed non-fatally with source information, while duplicate claims within a single mount remain compile-time errors.
@@ -727,7 +729,7 @@ If adopted as **Phase 6.7**, a reviewable breakdown might be:
 **Settled in conversation, 2026-10-27:**
 - Opt-in routing from a directory with conventional file-based pages, with complex routes able to use directories.
 - Coexistence with explicit `app.get` routing rather than replacing it.
-- Default `_components` exclusion, with mount-specific configurable exclusions.
+- Default recursive `_components` exclusion; **custom mount-specific `ignore` lists replace the default exclusions** (Option A), and `ignore: []` disables directory-name exclusions entirely. Ignored files remain importable, and `_components` is not intrinsically reserved.
 - Project-root aliases are a separate general import feature (see #76), and `_components` remains the routing convention by default.
 - **Three-level progressive routing**: simple Glaze page with automatic typed URL props; Glaze plus optional typed `load` for data; or a full ordinary route handler for control. Exact signatures remain under design.
 - **Complex route convention:** route-specific functions belong in a file named **`route.kiln`** inside the route directory; it may export `load` or an ordinary `get` handler, plus other HTTP-method functions including `post`, `put`, `patch` and `delete`. Exact return/error contracts are still under design.
@@ -760,7 +762,7 @@ If adopted as **Phase 6.7**, a reviewable breakdown might be:
 3. **SSG refinements:** exact export/marker signatures, enumeration failures and unusual handler results (§8). Route-local enumeration **without requiring `load` or `get` when an implicit Glaze GET exists**, server-startup pre-render, `static_refresh` alone on zero-parameter routes, contradictory declaration errors and rejection of request-dependent cached output (including explicit `.static(...)`) are settled.
 4. **Remaining route file naming:** filename/path character restrictions, handling reserved names, static-file extensions, catch-all or optional patterns and other edge cases (§4). Square-bracket `[name]` dynamic segments are now settled; standalone `.ember` pages are excluded.
 5. **Remaining collision policy:** partial overlaps of dynamic parameter patterns and reserved paths (§4). Registration-order precedence is settled for both explicit/file and file/file cross-mount overlaps; true duplicate claims inside one mount remain errors.
-6. **Ignore API details:** confirm `ignore` name and replacement rather than additive semantics; currently recorded as proposed in §3.
+6. **Remaining ignore API details:** whether directory-basename matching suffices or to support globs/patterns, plus validation of invalid entries (§3). The `ignore` option name, per-mount scope, recursive exclusion and **replacement (not additive)** behaviour, including `ignore: []`, are settled.
 7. **Roadmap:** candidate Phase 6.7 before 1.0, or a post-1.0 compatible addition? (§10)
 
 Keep this document updated as each decision is made, with changes in this draft PR until the spec is ready to merge.
