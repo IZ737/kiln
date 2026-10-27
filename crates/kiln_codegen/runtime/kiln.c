@@ -2529,6 +2529,7 @@ K_API void k_web_listen(void *app, kstr *address) {
     if (family == AF_INET6) host[hn - 1] = ']';
     const char *shown = hn == 0 || strcmp(host, "0.0.0.0") == 0 ? "localhost" : host;
     fprintf(stderr, "info listening on http://%s:%d\n", shown, bound);
+    fflush(stderr);
     /* This task accepts connections and starts a task for each. */
     k_task_init();
     k_sock_nonblock(fd);

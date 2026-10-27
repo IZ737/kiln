@@ -265,6 +265,9 @@ int main(int argc, char **argv) {
     _setmode(_fileno(stdin), _O_BINARY);
     _setmode(_fileno(stdout), _O_BINARY);
     _setmode(_fileno(stderr), _O_BINARY);
+    /* Windows buffers stderr when it is a pipe; logs such as the server's
+     * "listening" line must arrive when they are written, as elsewhere. */
+    setvbuf(stderr, NULL, _IONBF, 0);
     SetConsoleOutputCP(CP_UTF8);
 #else
     /* The collector would read /proc to find the stack, which a minimal
