@@ -191,7 +191,10 @@ batched updates, request-isolated SSR state, optional scoped overrides and
 opt-in client navigation that retains stores. A full reload resets state
 unless persistence is explicitly requested. These store capabilities are
 **planned**, not implemented in the current component-local `{% state %}`
-API. See [the implementation plan](plans/phase-6.5.1.md).
+API. **`{% state %}` remains the explicit local reactive-state declaration**;
+it will not be replaced by `{% var %}`, since readers should be able to
+recognize component state at a glance. See [the implementation
+plan](plans/phase-6.5.1.md).
 
 The key promise is that **a Kiln server function and the UI calling it share
 one type contract**, without hand-authoring route wrappers, fetch boilerplate,
