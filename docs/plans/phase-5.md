@@ -442,7 +442,9 @@ Never equate passing tests with a guarantee of no bugs; the suite is an increasi
 
 - **Earlier prerequisites:** Phase 4 provides Embers/WasmGC and typed RPC; Phase 4.1 explicit `.ember` files; **Phase 4.2 local folder modules and an optional minimal `kiln.toml`**. Phase 5 adds durable data and authenticated authorization.
 - **Phase 6:** Extended manifest dependency fields and `kiln.lock`, Wares and registry, official `kiln/ui` component Ware, global cache, formatter/hot reload, public integrated `kiln test` runner and broader agent tooling.
-- **Phase 7:** One-command deploy, advanced observability/optimization, SSG, stability commitments, broad cross-architecture compiler/runtime specialization.
+- **Phase 6.6:** Static site generation (`kiln fire --static`).
+- **Phase 7:** Advanced observability/optimization, stable 1.0 release builds and compatibility commitments.
+- **Phase 8:** One-command deploy/release automation and integration with existing infrastructure.
 - **Separate opt-in extension work:** OIDC/OAuth 2 providers, JWT/API token issuance, WebAuthn/passkeys/MFA, distributed rate limiting, streaming cloud uploads, cross-region migrations and advanced enterprise DB features. Keep extension points; **do not claim any of these exists until tested and documented**.
 - **Non-goals:** Inventing an ORM-only SQL dialect; implicit database queries when reading a normal field; auto-generating production migrations at startup; storing passwords or sessions insecurely to simplify demos; forcing one canonical user schema; enforcing Wares adoption; inventing a second template language for admin.
 
