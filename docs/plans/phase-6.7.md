@@ -65,6 +65,7 @@ These are decisions reached in the design discussion, not claims of implemented 
 | Pre-rendering safety | **Reject routes whose cached response depends on request-specific data** (auth/session, cookies, arbitrary headers/query/body); apply consistently to filesystem `static_params()` and explicit `.static(...)` routes |
 | Server-mode cache refresh | **Opt-in route-local `static_refresh` interval** in `route.kiln`, equivalent to explicit `.static(refresh: ...)`; never relax safe-pre-rendering checks |
 | Zero-parameter refresh | **`static_refresh` alone opts a parameter-free route into server startup pre-rendering and interval refresh**; no `static = true` or `static_params()` required |
+| Dynamic-only route scope | **`pub const dynamic = true` is valid on parameter-free and parameterised routes alike**, excluding the route from `kiln fire --static` while keeping server-mode routing; cannot combine with `static_params()` or `static_refresh` |
 | API-only routes | **`route.kiln` may define HTTP methods without any `index.glaze`**; `load` requires a Glaze to render and is invalid without one |
 | Routable page source | **Only `.glaze` files are automatically discovered as pages; `.ember` files do not independently claim URLs**. Embed Embers in a Glaze for interactive pages. Full HTTP handlers can still provide routes without a Glaze |
 
@@ -578,23 +579,34 @@ A compiler diagnostic should point at the conflicting `static_params()` declarat
 
 **A route originally authored as a flat `[slug].glaze` can be moved to `[slug]/index.glaze` plus `route.kiln` without changing the URL**, when it needs `static_params()` or other route-local logic.
 
-### Route-local opt-out: `dynamic`
+### Route-local opt-out: `dynamic` — Option A agreed (2026-10-27)
 
-A dynamic route that should **not** be included in `kiln fire --static` can opt out in `route.kiln`:
+**Decision:** A dynamic route that should **not** be included in `kiln fire --static` may opt out in `route.kiln` **regardless of whether its URL has parameters**. Personalised/authenticated pages commonly live at fixed paths such as `/dashboard` or `/account`; no artificial path parameter or separate exclusion mechanism is required.
+
+```text
+pages/
+  dashboard/
+    index.glaze
+    route.kiln
+```
+
+For example, a parameter-free authenticated `/dashboard` remains request-rendered in server mode but is excluded from static export by this declaration:
 
 ```kiln
 // Conceptual marker; final spelling and validation pending.
 pub const dynamic = true
 ```
 
-The semantics are the filesystem-route equivalent of `web.Route.dynamic()`: a static-only build skips this route rather than generating an invalid page; the route still runs normally when the server is running.
+The semantics are the filesystem-route equivalent of `web.Route.dynamic()`: a static-only build skips this route rather than generating an invalid page; the route still runs normally when the server is running. **`dynamic = true` is an explicit opt-out from static export, not a request to force additional caching or a different server dispatch mechanism.** It applies equally to a parameter-free Glaze/loader page, a parameterised page, or a full-handler GET endpoint intended to remain server-only. No HTML representation is generated during static export for a dynamic-only route; deployment of that endpoint requires a running server.
+
+**Contradictions:** a route declaring `dynamic = true` may **not** also declare `static_params()` or `static_refresh`, since the former is an export/pre-render enumeration and the latter enables server-mode shared pre-rendering (even for zero-parameter pages). Report a clear source-linked compiler error rather than silently prioritising one setting. Request-specific/personalised content is never made eligible for shared pre-rendering by an opt-out marker. `dynamic` may appear in a `route.kiln` containing no exported loader/GET handler when its sibling `index.glaze` defines the implicit GET.
 
 **Decision:** `static_params()` and a `dynamic` marker live in **`route.kiln`**, not on a mount-specific `.route("/path")` chain in `main.kiln`. The example names are the working convention, subject to a final syntax check. Avoid requiring dynamic metadata for ordinary static pages.
 
 ### Compile-time validation and Phase 6.6 behaviour
 
 - If a parameterised filesystem GET route has **neither** a finite `static_params()` enumeration nor a dynamic-only marker, `kiln fire --static` should report the existing missing-static-enumeration error (E0237 or its compatible extension). Ordinary dynamic `kiln run` and `kiln dev` do **not** require a static enumeration.
-- A route that declares **both** `static_params()` and `dynamic = true` has contradictory export intent: reject the combination with a source-linked diagnostic, rather than silently picking one.
+- A route that declares **both** `static_params()` and `dynamic = true` has contradictory export intent: reject the combination with a source-linked diagnostic, rather than silently picking one. Also reject **`dynamic = true` together with `static_refresh`**, including for parameter-free routes.
 - For `static_params()` with invalid return type, missing/duplicate record keys, incompatible parameter types, or values that fail enumeration, report useful diagnostics consistent with ordinary `.static(...)` routes.
 - Use the normal route graph, handler/Glaze rendering, HTML and asset generation, Ember hydration and errors: a page that requires unavailable server RPC, reads forbidden request data during static export, or produces broken links **must fail** using existing Phase 6.6 validation.
 - **Pre-rendering safety — DECIDED:** both filesystem `static_params()` and explicit `.static(...)` routes must reject request-dependent cached responses in server mode as well as in static export. Analyze transitive request reads, excluding legitimate route-parameter identity and separately executed `app.before` hooks. Do not merely assume existing E0404 static-export enforcement covers server-mode caching until the implementation is verified/extended.
@@ -602,7 +614,7 @@ The semantics are the filesystem-route equivalent of `web.Route.dynamic()`: a st
 - **Cache refresh — DECIDED:** optional route-local `static_refresh` uses the existing `.static(refresh: ...)` request-triggered re-render policy in server mode only. For zero-parameter GET routes, `static_refresh` **alone enables server startup pre-rendering** without `static_params()` or `static = true`; parameterised routes still need `static_params()`. Validate duration and contradictory/unused declarations. A refresh interval does not permit caching request-dependent responses.
 - Continue preserving hooks, 404/error behaviour, redirects and output path conventions. A representative app must demonstrate `kiln run` and `kiln fire --static` from **the same source**.
 
-**Still open:** whether `static_params()` is allowed without `load`/`get` (likely yes), whether `dynamic` is permitted on a nonparameterised route, exact export signatures, and how to handle failing enumeration or a route whose HTTP handlers return non-HTML content. All details must reuse the existing static export contract.
+**Still open:** whether `static_params()` is allowed without `load`/`get` (likely yes), exact export signatures, and how to handle failing enumeration or a route whose HTTP handlers return non-HTML content. **`dynamic` on parameter-free routes is settled as valid**, and contradicting `dynamic`/`static_params`/`static_refresh` declarations are diagnosed. All details must reuse the existing static export contract.
 
 ## 9. LSP / IDE / scaffolding
 
@@ -675,7 +687,8 @@ If adopted as **Phase 6.7**, a reviewable breakdown might be:
 - [ ] Both filesystem `static_params()` and ordinary explicit `.static(...)` reject request-dependent cached page output, including transitive auth/session/cookie/header/query/body reads; diagnostics identify the unsafe read and the pre-render declaration where possible.
 - [ ] Typed route parameters remain valid inputs to pre-rendered pages; request-time `app.before` authorization remains usable for genuinely shared page output and is not mistaken for the cached render phase.
 - [ ] Regression tests demonstrate that two users cannot receive one another's personalised cached page after declared pre-rendering; no silent downgrade or unsafe override bypasses the restriction.
-- [ ] A route-local `dynamic` marker opts a route out of static export while preserving normal server routing; combining `dynamic` and `static_params()` is diagnosed rather than guessed.
+- [ ] A route-local `dynamic` marker opts **parameter-free and parameterised** routes out of static export while preserving normal server routing; combining `dynamic` with either `static_params()` or `static_refresh` is a source-linked compile error.
+- [ ] A personalised parameter-free `/dashboard` with an implicit `index.glaze` and only `pub const dynamic = true` in `route.kiln` is omitted from `kiln fire --static` but handles normal per-request server GETs; no dummy path parameter or full handler is required.
 - [ ] Missing enumeration/dynamic intent on a parameterised GET route fails static export with the existing compatible diagnostic; existing Phase 6.6 validations still apply.
 - [ ] `kiln check`, `run`, `dev`, `test`, LSP and VS Code agree on the project route graph.
 - [ ] Real-browser tests cover SSR, selective hydration, typed RPC restrictions in static export and common error paths.
@@ -705,6 +718,7 @@ If adopted as **Phase 6.7**, a reviewable breakdown might be:
 - **Server-mode `static_params()` (Option A):** the same enumeration also pre-renders pages at server startup via existing `.static(...)` behaviour, including hooks and fallback for unlisted or unsuccessfully pre-rendered pages. It is not export-only.
 - **Safe pre-rendering (Option A):** reject request-dependent *cached output* (personalisation, cookies, auth/session, arbitrary headers/query/body) for filesystem and explicit `.static(...)` routes; typed enumerated URL parameters are safe inputs, and separately executed `app.before` hooks may still inspect request context. Extend static-export safeguards to server-mode pre-rendering where necessary.
 - **Route-local refresh (Option A):** support an optional `static_refresh` duration in `route.kiln` with the same server-mode first-request-after-expiry re-render semantics as `.static(refresh: ...)`. For a route with **no URL parameters**, `static_refresh` alone triggers startup pre-rendering: no `static_params()` or extra `static` declaration needed. A static export is still a snapshot; refresh does not override safe-cache restrictions.
+- **Dynamic-only routes without URL parameters (Option A):** `pub const dynamic = true` is valid on fixed paths (e.g. an authenticated `/dashboard`) as well as parameterised ones. It excludes the route from `kiln fire --static` while retaining normal server-mode request rendering, and conflicts with either `static_params()` or `static_refresh`.
 - **API-only routes (Option A):** a directory with `route.kiln` alone can register typed HTTP methods without `index.glaze`. A `load` export requires a sibling `index.glaze` and is an error without one. A view plus only non-GET exports retains normal implicit GET rendering; JSON APIs are subject to existing static-export restrictions.
 - **Standalone Ember pages (Option A):** `.ember` files never automatically register filesystem routes. A `.glaze` page embeds an Ember for interaction; API-only `route.kiln` methods remain independently routable.
 - **Explicit vs filesystem route precedence (Option A):** preserve the existing **first matching route wins** rule using registration order. `app.file_routes` occupies its call position; earlier explicit routes shadow matching filesystem routes and earlier filesystem routes can shadow later explicit routes. Provide nonfatal shadowing diagnostics where detectable. Do not alter the separate duplicate-error rule inside a single mount.
