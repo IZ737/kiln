@@ -1,0 +1,16 @@
+// What the shop sells.
+
+pub struct Product {
+    name: String
+    cents: Int
+    stock: Int
+}
+
+pub fn products() -> List<Product> {
+    return [
+        Product(name: "Teapot", cents: 2400, stock: 3),
+        Product(name: "Tea cup", cents: 650, stock: 0),
+        Product(name: "Saucer <small>", cents: 5, stock: 12),
+        Product(name: "Kettle", cents: 4999, stock: 1),
+    ]
+}

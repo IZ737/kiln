@@ -1,0 +1,59 @@
+import test
+
+fn sign_up(name: String, email: String) {
+    let form: Map<String, String> = Map()
+    form["name"] = name
+    form["email"] = email
+    form["password"] = "correct horse battery"
+    test.equal(test.post_form("/sign-up", form).status, 303)
+}
+
+// The value of the hidden `csrf` field on a page.
+fn csrf_of(page: String) -> String {
+    let at = page.index_of("name=\"csrf\"") ?? test.fail("the page has no field named csrf")
+    let rest = page.slice(at, page.len())
+    let start = rest.index_of("value=\"") ?? test.fail("the csrf field has no value")
+    let value = rest.slice(start + 7, rest.len())
+    let end = value.index_of("\"") ?? test.fail("the csrf value does not end")
+    return value.slice(0, end)
+}
+
+fn save(name: String, csrf: String) -> test.Response {
+    let form: Map<String, String> = Map()
+    form["name"] = name
+    form["csrf"] = csrf
+    return test.post_form("/settings", form)
+}
+
+fn test_bench_strangers_are_sent_to_sign_up() {
+    let res = test.get("/settings")
+    test.is_true(res.status == 302 or res.status == 303, "expected a redirect, got ${res.status}")
+    test.equal(res.header("location") ?? "", "/sign-up")
+    test.not_equal(save("Eve", "guess").status, 303)
+}
+
+fn test_bench_changes_the_name() {
+    sign_up("Ada", "ada@example.com")
+    let page = test.get("/settings")
+    test.equal(page.status, 200)
+    test.contains(page.body, "Ada")
+    let res = save("  Ada Lovelace ", csrf_of(page.body))
+    test.equal(res.status, 303)
+    test.equal(res.header("location") ?? "", "/settings")
+    test.contains(test.get("/").body, "Hello, Ada Lovelace")
+}
+
+fn test_bench_refuses_bad_names() {
+    sign_up("Ada", "ada@example.com")
+    let token = csrf_of(test.get("/settings").body)
+    test.equal(save("   ", token).status, 422)
+    test.equal(save("x".repeat(81), token).status, 422)
+    test.contains(test.get("/").body, "Hello, Ada")
+}
+
+fn test_bench_needs_the_token() {
+    sign_up("Ada", "ada@example.com")
+    test.not_equal(save("Mallory", "not-the-token").status, 303)
+    test.not_equal(save("Mallory", "").status, 303)
+    test.contains(test.get("/").body, "Hello, Ada")
+}

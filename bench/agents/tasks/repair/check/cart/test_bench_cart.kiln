@@ -1,0 +1,10 @@
+import test
+
+fn test_bench_totals() {
+    let items = parse("tea 3 450\ncake 1 300") catch err {
+        test.fail(err.message)
+    }
+    test.equal(total(items), 1650)
+    test.equal(total([Item(name: "a", quantity: 4, cents: 250), Item(name: "b", quantity: 6, cents: 50)]), 1170)
+    test.equal(total([]), 0)
+}

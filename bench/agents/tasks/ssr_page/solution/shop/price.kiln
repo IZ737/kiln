@@ -1,0 +1,6 @@
+// A price in cents as dollars: 1250 is "$12.50".
+pub fn price(cents: Int) -> String {
+    let rest = cents % 100
+    let pad = if rest < 10 { "0" } else { "" }
+    return "$${cents / 100}.${pad}${rest}"
+}

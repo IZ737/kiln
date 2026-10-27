@@ -1,0 +1,6 @@
+import test
+
+fn test_adds_a_todo() {
+    test.equal(test.post_json("/todos", "{\"title\": \"Milk\"}").status, 201)
+    test.contains(test.get("/todos").body, "Milk")
+}

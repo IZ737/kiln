@@ -1,0 +1,13 @@
+{% props name: String, email: String, message: String, problems: List<String> %}
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Contact</title></head>
+<body>
+<h1>Contact us</h1>
+<ui.FormErrors problems={problems} />
+<form method="post" action="/contact">
+  <ui.Input label="Name" name="name" value={name} />
+  <ui.Input label="Email" name="email" type="email" value={email} />
+  <ui.Textarea label="Message" name="message" value={message} />
+  <ui.Button type="submit">Send</ui.Button>
+</form>
+</body></html>

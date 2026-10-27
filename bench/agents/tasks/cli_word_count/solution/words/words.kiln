@@ -1,0 +1,35 @@
+// Counting words.
+
+pub struct Count {
+    word: String
+    count: Int
+}
+
+// The words of `text`: runs of ASCII letters, lower-cased.
+fn split_words(text: String) -> List<String> {
+    let found: List<String> = []
+    var current = ""
+    for c in text.lower().chars() {
+        if c >= "a" and c <= "z" {
+            current = current + c
+        } else if current != "" {
+            found.push(current)
+            current = ""
+        }
+    }
+    if current != "" {
+        found.push(current)
+    }
+    return found
+}
+
+// The `n` most common words, most common first, ties alphabetical.
+pub fn top(text: String, n: Int) -> List<Count> {
+    let counts: Map<String, Int> = Map()
+    for w in split_words(text) {
+        counts[w] = (counts.get(w) ?? 0) + 1
+    }
+    let all = counts.entries().map(fn(e) { Count(word: e.key, count: e.value) })
+    let sorted = all.sort_by(fn(c) { { count: 0 - c.count, word: c.word } })
+    return sorted.take(n)
+}

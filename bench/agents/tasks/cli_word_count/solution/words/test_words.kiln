@@ -1,0 +1,5 @@
+import test
+
+fn test_counts_words() {
+    test.equal(top("a b a", 2), [Count(word: "a", count: 2), Count(word: "b", count: 1)])
+}

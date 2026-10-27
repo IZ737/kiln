@@ -1,0 +1,48 @@
+import test, json
+
+struct Todo {
+    id: Int
+    title: String
+    done: Bool
+}
+
+fn todos() -> List<Todo> {
+    let res = test.get("/todos")
+    test.equal(res.status, 200)
+    return json.decode<List<Todo>>(res.body) catch err {
+        test.fail("GET /todos is not a JSON list of to-dos: ${err.message}")
+    }
+}
+
+fn test_bench_starts_empty() {
+    test.equal(todos(), [])
+}
+
+fn test_bench_adds_in_order() {
+    let res = test.post_json("/todos", "{\"title\": \"  Buy milk \"}")
+    test.equal(res.status, 201)
+    let made = json.decode<Todo>(res.body) catch err {
+        test.fail("the answer is not a to-do: ${err.message}")
+    }
+    test.equal(made, Todo(id: 1, title: "Buy milk", done: false))
+    test.equal(test.post_json("/todos", "{\"title\": \"Walk\"}").status, 201)
+    test.equal(todos().map(.title), ["Buy milk", "Walk"])
+    test.equal(todos().map(.id), [1, 2])
+}
+
+fn test_bench_refuses_an_empty_title() {
+    let res = test.post_json("/todos", "{\"title\": \"   \"}")
+    test.equal(res.status, 422)
+    test.contains(res.body, "title is required")
+    test.equal(todos(), [])
+}
+
+fn test_bench_finds_and_finishes() {
+    test.post_json("/todos", "{\"title\": \"Read\"}")
+    test.equal(test.get("/todos/1").status, 200)
+    test.equal(test.get("/todos/7").status, 404)
+    let done = test.request("POST", "/todos/1/done")
+    test.equal(done.status, 200)
+    test.equal(todos()[0].done, true)
+    test.equal(test.request("POST", "/todos/9/done").status, 404)
+}

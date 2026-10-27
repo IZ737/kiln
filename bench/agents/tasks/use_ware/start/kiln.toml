@@ -1,0 +1,3 @@
+[package]
+name = "contact"
+entry = "main.kiln"

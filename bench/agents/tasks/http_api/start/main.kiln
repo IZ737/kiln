@@ -1,0 +1,9 @@
+import web
+
+fn main() ! {
+    let app = web.app()
+    app.get("/", fn(req) {
+        return web.text("to-do API")
+    })
+    try app.listen("127.0.0.1:8080")
+}

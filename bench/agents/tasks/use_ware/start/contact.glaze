@@ -1,0 +1,13 @@
+{% props name: String, email: String, message: String, problems: List<String> %}
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Contact</title></head>
+<body>
+<h1>Contact us</h1>
+{% if not problems.is_empty() %}<ul>{% for p in problems %}<li>{p}</li>{% end %}</ul>{% end %}
+<form method="post" action="/contact">
+  <label>Name <input name="name" value={name}></label>
+  <label>Email <input name="email" type="email" value={email}></label>
+  <label>Message <textarea name="message">{message}</textarea></label>
+  <button type="submit">Send</button>
+</form>
+</body></html>

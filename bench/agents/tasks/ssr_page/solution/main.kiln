@@ -1,0 +1,14 @@
+import web, shop
+
+fn main() ! {
+    let app = web.app()
+    app.get("/health", fn(req) {
+        return web.text("ok ${shop.products().len()}")
+    })
+    app.get("/", fn(req) {
+        let q = (req.query("q") ?? "").trim().lower()
+        let shown = shop.products().filter(fn(p) { p.name.lower().contains(q) })
+        return web.render("home.glaze", { products: shown })
+    })
+    try app.listen("127.0.0.1:8080")
+}

@@ -1,0 +1,45 @@
+import web
+
+struct Todo {
+    id: Int
+    title: String
+    done: Bool
+}
+
+fn main() ! {
+    let app = web.app()
+    let todos: List<Todo> = []
+    app.get("/", fn(req) {
+        return web.text("to-do API")
+    })
+    app.get("/todos", fn(req) {
+        return web.json(todos)
+    })
+    app.post("/todos", fn(req) {
+        let body = try req.json<{ title: String }>()
+        let title = body.title.trim()
+        if title == "" {
+            return web.json({ error: "title is required" }, status: 422)
+        }
+        let todo = Todo(id: todos.len() + 1, title: title, done: false)
+        todos.push(todo)
+        return web.json(todo, status: 201)
+    })
+    app.get("/todos/{id: Int}", fn(req, id) {
+        let found = todos.find(fn(t) { t.id == id })
+        if found is some(t) {
+            return web.json(t)
+        }
+        return web.json({ error: "no such to-do" }, status: 404)
+    })
+    app.post("/todos/{id: Int}/done", fn(req, id) {
+        if id < 1 or id > todos.len() {
+            return web.json({ error: "no such to-do" }, status: 404)
+        }
+        let old = todos[id - 1]
+        let todo = Todo(id: old.id, title: old.title, done: true)
+        todos[id - 1] = todo
+        return web.json(todo)
+    })
+    try app.listen("127.0.0.1:8080")
+}

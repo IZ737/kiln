@@ -1,0 +1,34 @@
+// The settings page, where a person changes their own name.
+import web, sql, orm, auth, validate
+
+pub fn settings_routes(app: web.App, db: sql.Db, sessions: auth.Sessions) {
+    app.get("/settings", fn(req) {
+        let account = try signed_in(db, sessions, req)
+        if account is some(a) {
+            let token = try sessions.csrf(req)
+            return web.render("settings.glaze", { name: a.name, csrf: token, problems: [] })
+        }
+        return web.redirect("/sign-up", status: 303)
+    })
+
+    app.post("/settings", fn(req) {
+        let who = try sessions.require(req)
+        let form = try req.form<{ name: String, csrf: String }>()
+        try sessions.check(req, form.csrf)
+        let id = who.subject.to_int() ?? 0
+        let found = try orm.find<Account>(db).where(fn(a) { a.id == id }).first()
+        let account = found ?? throw web.error(401, "sign in first")
+        let name = form.name.trim()
+        let checked = validate.check([
+            validate.required("name", name),
+            validate.length("name", name, max: 80),
+        ])
+        if not checked.valid {
+            var res = web.render("settings.glaze", { name: form.name, csrf: form.csrf, problems: checked.messages() })
+            res.status = 422
+            return res
+        }
+        try orm.update<Account>(db, Account(id: account.id, email: account.email, name: name, password: account.password))
+        return web.redirect("/settings", status: 303)
+    })
+}

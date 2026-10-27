@@ -1,0 +1,47 @@
+import test, sql, orm, json, shared, posts
+
+fn add(db: sql.Db, title: String, published: Bool) {
+    orm.insert<shared.Post>(db, shared.Post(id: 0, title: title, body: "text", published: published)) catch err {
+        test.fail("cannot add a post: ${err.message}")
+    }
+}
+
+fn open() -> sql.Db {
+    return sql.open(test.database_url()) catch err {
+        test.fail("cannot open the test database: ${err.message}")
+    }
+}
+
+fn test_bench_newest_published_first() {
+    let db = open()
+    add(db, "First", true)
+    add(db, "Draft", false)
+    add(db, "Second", true)
+    let found = posts.published(db, 10) catch err {
+        test.fail(err.message)
+    }
+    test.equal(found.map(.title), ["Second", "First"])
+    let one = posts.published(db, 1) catch err {
+        test.fail(err.message)
+    }
+    test.equal(one.map(.title), ["Second"])
+}
+
+fn test_bench_route_lists_titles() {
+    let db = open()
+    for i in 1..13 {
+        add(db, "Post ${i}", i != 12)
+    }
+    let res = test.get("/posts")
+    test.equal(res.status, 200)
+    let titles = json.decode<List<String>>(res.body) catch err {
+        test.fail("GET /posts is not a JSON list of titles: ${err.message}")
+    }
+    test.equal(titles.len(), 10)
+    test.equal(titles[0], "Post 11")
+    test.is_false(titles.contains("Post 12"), "a draft was listed")
+}
+
+fn test_bench_empty() {
+    test.equal(test.get("/posts").body, "[]")
+}

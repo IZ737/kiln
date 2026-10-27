@@ -1,0 +1,14 @@
+import web, shared, posts
+
+fn main() ! {
+    let db = try shared.database()
+    let app = web.app()
+    app.get("/", fn(req) {
+        return web.text("blog")
+    })
+    app.get("/posts", fn(req) {
+        let found = try posts.published(db, 10)
+        return web.json(found.map(.title))
+    })
+    try app.listen("127.0.0.1:8080")
+}

@@ -1,0 +1,8 @@
+import test
+
+fn test_bench_prices() {
+    test.equal(price(1250), "$12.50")
+    test.equal(price(5), "$0.05")
+    test.equal(price(4999), "$49.99")
+    test.equal(price(100), "$1.00")
+}
