@@ -1,11 +1,11 @@
-# Draft RFC — Optional filesystem routing (candidate Phase 6.7)
+# Phase 6.7 — Optional filesystem routing (design RFC)
 
-**Status: Design in progress; not approved for implementation.**  
+**Status: Planned roadmap phase; design decisions recorded, implementation not started.**  
 **Last discussed: 2026-10-27.**  
-**Roadmap placement: candidate Phase 6.7, not yet a committed prerequisite for 1.0.**  
+**Roadmap placement: Phase 6.7, after completed Phase 6.6 and before Phase 7 (Kiln 1.0 readiness).**  
 **Implementation: none.** All API examples below are proposed, not valid Kiln code today.
 
-This is a **living design document**. Update this PR as decisions are made. Do not infer acceptance of an item merely because it appears in an illustrative example. The [current HTTP API](../reference/stdlib.md#web), [project/module model](../reference/projects.md), [Glazes/Embers](../reference/glazes.md), and [static-site behaviour](../guides/static-sites.md) remain authoritative until implementation and documentation are updated.
+This is the **agreed design RFC for planned Phase 6.7**. Validate proposed APIs against the compiler during implementation; the original design PR is closed. Do not infer acceptance of an item merely because it appears in an illustrative example. The [current HTTP API](../reference/stdlib.md#web), [project/module model](../reference/projects.md), [Glazes/Embers](../reference/glazes.md), and [static-site behaviour](../guides/static-sites.md) remain authoritative until implementation and documentation are updated.
 
 ## 1. Why this exists
 
@@ -708,13 +708,13 @@ The LSP and VS Code should eventually provide:
 
 ## 10. Work breakdown (provisional)
 
-If adopted as **Phase 6.7**, a reviewable breakdown might be:
+The planned **Phase 6.7** implementation can be divided into reviewable parts:
 
 1. **6.7A — Foundation.** Source discovery/mounts, ignored directories, static `.glaze` pages, conflict handling and preservation of ordinary route semantics.
 2. **6.7B — Dynamic pages.** URL parameters, settled handler/loading convention, validated props, methods and SSG enumeration.
 3. **6.7C — Developer experience.** LSP navigation and diagnostics, `kiln new` template, full E2E/browser/static-site tests and reference docs.
 
-**Timing is uncommitted.** This may be a pre-1.0 phase or a compatible feature added after 1.0; the RFC itself should not block the currently planned dogfooding and hardening work.
+**Roadmap order is committed:** Phase 6.7 follows 6.6 and precedes Phase 7. Implementation has not started; the design RFC is not evidence of shipped syntax.
 
 ## 10A. Consolidated review against existing Kiln contracts (2026-10-27)
 
@@ -729,7 +729,7 @@ This review applies implementation defaults from [the web reference](../referenc
 - **RPC path accuracy:** Kiln documents the `/_kiln/rpc/<name>` server-function family; `/_kiln/rpc` is also a hook prefix. The internal endpoint protection registry must use actual method/path or reserved-prefix ownership, not mistake the hook prefix for a standalone endpoint.
 - **Compiler/LSP:** use one route graph for diagnostics and navigation, reject ambiguous same-mount overlaps, and preserve normal import resolution, typed path matching and security checks.
 
-**No further product decisions are required to finish the routing RFC.** Implementation should verify these conventions with compiler and browser tests, and escalate only conflicts that cannot be reconciled with shipped APIs. Placement before or after Kiln 1.0 remains an independent roadmap scheduling choice.
+**No further product decisions are required to finish the routing RFC.** Implementation should verify these conventions with compiler and browser tests, and escalate only conflicts that cannot be reconciled with shipped APIs. Phase 6.7 is now scheduled between 6.6 and 7.
 
 ## 11. Acceptance criteria (candidate)
 
@@ -828,4 +828,4 @@ This review applies implementation defaults from [the web reference](../referenc
 
 ### Roadmap placement
 
-**Not committed:** this can be Phase 6.7 before Kiln 1.0 or a compatible release after 1.0. This timing decision is separate from the routing specification and should not block documentation review. The current draft PR must stay **draft and unmerged** until explicitly approved.
+**Committed roadmap placement:** Phase 6.7 comes after completed Phase 6.6 and before Phase 7 / Kiln 1.0 readiness. The implementation remains unstarted and subject to the compiler/LSP/browser acceptance tests above. The original design PR is closed; this document is now the implementation planning reference.
