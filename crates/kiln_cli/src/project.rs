@@ -1,5 +1,6 @@
 //! Deterministic project discovery. Only explicitly imported folders enter a build.
 pub mod bind;
+pub mod routes;
 use kiln_diagnostics::{codes, Diagnostic, Span};
 use kiln_syntax::ast::Item;
 use std::collections::{BTreeMap, BTreeSet};
@@ -420,6 +421,7 @@ impl Project {
             None => self.root.clone(),
         };
         let mut imports = BTreeMap::new();
+        let mut mounted: Vec<(PathBuf, PathBuf)> = Vec::new();
         for file in &files {
             if crate::is_glaze(file) {
                 continue;
@@ -428,7 +430,12 @@ impl Project {
                 Some(text) => text.clone(),
                 None => read(file)?,
             };
-            for item in kiln_syntax::parse(&text).module.items {
+            let module = kiln_syntax::parse(&text).module;
+            // The folders of `app.file_routes` mounts are part of the app.
+            for dir in routes::mount_dirs(&self.root, &module) {
+                mounted.push((dir, file.clone()));
+            }
+            for item in module.items {
                 if let Item::Import(import) = item {
                     for path in import.paths {
                         let span = path.first().unwrap().span.to(path.last().unwrap().span);
@@ -497,6 +504,18 @@ impl Project {
                     error
                 } else {
                     invalid_at(&file, span, error.to_string())
+                }
+            })?;
+        }
+        for (dir, file) in mounted {
+            if visiting.contains(&dir) {
+                continue;
+            }
+            self.visit(&dir, visiting, visited).map_err(|error| {
+                if error.get_ref().is_some_and(|e| e.is::<SourceError>()) {
+                    error
+                } else {
+                    invalid_at(&file, Span::default(), error.to_string())
                 }
             })?;
         }
@@ -675,4 +694,32 @@ pub fn check_method_access(
             }
         }
     }
+}
+
+/// The routes a project's `app.file_routes` mounts add, each with the file
+/// it comes from, for `kiln fire --static` and the editor.
+pub fn file_routes(path: &Path) -> Vec<(kiln_diagnostics::SourceFile, routes::RouteInfo)> {
+    let Ok(project) = discover(path) else {
+        return Vec::new();
+    };
+    let Ok(texts) = project
+        .files
+        .iter()
+        .map(|p| read(p).map(|t| (p.clone(), t)))
+        .collect::<Result<Vec<_>, _>>()
+    else {
+        return Vec::new();
+    };
+    let bound = bind::bind_entry(&project.root, &project.entry, &texts);
+    bound
+        .routes
+        .into_iter()
+        .map(|r| {
+            let (p, t) = &texts[r.file];
+            (
+                kiln_diagnostics::SourceFile::new(p.display().to_string(), t.clone()),
+                r,
+            )
+        })
+        .collect()
 }

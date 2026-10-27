@@ -1,0 +1,42 @@
+### GET /me HTTP/1.1
+HTTP/1.1 200 OK
+content-type: text/plain; charset=utf-8
+content-length: 9
+connection: close
+
+hello ann
+### GET /me HTTP/1.1
+HTTP/1.1 200 OK
+content-type: text/plain; charset=utf-8
+content-length: 9
+connection: close
+
+hello bob
+### GET /me HTTP/1.1
+HTTP/1.1 200 OK
+content-type: text/plain; charset=utf-8
+content-length: 11
+connection: close
+
+hello guest
+### GET /news HTTP/1.1
+HTTP/1.1 200 OK
+content-type: text/plain; charset=utf-8
+content-length: 17
+connection: close
+
+news for everyone
+### HEAD /news HTTP/1.1
+HTTP/1.1 200 OK
+content-type: text/plain; charset=utf-8
+content-length: 12
+connection: close
+
+### GET /news HTTP/1.1
+HTTP/1.1 200 OK
+content-type: text/plain; charset=utf-8
+content-length: 17
+connection: close
+
+news for everyone
+### GET /quit HTTP/1.1

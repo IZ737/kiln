@@ -1,0 +1,48 @@
+GET / HTTP/1.1
+###
+GET /about HTTP/1.1
+###
+GET /feed.xml HTTP/1.1
+###
+GET /_components/nav HTTP/1.1
+###
+GET /blog HTTP/1.1
+###
+GET /blog/new HTTP/1.1
+###
+GET /blog/hello%20world HTTP/1.1
+###
+GET /blog/5 HTTP/1.1
+###
+GET /docs/guide/3 HTTP/1.1
+###
+GET /docs/guide/three HTTP/1.1
+###
+GET /shop/1 HTTP/1.1
+###
+GET /shop/7 HTTP/1.1
+###
+GET /shop/500 HTTP/1.1
+###
+POST /shop/7 HTTP/1.1
+content-type: text/plain
+
+two
+###
+DELETE /shop/7 HTTP/1.1
+###
+GET /api/status HTTP/1.1
+###
+GET /api/hook HTTP/1.1
+###
+POST /api/hook HTTP/1.1
+###
+GET /clock HTTP/1.1
+###
+GET /clock HTTP/1.1
+###
+GET /admin HTTP/1.1
+###
+GET /admin/_components HTTP/1.1
+###
+GET /quit HTTP/1.1

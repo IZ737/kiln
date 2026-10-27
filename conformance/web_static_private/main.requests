@@ -1,0 +1,16 @@
+GET /me HTTP/1.1
+cookie: user=ann
+###
+GET /me HTTP/1.1
+cookie: user=bob
+###
+GET /me HTTP/1.1
+###
+GET /news HTTP/1.1
+###
+HEAD /news HTTP/1.1
+cookie: user=ann
+###
+GET /news HTTP/1.1
+###
+GET /quit HTTP/1.1

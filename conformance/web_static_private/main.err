@@ -1,0 +1,3 @@
+error the static page /me reads a cookie, so it differs from visitor to visitor and is not kept; it is rendered on each request
+info listening on http://127.0.0.1:PORT
+error the static page /news reads a cookie, so it differs from visitor to visitor and is not kept; it is rendered on each request

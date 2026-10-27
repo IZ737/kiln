@@ -1,0 +1,22 @@
+import web
+
+pub struct Product {
+    name: String
+    price: Float
+}
+
+pub fn load(id: Int) -> Product ! {
+    print("load ${id}")
+    if id > 100 {
+        throw web.error(404, "no product ${id}")
+    }
+    return Product(name: "Widget ${id}", price: 2.5)
+}
+
+pub fn post(req: web.Request, id: Int) -> web.Response {
+    return web.text("bought ${id}: ${req.body}", status: 201)
+}
+
+pub fn static_params() -> List<Int> {
+    return [1, 2]
+}

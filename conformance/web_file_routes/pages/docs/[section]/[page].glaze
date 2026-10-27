@@ -1,0 +1,2 @@
+{% props page: Int %}
+<p>page {page}</p>

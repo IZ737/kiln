@@ -1,0 +1,6 @@
+pub const static_refresh = 1h
+
+fn clock_text() -> String {
+    print("rendered /clock")
+    return "tick"
+}

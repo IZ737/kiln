@@ -1106,6 +1106,8 @@ typedef struct ktask {
     int64_t client_status;
     void *request;
     void *stores;
+    /* `k_web_reads` while the task waits. */
+    const char *web_reads;
     void *panic_jmp[5];
 #if K_TASK_FIBER
     void *fiber;
@@ -1307,8 +1309,11 @@ static __attribute__((noinline)) void k_task_jump_to(ktask *from, ktask *to) {
 }
 #endif
 
+K_API const char *k_web_reads;
+
 static void k_task_switch(ktask *to) {
     ktask *from = k_cur;
+    from->web_reads = k_web_reads;
     from->failed = k_failed;
     from->error = k_error;
     from->error_show = k_error_show;
@@ -1329,6 +1334,7 @@ static void k_task_switch(ktask *to) {
     k_web_client_error = to->client_error;
     k_web_client_status = to->client_status;
     k_web_request = to->request;
+    k_web_reads = to->web_reads;
     k_stores = to->stores;
     k_panic_trap = to->panic_trap;
     k_panic_message = to->panic_message;
@@ -2219,6 +2225,20 @@ K_API kv *k_web_not_found(void) {
  * first, such as "the query string", or NULL: a static host gives every
  * visitor the same file, so such a page cannot be exported. */
 K_API const char *k_web_reads = NULL;
+/* What the handler of the `.static` route that last answered read, or
+ * NULL: such a page is not kept for other visitors. */
+K_API const char *k_web_static_read = NULL;
+
+/* A `.static` page that read the request while it was rendered, such as
+ * a cookie, would show one visitor's page to the others, so it is not
+ * kept: it is logged and rendered on each request. */
+K_API void k_web_static_reads(kstr *path, const char *read) {
+    fflush(stdout);
+    fprintf(stderr,
+            "error the static page %s reads %s, so it differs from visitor to visitor and is not kept; it is "
+            "rendered on each request\n",
+            k_cstr(path), read);
+}
 
 /* Percent-decoding, query strings and cookies are in `kiln_rt`
  * (crates/kiln_rt/src/web.rs). */
@@ -2506,8 +2526,21 @@ K_API kv *k_web_dispatch(kapp *a, kv *req) {
         int64_t status = 0;
         kstr *message = NULL;
         bool json = false;
+        /* What a `.static` route's handler reads of the request, apart
+         * from the hooks, which run on every request anyway. */
+        const char *outer = k_web_reads;
+        if (r->is_static) k_web_reads = NULL;
         kv *res = k_web_call(r->handler, req, args, &status, &message, &json);
-        if (page && res && !k_web_marked(K_P2KV(res), K_RES_FIELDS) && res[K_RES_STATUS] == 200) {
+        if (r->is_static) {
+            k_web_static_read = k_web_reads;
+            if (!k_web_reads) k_web_reads = outer;
+        }
+        if (page && k_web_static_read) {
+            /* Rendered again for this request, and it read the request:
+             * this visitor's page is not kept for the others. */
+            k_web_static_reads(path, k_web_static_read);
+            k_map_remove(a->prerendered, K_P2KV(path));
+        } else if (page && res && !k_web_marked(K_P2KV(res), K_RES_FIELDS) && res[K_RES_STATUS] == 200) {
             page[0] = K_P2KV(res);
             page[1] = (kv)k_mono_now();
         }
@@ -2686,8 +2719,13 @@ K_API void k_web_prerender(kapp *a) {
         if (!a->prerendered) a->prerendered = k_web_headers();
         for (int64_t j = 0; j < paths->len; j++) {
             kstr *path = K_KV2P(kstr *, paths->items[j]);
+            k_web_static_read = NULL;
             kv *res = k_web_handle(a, k_web_request_for(path), 0);
             fflush(stdout);
+            if (k_web_static_read) {
+                k_web_static_reads(path, k_web_static_read);
+                continue;
+            }
             if (res[K_RES_STATUS] != 200) {
                 fprintf(stderr, "error the static page %s answered %" PRId64 "; it is rendered on each request\n",
                         k_cstr(path), (int64_t)res[K_RES_STATUS]);
