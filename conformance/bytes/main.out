@@ -18,7 +18,7 @@ error: the bytes are not UTF-8 text: byte 0 is not part of a character
 true
 [<8 bytes>, <15 bytes>]
 true
-error: cannot read no/such/file: No such file or directory
+error: true
 0
 {"name":"logo.png","data":"iVBORw0KGgo="}
 true

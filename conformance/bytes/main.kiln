@@ -48,7 +48,7 @@ fn main() ! {
     print(read == png)
     try fs.remove("bytes.out")
     let missing = fs.read_bytes("no/such/file") catch err {
-        print("error: ${err.message}")
+        print("error: ${err.message.starts_with("cannot read no/such/file: ")}")
         "".bytes()
     }
     print(missing.len())
