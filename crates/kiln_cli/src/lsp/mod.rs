@@ -334,10 +334,13 @@ impl Server {
             // `posts.title`: only the name after the module changes.
             let written = &source.text[start..end];
             let from = written.rfind('.').map_or(start, |d| start + d + 1);
-            changes.entry(target_uri.to_string()).or_default().push(json!({
-                "range": range(&source.text, from, end),
-                "newText": new_name,
-            }));
+            changes
+                .entry(target_uri.to_string())
+                .or_default()
+                .push(json!({
+                    "range": range(&source.text, from, end),
+                    "newText": new_name,
+                }));
         }
         json!({ "changes": changes })
     }

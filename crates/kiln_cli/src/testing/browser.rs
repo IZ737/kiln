@@ -91,7 +91,11 @@ pub fn find(root: &Path) -> Option<PathBuf> {
         // The headless shell first: it is smaller and starts faster.
         for prefix in ["chromium_headless_shell-", "chromium-"] {
             for d in &dirs {
-                let name = d.file_name().unwrap_or_default().to_string_lossy().to_string();
+                let name = d
+                    .file_name()
+                    .unwrap_or_default()
+                    .to_string_lossy()
+                    .to_string();
                 if !name.starts_with(prefix) {
                     continue;
                 }
@@ -161,7 +165,9 @@ pub fn install() -> Result<String, String> {
     if exe.is_file() {
         return Ok(format!("the test browser is installed: {}", exe.display()));
     }
-    let platform = platform().ok_or("Chrome for Testing has no build for this system; set KILN_TEST_BROWSER to a Chromium")?;
+    let platform = platform().ok_or(
+        "Chrome for Testing has no build for this system; set KILN_TEST_BROWSER to a Chromium",
+    )?;
     let url = format!(
         "https://storage.googleapis.com/chrome-for-testing-public/{PINNED_VERSION}/{platform}/chrome-headless-shell-{platform}.zip"
     );
@@ -178,7 +184,10 @@ pub fn install() -> Result<String, String> {
     for i in 0..zip.len() {
         let mut file = zip.by_index(i).map_err(|e| e.to_string())?;
         let Some(name) = file.enclosed_name() else {
-            return Err(format!("the archive holds an unsafe path: {:?}", file.name_raw()));
+            return Err(format!(
+                "the archive holds an unsafe path: {:?}",
+                file.name_raw()
+            ));
         };
         let out = staging.join(name);
         if file.is_dir() {
@@ -236,9 +245,10 @@ impl Browser {
         // Chromium's sandbox needs a user namespace, which containers and
         // CI machines running as root do not give.
         #[cfg(unix)]
-        if std::fs::read_to_string("/proc/self/status")
-            .is_ok_and(|s| s.lines().any(|l| l.starts_with("Uid:") && l.split_whitespace().nth(1) == Some("0")))
-            || std::env::var("USER").is_ok_and(|u| u == "root")
+        if std::fs::read_to_string("/proc/self/status").is_ok_and(|s| {
+            s.lines()
+                .any(|l| l.starts_with("Uid:") && l.split_whitespace().nth(1) == Some("0"))
+        }) || std::env::var("USER").is_ok_and(|u| u == "root")
             || std::env::var_os("CI").is_some()
             || std::fs::metadata("/.dockerenv").is_ok()
         {
@@ -256,7 +266,10 @@ impl Browser {
         std::thread::spawn(move || {
             let mut said = false;
             let mut log = String::new();
-            for line in std::io::BufReader::new(stderr).lines().map_while(Result::ok) {
+            for line in std::io::BufReader::new(stderr)
+                .lines()
+                .map_while(Result::ok)
+            {
                 if !said {
                     if let Some(at) = line.find("ws://") {
                         let _ = tx.send(Ok(line[at..].trim().to_string()));
@@ -288,7 +301,8 @@ impl Browser {
             .next()
             .unwrap_or("")
             .to_string();
-        let stream = TcpStream::connect(&host).map_err(|e| format!("cannot reach the browser: {e}"))?;
+        let stream =
+            TcpStream::connect(&host).map_err(|e| format!("cannot reach the browser: {e}"))?;
         let (socket, _) = tungstenite::client(ws.as_str(), stream)
             .map_err(|e| format!("cannot reach the browser: {e}"))?;
         socket
@@ -338,14 +352,20 @@ impl Browser {
             format!("the browser did not answer {method}")
         })?;
         if let Some(error) = reply.get("error") {
-            return Err(error["message"].as_str().unwrap_or("browser error").to_string());
+            return Err(error["message"]
+                .as_str()
+                .unwrap_or("browser error")
+                .to_string());
         }
         Ok(reply["result"].clone())
     }
 
     pub fn page(&self, base: &str, width: u32, height: u32) -> Result<Page, String> {
-        let context = self.call(None, "Target.createBrowserContext", json!({ "disposeOnDetach": true }))?
-            ["browserContextId"]
+        let context = self.call(
+            None,
+            "Target.createBrowserContext",
+            json!({ "disposeOnDetach": true }),
+        )?["browserContextId"]
             .as_str()
             .unwrap_or("")
             .to_string();
@@ -370,7 +390,14 @@ impl Browser {
             .unwrap()
             .insert(session.clone(), PageEvents::default());
         let s = Some(session.as_str());
-        for domain in ["Page.enable", "Runtime.enable", "Network.enable", "Log.enable", "DOM.enable", "Accessibility.enable"] {
+        for domain in [
+            "Page.enable",
+            "Runtime.enable",
+            "Network.enable",
+            "Log.enable",
+            "DOM.enable",
+            "Accessibility.enable",
+        ] {
             self.call(s, domain, json!({}))?;
         }
         let page = Page {
@@ -447,7 +474,13 @@ impl Browser {
             .map_err(|e| e.to_string())?;
         let safe: String = name
             .chars()
-            .map(|c| if c.is_ascii_alphanumeric() || c == '-' || c == '_' { c } else { '_' })
+            .map(|c| {
+                if c.is_ascii_alphanumeric() || c == '-' || c == '_' {
+                    c
+                } else {
+                    '_'
+                }
+            })
             .collect();
         std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
         let path = dir.join(format!("{safe}.png"));
@@ -469,7 +502,13 @@ impl Browser {
     }
 
     /// Calls a function on an element and returns its JSON value.
-    fn on(&self, page: &Page, object: &str, function: &str, args: &[Value]) -> Result<Value, String> {
+    fn on(
+        &self,
+        page: &Page,
+        object: &str,
+        function: &str,
+        args: &[Value],
+    ) -> Result<Value, String> {
         let arguments: Vec<Value> = args.iter().map(|a| json!({ "value": a })).collect();
         let r = self.call(
             Some(&page.session),
@@ -523,11 +562,7 @@ impl Browser {
             }
             return Ok(out);
         }
-        let expression = format!(
-            "({FIND})({}, {})",
-            json!(loc.by),
-            json!(loc.value)
-        );
+        let expression = format!("({FIND})({}, {})", json!(loc.by), json!(loc.value));
         let r = self.call(
             Some(&page.session),
             "Runtime.evaluate",
@@ -546,7 +581,10 @@ impl Browser {
         )?;
         let mut out = Vec::new();
         for p in props["result"].as_array().cloned().unwrap_or_default() {
-            if p["name"].as_str().is_some_and(|n| n.parse::<usize>().is_ok()) {
+            if p["name"]
+                .as_str()
+                .is_some_and(|n| n.parse::<usize>().is_ok())
+            {
                 if let Some(id) = p["value"]["objectId"].as_str() {
                     out.push(id.to_string());
                 }
@@ -567,7 +605,13 @@ impl Browser {
     }
 
     /// Waits for the one element a locator names to be ready for `need`.
-    fn element(&self, page: &Page, loc: &Locator, need: Need, until: Instant) -> Result<String, String> {
+    fn element(
+        &self,
+        page: &Page,
+        loc: &Locator,
+        need: Need,
+        until: Instant,
+    ) -> Result<String, String> {
         let mut last = format!("no element matches {}", loc.describe());
         loop {
             match self.resolve(page, loc) {
@@ -611,9 +655,16 @@ impl Browser {
 
     fn mouse_click(&self, page: &Page, object: &str) -> Result<(), String> {
         let point = self.on(page, object, CENTER, &[])?;
-        let (x, y) = (point[0].as_f64().unwrap_or(0.0), point[1].as_f64().unwrap_or(0.0));
+        let (x, y) = (
+            point[0].as_f64().unwrap_or(0.0),
+            point[1].as_f64().unwrap_or(0.0),
+        );
         let s = Some(page.session.as_str());
-        self.call(s, "Input.dispatchMouseEvent", json!({ "type": "mouseMoved", "x": x, "y": y }))?;
+        self.call(
+            s,
+            "Input.dispatchMouseEvent",
+            json!({ "type": "mouseMoved", "x": x, "y": y }),
+        )?;
         self.call(
             s,
             "Input.dispatchMouseEvent",
@@ -633,13 +684,16 @@ impl Browser {
         let parts: Vec<&str> = key.split('+').collect();
         if parts.len() > 1 && !key.ends_with('+') {
             for m in &parts[..parts.len() - 1] {
-                modifiers |= match *m {
-                    "Alt" => 1,
-                    "Control" | "Ctrl" => 2,
-                    "Meta" => 4,
-                    "Shift" => 8,
-                    other => return Err(format!("`{other}` is not a modifier key: expected Alt, Control, Meta or Shift")),
-                };
+                modifiers |=
+                    match *m {
+                        "Alt" => 1,
+                        "Control" | "Ctrl" => 2,
+                        "Meta" => 4,
+                        "Shift" => 8,
+                        other => return Err(format!(
+                            "`{other}` is not a modifier key: expected Alt, Control, Meta or Shift"
+                        )),
+                    };
             }
             name = parts[parts.len() - 1];
         }
@@ -675,7 +729,11 @@ impl Browser {
             other => return Err(format!("`{other}` is not a key kiln knows: use a character, or Enter, Tab, Escape, Backspace, Delete, Space, Home, End, PageUp, PageDown or an arrow key")),
         };
         let key_name = if name == "Space" { " " } else { name };
-        let text = if modifiers & (1 | 2 | 4) != 0 { None } else { text };
+        let text = if modifiers & (1 | 2 | 4) != 0 {
+            None
+        } else {
+            text
+        };
         let mut down = json!({
             "type": if text.is_some() { "keyDown" } else { "rawKeyDown" },
             "key": key_name,
@@ -742,9 +800,15 @@ impl Browser {
                 self.wait_load(page, before, until)?;
                 Ok(String::new())
             }
-            "path" => self.retrying(page, "location.pathname + location.search + location.hash", until),
+            "path" => self.retrying(
+                page,
+                "location.pathname + location.search + location.hash",
+                until,
+            ),
             "title" => self.retrying(page, "document.title", until),
-            "page_text" => self.retrying(page, "document.body ? document.body.innerText : ''", until),
+            "page_text" => {
+                self.retrying(page, "document.body ? document.body.innerText : ''", until)
+            }
             "wait_path" => {
                 let want = s("part");
                 loop {
@@ -764,7 +828,11 @@ impl Browser {
                     if c.is_ascii() && !c.is_ascii_control() {
                         self.key(page, &c.to_string())?;
                     } else {
-                        self.call(session, "Input.insertText", json!({ "text": c.to_string() }))?;
+                        self.call(
+                            session,
+                            "Input.insertText",
+                            json!({ "text": c.to_string() }),
+                        )?;
                     }
                 }
                 Ok(String::new())
@@ -772,7 +840,11 @@ impl Browser {
             "focused" => self.focused(page),
             "errors" => Ok(json!(self.errors(page)).to_string()),
             "viewport" => {
-                self.viewport(page, s("width").parse().unwrap_or(1280), s("height").parse().unwrap_or(800))?;
+                self.viewport(
+                    page,
+                    s("width").parse().unwrap_or(1280),
+                    s("height").parse().unwrap_or(800),
+                )?;
                 Ok(String::new())
             }
             "screenshot" => self.screenshot(page, results, &s("name")),
@@ -820,19 +892,41 @@ impl Browser {
             }
             "text" => {
                 let el = self.element(page, &loc, Need::Present, until)?;
-                Ok(text_of(self.on(page, &el, "function() { return (this.innerText ?? this.textContent ?? '').trim() }", &[])?))
+                Ok(text_of(self.on(
+                    page,
+                    &el,
+                    "function() { return (this.innerText ?? this.textContent ?? '').trim() }",
+                    &[],
+                )?))
             }
             "value" => {
                 let el = self.element(page, &loc, Need::Present, until)?;
-                Ok(text_of(self.on(page, &el, "function() { return this.value ?? '' }", &[])?))
+                Ok(text_of(self.on(
+                    page,
+                    &el,
+                    "function() { return this.value ?? '' }",
+                    &[],
+                )?))
             }
             "attribute" => {
                 let el = self.element(page, &loc, Need::Present, until)?;
-                Ok(self.on(page, &el, "function(n) { return this.getAttribute(n) }", &[json!(s("attribute"))])?.to_string())
+                Ok(self
+                    .on(
+                        page,
+                        &el,
+                        "function(n) { return this.getAttribute(n) }",
+                        &[json!(s("attribute"))],
+                    )?
+                    .to_string())
             }
             "style" => {
                 let el = self.element(page, &loc, Need::Present, until)?;
-                Ok(text_of(self.on(page, &el, "function(p) { return getComputedStyle(this).getPropertyValue(p) }", &[json!(s("property"))])?))
+                Ok(text_of(self.on(
+                    page,
+                    &el,
+                    "function(p) { return getComputedStyle(this).getPropertyValue(p) }",
+                    &[json!(s("property"))],
+                )?))
             }
             "count" => Ok(self.settled(page, &loc, until)?.len().to_string()),
             "visible" => {
@@ -846,13 +940,24 @@ impl Browser {
             }
             "is_focused" => {
                 let el = self.element(page, &loc, Need::Present, until)?;
-                Ok(self.on(page, &el, "function() { return document.activeElement === this }", &[])?.to_string())
+                Ok(self
+                    .on(
+                        page,
+                        &el,
+                        "function() { return document.activeElement === this }",
+                        &[],
+                    )?
+                    .to_string())
             }
             "is_checked" => {
                 let el = self.element(page, &loc, Need::Present, until)?;
-                Ok(self.on(page, &el, "function() { return !!this.checked }", &[])?.to_string())
+                Ok(self
+                    .on(page, &el, "function() { return !!this.checked }", &[])?
+                    .to_string())
             }
-            "wait" => self.element(page, &loc, Need::Visible, until).map(|_| String::new()),
+            "wait" => self
+                .element(page, &loc, Need::Visible, until)
+                .map(|_| String::new()),
             "expect_text" => {
                 let want = s("text");
                 let mut seen = String::new();
@@ -1149,15 +1254,18 @@ fn record(v: &Value, events: &Events) {
                         .unwrap_or_default()
                 })
                 .collect();
-            page.errors.push(format!("console.error: {}", text.join(" ")));
+            page.errors
+                .push(format!("console.error: {}", text.join(" ")));
         }
         // A response with an error status is the app's answer, which a
         // test checks itself; a request that failed is recorded below.
-        "Log.entryAdded" if p["entry"]["level"] == "error" && p["entry"]["source"] != "network" => page.errors.push(format!(
-            "{}: {}",
-            p["entry"]["source"].as_str().unwrap_or("log"),
-            p["entry"]["text"].as_str().unwrap_or("")
-        )),
+        "Log.entryAdded" if p["entry"]["level"] == "error" && p["entry"]["source"] != "network" => {
+            page.errors.push(format!(
+                "{}: {}",
+                p["entry"]["source"].as_str().unwrap_or("log"),
+                p["entry"]["text"].as_str().unwrap_or("")
+            ))
+        }
         "Network.loadingFailed" if p["canceled"] != true => page.errors.push(format!(
             "request failed: {}",
             p["errorText"].as_str().unwrap_or("")

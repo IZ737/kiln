@@ -114,7 +114,10 @@ fn path_wares_lock_and_run() {
         "pub fn hello(name: String) -> String {\n    return \"hello, ${name}\"\n}\n",
     );
     s.write("app/main.kiln", APP);
-    s.ok("app", &["add", "jake/greet", "--path", "../greet", "--as", "greet"]);
+    s.ok(
+        "app",
+        &["add", "jake/greet", "--path", "../greet", "--as", "greet"],
+    );
     let lock = s.read("app/kiln.lock");
     assert!(lock.contains("source = \"path+../greet\""), "{lock}");
     assert!(s.ok("app", &["run", "."]).contains("hello, kiln"));
@@ -180,8 +183,22 @@ fn undeclared_capabilities_and_policy() {
 #[test]
 fn version_conflicts_are_explained() {
     let s = Scratch::new();
-    ware(&s, "base1", "jake/base", "1.0.0", "", "pub fn one() -> Int {\n    return 1\n}\n");
-    ware(&s, "base2", "jake/base", "2.0.0", "", "pub fn one() -> Int {\n    return 2\n}\n");
+    ware(
+        &s,
+        "base1",
+        "jake/base",
+        "1.0.0",
+        "",
+        "pub fn one() -> Int {\n    return 1\n}\n",
+    );
+    ware(
+        &s,
+        "base2",
+        "jake/base",
+        "2.0.0",
+        "",
+        "pub fn one() -> Int {\n    return 2\n}\n",
+    );
     ware(
         &s,
         "left",
@@ -209,19 +226,47 @@ fn archives_are_canonical_and_the_cache_heals() {
         "",
         "pub fn hello(name: String) -> String {\n    return \"hello, ${name}\"\n}\n",
     );
-    let a = s.ok("greet", &["publish", ".", "--dry-run", "--registry", "http://127.0.0.1:9"]);
+    let a = s.ok(
+        "greet",
+        &[
+            "publish",
+            ".",
+            "--dry-run",
+            "--registry",
+            "http://127.0.0.1:9",
+        ],
+    );
     // Files in another order, or with other modification times, hash the same.
     std::thread::sleep(Duration::from_millis(20));
     s.write("greet/lib.kiln", &s.read("greet/lib.kiln"));
-    let b = s.ok("greet", &["publish", ".", "--dry-run", "--registry", "http://127.0.0.1:9"]);
-    let sum = |t: &str| t.split_whitespace().find(|w| w.starts_with("sha256:")).map(str::to_string);
+    let b = s.ok(
+        "greet",
+        &[
+            "publish",
+            ".",
+            "--dry-run",
+            "--registry",
+            "http://127.0.0.1:9",
+        ],
+    );
+    let sum = |t: &str| {
+        t.split_whitespace()
+            .find(|w| w.starts_with("sha256:"))
+            .map(str::to_string)
+    };
     assert!(sum(&a).is_some());
     assert_eq!(sum(&a), sum(&b));
     // Files that are not UTF-8 text are refused.
     std::fs::write(s.0.join("greet/logo.bin"), [0xff, 0xfe, 0]).unwrap();
     s.fails(
         "greet",
-        &["publish", ".", "--dry-run", "--registry", "http://127.0.0.1:9"],
+        &[
+            "publish",
+            ".",
+            "--dry-run",
+            "--registry",
+            "http://127.0.0.1:9",
+        ],
         "logo.bin",
     );
 }
@@ -247,7 +292,11 @@ fn git_sources_pin_a_commit() {
             .current_dir(s.0.join("greet"))
             .output()
             .unwrap();
-        assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+        assert!(
+            out.status.success(),
+            "{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
     };
     git(&["init", "-q"]);
     git(&["add", "."]);
@@ -257,7 +306,16 @@ fn git_sources_pin_a_commit() {
     let url = format!("file://{}", s.0.join("greet").display());
     s.ok(
         "app",
-        &["add", "jake/greet", "--git", &url, "--tag", "v1.0.0", "--as", "greet"],
+        &[
+            "add",
+            "jake/greet",
+            "--git",
+            &url,
+            "--tag",
+            "v1.0.0",
+            "--as",
+            "greet",
+        ],
     );
     let lock = s.read("app/kiln.lock");
     assert!(lock.contains("source = \"git+file://"), "{lock}");
@@ -317,12 +375,18 @@ impl Registry {
 
     /// Signs up `name` and returns a new publish token.
     fn token(&self, name: &str) -> String {
-        let form = format!("name={name}&email={name}%40example.com&password=a+long+enough+password");
+        let form =
+            format!("name={name}&email={name}%40example.com&password=a+long+enough+password");
         let res = self.http("POST", "/sign-up", "", &form);
         let cookie = between(&res, "set-cookie: ", ";");
         let page = self.http("GET", "/tokens", &cookie, "");
         let csrf = between(&page, "name=\"csrf\" value=\"", "\"");
-        let page = self.http("POST", "/tokens", &cookie, &format!("csrf={csrf}&label=tests"));
+        let page = self.http(
+            "POST",
+            "/tokens",
+            &cookie,
+            &format!("csrf={csrf}&label=tests"),
+        );
         between(&page, "data-testid=\"token\">", "<")
     }
 
@@ -357,7 +421,10 @@ impl Drop for Registry {
 }
 
 fn between(text: &str, start: &str, end: &str) -> String {
-    let from = text.find(start).unwrap_or_else(|| panic!("{start} in {text}")) + start.len();
+    let from = text
+        .find(start)
+        .unwrap_or_else(|| panic!("{start} in {text}"))
+        + start.len();
     let to = text[from..].find(end).unwrap() + from;
     text[from..to].to_string()
 }
@@ -383,16 +450,37 @@ fn publish_add_yank_through_the_registry() {
     s.ok("greet", &["publish", ".", "--registry", &url]);
     // Publishing the same archive again is fine; another archive is not.
     s.ok("greet", &["publish", ".", "--registry", &url]);
-    s.write("greet/lib.kiln", "pub fn hello(name: String) -> String {\n    return name\n}\n");
-    s.fails("greet", &["publish", ".", "--registry", &url], "already published");
+    s.write(
+        "greet/lib.kiln",
+        "pub fn hello(name: String) -> String {\n    return name\n}\n",
+    );
+    s.fails(
+        "greet",
+        &["publish", ".", "--registry", &url],
+        "already published",
+    );
     // Another publisher's names are refused.
-    ware(&s, "theirs", "someone/greet", "1.0.0", "", "pub fn x() {}\n");
-    s.fails("theirs", &["publish", ".", "--registry", &url], "cannot publish");
+    ware(
+        &s,
+        "theirs",
+        "someone/greet",
+        "1.0.0",
+        "",
+        "pub fn x() {}\n",
+    );
+    s.fails(
+        "theirs",
+        &["publish", ".", "--registry", &url],
+        "cannot publish",
+    );
 
     s.ok("app", &["add", "jake/greet", "--registry", &url]);
     assert!(s.ok("app", &["run", "."]).contains("hello, kiln"));
     let lock = s.read("app/kiln.lock");
-    assert!(lock.contains(&format!("source = \"registry+{url}\"")), "{lock}");
+    assert!(
+        lock.contains(&format!("source = \"registry+{url}\"")),
+        "{lock}"
+    );
 
     // A new version that gains a capability needs approval.
     ware(
@@ -417,6 +505,10 @@ fn publish_add_yank_through_the_registry() {
 
     // Offline, everything comes from the cache.
     drop(registry);
-    assert!(s.ok("app", &["--offline", "run", "."]).contains("hello, kiln"));
-    assert!(s.ok("app", &["cache", "verify"]).contains("match their checksums"));
+    assert!(s
+        .ok("app", &["--offline", "run", "."])
+        .contains("hello, kiln"));
+    assert!(s
+        .ok("app", &["cache", "verify"])
+        .contains("match their checksums"));
 }

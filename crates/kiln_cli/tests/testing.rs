@@ -56,9 +56,13 @@ impl Drop for Scratch {
 
 fn browser_available() -> bool {
     let found = std::env::var_os("KILN_TEST_BROWSER").is_some()
-        || ["/opt/pw-browsers", "/usr/bin/chromium", "/usr/bin/google-chrome"]
-            .iter()
-            .any(|p| Path::new(p).exists())
+        || [
+            "/opt/pw-browsers",
+            "/usr/bin/chromium",
+            "/usr/bin/google-chrome",
+        ]
+        .iter()
+        .any(|p| Path::new(p).exists())
         || std::env::var_os("HOME")
             .is_some_and(|h| Path::new(&h).join(".cache/ms-playwright").is_dir());
     if !found {
@@ -85,7 +89,10 @@ fn failures_point_at_the_line_and_set_the_exit_code() {
     assert_eq!(out.status.code(), Some(1), "{t}");
     assert!(t.contains("ok    test_doubles"), "{t}");
     assert!(t.contains("test_double.kiln:9:5: the values differ"), "{t}");
-    assert!(t.contains("expected: 5") && t.contains("actual:   4"), "{t}");
+    assert!(
+        t.contains("expected: 5") && t.contains("actual:   4"),
+        "{t}"
+    );
     assert!(t.contains("some output"), "{t}");
     assert!(t.contains("the test failed: broken"), "{t}");
 
@@ -128,7 +135,10 @@ fn junit_reports_and_timeouts() {
     assert_eq!(out.status.code(), Some(1), "{}", text(&out));
     assert!(text(&out).contains("longer than 1 s"), "{}", text(&out));
     let report = std::fs::read_to_string(&xml).unwrap();
-    assert!(report.contains("<testcase classname=\"\" name=\"test_forever\""), "{report}");
+    assert!(
+        report.contains("<testcase classname=\"\" name=\"test_forever\""),
+        "{report}"
+    );
     assert!(report.contains("<failure"), "{report}");
 }
 
@@ -162,9 +172,11 @@ fn a_failing_browser_test_saves_a_screenshot() {
     let out = kiln_test(&s.0, &["--timeout", "30"]);
     let t = text(&out);
     assert_eq!(out.status.code(), Some(1), "{t}");
-    assert!(t.contains("test_page.kiln:8:5: no element matches button \"Stop\""), "{t}");
-    let shot = s
-        .0
-        .join(".kiln/test-results/tests.browser.test_missing_button/failure-1.png");
+    assert!(
+        t.contains("test_page.kiln:8:5: no element matches button \"Stop\""),
+        "{t}"
+    );
+    let shot =
+        s.0.join(".kiln/test-results/tests.browser.test_missing_button/failure-1.png");
     assert!(shot.is_file(), "{t}");
 }

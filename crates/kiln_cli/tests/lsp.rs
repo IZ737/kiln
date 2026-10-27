@@ -755,16 +755,24 @@ fn finds_references_and_renames_across_folders() {
     let main_edits = edit["changes"][&uri].as_array().unwrap();
     assert_eq!(main_edits.len(), 2);
     // Only the name after `posts.` changes.
-    assert_eq!(main_edits[0]["range"]["start"], json!({"line": 2, "character": 16}));
+    assert_eq!(
+        main_edits[0]["range"]["start"],
+        json!({"line": 2, "character": 16})
+    );
     assert_eq!(main_edits[0]["newText"], "heading");
     assert_eq!(edit["changes"][&api_uri].as_array().unwrap().len(), 2);
     // A keyword is not a name.
-    c.send(json!({"jsonrpc": "2.0", "id": 9, "method": "textDocument/rename",
-        "params": {"textDocument": {"uri": uri}, "position": position, "newName": "match"}}));
+    c.send(
+        json!({"jsonrpc": "2.0", "id": 9, "method": "textDocument/rename",
+        "params": {"textDocument": {"uri": uri}, "position": position, "newName": "match"}}),
+    );
     loop {
         let m = c.receive();
         if m["id"] == 9 {
-            assert!(m["error"]["message"].as_str().unwrap().contains("not a name"));
+            assert!(m["error"]["message"]
+                .as_str()
+                .unwrap()
+                .contains("not a name"));
             break;
         }
     }
@@ -776,7 +784,10 @@ fn finds_references_and_renames_across_folders() {
     );
     assert_eq!(refs, json!([]));
     // Formatting uses `kiln fmt`.
-    c.change(&uri, "import posts\nfn main( ) {\n  print(posts.title( ))\n}");
+    c.change(
+        &uri,
+        "import posts\nfn main( ) {\n  print(posts.title( ))\n}",
+    );
     let edits = c.request(
         "textDocument/formatting",
         json!({"textDocument": {"uri": uri}, "options": {"tabSize": 4, "insertSpaces": true}}),

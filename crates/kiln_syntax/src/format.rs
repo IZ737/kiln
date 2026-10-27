@@ -98,11 +98,17 @@ fn pieces(gap: &str) -> Vec<Piece<'_>> {
 }
 
 fn is_open(k: &TokenKind) -> bool {
-    matches!(k, TokenKind::LParen | TokenKind::LBrace | TokenKind::LBracket)
+    matches!(
+        k,
+        TokenKind::LParen | TokenKind::LBrace | TokenKind::LBracket
+    )
 }
 
 fn is_close(k: &TokenKind) -> bool {
-    matches!(k, TokenKind::RParen | TokenKind::RBrace | TokenKind::RBracket)
+    matches!(
+        k,
+        TokenKind::RParen | TokenKind::RBrace | TokenKind::RBracket
+    )
 }
 
 fn is_keyword(k: &TokenKind) -> bool {
@@ -482,7 +488,8 @@ mod tests {
     #[test]
     fn glaze_tags() {
         assert_eq!(
-            format_glaze("{%props a:Int,b: String%}\n<p>  {a}  </p>\n{% if a>1 %}x{%end%}").unwrap(),
+            format_glaze("{%props a:Int,b: String%}\n<p>  {a}  </p>\n{% if a>1 %}x{%end%}")
+                .unwrap(),
             "{% props a: Int, b: String %}\n<p>  {a}  </p>\n{% if a>1 %}x{% end %}"
         );
     }
@@ -491,7 +498,15 @@ mod tests {
     fn every_example_is_stable() {
         let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
         let mut files = Vec::new();
-        for dir in ["examples", "conformance", "site", "registry", "wares", "crates/kiln_check/std", "crates/kiln_cli/wares"] {
+        for dir in [
+            "examples",
+            "conformance",
+            "site",
+            "registry",
+            "wares",
+            "crates/kiln_check/std",
+            "crates/kiln_cli/wares",
+        ] {
             collect(&root.join(dir), &mut files);
         }
         assert!(files.len() > 50);
@@ -499,7 +514,12 @@ mod tests {
             let src = std::fs::read_to_string(&file).unwrap();
             let once = format_kiln(&src).unwrap_or_else(|e| panic!("{}: {e}", file.display()));
             // The repository's own code is kept formatted.
-            assert_eq!(once, src, "{} is not formatted: run `kiln fmt`", file.display());
+            assert_eq!(
+                once,
+                src,
+                "{} is not formatted: run `kiln fmt`",
+                file.display()
+            );
             let twice = format_kiln(&once).unwrap_or_else(|e| panic!("{}: {e}", file.display()));
             assert_eq!(once, twice, "{} is not stable", file.display());
             assert_eq!(
@@ -512,7 +532,9 @@ mod tests {
     }
 
     fn collect(dir: &std::path::Path, out: &mut Vec<std::path::PathBuf>) {
-        let Ok(entries) = std::fs::read_dir(dir) else { return };
+        let Ok(entries) = std::fs::read_dir(dir) else {
+            return;
+        };
         for e in entries.flatten() {
             let p = e.path();
             if p.is_dir() {

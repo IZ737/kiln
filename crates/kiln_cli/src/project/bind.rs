@@ -312,7 +312,10 @@ impl Resolver<'_> {
         }
         if path.len() == 1
             && self.owner == "__test"
-            && !self.symbols.get("__test").is_some_and(|m| m.contains_key(first))
+            && !self
+                .symbols
+                .get("__test")
+                .is_some_and(|m| m.contains_key(first))
         {
             // The test harness calls the tests of the root folder.
             if let Some(symbol) = self.symbols.get("").and_then(|m| m.get(first)) {

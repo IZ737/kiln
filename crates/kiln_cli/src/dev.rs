@@ -264,7 +264,10 @@ fn serve(mut client: TcpStream, shared: &Shared) -> std::io::Result<()> {
         if let Some((k, v)) = line.split_once(':') {
             headers.insert(k.trim().to_ascii_lowercase(), v.trim().to_string());
             let lower = k.trim().to_ascii_lowercase();
-            if !matches!(lower.as_str(), "content-length" | "transfer-encoding" | "connection") {
+            if !matches!(
+                lower.as_str(),
+                "content-length" | "transfer-encoding" | "connection"
+            ) {
                 kept.push(line.to_string());
             }
         }
@@ -291,7 +294,10 @@ fn serve(mut client: TcpStream, shared: &Shared) -> std::io::Result<()> {
         out.push_str(&line);
         out.push_str("\r\n");
     }
-    out.push_str(&format!("content-length: {}\r\nconnection: close\r\n\r\n", body.len()));
+    out.push_str(&format!(
+        "content-length: {}\r\nconnection: close\r\n\r\n",
+        body.len()
+    ));
     client.write_all(out.as_bytes())?;
     client.write_all(&body)
 }

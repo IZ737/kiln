@@ -13,7 +13,7 @@ pub fn format_file(path: &Path, text: &str) -> Result<String, String> {
     }
 }
 
-fn collect(path: &Path, out: &mut Vec<PathBuf>) {
+pub(crate) fn collect(path: &Path, out: &mut Vec<PathBuf>) {
     if path.is_file() {
         out.push(path.to_path_buf());
         return;
@@ -24,9 +24,17 @@ fn collect(path: &Path, out: &mut Vec<PathBuf>) {
     let mut entries: Vec<PathBuf> = entries.filter_map(|e| e.ok().map(|e| e.path())).collect();
     entries.sort();
     for p in entries {
-        let name = p.file_name().unwrap_or_default().to_string_lossy().to_string();
+        let name = p
+            .file_name()
+            .unwrap_or_default()
+            .to_string_lossy()
+            .to_string();
         if p.is_dir() {
-            if !name.starts_with('.') && !name.starts_with("__") && name != "target" && name != "node_modules" {
+            if !name.starts_with('.')
+                && !name.starts_with("__")
+                && name != "target"
+                && name != "node_modules"
+            {
                 collect(&p, out);
             }
         } else if p.extension().is_some_and(|e| e == "kiln") || crate::is_glaze(&p) {
@@ -36,7 +44,11 @@ fn collect(path: &Path, out: &mut Vec<PathBuf>) {
 }
 
 pub fn run(paths: Vec<PathBuf>, check: bool) -> ExitCode {
-    let paths = if paths.is_empty() { vec![PathBuf::from(".")] } else { paths };
+    let paths = if paths.is_empty() {
+        vec![PathBuf::from(".")]
+    } else {
+        paths
+    };
     let mut files = Vec::new();
     for p in &paths {
         if !p.exists() {
@@ -73,10 +85,18 @@ pub fn run(paths: Vec<PathBuf>, check: bool) -> ExitCode {
     }
     if check {
         if !changed.is_empty() {
-            eprintln!("{} of {} file(s) are not formatted; run `kiln fmt`", changed.len(), files.len());
+            eprintln!(
+                "{} of {} file(s) are not formatted; run `kiln fmt`",
+                changed.len(),
+                files.len()
+            );
         }
     } else {
-        eprintln!("formatted {} file(s); {} were already formatted", changed.len(), files.len() - changed.len() - failed);
+        eprintln!(
+            "formatted {} file(s); {} were already formatted",
+            changed.len(),
+            files.len() - changed.len() - failed
+        );
     }
     if failed > 0 {
         ExitCode::from(2)

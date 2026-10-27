@@ -150,7 +150,10 @@ pub fn encode(text: &str) -> String {
 mod tests {
     #[test]
     fn chunks_and_encoding() {
-        assert_eq!(super::dechunk(b"3\r\nabc\r\n2\r\nde\r\n0\r\n\r\n"), b"abcde");
+        assert_eq!(
+            super::dechunk(b"3\r\nabc\r\n2\r\nde\r\n0\r\n\r\n"),
+            b"abcde"
+        );
         assert_eq!(super::encode("a b&c=é"), "a+b%26c%3D%C3%A9");
     }
 }

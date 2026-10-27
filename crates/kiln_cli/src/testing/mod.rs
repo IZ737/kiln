@@ -306,15 +306,17 @@ fn once(options: &Options, builder: Builder) -> ExitCode {
     let cases: Vec<Case> = all
         .into_iter()
         .filter(|c| options.kinds.is_empty() || options.kinds.contains(&c.kind))
-        .filter(|c| options.filter.as_ref().is_none_or(|f| c.id.contains(f.as_str())))
+        .filter(|c| {
+            options
+                .filter
+                .as_ref()
+                .is_none_or(|f| c.id.contains(f.as_str()))
+        })
         .collect();
     if options.list {
         if options.json {
             let list: Vec<Value> = cases.iter().map(case_json).collect();
-            println!(
-                "{}",
-                json!({ "version": REPORT_VERSION, "tests": list })
-            );
+            println!("{}", json!({ "version": REPORT_VERSION, "tests": list }));
         } else {
             for c in &cases {
                 println!("{}  {} ({})", c.kind.name(), c.id, c.at());
@@ -581,7 +583,10 @@ impl Shared<'_> {
                         Ok(value) => json!({ "ok": true, "value": value, "error": "" }),
                         Err(error) => json!({ "ok": false, "value": "", "error": error }),
                     };
-                    if writeln!(stdin, "{reply}").and_then(|_| stdin.flush()).is_err() {
+                    if writeln!(stdin, "{reply}")
+                        .and_then(|_| stdin.flush())
+                        .is_err()
+                    {
                         break;
                     }
                 }
@@ -696,8 +701,10 @@ impl Env<'_, '_> {
                     &mut self.cookies,
                     left.max(Duration::from_millis(100)),
                 )?;
-                Ok(json!({ "status": res.status, "headers": res.headers, "body": res.body })
-                    .to_string())
+                Ok(
+                    json!({ "status": res.status, "headers": res.headers, "body": res.body })
+                        .to_string(),
+                )
             }
             "page" => {
                 let base = self.server()?;
@@ -814,7 +821,8 @@ impl Env<'_, '_> {
         if let Ok(browser) = self.shared.browser() {
             if !self.pages.is_empty() {
                 for (i, page) in self.pages.iter().enumerate() {
-                    if let Ok(path) = browser.screenshot(page, &dir, &format!("failure-{}", i + 1)) {
+                    if let Ok(path) = browser.screenshot(page, &dir, &format!("failure-{}", i + 1))
+                    {
                         kept.push(path);
                     }
                     let errors = browser.errors(page);
@@ -874,7 +882,11 @@ fn print_outcome(o: &Outcome) {
             let _ = writeln!(err, "ok    {} ({} ms{retried})", o.case.id, o.millis);
         }
         Status::Failed | Status::Error => {
-            let word = if o.status == Status::Failed { "FAIL " } else { "ERROR" };
+            let word = if o.status == Status::Failed {
+                "FAIL "
+            } else {
+                "ERROR"
+            };
             let _ = writeln!(err, "{word} {} ({} ms)", o.case.id, o.millis);
             let _ = writeln!(err, "  {}: {}", o.at, o.message);
             if !o.expected.is_empty() || !o.actual.is_empty() {
@@ -895,14 +907,26 @@ fn print_outcome(o: &Outcome) {
 }
 
 fn print_summary(outcomes: &[Outcome], millis: u128) {
-    let passed = outcomes.iter().filter(|o| o.status == Status::Passed).count();
-    let failed = outcomes.iter().filter(|o| o.status == Status::Failed).count();
-    let errors = outcomes.iter().filter(|o| o.status == Status::Error).count();
+    let passed = outcomes
+        .iter()
+        .filter(|o| o.status == Status::Passed)
+        .count();
+    let failed = outcomes
+        .iter()
+        .filter(|o| o.status == Status::Failed)
+        .count();
+    let errors = outcomes
+        .iter()
+        .filter(|o| o.status == Status::Error)
+        .count();
     let flaky = outcomes
         .iter()
         .filter(|o| o.status == Status::Passed && o.retries > 0)
         .count();
-    let mut line = format!("\n{} test(s): {passed} passed, {failed} failed", outcomes.len());
+    let mut line = format!(
+        "\n{} test(s): {passed} passed, {failed} failed",
+        outcomes.len()
+    );
     if errors > 0 {
         line.push_str(&format!(", {errors} could not run"));
     }
@@ -983,8 +1007,14 @@ fn xml(text: &str) -> String {
 
 /// The results as JUnit XML, which most CI systems read.
 pub fn junit(outcomes: &[Outcome], millis: u128) -> String {
-    let failed = outcomes.iter().filter(|o| o.status == Status::Failed).count();
-    let errors = outcomes.iter().filter(|o| o.status == Status::Error).count();
+    let failed = outcomes
+        .iter()
+        .filter(|o| o.status == Status::Failed)
+        .count();
+    let errors = outcomes
+        .iter()
+        .filter(|o| o.status == Status::Error)
+        .count();
     let mut out = format!(
         "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<testsuites name=\"kiln test\" tests=\"{}\" failures=\"{failed}\" errors=\"{errors}\" time=\"{:.3}\">\n",
         outcomes.len(),
@@ -1013,10 +1043,17 @@ pub fn junit(outcomes: &[Outcome], millis: u128) -> String {
                 out.push_str(" />\n");
                 continue;
             }
-            let tag = if o.status == Status::Failed { "failure" } else { "error" };
+            let tag = if o.status == Status::Failed {
+                "failure"
+            } else {
+                "error"
+            };
             let mut detail = format!("{}: {}", o.at, o.message);
             if !o.expected.is_empty() || !o.actual.is_empty() {
-                detail.push_str(&format!("\nexpected: {}\nactual:   {}", o.expected, o.actual));
+                detail.push_str(&format!(
+                    "\nexpected: {}\nactual:   {}",
+                    o.expected, o.actual
+                ));
             }
             out.push_str(&format!(
                 ">\n      <{tag} message=\"{}\">{}</{tag}>\n      <system-out>{}</system-out>\n    </testcase>\n",

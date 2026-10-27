@@ -5,6 +5,7 @@ mod db;
 mod dev;
 mod fmt;
 mod lsp;
+mod mcp;
 mod notice;
 mod npm;
 mod project;
@@ -184,6 +185,28 @@ enum Command {
     },
     /// Run the language server, for editors, over standard input and output.
     Lsp,
+    /// Run a Model Context Protocol server over standard input and output,
+    /// so a coding agent can read the project graph, check, explain, format
+    /// and (when allowed) run tests with this compiler.
+    Mcp {
+        /// A folder the agent may read. Defaults to the current directory;
+        /// give it more than once for more folders.
+        #[arg(long = "root")]
+        roots: Vec<PathBuf>,
+        /// Let the agent run the project's tests, which executes its code.
+        #[arg(long)]
+        allow_exec: bool,
+        /// Let the agent write files: format them, and build executables
+        /// into `.kiln/mcp/`.
+        #[arg(long)]
+        allow_write: bool,
+    },
+    /// Print Kiln's documentation for this version.
+    Docs {
+        /// The guide for coding agents, as one Markdown document.
+        #[arg(long)]
+        llm: bool,
+    },
     /// Print the syntax tree of a file.
     Parse { file: PathBuf },
     /// Explain an error code, with a wrong and a right example.
@@ -431,6 +454,8 @@ fn main() -> ExitCode {
     let notice = !matches!(
         command,
         Command::Lsp
+            | Command::Mcp { .. }
+            | Command::Docs { .. }
             | Command::Upgrade { .. }
             | Command::UpdateCheck
             | Command::Check { json: true, .. }
@@ -441,6 +466,9 @@ fn main() -> ExitCode {
     }
     code
 }
+
+/// The guide for coding agents, as this version of kiln knows it.
+pub(crate) const AGENT_GUIDE: &str = include_str!("../../../docs/guides/agents.md");
 
 fn dispatch(command: Command) -> ExitCode {
     match command {
@@ -502,9 +530,8 @@ fn dispatch(command: Command) -> ExitCode {
                 list,
                 junit,
                 watch,
-                jobs: jobs.unwrap_or_else(|| {
-                    std::thread::available_parallelism().map_or(2, |n| n.get())
-                }),
+                jobs: jobs
+                    .unwrap_or_else(|| std::thread::available_parallelism().map_or(2, |n| n.get())),
                 timeout: std::time::Duration::from_secs(timeout.or(config.timeout).unwrap_or(60)),
                 retries,
                 headed,
@@ -557,6 +584,27 @@ fn dispatch(command: Command) -> ExitCode {
             args,
         } => run(&file, &args, Backend::or_default(backend, Target::host())),
         Command::Lsp => ExitCode::from(lsp::run() as u8),
+        Command::Mcp {
+            roots,
+            allow_exec,
+            allow_write,
+        } => mcp::run(mcp::Options {
+            roots: if roots.is_empty() {
+                vec![PathBuf::from(".")]
+            } else {
+                roots
+            },
+            allow_exec,
+            allow_write,
+        }),
+        Command::Docs { llm } => {
+            if llm {
+                print!("{AGENT_GUIDE}");
+            } else {
+                println!("Kiln {}: the documentation is at https://github.com/IZ737/kiln/tree/main/docs; `kiln docs --llm` prints the guide for coding agents.", env!("CARGO_PKG_VERSION"));
+            }
+            ExitCode::SUCCESS
+        }
         Command::Parse { file } => parse(&file),
         Command::Explain { code } => explain(&code),
         Command::Add {
@@ -686,6 +734,55 @@ fn report(result: Result<String, String>) -> ExitCode {
 }
 
 fn check(paths: Vec<PathBuf>, json: bool) -> ExitCode {
+    let report = match check_paths(paths) {
+        Ok(r) => r,
+        Err(err) => {
+            eprintln!("error: {err}");
+            return ExitCode::from(2);
+        }
+    };
+    if json {
+        let diagnostics: Vec<_> = report
+            .diagnostics
+            .iter()
+            .map(|(file, diag)| diag.to_json(file))
+            .collect();
+        let out = serde_json::json!({
+            "files_checked": report.files_checked,
+            "error_count": report.diagnostics.len(),
+            "diagnostics": diagnostics,
+        });
+        println!("{}", serde_json::to_string_pretty(&out).unwrap());
+    } else {
+        for (file, diag) in &report.diagnostics {
+            eprintln!("{}", diag.render(file));
+        }
+        if report.diagnostics.is_empty() {
+            eprintln!("checked {} file(s): no errors", report.files_checked);
+        } else {
+            eprintln!(
+                "checked {} file(s): {} error(s). Run `kiln explain <code>` for details.",
+                report.files_checked,
+                report.diagnostics.len()
+            );
+        }
+    }
+    if report.diagnostics.is_empty() {
+        ExitCode::SUCCESS
+    } else {
+        ExitCode::FAILURE
+    }
+}
+
+/// What `kiln check` found: how many files it read, and each error with
+/// its file.
+pub(crate) struct CheckReport {
+    pub files_checked: usize,
+    pub diagnostics: Vec<(SourceFile, Diagnostic)>,
+}
+
+/// Checks files and folders as `kiln check` does, for it and `kiln mcp`.
+pub(crate) fn check_paths(paths: Vec<PathBuf>) -> Result<CheckReport, String> {
     let paths = if paths.is_empty() {
         vec![PathBuf::from(".")]
     } else {
@@ -693,13 +790,10 @@ fn check(paths: Vec<PathBuf>, json: bool) -> ExitCode {
     };
     let mut files = Vec::new();
     for path in &paths {
-        if let Err(err) = collect_sources(path, &mut files) {
-            eprintln!("error: cannot read {}: {err}", path.display());
-            return ExitCode::from(2);
-        }
+        collect_sources(path, &mut files)
+            .map_err(|err| format!("cannot read {}: {err}", path.display()))?;
     }
     files.sort();
-
     // Files are type-checked with the other files in their directory,
     // which form one app: glazes use the types of the `.kiln` files there.
     let mut dirs: BTreeMap<PathBuf, Vec<PathBuf>> = BTreeMap::new();
@@ -728,8 +822,7 @@ fn check(paths: Vec<PathBuf>, json: bool) -> ExitCode {
     for root in selected {
         dirs.entry(root).or_default();
     }
-    let mut error_count = 0;
-    let mut json_diags = Vec::new();
+    let mut found = Vec::new();
     let mut visited = std::collections::HashSet::new();
     for dir in dirs.keys() {
         let canonical = dir.canonicalize().unwrap_or_else(|_| dir.clone());
@@ -748,12 +841,7 @@ fn check(paths: Vec<PathBuf>, json: bool) -> ExitCode {
             Ok(project) => project,
             Err(err) => {
                 let (file, diag) = project::error_diagnostic(&err, &dir.join("kiln.toml"));
-                if json {
-                    json_diags.push(diag.to_json(&file));
-                } else {
-                    eprintln!("{}", diag.render(&file));
-                }
-                error_count += 1;
+                found.push((file, diag));
                 continue;
             }
         };
@@ -766,14 +854,9 @@ fn check(paths: Vec<PathBuf>, json: bool) -> ExitCode {
             .files
             .iter()
             .map(|p| project::read(p).map(|text| (p.clone(), text)))
-            .collect::<Result<Vec<_>, _>>();
-        let app = match texts {
-            Ok(texts) => check_project_sources_entry(&project.root, &project.entry, texts).0,
-            Err(err) => {
-                eprintln!("error: {err}");
-                return ExitCode::from(2);
-            }
-        };
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|err| err.to_string())?;
+        let app = check_project_sources_entry(&project.root, &project.entry, texts).0;
         for (file, diagnostics) in app {
             if paths.iter().all(|p| p.is_file())
                 && Path::new(&file.name).parent() == Some(canonical.as_path())
@@ -783,37 +866,15 @@ fn check(paths: Vec<PathBuf>, json: bool) -> ExitCode {
             {
                 continue;
             }
-            error_count += diagnostics.len();
-            for diag in &diagnostics {
-                if json {
-                    json_diags.push(diag.to_json(&file));
-                } else {
-                    eprintln!("{}", diag.render(&file));
-                }
+            for diag in diagnostics {
+                found.push((file.clone(), diag));
             }
         }
     }
-
-    if json {
-        let report = serde_json::json!({
-            "files_checked": files.len(),
-            "error_count": error_count,
-            "diagnostics": json_diags,
-        });
-        println!("{}", serde_json::to_string_pretty(&report).unwrap());
-    } else if error_count == 0 {
-        eprintln!("checked {} file(s): no errors", files.len());
-    } else {
-        eprintln!(
-            "checked {} file(s): {error_count} error(s). Run `kiln explain <code>` for details.",
-            files.len()
-        );
-    }
-    if error_count == 0 {
-        ExitCode::SUCCESS
-    } else {
-        ExitCode::FAILURE
-    }
+    Ok(CheckReport {
+        files_checked: files.len(),
+        diagnostics: found,
+    })
 }
 
 enum Parsed {
@@ -1474,7 +1535,11 @@ fn caller_locations(
     info: &AppInfo,
     root: &Path,
 ) -> Box<dyn Fn(u32) -> String + Send> {
-    let files: Vec<(u32, SourceFile, Option<(SourceFile, project::bind::SourceMap)>)> = kiln_files
+    let files: Vec<(
+        u32,
+        SourceFile,
+        Option<(SourceFile, project::bind::SourceMap)>,
+    )> = kiln_files
         .iter()
         .zip(offsets)
         .map(|(f, &o)| ((*f).clone(), o, info.source_maps.get(&f.name).cloned()))
@@ -1488,13 +1553,22 @@ fn caller_locations(
         let (start, file, map) = &files[i];
         let local = offset - start;
         let (file, local) = match map {
-            Some((original, map)) => (original, map.original(Span::new(local as usize, local as usize)).start),
+            Some((original, map)) => (
+                original,
+                map.original(Span::new(local as usize, local as usize))
+                    .start,
+            ),
             None => (file, local),
         };
         let at = file.line_col(local);
         let path = PathBuf::from(project::shown(&file.name));
         let path = path.strip_prefix(&root).unwrap_or(&path);
-        format!("{}:{}:{}", path.display().to_string().replace('\\', "/"), at.line, at.column)
+        format!(
+            "{}:{}:{}",
+            path.display().to_string().replace('\\', "/"),
+            at.line,
+            at.column
+        )
     })
 }
 

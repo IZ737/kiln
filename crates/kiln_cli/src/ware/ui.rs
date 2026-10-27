@@ -169,7 +169,11 @@ pub fn new_project(dir: &Path) -> Result<String, String> {
         .file_name()
         .map(|n| n.to_string_lossy().to_string())
         .unwrap_or_default();
-    if name.is_empty() || !name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-') {
+    if name.is_empty()
+        || !name
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
+    {
         return Err(format!(
             "`{}` is not a project name: use letters, digits, `-` and `_`",
             dir.display()

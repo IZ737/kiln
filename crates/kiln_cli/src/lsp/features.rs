@@ -354,7 +354,12 @@ fn references_bound(sources: &[Source], index: usize, offset: usize) -> Value {
                 }
             }
         }
-        Ref::Module(_) | Ref::ModuleFn(..) | Ref::StyleKey { .. } | Ref::Token { .. } | Ref::Theme(_) | Ref::Component(_) => {
+        Ref::Module(_)
+        | Ref::ModuleFn(..)
+        | Ref::StyleKey { .. }
+        | Ref::Token { .. }
+        | Ref::Theme(_)
+        | Ref::Component(_) => {
             return json!([]);
         }
         _ => {
