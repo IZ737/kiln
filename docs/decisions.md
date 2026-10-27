@@ -10,6 +10,7 @@ Phase 6.5 reviewed the whole language against the [vision](vision.md);
 
 | Date | Decision | Why | Compatibility |
 | --- | --- | --- | --- |
+| 2026-10-27 | **Keep `{% state %}` as the canonical Ember-local reactive declaration; do not replace it with `{% var %}`.** Shared stores will have explicit reactive roots, not automatically reactive `var` bindings ([Phase 6.5.1](plans/phase-6.5.1.md)). | Someone scanning a file should immediately recognize what is component state and what is merely an ordinary mutable variable. | No break: preserves the implemented syntax; the earlier `{% var %}` idea is rejected. |
 | 2026-10-27 | Deferred: forms typed once from one struct for both the page and its handler (Phase 7); `js.Handle<T>` for typed JavaScript objects (after 1.0); private fields (before Wares are widely published) | Each is worth doing, but none blocks 1.0 programs, and each needs design beyond this review | None |
 | 2026-10-27 | Models and the guides write `id: Int = 0`, so a new record is made without inventing a key | Examples passed `id: 0` by hand to every insert | None: a style change |
 | 2026-10-27 | Structural interfaces, used only as bounds on generic functions (`fn label<T: Named>(x: T)`), compiled per type with no dynamic dispatch; a type fits by having the methods | Generic code could only show, compare and hash, so Wares could not offer reusable code over the program's types; dynamic dispatch would need a runtime representation 1.0 does not need | Additive; `interface` is a keyword only at the start of a declaration |
