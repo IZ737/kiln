@@ -57,6 +57,7 @@ These are decisions reached in the design discussion, not claims of implemented 
 | Pre-rendering safety | **Reject routes whose cached response depends on request-specific data** (auth/session, cookies, arbitrary headers/query/body); apply consistently to filesystem `static_params()` and explicit `.static(...)` routes |
 | Server-mode cache refresh | **Opt-in route-local `static_refresh` interval** in `route.kiln`, equivalent to explicit `.static(refresh: ...)`; never relax safe-pre-rendering checks |
 | Zero-parameter refresh | **`static_refresh` alone opts a parameter-free route into server startup pre-rendering and interval refresh**; no `static = true` or `static_params()` required |
+| API-only routes | **`route.kiln` may define HTTP methods without any `index.glaze`**; `load` requires a Glaze to render and is invalid without one |
 
 The mount API, URL filename conventions and exact handler signatures below are **provisional** until decided. The **`route.kiln`** file name and its use for the `load`/HTTP-method exports are agreed.
 
@@ -123,7 +124,7 @@ my-app/
 - `about.glaze` maps to `/about`.
 - `blog/index.glaze` maps to `/blog`.
 - `[slug].glaze` maps to a parameter segment named `slug`. **Agreed: the segment's type comes from matching Glaze, loader or handler declarations**, not filename type markers; where none specifies a type, it defaults to `String`. The exact `[name]` delimiter convention remains subject to final route-naming review.
-- For complex routes, a directory may instead contain `index.glaze` plus **`route.kiln`** when route-specific code is needed (see §5). For instance `blog/[slug]/index.glaze` would map to the same path as `blog/[slug].glaze`; including both is an error.
+- For complex **page routes**, a directory may contain `index.glaze` plus **`route.kiln`** when route-specific code is needed (see §5). For **API-only routes**, `route.kiln` may exist **without** an `index.glaze` and register its exported HTTP methods directly (see §5). For instance `blog/[slug]/index.glaze` would map to the same path as `blog/[slug].glaze`; including both is an error.
 - Plain components outside mounted directories are not route candidates. Only **mounted directories** are scanned.
 - The initial automatic-page convention is for **server-rendered `.glaze` pages**; `.ember` components can be embedded normally. Whether standalone `.ember` files may directly claim routes is an **open question**.
 
@@ -241,6 +242,39 @@ pub fn get(req: web.Request, slug: String) -> web.Response ! {
 
 This handler uses the existing request, typed path parameters, response types, hooks and error behaviour. Additional `post`, `put`, `patch` and `delete` handlers should eventually use the same ordinary routing semantics, subject to the handler convention being settled. A full handler may return something other than HTML.
 
+### API-only filesystem routes — Option A agreed (2026-10-27)
+
+A route directory containing **`route.kiln` alone is valid**, with **no `index.glaze` required**. Its ordinary exported HTTP-method functions define the endpoint(s). This is not a fourth rendering mechanism: it is the existing full-handler route model without a page view.
+
+```text
+pages/
+  api/
+    users/
+      route.kiln             → /api/users
+```
+
+```kiln
+// Conceptual: ordinary typed HTTP handlers in pages/api/users/route.kiln.
+import web, users
+
+pub fn get(req: web.Request) -> web.Response ! {
+    return web.json(users.all())
+}
+
+pub fn post(req: web.Request) -> web.Response ! {
+    return web.json(try users.create(req))
+}
+```
+
+**Rules:**
+
+- `get`, `post`, `put`, `patch` and `delete` exports register their corresponding methods at the directory's path and preserve existing request/response types, errors, hooks and typed path parameters. A `post`-only route need not define `get`; an incoming GET then follows ordinary 405/no-matching-method behaviour.
+- **`load` is invalid without an `index.glaze`** in the same route directory, because there is no Glaze to receive and render the returned props. Report a source-linked error explaining how to add a view or replace `load` with a full `get` handler.
+- If there **is** an `index.glaze` and `route.kiln` exports only non-GET HTTP methods, Kiln still provides the normal implicit GET page render. A full `get` export overrides implicit GET rendering; a `load` export provides typed props for implicit rendering. The existing `load`/`get` exclusivity rule remains unchanged.
+- A `route.kiln` with neither a routable HTTP method nor a usable Glaze/`load` page is an error or an unused file, not an invisible successful endpoint; choose the exact diagnostic policy when implementing discovery.
+- A GET returning JSON or other non-HTML content is **not automatically static-exportable** merely because it comes from a filesystem route. Use the same Phase 6.6 export checks as explicit GET routes (including valid extensions for non-HTML output), and allow a route-local `dynamic` marker for endpoints intentionally excluded from `kiln fire --static`. POST and other non-GET endpoints are omitted from full-static export as usual.
+- No mandatory Glaze, empty page stub, new API directory type, separate router, or different auth/middleware machinery is introduced.
+
 **Design constraint:** these levels describe progressively greater *control*, not separate frameworks. Generate ordinary route registrations for all three. Do not create a parallel rendering, middleware, authentication or static-export pipeline.
 
 ## 6. Parameters, props, precedence and errors — remaining design work
@@ -280,7 +314,7 @@ The **three levels above are agreed**; their other exact contracts need decision
 - **Handler discovery:** **`route.kiln` in the route directory is settled.** Determine its visibility/export rules, signature typing, how it participates in ordinary folder-module imports/privacy and which declarations may be used as route handlers.
 - **`load` vs `get` — DECIDED:** they are **mutually exclusive per route** and must trigger a **compile-time error** when both are defined. `load` may coexist with non-GET method exports (`post`, `put`, `patch`, `delete`). Do not invent fallback or invocation ordering between `load` and `get`.
 - **Failure handling — DECIDED:** reuse `web.error(status, message)`, ordinary `try`/`throw`, existing unexpected-error (500) handling, and `app.on_error`; **do not** convert `none` to 404 automatically. Authentication and authorization failures must be propagated through this same path. Exact examples and language type signatures still require implementation-time validation.
-- **HTML and non-HTML:** only a route designed for page rendering should receive automatic Glaze behaviour. A full handler can return arbitrary `web.Response`.
+- **HTML and non-HTML — DECIDED:** API-only `route.kiln` directories may omit `index.glaze` and expose ordinary HTTP-method handlers; `load` without an `index.glaze` is an error. Full handlers can return arbitrary `web.Response`, subject to existing static-export constraints.
 - **Upgrade path:** moving `blog/[slug].glaze` to `blog/[slug]/index.glaze` plus `route.kiln` should preserve `/blog/{slug}`; defining both forms simultaneously is a deterministic collision error.
 - **Testing:** include simple direct parameter props, typed loader props, full handlers, invalid prop/type contracts, access control, errors, cross-folder imports and consistent static export behaviour.
 
@@ -476,6 +510,8 @@ If adopted as **Phase 6.7**, a reviewable breakdown might be:
 - [ ] A full GET handler may directly return `web.Response` without bypassing existing hooks, validation or SSG integration.
 - [ ] Route directories discover their `route.kiln` consistently; its `load` and HTTP-method functions retain the ordinary language's type checking.
 - [ ] Defining both `load` and `get` for the same filesystem route is a compile-time diagnostic with a useful fix; `load` plus a `post`/`put`/`patch`/`delete` handler compiles and dispatches by method correctly.
+- [ ] `pages/api/users/route.kiln` without a Glaze registers exported `get`/`post` (and other supported methods), with ordinary typed responses and 404/405 handling; `load` without a sibling `index.glaze` fails compilation.
+- [ ] A sibling `index.glaze` remains an implicit GET when `route.kiln` defines only non-GET handlers; API responses retain current Phase 6.6 static-export rules, including non-HTML and dynamic-only behaviour.
 - [ ] Static, dynamic, mixed, and Ember-using examples preserve Phase 6.6 semantics under `kiln fire --static`.
 - [ ] Parameterised routes use typed, finite `static_params()` from `route.kiln` for static export, including multi-parameter records; routes without parameters export without additional boilerplate.
 - [ ] In server mode, `static_params()` pre-renders its enumerated pages at startup through the ordinary `.static(...)` code path, honours `app.before` on requests, and retains existing behaviour for unlisted parameter values and failed startup pre-renders.
@@ -510,10 +546,11 @@ If adopted as **Phase 6.7**, a reviewable breakdown might be:
 - **Server-mode `static_params()` (Option A):** the same enumeration also pre-renders pages at server startup via existing `.static(...)` behaviour, including hooks and fallback for unlisted or unsuccessfully pre-rendered pages. It is not export-only.
 - **Safe pre-rendering (Option A):** reject request-dependent *cached output* (personalisation, cookies, auth/session, arbitrary headers/query/body) for filesystem and explicit `.static(...)` routes; typed enumerated URL parameters are safe inputs, and separately executed `app.before` hooks may still inspect request context. Extend static-export safeguards to server-mode pre-rendering where necessary.
 - **Route-local refresh (Option A):** support an optional `static_refresh` duration in `route.kiln` with the same server-mode first-request-after-expiry re-render semantics as `.static(refresh: ...)`. For a route with **no URL parameters**, `static_refresh` alone triggers startup pre-rendering: no `static_params()` or extra `static` declaration needed. A static export is still a snapshot; refresh does not override safe-cache restrictions.
+- **API-only routes (Option A):** a directory with `route.kiln` alone can register typed HTTP methods without `index.glaze`. A `load` export requires a sibling `index.glaze` and is an error without one. A view plus only non-GET exports retains normal implicit GET rendering; JSON APIs are subject to existing static-export restrictions.
 
 **Needs an explicit decision before locking the specification:**
 1. **Remaining loader contract:** admissible successful return record shapes, unused/extra field policy and unused parameter rules (§§5–6). Named parameter binding, optional first `req`, automatic props merging, duplicate-name errors, type inference/default `String` and ordinary error/404 propagation are settled.
-2. **`route.kiln` contracts:** exact function signatures, module boundaries, exports and how flat Glaze files graduate to route directories (§5). The filename is settled.
+2. **`route.kiln` contracts:** exact function signatures, module boundaries, exports and how flat Glaze files graduate to route directories (§5). The filename and permission for handler-only API routes are settled.
 3. **SSG refinements:** exact export/marker signatures, contradictory declarations and unusual handler results (§8). Route-local enumeration, server-startup pre-render, `static_refresh` alone on zero-parameter routes and rejection of request-dependent cached output (including explicit `.static(...)`) are settled.
 4. **Route file naming:** `[slug]` spelling, typed parameters, extensions and optional `.ember` page files? (§4)
 5. **Collision policy:** explicit route versus filesystem mount interactions, duplicate mount URL scope, and reserved paths? (§4)
