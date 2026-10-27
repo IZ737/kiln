@@ -611,8 +611,10 @@ step and no expansion into Embers or the general module system.
   integration and automated browser/Glaze/Ember tests**. Phase 3 still
   needs compiler/HTML/CSS smoke and regression tests but does not depend
   on the finished public test command.
-- **Phase 7:** Static site export, deployment automation,
-  major runtime/compiler optimization and stability guarantees.
+- **Phase 6.6:** Static site export, including `kiln fire --static`.
+- **Phase 7:** Release-build optimization, major runtime/compiler hardening
+  and stability guarantees for 1.0.
+- **Phase 8:** Deployment/release automation on existing infrastructure.
 - **Later:** automatic runtime theme switching, user theme
   preferences, theme registry/distribution, style previews,
   arbitrary dynamic computed CSS and new CSS-replacement DSLs.
