@@ -407,13 +407,31 @@ impl Expr {
     /// is not always the innermost one: a record's field is held as `Any`
     /// and read back with a coercion to its own type, so
     /// `((form.email as String) as Any)` describes a `String`.
+    /// A library call's own type can still name its parameters, as
+    /// `xs.map(f)` is a `List<U>` under its coercion to `List<String>`, so
+    /// only a type with nothing left to solve is looked under.
     pub fn described(&self) -> &Ty {
         match &self.kind {
-            ExprKind::Coerce(inner) if !matches!(inner.ty, Ty::Any | Ty::Unknown) => {
-                inner.described()
-            }
+            ExprKind::Coerce(inner) if concrete(&inner.ty) => inner.described(),
             _ => &self.ty,
         }
+    }
+}
+
+/// Whether a type is fully known: no parameter, variable, `Any` or
+/// `Unknown` anywhere in it.
+fn concrete(ty: &Ty) -> bool {
+    match ty {
+        Ty::Adt(_, args) => args.iter().all(concrete),
+        Ty::Opt(inner) => concrete(inner),
+        Ty::Fn(f) => {
+            f.params.iter().all(concrete)
+                && concrete(&f.ret)
+                && f.throws.as_ref().is_none_or(concrete)
+        }
+        Ty::Record(fields) => fields.iter().all(|(_, t)| concrete(t)),
+        Ty::Param(_) | Ty::Var(_) | Ty::Any | Ty::Rest | Ty::Unknown => false,
+        Ty::Unit | Ty::Never | Ty::Style(_) => true,
     }
 }
 
