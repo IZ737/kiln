@@ -1,0 +1,18 @@
+{% props title: String, dark: Bool = false %}
+{% css "theme.css" %}
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>{title} - Guestbook</title></head>
+<body ui={{ theme: if dark { .dark } else { .light }, bg: color.page, fg: color.text }}>
+<header ui={{ flex: true, justify: .between, items: .center, px: space.lg, py: space.sm, bg: color.surface }}>
+  <a href="/">Guestbook</a>
+  <form method="post" action="/theme">
+    <input type="hidden" name="theme" value={if dark { "light" } else { "dark" }}>
+    <ui.Button type="submit" tone={ui.Tone.Neutral}>{if dark { "Light theme" } else { "Dark theme" }}</ui.Button>
+  </form>
+</header>
+<main ui={{ maxW: "40rem", mx: .auto, p: space.lg }}>
+{% slot %}
+</main>
+</body>
+</html>

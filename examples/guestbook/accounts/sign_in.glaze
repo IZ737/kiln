@@ -1,0 +1,10 @@
+{% props email: String, problem: String, dark: Bool %}
+{% layout "shared/layout.glaze" title: "Sign in", dark: dark %}
+<h1>Sign in</h1>
+{% if problem != "" %}<ui.Alert tone={ui.Tone.Danger}>{problem}</ui.Alert>{% end %}
+<form method="post" action="/sign-in">
+  <ui.Input label="Email" name="email" type="email" value={email} required autocomplete="email" />
+  <ui.Input label="Password" name="password" type="password" required autocomplete="current-password" />
+  <ui.Button type="submit">Sign in</ui.Button>
+</form>
+<p>New here? <a href="/sign-up">Sign up</a></p>

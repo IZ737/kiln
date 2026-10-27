@@ -1,0 +1,7 @@
+// The layout's theme switch is a kiln/ui button.
+import web, ui
+
+// Whether the visitor chose the dark theme.
+pub fn dark(req: web.Request) -> Bool {
+    return (req.cookie("theme") ?? "") == "dark"
+}

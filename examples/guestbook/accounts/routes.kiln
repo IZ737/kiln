@@ -1,0 +1,52 @@
+// Signing up, in and out.
+import web, sql, orm, auth, ui, shared
+
+pub fn routes(app: web.App, db: sql.Db, sessions: auth.Sessions) {
+    app.get("/sign-up", fn(req) {
+        return web.render("sign_up.glaze", { name: "", email: "", problems: [], dark: shared.dark(req) })
+    })
+
+    app.post("/sign-up", fn(req) {
+        if not shared.same_origin(req) {
+            throw web.error(403, "this form was sent from another site")
+        }
+        let form = try req.form<{ name: String, email: String, password: String }>()
+        let email = form.email.trim().lower()
+        let taken = try orm.find<shared.Account>(db).where(fn(a) { a.email == email }).count()
+        let checked = shared.account_problems(form.name.trim(), email, form.password, taken > 0)
+        if not checked.valid {
+            var res = web.render("sign_up.glaze", { name: form.name, email: email, problems: checked.messages(), dark: shared.dark(req) })
+            res.status = 422
+            return res
+        }
+        let hash = try auth.hash_password(form.password)
+        let account = try orm.insert<shared.Account>(db, shared.Account(id: 0, email: email, name: form.name.trim(), password: hash))
+        return try sessions.sign_in(web.redirect("/", status: 303), "${account.id}")
+    })
+
+    app.get("/sign-in", fn(req) {
+        return web.render("sign_in.glaze", { email: "", problem: "", dark: shared.dark(req) })
+    })
+
+    app.post("/sign-in", fn(req) {
+        if not shared.same_origin(req) {
+            throw web.error(403, "this form was sent from another site")
+        }
+        let form = try req.form<{ email: String, password: String }>()
+        let email = form.email.trim().lower()
+        let found = try orm.find<shared.Account>(db).where(fn(a) { a.email == email }).first()
+        if found is some(account) and auth.verify_password(form.password, account.password) {
+            return try sessions.sign_in(web.redirect("/", status: 303), "${account.id}")
+        }
+        // The same answer whether the email or the password was wrong.
+        var res = web.render("sign_in.glaze", { email: email, problem: "That email and password do not match.", dark: shared.dark(req) })
+        res.status = 401
+        return res
+    })
+
+    app.post("/sign-out", fn(req) {
+        let form = try req.form<{ csrf: String }>()
+        try sessions.check(req, form.csrf)
+        return try sessions.sign_out(req, web.redirect("/", status: 303))
+    })
+}

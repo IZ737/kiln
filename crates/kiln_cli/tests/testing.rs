@@ -1,6 +1,6 @@
-//! `kiln test`: discovery, failures and reports, and the journal example's
-//! own unit, integration and browser tests. The browser tests run when a
-//! Chromium is found (`KILN_BROWSER=1` makes a missing one a failure).
+//! `kiln test`: discovery, failures and reports, and the journal and
+//! guestbook examples' own unit, integration and browser tests. The
+//! browser tests run when a Chromium is found (`KILN_BROWSER=1` makes a missing one a failure).
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -144,12 +144,21 @@ fn junit_reports_and_timeouts() {
 
 #[test]
 fn the_journal_tests_pass() {
-    let journal = root().join("examples/journal");
-    let mut args = vec!["--unit", "--integration"];
+    examples_tests_pass("examples/journal");
+}
+
+/// The app docs/guides/first-site.md builds, with its Ware locked.
+#[test]
+fn the_guestbook_tests_pass() {
+    examples_tests_pass("examples/guestbook");
+}
+
+fn examples_tests_pass(dir: &str) {
+    let mut args = vec!["--unit", "--integration", "--locked"];
     if browser_available() {
         args.push("--browser");
     }
-    let out = kiln_test(&journal, &args);
+    let out = kiln_test(&root().join(dir), &args);
     assert!(out.status.success(), "{}", text(&out));
     assert!(text(&out).contains("0 failed"), "{}", text(&out));
 }

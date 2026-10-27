@@ -1,0 +1,26 @@
+// Guestbook: visitors sign up, sign the book and choose a light or a dark
+// page. It is the app docs/guides/first-site.md builds, step by step.
+//
+//     kiln db migrate --url sqlite:guestbook.db examples/guestbook
+//     GUESTBOOK_HTTP=1 kiln run examples/guestbook
+import web, shared, accounts, entries
+
+fn main() ! {
+    let db = try shared.database()
+    let sessions = try shared.sessions(db)
+    let app = web.app()
+    accounts.routes(app, db, sessions)
+    entries.routes(app, db, sessions)
+
+    // The theme is the visitor's choice, kept in a cookie.
+    app.post("/theme", fn(req) {
+        let form = try req.form<{ theme: String }>()
+        let theme = if form.theme == "dark" { "dark" } else { "light" }
+        var res = web.redirect("/", status: 303)
+        res.headers["set-cookie"] = "theme=${theme}; Path=/; SameSite=Lax; Max-Age=31536000"
+        return res
+    })
+
+    let port = if env("PORT") == "" { "8080" } else { env("PORT") }
+    try app.listen("127.0.0.1:${port}")
+}

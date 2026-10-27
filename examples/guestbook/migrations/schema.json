@@ -1,0 +1,55 @@
+{
+  "tables": {
+    "accounts": {
+      "columns": [
+        {
+          "name": "id",
+          "ty": "integer",
+          "not_null": false,
+          "key": true
+        },
+        {
+          "name": "email",
+          "ty": "text",
+          "not_null": true,
+          "key": false
+        },
+        {
+          "name": "name",
+          "ty": "text",
+          "not_null": true,
+          "key": false
+        },
+        {
+          "name": "password",
+          "ty": "text",
+          "not_null": true,
+          "key": false
+        }
+      ]
+    },
+    "entries": {
+      "columns": [
+        {
+          "name": "id",
+          "ty": "integer",
+          "not_null": false,
+          "key": true
+        },
+        {
+          "name": "account_id",
+          "ty": "integer",
+          "not_null": true,
+          "key": false,
+          "references": "accounts(id)"
+        },
+        {
+          "name": "message",
+          "ty": "text",
+          "not_null": true,
+          "key": false
+        }
+      ]
+    }
+  }
+}

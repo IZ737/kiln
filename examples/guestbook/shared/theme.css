@@ -1,0 +1,16 @@
+/* The two themes. kiln/ui's components take their colours from these
+   tokens, so switching the theme restyles them too. */
+.theme-light {
+  --color-accent: #a8452a; --color-on-accent: #ffffff; --color-surface: #ffffff;
+  --color-page: #f7f3ec; --color-text: #1f232b; --color-muted: #4f5560;
+  --color-border: #8a8f98; --color-danger: #b42318; --color-success: #1e6b3a;
+  --color-focus: #1f5fbf;
+}
+.theme-dark {
+  --color-accent: #f08a62; --color-on-accent: #1f232b; --color-surface: #2a2f38;
+  --color-page: #1f232b; --color-text: #f7f3ec; --color-muted: #c3c7ce;
+  --color-border: #6b717c; --color-danger: #ff8a80; --color-success: #7fd49b;
+  --color-focus: #9cc2ff;
+}
+:root { --space-sm: 0.5rem; --space-md: 1rem; --space-lg: 2rem; --radius-card: 0.5rem; }
+body { margin: 0; font: 16px/1.5 system-ui, sans-serif; }

@@ -1,0 +1,28 @@
+{% props entries: List<shared.Entry>, signed_in: Bool, csrf: String, message: String, problems: List<String>, dark: Bool %}
+{% layout "shared/layout.glaze" title: "The book", dark: dark %}
+<h1>The book</h1>
+{% if signed_in %}
+<ui.FormErrors problems={problems} />
+<form method="post" action="/entries">
+  <input type="hidden" name="csrf" value={csrf}>
+  <ui.Textarea label="Message" name="message" value={message} />
+  <components.Button type="submit">Sign the book</components.Button>
+</form>
+<form method="post" action="/sign-out">
+  <input type="hidden" name="csrf" value={csrf}>
+  <components.Button type="submit" tone={components.Tone.Neutral}>Sign out</components.Button>
+</form>
+{% else %}
+<p><a href="/sign-in">Sign in</a> or <a href="/sign-up">sign up</a> to sign the book.</p>
+{% end %}
+<ul class="entries">
+{% for entry in entries %}
+  <li><strong>{% if entry.account is some(a) %}{a.name}{% else %}someone{% end %}</strong>: {entry.message}</li>
+{% empty %}
+  <li>Nobody has signed the book yet.</li>
+{% end %}
+</ul>
+<style>
+.entries { list-style: none; padding: 0; }
+.entries li { padding: var(--space-sm) 0; border-bottom: 1px solid var(--color-border); }
+</style>
