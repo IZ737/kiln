@@ -46,13 +46,19 @@ split_requests() {
 }
 
 # Sends the requests in $1 to 127.0.0.1:$2 once it accepts connections,
-# writing the responses as main.responses holds them.
+# writing the responses as main.responses holds them. $3 is the server's
+# process: if it ends before accepting a connection, this returns 2.
 send_requests() {
-    local file=$1 port=$2 dir i tries=0
+    local file=$1 port=$2 pid=$3 dir i tries=0
     dir=$(mktemp -d)
     split_requests "$file" "$dir"
     until (exec 3<> "/dev/tcp/127.0.0.1/$port") 2> /dev/null; do
         tries=$((tries + 1))
+        if ! kill -0 "$pid" 2> /dev/null; then
+            echo "the server never accepted a connection"
+            rm -rf "$dir"
+            return 2
+        fi
         if ((tries > 600)); then
             echo "the server never accepted a connection"
             rm -rf "$dir"
@@ -87,11 +93,23 @@ check_conformance() {
         [[ -f $dir/main.in ]] && input=$dir/main.in
         set +e
         if [[ -f $dir/main.requests ]]; then
-            local port=$((20000 + RANDOM % 30000)) pid waited=0
-            PORT=$port run_program "$name" "${args[@]}" < "$input" > "$work/out" 2> "$work/err.raw" &
-            pid=$!
-            # Ember files are named by hashes, which change with the compiler.
-            send_requests "$dir/main.requests" "$port" | sed -E 's/ember-[0-9a-z]{6}\./ember-HASH./g' > "$work/responses"
+            local port pid waited=0 attempt
+            # A random port can be in use or reserved (Windows reserves
+            # ranges of them), so a server that cannot listen gets another.
+            for attempt in 1 2 3 4 5; do
+                port=$((20000 + RANDOM % 30000))
+                if (exec 3<> "/dev/tcp/127.0.0.1/$port") 2> /dev/null; then
+                    continue
+                fi
+                PORT=$port run_program "$name" "${args[@]}" < "$input" > "$work/out" 2> "$work/err.raw" &
+                pid=$!
+                # Ember files are named by hashes, which change with the compiler.
+                send_requests "$dir/main.requests" "$port" "$pid" | sed -E 's/ember-[0-9a-z]{6}\./ember-HASH./g' > "$work/responses"
+                if [[ ${PIPESTATUS[0]} != 2 ]] || ! grep -q 'cannot listen' "$work/err.raw"; then
+                    break
+                fi
+                wait "$pid"
+            done
             # The last request should have ended the program.
             while kill -0 "$pid" 2> /dev/null && ((waited < 300)); do
                 sleep 0.1
