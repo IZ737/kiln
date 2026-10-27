@@ -54,6 +54,7 @@ These are decisions reached in the design discussion, not claims of implemented 
 | Loader failures | **Reuse ordinary Kiln error propagation**: `web.error(status, message)` for intentional HTTP failures, existing 500 handling for unexpected errors, and `app.on_error` for custom responses; **no implicit `none` → 404** |
 | Static parameter enumeration | **Route-local** `static_params()` in `route.kiln` supplies finite typed values; a route-local `dynamic` marker opts out of static export; use existing Phase 6.6 implementation |
 | Server-mode static pages | **`static_params()` also pre-renders its enumerated pages when the server starts**, matching explicit `.static(...)`; reuse existing in-memory response serving, hook ordering and fallback behaviour |
+| Pre-rendering safety | **Reject routes whose cached response depends on request-specific data** (auth/session, cookies, arbitrary headers/query/body); apply consistently to filesystem `static_params()` and explicit `.static(...)` routes |
 
 The mount API, URL filename conventions and exact handler signatures below are **provisional** until decided. The **`route.kiln`** file name and its use for the `load`/HTTP-method exports are agreed.
 
@@ -332,6 +333,35 @@ The compiler checks that each returned element matches the route's inferred para
 
 This is an explicit design commitment: `static_params()` is **not export-only**. Whether route-local syntax also exposes an optional refresh/revalidation interval equivalent to existing `.static(refresh: ...)` is still an open question; do not assume the enumerated pages must stay cached indefinitely.
 
+### Safety rule — no request-dependent shared pre-rendering (Option A agreed)
+
+**Decision (2026-10-27):** A route's pre-rendered **body/response must not depend on per-request data** that can differ between users or requests. When a compiler can determine that rendering (directly or transitively through a loader, GET handler or Glaze/helper) depends on authentication/session/user identity, cookies, request headers, query strings, request body or other variable request context, **reject pre-rendering with a clear, source-linked diagnostic**. Do not cache personalised output even when an explicit `static_params()` list exists. If static safety cannot be established for a request-dependent response, treat it conservatively; no unsafe "trust me" opt-in is proposed for the initial feature.
+
+The **typed URL path parameters enumerated by `static_params()`** are part of the static page's identity and are **not prohibited** by this rule: `/blog/hello` and `/blog/world` can each be pre-rendered from their respective `slug` values. The unsafe boundary is *additional* request-specific inputs that would change the same page's output for different requests.
+
+A `load(req: web.Request, ...)` signature is allowed for ordinary runtime rendering. **Merely declaring `req` is not, by itself, evidence of an unsafe read**; check the actual reachable operations, not just the parameter's presence, wherever analysis supports this. A loader that really needs cookies/auth/headers should run per request and must not declare `static_params()`; for a parameterised route, use the route-local `dynamic` opt-out if producing a full static export. The same prohibition should apply to a full `get` handler attempting to pre-render request-dependent output.
+
+**This safeguard must also cover ordinary code-defined routes with `.static(...)`**, not just newly discovered filesystem routes, so both routing models share the same safety boundary. Phase 6.6 already checks request-specific reads in **static export** (E0404); extending/using those checks for **server-mode pre-rendering** is an explicit implementation requirement of this RFC, not a claim the current server-mode implementation already enforces it. Prefer reusing the same static-analysis infrastructure and diagnostics while distinguishing server-mode versus export context in explanations.
+
+**Hooks are different from cached page generation:** Kiln's existing `app.before` hooks run on each request *before* returning a pre-rendered response. They may still enforce per-request authorization or reject access, provided the response cached for an allowed request is independent of user identity. A per-user page cannot become safe simply because a hook runs first; nor should the compiler reject a public static page solely because a separate request-time hook reads a cookie.
+
+Illustrative invalid combination:
+
+```kiln
+// Conceptual, for pages/account/[id]/route.kiln.
+pub fn load(req: web.Request, id: Int) -> { profile: Profile } ! {
+    let user = try auth.require(req)
+    return { profile: try profiles.for_user(user, id) }
+}
+
+pub fn static_params() -> List<Int> {
+    return profiles.ids()
+}
+// Invalid: the cached profile response depends on the requesting user.
+```
+
+A compiler diagnostic should point at the conflicting `static_params()` declaration **and** the request-dependent read where feasible, with advice to remove pre-rendering or make the page genuinely request-independent. Do not silently downgrade a declared pre-render into request-time rendering without signalling the error.
+
 **A route originally authored as a flat `[slug].glaze` can be moved to `[slug]/index.glaze` plus `route.kiln` without changing the URL**, when it needs `static_params()` or other route-local logic.
 
 ### Route-local opt-out: `dynamic`
@@ -353,6 +383,7 @@ The semantics are the filesystem-route equivalent of `web.Route.dynamic()`: a st
 - A route that declares **both** `static_params()` and `dynamic = true` has contradictory export intent: reject the combination with a source-linked diagnostic, rather than silently picking one.
 - For `static_params()` with invalid return type, missing/duplicate record keys, incompatible parameter types, or values that fail enumeration, report useful diagnostics consistent with ordinary `.static(...)` routes.
 - Use the normal route graph, handler/Glaze rendering, HTML and asset generation, Ember hydration and errors: a page that requires unavailable server RPC, reads forbidden request data during static export, or produces broken links **must fail** using existing Phase 6.6 validation.
+- **Pre-rendering safety — DECIDED:** both filesystem `static_params()` and explicit `.static(...)` routes must reject request-dependent cached responses in server mode as well as in static export. Analyze transitive request reads, excluding legitimate route-parameter identity and separately executed `app.before` hooks. Do not merely assume existing E0404 static-export enforcement covers server-mode caching until the implementation is verified/extended.
 - **Server-mode pre-rendering — DECIDED:** `static_params()` also enumerates and pre-renders pages when the server starts, just as explicit `.static(...)` does. Reuse its in-memory serving, request hooks, unlisted-parameter fallback, and startup-render failure handling. Do **not** make `static_params()` an export-only convention. A refresh/revalidation option is a separate design question.
 - Continue preserving hooks, 404/error behaviour, redirects and output path conventions. A representative app must demonstrate `kiln run` and `kiln fire --static` from **the same source**.
 
@@ -403,6 +434,9 @@ If adopted as **Phase 6.7**, a reviewable breakdown might be:
 - [ ] Static, dynamic, mixed, and Ember-using examples preserve Phase 6.6 semantics under `kiln fire --static`.
 - [ ] Parameterised routes use typed, finite `static_params()` from `route.kiln` for static export, including multi-parameter records; routes without parameters export without additional boilerplate.
 - [ ] In server mode, `static_params()` pre-renders its enumerated pages at startup through the ordinary `.static(...)` code path, honours `app.before` on requests, and retains existing behaviour for unlisted parameter values and failed startup pre-renders.
+- [ ] Both filesystem `static_params()` and ordinary explicit `.static(...)` reject request-dependent cached page output, including transitive auth/session/cookie/header/query/body reads; diagnostics identify the unsafe read and the pre-render declaration where possible.
+- [ ] Typed route parameters remain valid inputs to pre-rendered pages; request-time `app.before` authorization remains usable for genuinely shared page output and is not mistaken for the cached render phase.
+- [ ] Regression tests demonstrate that two users cannot receive one another's personalised cached page after declared pre-rendering; no silent downgrade or unsafe override bypasses the restriction.
 - [ ] A route-local `dynamic` marker opts a route out of static export while preserving normal server routing; combining `dynamic` and `static_params()` is diagnosed rather than guessed.
 - [ ] Missing enumeration/dynamic intent on a parameterised GET route fails static export with the existing compatible diagnostic; existing Phase 6.6 validations still apply.
 - [ ] `kiln check`, `run`, `dev`, `test`, LSP and VS Code agree on the project route graph.
@@ -425,11 +459,12 @@ If adopted as **Phase 6.7**, a reviewable breakdown might be:
 - **Loader error handling (Option A):** use existing Kiln `try`/`throw`, `web.error`, unexpected-error 500 and `app.on_error` behaviour. No special `none` → 404 conversion.
 - **Filesystem SSG (Option A):** parameterised routes enumerate typed pages with route-local `static_params()` in `route.kiln`, or opt out through a route-local `dynamic` marker. The implementation must reuse the existing `.static(...)`/`.dynamic()` and static-export pipeline, not add a second exporter.
 - **Server-mode `static_params()` (Option A):** the same enumeration also pre-renders pages at server startup via existing `.static(...)` behaviour, including hooks and fallback for unlisted or unsuccessfully pre-rendered pages. It is not export-only.
+- **Safe pre-rendering (Option A):** reject request-dependent *cached output* (personalisation, cookies, auth/session, arbitrary headers/query/body) for filesystem and explicit `.static(...)` routes; typed enumerated URL parameters are safe inputs, and separately executed `app.before` hooks may still inspect request context. Extend static-export safeguards to server-mode pre-rendering where necessary.
 
 **Needs an explicit decision before locking the specification:**
 1. **Remaining loader contract:** admissible successful return record shapes, unused/extra field policy and unused parameter rules (§§5–6). Named parameter binding, optional first `req`, automatic props merging, duplicate-name errors, type inference/default `String` and ordinary error/404 propagation are settled.
 2. **`route.kiln` contracts:** exact function signatures, module boundaries, exports and how flat Glaze files graduate to route directories (§5). The filename is settled.
-3. **SSG refinements:** exact export/marker signatures, optional server-mode refresh/revalidation, contradictory declarations and unusual handler results (§8). The route-local approach and server-startup pre-render semantics are settled.
+3. **SSG refinements:** exact export/marker signatures, optional server-mode refresh/revalidation, contradictory declarations and unusual handler results (§8). The route-local approach, server-startup pre-render semantics and rejection of request-dependent cached output (including explicit `.static(...)`) are settled.
 4. **Route file naming:** `[slug]` spelling, typed parameters, extensions and optional `.ember` page files? (§4)
 5. **Collision policy:** explicit route versus filesystem mount interactions, duplicate mount URL scope, and reserved paths? (§4)
 6. **Ignore API details:** confirm `ignore` name and replacement rather than additive semantics; currently recorded as proposed in §3.
