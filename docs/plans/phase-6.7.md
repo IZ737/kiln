@@ -61,6 +61,7 @@ These are decisions reached in the design discussion, not claims of implemented 
 | Dynamic filename syntax | **Square-bracket `[name]` segments** in both `.glaze` filenames and route directories, mapping to ordinary Kiln `{name}` URL parameters; no curly-brace filenames or encoded types |
 | Loader failures | **Reuse ordinary Kiln error propagation**: `web.error(status, message)` for intentional HTTP failures, existing 500 handling for unexpected errors, and `app.on_error` for custom responses; **no implicit `none` → 404** |
 | Static parameter enumeration | **Route-local** `static_params()` in `route.kiln` supplies finite typed values; a route-local `dynamic` marker opts out of static export; use existing Phase 6.6 implementation |
+| Enumeration without loader/handler | **`static_params()` may be the sole exported function in `route.kiln` alongside `index.glaze`**; its values pre-render the ordinary Glaze using typed URL props, with no dummy `load` or `get` required |
 | Server-mode static pages | **`static_params()` also pre-renders its enumerated pages when the server starts**, matching explicit `.static(...)`; reuse existing in-memory response serving, hook ordering and fallback behaviour |
 | Pre-rendering safety | **Reject routes whose cached response depends on request-specific data** (auth/session, cookies, arbitrary headers/query/body); apply consistently to filesystem `static_params()` and explicit `.static(...)` routes |
 | Server-mode cache refresh | **Opt-in route-local `static_refresh` interval** in `route.kiln`, equivalent to explicit `.static(refresh: ...)`; never relax safe-pre-rendering checks |
@@ -502,6 +503,31 @@ pub fn static_params() -> List<{ section: String, page: String }> {
 
 The compiler checks that each returned element matches the route's inferred parameter type(s). No parameter conversion or fallback is invented specifically for filesystem routing. For a zero-parameter route, no enumeration is necessary. The precise export visibility requirements and permitted function effects are still to be defined.
 
+**Decision (2026-10-27) — independent `static_params()`, Option A:** a parameterised route may provide **only `index.glaze` and `route.kiln` exporting `static_params()`**, with **no `load()` or `get()`**. Enumeration controls which parameter combinations are pre-rendered; it does **not** require application-specific data loading or full request/response control. Kiln continues to generate the implicit GET page renderer, supplies typed URL parameters to declared Glaze props, and uses that same renderer to pre-render the enumerated URLs in server mode and export them under `kiln fire --static`. No dummy loader, duplicate record construction, or explicit GET handler is necessary.
+
+```text
+pages/
+  blog/
+    [slug]/
+      index.glaze
+      route.kiln
+```
+
+```glaze
+{# pages/blog/[slug]/index.glaze — conceptual #}
+{% props slug: String %}
+<h1>{slug}</h1>
+```
+
+```kiln
+// pages/blog/[slug]/route.kiln — conceptual
+pub fn static_params() -> List<String> {
+    return ["welcome", "about", "updates"]
+}
+```
+
+This declares `/blog/welcome`, `/blog/about` and `/blog/updates` as pre-rendered outputs. In normal server mode, requests to other slugs retain the previously agreed `.static(...)` dynamic fallback; in static export only the enumerated paths are generated. **The existing Glaze prop contract still applies:** if an `index.glaze` needs required fields other than typed URL props, declared defaults or existing built-in props, omitting a needed loader is a compile-time error. If there is no GET-capable Glaze and no full GET handler at all (for example, a POST-only API directory), `static_params()` cannot by itself invent a page/GET endpoint; the precise diagnostic should explain the missing renderable route. As before, `static_params()` conflicts with `dynamic = true` and its cached output must pass the shared request-independence checks.
+
 **Decision (2026-10-27) — server-mode behaviour, Option A:** `static_params()` is the filesystem-route counterpart of **`.static(...)` for *both* static export and a running server**. When the application starts in server mode, Kiln evaluates the declared parameter list and pre-renders those GET pages into the same in-memory pre-rendered response mechanism used by explicit `.static(...)` routes. When serving subsequent requests for enumerated paths, preserve the existing `app.before` hook ordering and use the pre-rendered response. Requests for parameter values *not* in the list must retain the existing `.static(...)` behaviour (ordinary request-time rendering rather than a fabricated 404), unless some other routing rule prevents them. If pre-rendering fails at startup, follow the current `.static(...)` fallback: log the failure and render on demand instead of silently treating it as a successfully cached page. No independent cache, renderer or error pathway is introduced.
 
 This is an explicit design commitment: `static_params()` is **not export-only**. **Decision (2026-10-27):** route-local refresh intervals are supported, matching existing `.static(refresh: ...)` rather than requiring developers to switch to explicit code-defined routing. See the following section.
@@ -614,7 +640,7 @@ The semantics are the filesystem-route equivalent of `web.Route.dynamic()`: a st
 - **Cache refresh — DECIDED:** optional route-local `static_refresh` uses the existing `.static(refresh: ...)` request-triggered re-render policy in server mode only. For zero-parameter GET routes, `static_refresh` **alone enables server startup pre-rendering** without `static_params()` or `static = true`; parameterised routes still need `static_params()`. Validate duration and contradictory/unused declarations. A refresh interval does not permit caching request-dependent responses.
 - Continue preserving hooks, 404/error behaviour, redirects and output path conventions. A representative app must demonstrate `kiln run` and `kiln fire --static` from **the same source**.
 
-**Still open:** whether `static_params()` is allowed without `load`/`get` (likely yes), exact export signatures, and how to handle failing enumeration or a route whose HTTP handlers return non-HTML content. **`dynamic` on parameter-free routes is settled as valid**, and contradicting `dynamic`/`static_params`/`static_refresh` declarations are diagnosed. All details must reuse the existing static export contract.
+**Still open:** exact `static_params()` visibility/return signatures, how to handle failing enumeration in static export, and a route whose HTTP handlers return non-HTML content. **An implicit Glaze GET with `static_params()` alone is now explicitly valid**, as is `dynamic` on parameter-free routes; contradicting `dynamic`/`static_params`/`static_refresh` declarations are diagnosed. All details must reuse the existing static export contract.
 
 ## 9. LSP / IDE / scaffolding
 
@@ -679,6 +705,8 @@ If adopted as **Phase 6.7**, a reviewable breakdown might be:
 - [ ] A routable `index.glaze` may embed an Ember, preserving normal SSR, selective hydration, asset bundling and static-export validation; a standalone Ember in the same folder stays a component.
 - [ ] Static, dynamic, mixed, and Ember-using examples preserve Phase 6.6 semantics under `kiln fire --static`.
 - [ ] Parameterised routes use typed, finite `static_params()` from `route.kiln` for static export, including multi-parameter records; routes without parameters export without additional boilerplate.
+- [ ] A parameterised `index.glaze` plus a `route.kiln` containing only `pub fn static_params()` compiles, pre-renders enumerated Glaze pages at server startup, and exports the enumerated pages under `kiln fire --static`, without `load` or `get`.
+- [ ] Enumerated Glaze-only routes still enforce required-prop checks and safe-cache restrictions; an enumeration function cannot invent a GET endpoint for a POST-only directory.
 - [ ] In server mode, `static_params()` pre-renders its enumerated pages at startup through the ordinary `.static(...)` code path, honours `app.before` on requests, and retains existing behaviour for unlisted parameter values and failed startup pre-renders.
 - [ ] Route-local `static_refresh` uses `.static(refresh: ...)` semantics, including per-page expiration and first-request-after-expiry regeneration; static export remains a one-time output.
 - [ ] A zero-parameter `index.glaze` + `route.kiln` declaring only `static_refresh` pre-renders at startup and refreshes on request; no dummy `static_params()` or `static` flag is required. Without `static_refresh`, the page remains request-rendered in server mode while still being included in static export.
@@ -715,6 +743,7 @@ If adopted as **Phase 6.7**, a reviewable breakdown might be:
 - **Parameter typing (Option A):** `[id]` is only a name; infer the route parameter type from matching Glaze, `load` or handler declarations, defaulting to `String` without an annotation. Conflicting declarations are compiler errors. Do not encode types in route filenames.
 - **Loader error handling (Option A):** use existing Kiln `try`/`throw`, `web.error`, unexpected-error 500 and `app.on_error` behaviour. No special `none` → 404 conversion.
 - **Filesystem SSG (Option A):** parameterised routes enumerate typed pages with route-local `static_params()` in `route.kiln`, or opt out through a route-local `dynamic` marker. The implementation must reuse the existing `.static(...)`/`.dynamic()` and static-export pipeline, not add a second exporter.
+- **Standalone `static_params()` with Glaze (Option A):** `route.kiln` may export only `static_params()` alongside `index.glaze`; a loader or GET handler is not required. The implicit Glaze GET receives typed URL props, and its enumerated instances are pre-rendered for both server mode and static export. No GET-capable page means enumeration alone cannot register one.
 - **Server-mode `static_params()` (Option A):** the same enumeration also pre-renders pages at server startup via existing `.static(...)` behaviour, including hooks and fallback for unlisted or unsuccessfully pre-rendered pages. It is not export-only.
 - **Safe pre-rendering (Option A):** reject request-dependent *cached output* (personalisation, cookies, auth/session, arbitrary headers/query/body) for filesystem and explicit `.static(...)` routes; typed enumerated URL parameters are safe inputs, and separately executed `app.before` hooks may still inspect request context. Extend static-export safeguards to server-mode pre-rendering where necessary.
 - **Route-local refresh (Option A):** support an optional `static_refresh` duration in `route.kiln` with the same server-mode first-request-after-expiry re-render semantics as `.static(refresh: ...)`. For a route with **no URL parameters**, `static_refresh` alone triggers startup pre-rendering: no `static_params()` or extra `static` declaration needed. A static export is still a snapshot; refresh does not override safe-cache restrictions.
@@ -728,7 +757,7 @@ If adopted as **Phase 6.7**, a reviewable breakdown might be:
 **Needs an explicit decision before locking the specification:**
 1. **Remaining loader contract:** final precise return-type restrictions and minor syntax/visibility questions (§§5–6). Named parameter binding, **loader subset URL parameters**, optional first `req`, automatic props merging, **strict no-extra-fields matching**, named-struct/anonymous-record success returns, duplicate-name errors, type inference/default `String` and ordinary error/404 propagation are settled.
 2. **`route.kiln` contracts:** remaining exact function return/error typing, module boundaries, and how flat Glaze files graduate to route directories (§5). The filename, **`pub` requirement for loader/HTTP handler discovery**, optional request context for both, subset URL parameter binding for both, and permission for handler-only API routes are settled.
-3. **SSG refinements:** exact export/marker signatures, contradictory declarations and unusual handler results (§8). Route-local enumeration, server-startup pre-render, `static_refresh` alone on zero-parameter routes and rejection of request-dependent cached output (including explicit `.static(...)`) are settled.
+3. **SSG refinements:** exact export/marker signatures, enumeration failures and unusual handler results (§8). Route-local enumeration **without requiring `load` or `get` when an implicit Glaze GET exists**, server-startup pre-render, `static_refresh` alone on zero-parameter routes, contradictory declaration errors and rejection of request-dependent cached output (including explicit `.static(...)`) are settled.
 4. **Remaining route file naming:** filename/path character restrictions, handling reserved names, static-file extensions, catch-all or optional patterns and other edge cases (§4). Square-bracket `[name]` dynamic segments are now settled; standalone `.ember` pages are excluded.
 5. **Remaining collision policy:** partial overlaps of dynamic parameter patterns and reserved paths (§4). Registration-order precedence is settled for both explicit/file and file/file cross-mount overlaps; true duplicate claims inside one mount remain errors.
 6. **Ignore API details:** confirm `ignore` name and replacement rather than additive semantics; currently recorded as proposed in §3.
