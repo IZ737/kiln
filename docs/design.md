@@ -544,14 +544,16 @@ reactive style updates, SQL/auth, Wares and SSG remain later milestones.
 ### Static site generation
 
 The same app can be built as a static site, for blogs, docs and marketing
-pages that need no server. Planned for phase 6.6:
+pages that need no server. Implemented in phase 6.6 (see
+[Static sites](guides/static-sites.md)):
 
-- `kiln fire --static` renders every route to HTML files, with assets, ready
-  for any static host or CDN. Routes with parameters list their pages:
-  `app.get("/posts/{id: Int}", show_post).static(fn() { all_post_ids() })`.
-- Mixed apps prerender the routes marked `.static(...)` at build time and
-  serve the rest dynamically from the same binary, optionally re-rendering a
-  static page on a schedule (`.static(..., refresh: 10m)`).
+- `kiln fire --static` renders every `GET` route to HTML files, with assets,
+  ready for any static host or CDN. Routes with parameters list their pages:
+  `app.get("/posts/{id: Int}", show_post).static(fn() { all_post_ids() })`,
+  and `.dynamic()` leaves a route out.
+- Mixed apps prerender the routes marked `.static(...)` when the server
+  starts and serve the rest dynamically from the same binary, optionally
+  re-rendering a static page on a schedule (`.static(..., refresh: 10m)`).
 - Embers still work on static pages: they hydrate in the browser as usual.
   Server functions need a server, so a fully static export reports any ember
   that calls one as a build error.

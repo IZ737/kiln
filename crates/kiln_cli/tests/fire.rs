@@ -62,8 +62,15 @@ fn a_site_is_written_as_files() {
     std::fs::write(other.join("keep.txt"), "mine").unwrap();
     let refused = fire_static(&root().join("examples/static_blog"), &other);
     assert!(!refused.status.success());
-    assert!(stderr(&refused).contains("kiln did not write it"), "{}", stderr(&refused));
-    assert_eq!(std::fs::read_to_string(other.join("keep.txt")).unwrap(), "mine");
+    assert!(
+        stderr(&refused).contains("kiln did not write it"),
+        "{}",
+        stderr(&refused)
+    );
+    assert_eq!(
+        std::fs::read_to_string(other.join("keep.txt")).unwrap(),
+        "mine"
+    );
     let _ = std::fs::remove_dir_all(&out);
     let _ = std::fs::remove_dir_all(&other);
     let _ = std::fs::remove_file(root().join("examples/static_blog/.kiln/fire-static.json"));
@@ -148,7 +155,11 @@ fn a_program_without_a_server_has_no_site() {
     let out = temp("no-server-out");
     let fired = fire_static(&app, &out);
     assert!(!fired.status.success());
-    assert!(stderr(&fired).contains("without calling `app.listen`"), "{}", stderr(&fired));
+    assert!(
+        stderr(&fired).contains("without calling `app.listen`"),
+        "{}",
+        stderr(&fired)
+    );
     let _ = std::fs::remove_dir_all(&app);
     let _ = std::fs::remove_dir_all(&out);
 }

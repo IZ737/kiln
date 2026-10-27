@@ -2562,10 +2562,12 @@ impl Checker {
                         if self.is_web_type(*route_id, "Route") && route_args.len() == 1 {
                             let page = match &route {
                                 Some((_, _, _, page)) => page.clone(),
-                                None => Ty::Unknown,
+                                None => self.route_page_type(args),
                             };
                             let arg = route_args[0].clone();
-                            self.unify(&arg, &page);
+                            if let Ty::Var(v) = self.resolve(&arg) {
+                                self.subst[v as usize] = Some(page);
+                            }
                         }
                     }
                     let route = route.map(|(handler, count, span, _)| (handler, count, span));
@@ -2838,6 +2840,42 @@ impl Checker {
             .iter()
             .find(|m| m.name == "web")
             .is_some_and(|m| m.types.get(name) == Some(&adt))
+    }
+
+    /// The type that tells a route's pages apart (see `web.Route`) when its
+    /// pattern is built from pieces, as in `"${prefix}/{key: Int}"`: read
+    /// from the pieces written out.
+    fn route_page_type(&mut self, args: &[Arg]) -> Ty {
+        let Some(ExprKind::Str(pieces)) = args.first().map(|a| &a.value.kind) else {
+            return Ty::Unknown;
+        };
+        let text: String = pieces
+            .iter()
+            .map(|p| match p {
+                StrPiece::Text(t) => t.as_str(),
+                _ => "",
+            })
+            .collect();
+        let mut fields = Vec::new();
+        let mut rest = text.as_str();
+        while let Some(open) = rest.find('{') {
+            let Some(close) = rest[open..].find('}') else {
+                break;
+            };
+            let segment = &rest[open + 1..open + close];
+            let (name, ty) = segment.split_once(':').unwrap_or((segment, "String"));
+            let ty = match ty.trim() {
+                t @ ("Int" | "String" | "Float" | "Bool") => self.prim(t),
+                _ => Ty::Unknown,
+            };
+            fields.push((name.trim().to_string(), ty));
+            rest = &rest[open + close + 1..];
+        }
+        match fields.len() {
+            0 => Ty::Unit,
+            1 => fields.remove(0).1,
+            _ => Ty::Record(fields),
+        }
     }
 
     /// `route.static(pages)`: a route with parameters lists its pages, and

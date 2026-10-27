@@ -280,7 +280,11 @@ fn serve_file(mut stream: std::net::TcpStream, site: &Path) {
     if path.split('/').any(|p| p == "..") {
         file = site.join("missing");
     }
-    let respond = |stream: &mut std::net::TcpStream, status: &str, kind: &str, extra: &str, body: &[u8]| {
+    let respond = |stream: &mut std::net::TcpStream,
+                   status: &str,
+                   kind: &str,
+                   extra: &str,
+                   body: &[u8]| {
         let head = format!(
             "HTTP/1.1 {status}\r\ncontent-type: {kind}\r\ncontent-length: {}\r\n{extra}connection: close\r\n\r\n",
             body.len()
@@ -291,7 +295,13 @@ fn serve_file(mut stream: std::net::TcpStream, site: &Path) {
     if file.is_dir() {
         if !path.ends_with('/') {
             let extra = format!("location: {path}/\r\n");
-            respond(&mut stream, "301 Moved Permanently", "text/plain", &extra, b"");
+            respond(
+                &mut stream,
+                "301 Moved Permanently",
+                "text/plain",
+                &extra,
+                b"",
+            );
             return;
         }
         file = file.join("index.html");
@@ -311,7 +321,13 @@ fn serve_file(mut stream: std::net::TcpStream, site: &Path) {
         Ok(body) => respond(&mut stream, "200 OK", kind, "", &body),
         Err(_) => {
             let body = std::fs::read(site.join("404.html")).unwrap_or_default();
-            respond(&mut stream, "404 Not Found", "text/html; charset=utf-8", "", &body);
+            respond(
+                &mut stream,
+                "404 Not Found",
+                "text/html; charset=utf-8",
+                "",
+                &body,
+            );
         }
     }
 }

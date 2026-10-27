@@ -209,6 +209,17 @@ app.before("/admin", fn(req) {
 })
 ```
 
+**Static pages.** Each route method returns the `web.Route`, and two of
+its methods are about static sites. `.static(...)` lists the pages of a
+route with parameters, by their parameter's value (`.static(fn() { [1, 2] })`
+for `/posts/{id: Int}`), or by a record for more than one
+(`{ dir: "guides", page: "tooling" }`); a route without parameters takes
+`.static()`. `kiln fire --static` writes every `GET` route without
+parameters and the pages these list, and `.dynamic()` leaves a `GET` route
+out. A running server renders a `.static` route's pages once, when it
+starts, and serves them from memory, again after `refresh: 10m` has passed
+if given. See [Static sites](../guides/static-sites.md).
+
 The routes of `server fn`s are under `/_kiln/rpc/<name>`, so a hook on
 `/_kiln/rpc` guards every call from an ember, and one on
 `/_kiln/rpc/reset` guards one function.

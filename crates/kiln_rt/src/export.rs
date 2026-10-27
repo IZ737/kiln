@@ -82,8 +82,8 @@ pub fn paths(pattern: &str, items: &str) -> Result<Vec<String>, String> {
                     } else {
                         item.get(name.as_str()).unwrap_or(&Value::Null)
                     };
-                    let seg = segment(value)
-                        .map_err(|e| format!("the page {item} of {pattern}: {e}"))?;
+                    let seg =
+                        segment(value).map_err(|e| format!("the page {item} of {pattern}: {e}"))?;
                     path.push_str(&seg);
                 }
             }
@@ -235,11 +235,12 @@ pub unsafe extern "C" fn k_rt_export_not_found(res: *const Kv) {
 }
 
 /// The file a page's path is written to, relative to the site's folder:
-/// `/` and `/docs/` are folders' `index.html`, a path whose last part has
-/// a `.` is that file, and another path is a folder too, so
-/// `/install` is `install/index.html`, which every static host serves at
-/// `/install` or `/install/`. `None` for a path no file can have.
-pub fn file_of(path: &str) -> Option<String> {
+/// `/` and `/docs/` are folders' `index.html`, and so is another path of
+/// an HTML page, so `/install` is `install/index.html`, which every static
+/// host serves at `/install` or `/install/`. A file that is not HTML, and
+/// an HTML page whose path ends in `.html`, keeps its path. `None` for a
+/// path no file can have.
+pub fn file_of(path: &str, html: bool) -> Option<String> {
     let decoded = percent_decode_str(path).decode_utf8().ok()?;
     let rel = decoded.trim_start_matches('/');
     let parts: Vec<&str> = rel.split('/').collect();
@@ -254,9 +255,10 @@ pub fn file_of(path: &str) -> Option<String> {
         }
     }
     let last = parts.last().copied().unwrap_or("");
+    let lower = last.to_ascii_lowercase();
     Some(if last.is_empty() {
         format!("{rel}index.html")
-    } else if last.contains('.') {
+    } else if !html || lower.ends_with(".html") || lower.ends_with(".htm") {
         rel.to_string()
     } else {
         format!("{rel}/index.html")
@@ -298,10 +300,12 @@ fn plan(e: &Export) -> (Vec<(String, Vec<u8>, String)>, Vec<Value>) {
         })
         .collect();
     let problem = |problems: &mut Vec<Value>, p: &Page, kind: &str, message: String| {
-        problems.push(json!({"pattern": p.pattern, "path": p.path, "kind": kind, "message": message}));
+        problems
+            .push(json!({"pattern": p.pattern, "path": p.path, "kind": kind, "message": message}));
     };
     for p in &e.pages {
-        let Some(file) = file_of(&p.path) else {
+        let redirect = matches!(p.status, 301 | 302 | 303 | 307 | 308) && p.location.is_some();
+        let Some(file) = file_of(&p.path, redirect || is_html(&p.content_type)) else {
             problem(
                 &mut problems,
                 p,
@@ -314,16 +318,16 @@ fn plan(e: &Export) -> (Vec<(String, Vec<u8>, String)>, Vec<Value>) {
             problem(&mut problems, p, "reads", reads.clone());
             continue;
         }
-        let redirect = matches!(p.status, 301 | 302 | 303 | 307 | 308) && p.location.is_some();
         let body = if redirect {
             let to = p.location.clone().unwrap_or_default();
             // `/docs` sending the browser to `/docs/` is what hosts do.
-            if to.starts_with('/') && file_of(&to).as_deref() == Some(file.as_str()) {
+            if to.starts_with('/') && file_of(&to, true).as_deref() == Some(file.as_str()) {
                 continue;
             }
             redirect_page(&to)
         } else if p.status == 200 {
-            if !is_html(&p.content_type) && file.ends_with("/index.html") && !p.path.ends_with('/') {
+            let extension = p.path.rsplit('/').next().is_some_and(|l| l.contains('.'));
+            if !is_html(&p.content_type) && !extension {
                 problem(
                     &mut problems,
                     p,
@@ -421,14 +425,22 @@ mod tests {
 
     #[test]
     fn files() {
-        assert_eq!(file_of("/").as_deref(), Some("index.html"));
-        assert_eq!(file_of("/docs/").as_deref(), Some("docs/index.html"));
-        assert_eq!(file_of("/install").as_deref(), Some("install/index.html"));
-        assert_eq!(file_of("/llms.txt").as_deref(), Some("llms.txt"));
-        assert_eq!(file_of("/a%20b").as_deref(), Some("a b/index.html"));
-        assert_eq!(file_of("/../x"), None);
-        assert_eq!(file_of("/%2e%2e/x"), None);
-        assert_eq!(file_of("/a//b"), None);
+        assert_eq!(file_of("/", true).as_deref(), Some("index.html"));
+        assert_eq!(file_of("/docs/", true).as_deref(), Some("docs/index.html"));
+        assert_eq!(
+            file_of("/install", true).as_deref(),
+            Some("install/index.html")
+        );
+        assert_eq!(
+            file_of("/phase-6.5", true).as_deref(),
+            Some("phase-6.5/index.html")
+        );
+        assert_eq!(file_of("/old.html", true).as_deref(), Some("old.html"));
+        assert_eq!(file_of("/llms.txt", false).as_deref(), Some("llms.txt"));
+        assert_eq!(file_of("/a%20b", true).as_deref(), Some("a b/index.html"));
+        assert_eq!(file_of("/../x", true), None);
+        assert_eq!(file_of("/%2e%2e/x", true), None);
+        assert_eq!(file_of("/a//b", true), None);
     }
 
     #[test]

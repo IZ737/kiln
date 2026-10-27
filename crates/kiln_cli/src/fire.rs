@@ -93,7 +93,8 @@ fn clear_output(root: &Path, out: &Path) -> Result<(), String> {
                 out.display()
             ));
         }
-        std::fs::remove_dir_all(out).map_err(|e| format!("cannot remove {}: {e}", out.display()))?;
+        std::fs::remove_dir_all(out)
+            .map_err(|e| format!("cannot remove {}: {e}", out.display()))?;
     }
     std::fs::create_dir_all(out).map_err(|e| format!("cannot create {}: {e}", out.display()))
 }
@@ -210,19 +211,14 @@ fn export(dir: &Path, root: &Path, out: &Path, scratch: &Path, backend: Backend)
     }
     for (message, from) in missing.values() {
         errors += 1;
-        let shown = if from.len() > 3 {
-            format!("{} and {} more", from[..3].join(", "), from.len() - 3)
-        } else {
-            from.join(", ")
-        };
-        eprintln!("{message}  = note: on the page {shown}\n");
+        eprintln!("{message}  = note: on the page {}\n", some_of(from));
     }
     for (name, rendered) in &calls {
         if let Some(on) = ember_pages.get(name.as_str()) {
             errors += 1;
-            let mut on: Vec<&str> = on.clone();
+            let mut on: Vec<String> = on.iter().map(|p| p.to_string()).collect();
             on.dedup();
-            eprintln!("{rendered}  = note: on the page {}\n", on.join(", "));
+            eprintln!("{rendered}  = note: on the page {}\n", some_of(&on));
         }
     }
     let written: Vec<&str> = pages.iter().map(|(_, f)| f.as_str()).collect();
@@ -244,6 +240,15 @@ fn export(dir: &Path, root: &Path, out: &Path, scratch: &Path, backend: Backend)
         out.display()
     );
     ExitCode::SUCCESS
+}
+
+/// The first pages of a list, and how many more there are.
+fn some_of(pages: &[String]) -> String {
+    if pages.len() > 3 {
+        format!("{} and {} more", pages[..3].join(", "), pages.len() - 3)
+    } else {
+        pages.join(", ")
+    }
 }
 
 /// The project's `.kiln` files, to point at the routes problems are about.
@@ -297,8 +302,7 @@ fn problem_message(problem: &serde_json::Value, sources: &[SourceFile]) -> Strin
     let quoted = format!("\"{pattern}\"");
     for file in sources {
         if let Some(at) = file.text.find(&quoted) {
-            let mut diag =
-                Diagnostic::error(code, text.clone(), Span::new(at, at + quoted.len()));
+            let mut diag = Diagnostic::error(code, text.clone(), Span::new(at, at + quoted.len()));
             if let Some(help) = &help {
                 diag = diag.with_help(help.clone());
             }
@@ -373,9 +377,9 @@ fn matches_pattern(pattern: &str, path: &str) -> bool {
     let p: Vec<&str> = pattern.trim_start_matches('/').split('/').collect();
     let s: Vec<&str> = path.trim_start_matches('/').split('/').collect();
     p.len() == s.len()
-        && p.iter().zip(&s).all(|(p, s)| {
-            (p.starts_with('{') && p.ends_with('}') && !s.is_empty()) || p == s
-        })
+        && p.iter()
+            .zip(&s)
+            .all(|(p, s)| (p.starts_with('{') && p.ends_with('}') && !s.is_empty()) || p == s)
 }
 
 /// A URL on a page, and what it is.
@@ -478,9 +482,10 @@ fn links(html: &str) -> Vec<Link> {
             };
             if key == "href" && matches!(name.as_str(), "link") {
                 let rel = get("rel").unwrap_or("").to_ascii_lowercase();
-                if rel.split_whitespace().any(|r| {
-                    matches!(r, "preconnect" | "dns-prefetch" | "canonical" | "alternate")
-                }) {
+                if rel
+                    .split_whitespace()
+                    .any(|r| matches!(r, "preconnect" | "dns-prefetch" | "canonical" | "alternate"))
+                {
                     continue;
                 }
             }

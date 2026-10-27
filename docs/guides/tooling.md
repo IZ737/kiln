@@ -2,6 +2,7 @@
 
 The tools around the compiler: `kiln fmt` for one layout, `kiln dev` for
 a server that rebuilds as you type, and `kiln mcp` for coding agents.
+[Static sites](static-sites.md) covers `kiln fire --static`.
 [Editor setup](editors.md) covers the language server, and
 [Testing](../reference/testing.md) covers `kiln test`.
 

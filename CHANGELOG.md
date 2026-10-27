@@ -1,5 +1,35 @@
 # Changelog
 
+## 0.14.0 (2026-10-27)
+
+Phase 6.6: static sites. The same Kiln web app can be written as plain
+files for any static host, or mix prerendered pages with dynamic ones.
+
+- `kiln fire --static` builds the program and runs it so that
+  `app.listen` writes its pages to `dist/` (or `-o`) instead of serving
+  them: every `GET` route without parameters, with its styles, `static/`
+  files, ember code and a `404.html` from `app.on_error`. No port is
+  opened. `/about` is written as `about/index.html`, a file such as
+  `/feed.xml` keeps its name, and a redirect becomes a page that sends the
+  browser on.
+- Route methods return a `web.Route`. `.static(fn() { [...] })` lists the
+  pages of a route with parameters, typed from its pattern (`List<Int>`
+  for `/posts/{id: Int}`, a record for more parameters), and `.dynamic()`
+  leaves a `GET` route out of a static site.
+- In a running server, `.static` pages are rendered once when it starts
+  and answered from memory; `.static(refresh: 10m)` renders them again
+  after that long.
+- A site that would be broken on its host is a build error at its source:
+  a route with parameters and no list (E0237), a page that reads the
+  query string, headers, cookies or body, fails, or is not HTML at a path
+  without an extension (E0404), an ember on a written page that calls a
+  `server fn` (E0405), and a link, form, image, script or stylesheet
+  `url()` to a page the site does not have (E0406).
+- `kiln fire` without `--static` builds an executable as `kiln build` does,
+  until phase 7's optimized release builds.
+- New example `examples/static_blog`, and a guide: `docs/guides/static-sites.md`.
+- The docs site renders its documentation pages once when it starts.
+
 ## 0.13.0 (2026-10-27)
 
 Phase 6.5.1: embers share state through stores.
