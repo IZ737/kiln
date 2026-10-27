@@ -173,6 +173,19 @@ fn embers_work_in_a_real_browser() {
     );
 }
 
+/// The app in `tests/browser/stores`: two unrelated embers share a store
+/// from a folder module, changes batch and keep focus, client navigation
+/// keeps the store while a reload starts it again, a store with a key
+/// outlives the page, and overlapping requests each see their own.
+#[test]
+fn stores_work_in_a_real_browser() {
+    drive(
+        "stores",
+        "crates/kiln_cli/tests/browser/stores",
+        "stores.mjs",
+    );
+}
+
 /// The documentation site's embers: the search box and the copy buttons.
 #[test]
 fn the_sites_embers_work_in_a_real_browser() {

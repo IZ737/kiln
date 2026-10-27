@@ -49,6 +49,7 @@ use kiln_diagnostics::Span;
 pub type FuncId = usize;
 pub type LocalId = usize;
 pub type GlobalId = usize;
+pub type StoreId = usize;
 
 /// A whole program.
 pub struct Program {
@@ -63,6 +64,8 @@ pub struct Program {
     pub prims: Prims,
     /// Top-level constants.
     pub globals: Vec<Global>,
+    /// `store`s, in source order.
+    pub stores: Vec<Store>,
     pub funcs: Vec<Func>,
     /// Runs before `main` and sets every global, in source order.
     pub init: FuncId,
@@ -87,6 +90,18 @@ pub struct Prims {
 pub struct Global {
     pub name: String,
     pub ty: Ty,
+}
+
+/// A `store`. Its value lives in the running scope's table of stores (one
+/// per request on the server, one per page in the browser), as a `ty?`
+/// that is `none` until the store is first read. Reading the store is a
+/// call of `get`, which starts it from its first value then.
+pub struct Store {
+    pub name: String,
+    pub ty: Ty,
+    pub get: FuncId,
+    /// `persist "key"`: the browser keeps the value under this key.
+    pub persist: Option<String>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -144,6 +159,9 @@ pub enum Stmt {
     /// Initializes a local, allocating its cell if it has one.
     Let(LocalId, Expr),
     SetGlobal(GlobalId, Expr),
+    /// Sets a store's slot in the running scope's table to a value of the
+    /// type `ty?` of the store.
+    SetStore(StoreId, Expr),
     /// `place = value`, or `place op= value`. The value has the type of
     /// the place.
     Assign {
@@ -232,6 +250,9 @@ pub enum ExprKind {
     None,
     Local(LocalId),
     Global(GlobalId),
+    /// A store's slot in the running scope's table: a `ty?`, `none` until
+    /// the store is started.
+    StoreSlot(StoreId),
     /// A top-level function used as a value.
     FuncRef(FuncId),
     /// Joins `String` values.

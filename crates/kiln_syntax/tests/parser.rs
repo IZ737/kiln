@@ -421,3 +421,40 @@ fn bounds_belong_to_functions() {
     let src = "interface Named {\n    fn name(self) -> String {\n        return \"\"\n    }\n}\n";
     assert_eq!(error_codes(src), vec![codes::EXPECTED_TOKEN]);
 }
+
+#[test]
+fn stores() {
+    let src = "pub store cart: Cart = Cart()\nstore prefs: Prefs = Prefs() persist \"shop.prefs\"\nconst LIMIT: Int = 3\n";
+    let result = parse(src);
+    assert!(result.diagnostics.is_empty(), "{:#?}", result.diagnostics);
+    let consts: Vec<&ConstDecl> = result
+        .module
+        .items
+        .iter()
+        .filter_map(|i| match i {
+            Item::Const(c) => Some(c),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(consts.len(), 3);
+    assert!(consts[0].is_pub && consts[0].store.as_ref().unwrap().persist.is_none());
+    assert_eq!(
+        consts[1]
+            .store
+            .as_ref()
+            .unwrap()
+            .persist
+            .as_ref()
+            .unwrap()
+            .0,
+        "shop.prefs"
+    );
+    assert!(consts[2].store.is_none());
+    // `store` is a word like any other where it is not a declaration.
+    stmts("let store = 1\nstore.save(x)");
+    // The key is a plain string.
+    assert_eq!(
+        error_codes("store a: Int = 1 persist key\n"),
+        vec![codes::EXPECTED_TOKEN]
+    );
+}

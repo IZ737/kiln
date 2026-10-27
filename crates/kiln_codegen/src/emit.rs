@@ -545,6 +545,10 @@ impl<'a> Gen<'a> {
                 let name = format!("kc_{}", mangle(&self.p.globals[*g].name));
                 self.line(&format!("{name} = {v};"));
             }
+            Stmt::SetStore(id, value) => {
+                let v = self.expr(value);
+                self.line(&format!("*k_store_slot({id}) = (void *){v};"));
+            }
             Stmt::Assign { place, op, value } => self.assign(place, *op, value),
             Stmt::Return(value) => {
                 let ret = self.f.ret.clone();
@@ -761,6 +765,7 @@ impl<'a> Gen<'a> {
             ExprKind::Bool(b) => b.to_string(),
             ExprKind::Str(s) => c_string(s),
             ExprKind::None => "NULL".into(),
+            ExprKind::StoreSlot(id) => format!("((kbox *)*k_store_slot({id}))"),
             ExprKind::Local(l) => self.local(*l),
             ExprKind::Global(g) => format!("kc_{}", mangle(&self.p.globals[*g].name)),
             ExprKind::FuncRef(f) => self.fn_value(*f),
@@ -1585,6 +1590,10 @@ impl<'a> Gen<'a> {
             ("os", "exit") => (self.store(&format!("k_os_{name}({})", arg(0)), ty), false),
             ("web", "not_found") => (self.store("(void *)k_web_not_found()", ty), false),
             ("web", "__request") => (self.store("k_web_current_request()", ty), false),
+            ("stores", "enter") | ("stores", "leave") => {
+                self.line(&format!("k_store_{name}();"));
+                ("0".into(), false)
+            }
             ("web", "app") => {
                 let call = format!("(void *)k_web_app({})", a.join(", "));
                 (self.store(&call, ty), false)

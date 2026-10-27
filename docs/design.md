@@ -505,11 +505,13 @@ See the [Phase 4 implementation plan](plans/phase-4.md).
 Phase 5 adds database-backed and authenticated uses of those RPC contracts,
 sharing validation across SSR and reactive forms.
 
-**Phase 6.5.1 (planned):** Complete the earlier agreed Ember shared-state
-contract before 1.0: importable provider-free typed stores, automatic deep
-reactivity inside explicit roots, batched invalidation, per-request SSR
-isolation, optional scoped overrides, and opt-in client navigation with
-retained stores but no automatic persistence. The existing `{% state %}` syntax is **confirmed and retained** for
+**Phase 6.5.1 (implemented):** Embers share typed `store`s declared in
+ordinary modules, with no provider: deep changes inside a store rerender
+the islands that read it, batched per event; the server keeps one set of
+stores per request and hands the page a JSON snapshot; `stores.scope`
+isolates tests; `client:navigate` keeps stores across in-page navigation,
+and only `persist "key"` keeps one across reloads ([Shared
+stores](reference/glazes.md#shared-stores)). The existing `{% state %}` syntax is **confirmed and retained** for
 Ember-local reactive state: readers can immediately distinguish it from
 ordinary `let` and `var`. An earlier top-level `{% var %}` proposal was
 reconsidered and rejected; no local-state syntax migration is part of this

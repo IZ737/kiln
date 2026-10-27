@@ -1,0 +1,11 @@
+// Stores: application state that embers share, declared with `store`.
+// A store's value belongs to one request on the server, and to the page
+// (and the client navigation it opts into) in the browser.
+
+// Runs `body` with every store fresh: each starts again from its first
+// value when it is first read, and the stores outside come back when
+// `body` returns. Tests use it to give one store a value of their own.
+fn scope(body: fn()) {}
+
+// Whether the store has a value yet, without starting it.
+fn __ready<T>(store: T) -> Bool {}

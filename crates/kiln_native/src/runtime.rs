@@ -92,9 +92,10 @@ pub(crate) fn signature(name: &str) -> Option<(&'static [C], Option<C>)> {
         | "k_io_read_lines"
         | "k_web_not_found"
         | "k_web_current_request" => (&[], Some(I64)),
-        "k_io_flush" => (&[], None),
+        "k_io_flush" | "k_store_enter" | "k_store_leave" => (&[], None),
         "k_web_app" => (&[I64, I64, I64, I64, Bool, I64], Some(I64)),
         "k_alloc"
+        | "k_store_slot"
         | "k_neg"
         | "k_abs"
         | "k_int_str"

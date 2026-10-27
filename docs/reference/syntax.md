@@ -29,6 +29,9 @@ import web, sql, web.router
 
 const PAGE_SIZE: Int = 20
 
+pub store cart: Cart = Cart()                  // shared state embers read and change
+store prefs: Prefs = Prefs() persist "prefs"   // the browser keeps it between visits
+
 pub struct Post {
     id: Int
     title: String
@@ -69,6 +72,12 @@ fn show_all<T: Named + Sized>(xs: List<T>) { ... }
   body or type parameters (E0235).
 - Only the type parameters of functions and methods take bounds; a struct's
   or enum's stay plain (E0112).
+- `store name: Type = value` declares application state that embers share
+  ([Shared stores](glazes.md#shared-stores)). Unlike a `const`, a store can
+  be assigned and changed inside; its type is written out and has a JSON
+  form (E0236, E0224). `persist "key"` after the value keeps it in the
+  browser. `store` and `persist` are keywords only there, so they can still
+  name variables.
 
 ## Types
 

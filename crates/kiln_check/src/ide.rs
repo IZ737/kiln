@@ -106,6 +106,8 @@ pub struct Analysis {
     pub global_types: HashMap<String, AdtId>,
     pub interfaces: Vec<InterfaceDef>,
     pub consts: HashMap<String, Ty>,
+    /// The constants that are `store`s.
+    pub stores: std::collections::HashSet<String>,
     /// The modules the file imports, by the name it uses.
     pub imports: HashMap<String, ModId>,
     pub modules: Vec<ModuleDef>,
@@ -150,6 +152,7 @@ pub fn analyze_app(
         global_types: checker.global_types,
         interfaces: checker.interfaces,
         consts: checker.consts,
+        stores: checker.stores,
         imports: checker.imports,
         modules: checker.modules,
         expr_types: checker.expr_types,

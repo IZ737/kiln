@@ -1,0 +1,3 @@
+{# Writes a field of the cart as the visitor types. #}
+<label>Note <input id="note" value={shop.cart.note} on:input={ shop.cart.note = event.value } /></label>
+<button id="clear" on:click={ shop.cart = shop.Cart(owner: shop.cart.owner) }>Empty the cart</button>

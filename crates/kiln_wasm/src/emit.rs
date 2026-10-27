@@ -155,6 +155,22 @@ impl<'a> Gen<'a> {
                 let _ = writeln!(self.globals, "  (global $g{i} (mut {wt}) ({init}))");
             }
         }
+        for i in 0..self.p.stores.len() {
+            let _ = writeln!(
+                self.globals,
+                "  (global $st{i} (mut (ref null $Opt)) (ref.null $Opt))"
+            );
+        }
+        // The stores that `stores.scope` put aside.
+        self.types.push_str(
+            "  (type $StArr (array (mut (ref null $Opt))))\n  (rec (type $StSave (struct (field (ref null $StSave)) (field (ref $StArr)))))\n",
+        );
+        self.globals
+            .push_str("  (global $st_saved (mut (ref null $StSave)) (ref.null $StSave))\n");
+        if self.browser && !self.p.stores.is_empty() {
+            self.extra_imports
+                .insert("  (import \"b\" \"store_read\" (func $b_store_read (param i32)))".into());
+        }
         for id in 0..self.p.funcs.len() {
             if self.reached[id] && id != self.p.init {
                 self.function(id);
@@ -731,6 +747,10 @@ impl<'a> Gen<'a> {
                     self.line(&format!("global.set $g{g}"));
                 }
             }
+            Stmt::SetStore(id, value) => {
+                self.expr(value);
+                self.line(&format!("global.set $st{id}"));
+            }
             Stmt::Assign { place, op, value } => self.assign(place, *op, value),
             Stmt::Return(value) => {
                 let ret = self.f.ret.clone();
@@ -1083,6 +1103,15 @@ impl<'a> Gen<'a> {
                 if self.wt(&self.p.globals[*g].ty).is_some() {
                     self.line(&format!("global.get $g{g}"));
                 }
+            }
+            // A page's stores are one per page; the bridge learns which
+            // stores an ember reads as it renders.
+            ExprKind::StoreSlot(id) => {
+                if self.browser {
+                    self.line(&format!("i32.const {id}"));
+                    self.line("call $b_store_read");
+                }
+                self.line(&format!("global.get $st{id}"));
             }
             ExprKind::FuncRef(f) => self.fn_value(*f),
             ExprKind::Concat(parts) => {
@@ -1926,6 +1955,34 @@ impl<'a> Gen<'a> {
 
     fn lib_call(&mut self, module: &str, name: &str, args: &[Expr], ty: &Ty, span: Span) {
         match (module, name) {
+            // `stores.scope`: the stores' values are saved on a stack, and
+            // the stores start again until they are put back.
+            ("stores", "enter") => {
+                let n = self.p.stores.len();
+                self.line("global.get $st_saved");
+                for i in 0..n {
+                    self.line(&format!("global.get $st{i}"));
+                }
+                self.line(&format!("array.new_fixed $StArr {n}"));
+                self.line("struct.new $StSave");
+                self.line("global.set $st_saved");
+                for i in 0..n {
+                    self.line("ref.null $Opt");
+                    self.line(&format!("global.set $st{i}"));
+                }
+            }
+            ("stores", "leave") => {
+                for i in 0..self.p.stores.len() {
+                    self.line("global.get $st_saved");
+                    self.line("struct.get $StSave 1");
+                    self.line(&format!("i32.const {i}"));
+                    self.line("array.get $StArr");
+                    self.line(&format!("global.set $st{i}"));
+                }
+                self.line("global.get $st_saved");
+                self.line("struct.get $StSave 0");
+                self.line("global.set $st_saved");
+            }
             ("html", "escape") | ("html", "safe_url") | ("ui", "merge") | ("base64", "encode") => {
                 for a in args {
                     self.expr(a);
@@ -2709,7 +2766,9 @@ fn walk_block(b: &Block, r: &mut Refs) {
 
 fn walk_stmt(s: &Stmt, r: &mut Refs) {
     match s {
-        Stmt::Let(_, e) | Stmt::SetGlobal(_, e) | Stmt::Expr(e) => walk_expr(e, r),
+        Stmt::Let(_, e) | Stmt::SetGlobal(_, e) | Stmt::SetStore(_, e) | Stmt::Expr(e) => {
+            walk_expr(e, r)
+        }
         Stmt::Assign { place, value, .. } => {
             match place {
                 Place::Local(_) => {}
@@ -2871,6 +2930,7 @@ fn walk_expr(e: &Expr, r: &mut Refs) {
         | ExprKind::Str(_)
         | ExprKind::None
         | ExprKind::Local(_)
+        | ExprKind::StoreSlot(_)
         | ExprKind::NewMap
         | ExprKind::Error => {}
     }

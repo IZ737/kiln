@@ -140,7 +140,17 @@ pub struct ConstDecl {
     pub name: Ident,
     pub ty: Option<TypeExpr>,
     pub value: Expr,
+    /// `store` instead of `const`: shared application state that embers
+    /// read and change.
+    pub store: Option<StoreDecl>,
     pub span: Span,
+}
+
+/// What a `store` adds to a constant.
+#[derive(Clone, Debug, PartialEq)]
+pub struct StoreDecl {
+    /// `persist "key"`: the browser keeps the value under this key.
+    pub persist: Option<(String, Span)>,
 }
 
 #[derive(Clone, Debug, PartialEq)]

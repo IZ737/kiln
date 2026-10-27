@@ -1,6 +1,6 @@
 # Phase 6.5.1 — Ember shared stores and reactivity alignment
 
-**Status:** Planned; the **immediate next phase** after completed Phase 6.5 and before [Phase 6.6 static site generation](phase-6.6.md). This phase restores previously agreed Ember design that did not land in the current implementation. It is implementation work, not a new brainstorming/review phase.
+**Status:** Done (release 0.13.0). The contract below was implemented as `store` declarations; the [reference](../reference/glazes.md#shared-stores) is the current documentation, and the implementation notes at the end record how each checkpoint was met.
 
 ## Why this phase exists
 
@@ -79,3 +79,15 @@ The intent is: both Embers reference the **same store**, updates in one automati
 ## Explicit exclusions
 
 This is **not** an always-on SPA router, automatic offline storage/sync, arbitrary browser-wide mutable globals, an unreviewed new frontend framework, or a new client compilation target. Phase 6.6 remains static site generation, Phase 7 remains 1.0 hardening, and Phase 8 remains deployment automation.
+
+## Implementation notes
+
+**Syntax (decided 2026-10-27):** `[pub] store name: Type = value [persist "key"]`, a top-level declaration beside `const`. Embers, handlers and server code read and change it by name (`shop.cart.lines.push(x)`, `shop.cart = shop.Cart()`); `{% state %}` is unchanged.
+
+- **Semantics.** A store's value lives in the running scope's table: one per request on the server (started in `k_web_handle`, kept per task across `k_task_switch`), one per page in the browser. It starts from its declared value on first read. The type must be written (E0236) and have a JSON form (E0224). A store is browser-visible state: never put secrets in one.
+- **Compiler and runtime.** The IR has `StoreSlot`/`SetStore`; each store gets a `<store name>` getter. The C and native backends use `k_store_slot` in `kiln.c`; WasmGC keeps one global per store and reports reads to the bridge (`store_read`). The browser module exports `__kiln_store_names`, `__kiln_store_json` and `__kiln_store_load`.
+- **Cross-island updates.** After each event or reply, the bridge compares each store's JSON with what the islands last saw and rerenders, once and in page order, the islands that read a changed store (reads are tracked per render, so subscriptions follow what an island actually read). Comparing values catches changes through any alias without instrumenting writes.
+- **Scope and SSR.** Each request has fresh stores; a page with embers carries the stores its request started in `<script type="application/json" id="kiln-stores">` (with `<` escaped), and hydration starts from it. `stores.scope(fn() { ... })` runs code with fresh stores and restores the outer ones after, in every backend; tests use it to give a store their own value.
+- **Navigation.** `client:navigate` on a link or an element around links loads same-origin HTML pages into the document (title, body, new stylesheets; history and back/forward), disposes the old islands and their calls, keeps started stores and starts new ones from the new page's snapshot. Anything else falls back to an ordinary load. A page with no embers loads no script, so its links stay ordinary.
+- **Persistence.** `persist "key"` keeps a store in `localStorage` as `kiln:store:<key>`, written when it changes and read before the page's snapshot on a full load; a value that no longer decodes is dropped. Changing the key is the migration for an incompatible type.
+- **Tests.** `conformance/stores` (both native backends), `tests/browser/stores` with `stores.mjs` (two unrelated embers on a multi-folder app, batching, focus, navigation, reload, persistence, overlapping requests) and its `kiln test` unit tests, parser and grammar tests.

@@ -169,6 +169,9 @@ impl<'a> Printer<'a> {
                 format!("{kw} {}: {ty} = {}", self.local(*l), self.expr(v))
             }
             Stmt::SetGlobal(g, v) => format!("@{} = {}", self.prog.globals[*g].name, self.expr(v)),
+            Stmt::SetStore(s, v) => {
+                format!("store {} = {}", self.prog.stores[*s].name, self.expr(v))
+            }
             Stmt::Assign { place, op, value } => {
                 let place = match place {
                     Place::Local(l) => self.local(*l),
@@ -254,6 +257,7 @@ impl<'a> Printer<'a> {
             ExprKind::None => "none".into(),
             ExprKind::Local(l) => self.local(*l),
             ExprKind::Global(g) => format!("@{}", self.prog.globals[*g].name),
+            ExprKind::StoreSlot(s) => format!("store {}", self.prog.stores[*s].name),
             ExprKind::FuncRef(f) => format!("&{}", self.func_name(*f)),
             ExprKind::Concat(parts) => format!("concat({})", self.list(parts)),
             ExprKind::Show(v) => format!("show({})", self.expr(v)),

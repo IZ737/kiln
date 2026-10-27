@@ -1,0 +1,24 @@
+// Two unrelated embers share the shop's cart, which each request starts
+// afresh: `/who?user=ana` waits a moment between setting the owner and
+// rendering, so requests overlap.
+import web, time, shop
+
+fn main() ! {
+    let app = web.app()
+    app.get("/", fn(req) {
+        return web.render("index.glaze", {})
+    })
+    app.get("/about", fn(req) {
+        return web.render("about.glaze", {})
+    })
+    app.get("/plain", fn(req) {
+        return web.render("plain.glaze", {})
+    })
+    app.get("/who", fn(req) {
+        shop.cart.owner = req.query("user") ?? "nobody"
+        time.sleep(300ms)
+        shop.add("welcome gift")
+        return web.render("index.glaze", {})
+    })
+    try app.listen("127.0.0.1:${env("PORT") ?? "8080"}")
+}

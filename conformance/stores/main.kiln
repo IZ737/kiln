@@ -1,0 +1,29 @@
+// Stores: a store starts from its first value when it is first read, deep
+// changes to it are seen everywhere it is read, it can be replaced as a
+// whole, and `stores.scope` gives code fresh stores of its own.
+import shop, stores
+
+fn main() {
+    print("before any read")
+    shop.add("tea")
+    shop.add("tea")
+    shop.add("cake")
+    print("${shop.total()} items, ${shop.cart.lines.len()} lines")
+    shop.cart.lines[0].count = 5
+    shop.cart.note = "for Sunday"
+    print("${shop.total()} items: ${shop.cart.note}")
+    shop.visits += 1
+    shop.visits += 1
+    print("visits: ${shop.visits}")
+
+    stores.scope(fn() {
+        print("in a scope: ${shop.total()} items, ${shop.visits} visits")
+        shop.cart = shop.Cart(note: "a test's own")
+        shop.add("jam")
+        print("in a scope: ${shop.total()} items: ${shop.cart.note}")
+    })
+    print("after the scope: ${shop.total()} items: ${shop.cart.note}")
+
+    shop.cart = shop.Cart()
+    print("replaced: ${shop.total()} items")
+}

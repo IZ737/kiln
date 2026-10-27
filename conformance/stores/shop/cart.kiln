@@ -1,0 +1,35 @@
+// A store in a folder module: the shop's cart.
+pub struct Line {
+    name: String
+    count: Int = 1
+}
+
+pub struct Cart {
+    lines: List<Line> = []
+    note: String = ""
+}
+
+pub store cart: Cart = start()
+
+pub store visits: Int = 0
+
+fn start() -> Cart {
+    print("the cart starts")
+    return Cart()
+}
+
+pub fn add(name: String) {
+    for line in cart.lines where line.name == name {
+        line.count += 1
+        return
+    }
+    cart.lines.push(Line(name: name))
+}
+
+pub fn total() -> Int {
+    var n = 0
+    for line in cart.lines {
+        n += line.count
+    }
+    return n
+}

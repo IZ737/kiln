@@ -1,0 +1,2 @@
+{# A preference the browser keeps between visits. #}
+<button id="theme" on:click={ shop.prefs.dark = not shop.prefs.dark }>{if shop.prefs.dark { "dark" } else { "light" }}</button>
