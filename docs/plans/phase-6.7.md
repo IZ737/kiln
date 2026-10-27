@@ -56,6 +56,7 @@ These are decisions reached in the design discussion, not claims of implemented 
 | Server-mode static pages | **`static_params()` also pre-renders its enumerated pages when the server starts**, matching explicit `.static(...)`; reuse existing in-memory response serving, hook ordering and fallback behaviour |
 | Pre-rendering safety | **Reject routes whose cached response depends on request-specific data** (auth/session, cookies, arbitrary headers/query/body); apply consistently to filesystem `static_params()` and explicit `.static(...)` routes |
 | Server-mode cache refresh | **Opt-in route-local `static_refresh` interval** in `route.kiln`, equivalent to explicit `.static(refresh: ...)`; never relax safe-pre-rendering checks |
+| Zero-parameter refresh | **`static_refresh` alone opts a parameter-free route into server startup pre-rendering and interval refresh**; no `static = true` or `static_params()` required |
 
 The mount API, URL filename conventions and exact handler signatures below are **provisional** until decided. The **`route.kiln`** file name and its use for the `load`/HTTP-method exports are agreed.
 
@@ -336,7 +337,7 @@ This is an explicit design commitment: `static_params()` is **not export-only**.
 
 ### Route-local refresh interval — Option A agreed (2026-10-27)
 
-When a route is pre-rendered in server mode, developers may optionally specify a refresh interval in that route's `route.kiln`. The working API spelling is **`static_refresh`**; the final declaration form and visibility/export rules are pending language-syntax review:
+When a route is pre-rendered in server mode, developers may optionally specify a refresh interval in that route's `route.kiln`. **Decision (2026-10-27): for a route *without* URL parameters, declaring `static_refresh` by itself also enables server-mode pre-rendering**; do not require either an additional `static = true` marker or a meaningless `static_params()` enumeration. The working API spelling is **`static_refresh`**; the final declaration form and visibility/export rules are pending language-syntax review:
 
 ```kiln
 // Illustrative route.kiln — prospective syntax.
@@ -347,6 +348,22 @@ pub fn static_params() -> List<String> {
 pub const static_refresh = 10m
 ```
 
+For a zero-parameter page, this alone is sufficient:
+
+```text
+pages/
+  dashboard/
+    index.glaze
+    route.kiln
+```
+
+```kiln
+// pages/dashboard/route.kiln — conceptual syntax
+pub const static_refresh = 10m
+```
+
+The single `/dashboard` page is pre-rendered at server startup and refreshed when requested after the interval expires. **A parameter-free `.glaze` file without `static_refresh` remains a normal request-rendered page in server mode**, although it is included automatically in `kiln fire --static` as required by Phase 6.6. Static export and server-mode pre-rendering are distinct operations.
+
 **Agreed semantics:**
 
 - `static_refresh` maps onto the already implemented **`.static(refresh: 10m)`** mechanism. Initial enumerated pages are pre-rendered on server startup. Once a cached page's interval has expired, the **first subsequent request** re-renders it through the same ordinary route machinery. This is request-triggered refresh, **not** periodic background fetching or an independent TTL cache.
@@ -355,10 +372,10 @@ pub const static_refresh = 10m
 - With **no `static_refresh`**, preserve the normal non-refreshing `.static(...)` semantics; do not introduce a new default expiration policy.
 - `kiln fire --static` still produces a **one-time snapshot**, without running refresh or promising background updates on the static host. The refresh setting matters only when a Kiln server is running.
 - **Security is unchanged:** request-dependent/personalised output remains ineligible for shared pre-rendering, with or without refresh. A short interval does **not** make caching user-specific responses safe.
-- A route opting out using `dynamic = true` must not simultaneously declare `static_refresh`. A duration with **no pre-rendering target** (for example, a parameterised route without `static_params()`) is invalid; do not silently ignore it.
+- A route opting out using `dynamic = true` must not simultaneously declare `static_refresh`. On a **parameterised** route, a duration with **no `static_params()` enumeration** is invalid; do not silently ignore it. On a **zero-parameter** route, the route itself is the single valid pre-render target, so `static_refresh` requires no separate marker.
 - Preserve the current `.static(refresh: ...)` approach to re-render errors, hooks and response handling, rather than inventing a filesystem-router-specific refresh strategy.
 
-**Still to resolve:** whether a non-parameterised `index.glaze` page may opt into server-side pre-rendering by supplying only `static_refresh` in its adjacent `route.kiln`, without adding `static_params()`. This should be designed consistently with existing explicit `.static()` (no parameter list) without requiring a meaningless empty enumeration.
+**Settled:** for a non-parameterised GET route, `static_refresh` is sufficient to opt into server-side pre-rendering, without `static_params()` or `static = true`. The resulting implementation should correspond to ordinary `.static(refresh: ...)` for one route. It remains an error to supply a parameterised route's `static_refresh` without `static_params()`.
 
 ### Safety rule — no request-dependent shared pre-rendering (Option A agreed)
 
@@ -412,7 +429,7 @@ The semantics are the filesystem-route equivalent of `web.Route.dynamic()`: a st
 - Use the normal route graph, handler/Glaze rendering, HTML and asset generation, Ember hydration and errors: a page that requires unavailable server RPC, reads forbidden request data during static export, or produces broken links **must fail** using existing Phase 6.6 validation.
 - **Pre-rendering safety — DECIDED:** both filesystem `static_params()` and explicit `.static(...)` routes must reject request-dependent cached responses in server mode as well as in static export. Analyze transitive request reads, excluding legitimate route-parameter identity and separately executed `app.before` hooks. Do not merely assume existing E0404 static-export enforcement covers server-mode caching until the implementation is verified/extended.
 - **Server-mode pre-rendering — DECIDED:** `static_params()` also enumerates and pre-renders pages when the server starts, just as explicit `.static(...)` does. Reuse its in-memory serving, request hooks, unlisted-parameter fallback, and startup-render failure handling. Do **not** make `static_params()` an export-only convention.
-- **Cache refresh — DECIDED:** optional route-local `static_refresh` uses the existing `.static(refresh: ...)` request-triggered re-render policy in server mode only. Validate duration and contradictory/unused declarations. A refresh interval does not permit caching request-dependent responses.
+- **Cache refresh — DECIDED:** optional route-local `static_refresh` uses the existing `.static(refresh: ...)` request-triggered re-render policy in server mode only. For zero-parameter GET routes, `static_refresh` **alone enables server startup pre-rendering** without `static_params()` or `static = true`; parameterised routes still need `static_params()`. Validate duration and contradictory/unused declarations. A refresh interval does not permit caching request-dependent responses.
 - Continue preserving hooks, 404/error behaviour, redirects and output path conventions. A representative app must demonstrate `kiln run` and `kiln fire --static` from **the same source**.
 
 **Still open:** whether `static_params()` is allowed without `load`/`get` (likely yes), whether `dynamic` is permitted on a nonparameterised route, exact export signatures, and how to handle failing enumeration or a route whose HTTP handlers return non-HTML content. All details must reuse the existing static export contract.
@@ -463,6 +480,8 @@ If adopted as **Phase 6.7**, a reviewable breakdown might be:
 - [ ] Parameterised routes use typed, finite `static_params()` from `route.kiln` for static export, including multi-parameter records; routes without parameters export without additional boilerplate.
 - [ ] In server mode, `static_params()` pre-renders its enumerated pages at startup through the ordinary `.static(...)` code path, honours `app.before` on requests, and retains existing behaviour for unlisted parameter values and failed startup pre-renders.
 - [ ] Route-local `static_refresh` uses `.static(refresh: ...)` semantics, including per-page expiration and first-request-after-expiry regeneration; static export remains a one-time output.
+- [ ] A zero-parameter `index.glaze` + `route.kiln` declaring only `static_refresh` pre-renders at startup and refreshes on request; no dummy `static_params()` or `static` flag is required. Without `static_refresh`, the page remains request-rendered in server mode while still being included in static export.
+- [ ] Parameterised routes with `static_refresh` but no `static_params()` are rejected; the existing shared-cache/request-dependency security rule still applies for zero-parameter pages.
 - [ ] Missing, contradictory, invalid or otherwise inapplicable pre-render/refresh declarations yield useful diagnostics; no option can bypass request-dependent shared-cache restrictions.
 - [ ] Both filesystem `static_params()` and ordinary explicit `.static(...)` reject request-dependent cached page output, including transitive auth/session/cookie/header/query/body reads; diagnostics identify the unsafe read and the pre-render declaration where possible.
 - [ ] Typed route parameters remain valid inputs to pre-rendered pages; request-time `app.before` authorization remains usable for genuinely shared page output and is not mistaken for the cached render phase.
@@ -490,12 +509,12 @@ If adopted as **Phase 6.7**, a reviewable breakdown might be:
 - **Filesystem SSG (Option A):** parameterised routes enumerate typed pages with route-local `static_params()` in `route.kiln`, or opt out through a route-local `dynamic` marker. The implementation must reuse the existing `.static(...)`/`.dynamic()` and static-export pipeline, not add a second exporter.
 - **Server-mode `static_params()` (Option A):** the same enumeration also pre-renders pages at server startup via existing `.static(...)` behaviour, including hooks and fallback for unlisted or unsuccessfully pre-rendered pages. It is not export-only.
 - **Safe pre-rendering (Option A):** reject request-dependent *cached output* (personalisation, cookies, auth/session, arbitrary headers/query/body) for filesystem and explicit `.static(...)` routes; typed enumerated URL parameters are safe inputs, and separately executed `app.before` hooks may still inspect request context. Extend static-export safeguards to server-mode pre-rendering where necessary.
-- **Route-local refresh (Option A):** support an optional `static_refresh` duration in `route.kiln` with the same server-mode first-request-after-expiry re-render semantics as `.static(refresh: ...)`. A static export is still a snapshot; refresh does not override safe-cache restrictions.
+- **Route-local refresh (Option A):** support an optional `static_refresh` duration in `route.kiln` with the same server-mode first-request-after-expiry re-render semantics as `.static(refresh: ...)`. For a route with **no URL parameters**, `static_refresh` alone triggers startup pre-rendering: no `static_params()` or extra `static` declaration needed. A static export is still a snapshot; refresh does not override safe-cache restrictions.
 
 **Needs an explicit decision before locking the specification:**
 1. **Remaining loader contract:** admissible successful return record shapes, unused/extra field policy and unused parameter rules (§§5–6). Named parameter binding, optional first `req`, automatic props merging, duplicate-name errors, type inference/default `String` and ordinary error/404 propagation are settled.
 2. **`route.kiln` contracts:** exact function signatures, module boundaries, exports and how flat Glaze files graduate to route directories (§5). The filename is settled.
-3. **SSG refinements:** exact export/marker signatures, zero-parameter route refresh, contradictory declarations and unusual handler results (§8). Route-local enumeration, server-startup pre-render, optional `static_refresh` and rejection of request-dependent cached output (including explicit `.static(...)`) are settled.
+3. **SSG refinements:** exact export/marker signatures, contradictory declarations and unusual handler results (§8). Route-local enumeration, server-startup pre-render, `static_refresh` alone on zero-parameter routes and rejection of request-dependent cached output (including explicit `.static(...)`) are settled.
 4. **Route file naming:** `[slug]` spelling, typed parameters, extensions and optional `.ember` page files? (§4)
 5. **Collision policy:** explicit route versus filesystem mount interactions, duplicate mount URL scope, and reserved paths? (§4)
 6. **Ignore API details:** confirm `ignore` name and replacement rather than additive semantics; currently recorded as proposed in §3.
