@@ -405,7 +405,10 @@ CI must test native Linux/Windows and the C backend where supported, plus cross-
 ## 13. Explicit deferrals and non-goals
 
 - **Earlier foundations:** Phase 4 supplies Embers/WasmGC, reactive hydration, generated RPC and state; **Phase 4.2 supplies local folder modules and an optional minimal project manifest**; Phase 5 supplies persistence/auth/forms/admin. Phase 6 integrates and tests them without moving module development back into this phase.
-- **Phase 7:** One-command deploy/release, static site export, broad stability/performance hardening, arbitrary code optimization or a mandatory new native backend.
+- **Phase 6.6:** Static site generation and export with `kiln fire --static`.
+- **Phase 7:** Optimized release builds, broad stability/performance hardening and 1.0 compatibility (without requiring automated deployment).
+- **Phase 8:** One-command deploy/release on existing infrastructure.
+- **Later:** Arbitrary further code optimization or a mandatory new native backend.
 - **Later registry scaling:** Commercial hosting, public social discovery, web search/rankings, organization billing, cross-user global cache, complete security auditing/review infrastructure at industrial scale.
 - **Later tooling:** Full debugger/DAP and variable inspection, deep time-travel debugging, arbitrary live-patching of native code, self-hosting of all compiler internals.
 - **Optional later work:** Full multi-package workspace publishing, global dependency feature unification, a universal WASI/container sandbox, all-language FFI bindings, automatic use of arbitrary npm modules.
