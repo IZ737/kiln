@@ -1,0 +1,8 @@
+{% props plants: List<plants.Plant> %}
+{% layout "pages/_components/layout.glaze" title: "Garden" %}
+<h1>Garden notes</h1>
+<ul class="plants">
+  {% for plant in plants %}
+  <li><pages._components.PlantLink slug={plant.slug} name={plant.name} /></li>
+  {% end %}
+</ul>

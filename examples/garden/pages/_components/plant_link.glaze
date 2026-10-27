@@ -1,0 +1,3 @@
+{# In `_components/`, so it is a component and not a page. #}
+{% props slug: String, name: String %}
+<a href="/plants/{slug}">{name}</a>

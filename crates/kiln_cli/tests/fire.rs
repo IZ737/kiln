@@ -179,3 +179,73 @@ fn fire_without_static_builds_an_executable() {
     assert!(exe.is_file());
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+/// A static export of filesystem routes: their pages, the pages
+/// `static_params` lists, and an error at the file for each route a static
+/// site cannot have unless its route.kiln says `dynamic`.
+#[test]
+fn file_routes_are_exported() {
+    let out = temp("garden");
+    let fired = fire_static(&root().join("examples/garden"), &out);
+    assert!(fired.status.success(), "{}", stderr(&fired));
+    for file in [
+        "index.html",
+        "about/index.html",
+        "plants/fern/index.html",
+        "plants/moss/index.html",
+        "plants/sage/index.html",
+        "404.html",
+    ] {
+        assert!(out.join(file).is_file(), "{file}");
+    }
+    assert!(!out.join("api").exists());
+    let _ = std::fs::remove_dir_all(&out);
+    let _ = std::fs::remove_file(root().join("examples/garden/.kiln/fire-static.json"));
+    let _ = std::fs::remove_dir(root().join("examples/garden/.kiln"));
+
+    let app = temp("file-routes-app");
+    let write = |name: &str, text: &str| {
+        let path = app.join(name);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(path, text).unwrap();
+    };
+    write(
+        "main.kiln",
+        "import web\n\nfn main() ! {\n    let app = web.app()\n    app.file_routes(\"pages\")\n    try app.listen(\":8080\")\n}\n",
+    );
+    write("pages/index.glaze", "<a href=\"/tags/a\">a</a>\n");
+    write("pages/tags/[tag].glaze", "{% props tag: String %}\n<h1>{tag}</h1>\n");
+    write(
+        "pages/hook/route.kiln",
+        "import web\n\npub fn post(req: web.Request) -> web.Response {\n    return web.text(\"ok\")\n}\n",
+    );
+    let site = temp("file-routes-site");
+    let fired = fire_static(&app, &site);
+    assert!(!fired.status.success());
+    let err = stderr(&fired);
+    for expected in [
+        "error[E0237]: the route /tags/{tag} has parameters",
+        "tags/[tag].glaze",
+        "pub fn static_params()",
+        "error[E0404]: this route.kiln answers only POST /hook",
+        "pub const dynamic = true",
+    ] {
+        assert!(err.contains(expected), "`{expected}` in:\n{err}");
+    }
+    // Listed and left out, the site is complete.
+    std::fs::remove_file(app.join("pages/tags/[tag].glaze")).unwrap();
+    write("pages/tags/[tag]/index.glaze", "{% props tag: String %}\n<h1>{tag}</h1>\n");
+    write(
+        "pages/tags/[tag]/route.kiln",
+        "pub fn static_params() -> List<String> {\n    return [\"a\", \"b\"]\n}\n",
+    );
+    write(
+        "pages/hook/route.kiln",
+        "import web\n\npub fn post(req: web.Request) -> web.Response {\n    return web.text(\"ok\")\n}\n\npub const dynamic = true\n",
+    );
+    let fired = fire_static(&app, &site);
+    assert!(fired.status.success(), "{}", stderr(&fired));
+    assert!(site.join("tags/b/index.html").is_file());
+    let _ = std::fs::remove_dir_all(&app);
+    let _ = std::fs::remove_dir_all(&site);
+}

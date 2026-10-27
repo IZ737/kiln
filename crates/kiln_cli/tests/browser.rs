@@ -198,13 +198,29 @@ fn the_sites_embers_work_in_a_real_browser() {
 /// ember hydrates and runs.
 #[test]
 fn a_static_export_works_in_a_real_browser() {
+    drive_export("static_blog", "examples/static_blog", "static_blog.mjs", &[]);
+}
+
+/// `examples/garden`, whose routes are files (`app.file_routes`): the
+/// running app, and its static export from the same source. Pages get
+/// their props from `load`, a `[slug]` page's ember hydrates, components
+/// are not pages, and the API route needs a server.
+#[test]
+fn file_routes_work_in_a_real_browser() {
+    drive("garden", "examples/garden", "garden.mjs");
+    drive_export("garden", "examples/garden", "garden.mjs", &["static"]);
+}
+
+/// Exports `app` with `kiln fire --static`, serves the files as a plain
+/// static host does, and runs `script` against them.
+fn drive_export(name: &str, app: &str, script: &str, args: &[&str]) {
     let Some(node) = node() else { return };
-    let dir = std::env::temp_dir().join(format!("kiln-static-blog-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("kiln-export-{name}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     let fired = Command::new(env!("CARGO_BIN_EXE_kiln"))
         .args(["fire", "--static", "-o"])
         .arg(&dir)
-        .arg(root().join("examples/static_blog"))
+        .arg(root().join(app))
         .output()
         .unwrap();
     assert!(
@@ -222,18 +238,21 @@ fn a_static_export_works_in_a_real_browser() {
         }
     });
     let out = Command::new(&node)
-        .arg(root().join("crates/kiln_cli/tests/browser/static_blog.mjs"))
+        .arg(root().join("crates/kiln_cli/tests/browser").join(script))
         .arg(format!("http://{address}"))
+        .args(args)
         .output()
         .unwrap();
     let _ = std::fs::remove_dir_all(&dir);
+    let _ = std::fs::remove_file(root().join(app).join(".kiln/fire-static.json"));
+    let _ = std::fs::remove_dir(root().join(app).join(".kiln"));
     assert!(
         out.status.success(),
         "the browser did not run:\n{}",
         String::from_utf8_lossy(&out.stderr)
     );
     let result: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
-    eprintln!("static_blog: {}", result["metrics"]);
+    eprintln!("{name}: {}", result["metrics"]);
     let failures: Vec<&str> = result["failures"]
         .as_array()
         .unwrap()

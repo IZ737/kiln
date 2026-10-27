@@ -1,0 +1,6 @@
+{% props slug: String, plant: plants.Plant %}
+{% layout "pages/_components/layout.glaze" title: plant.name %}
+<h1>{plant.name}</h1>
+<p class="light">Likes {plant.light}.</p>
+<p>{plant.note}</p>
+<Watering />

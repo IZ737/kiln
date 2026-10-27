@@ -1012,7 +1012,15 @@ fn mount(
                 parsed.diagnostics.is_empty().then_some(parsed.glaze)
             });
         }
-        let glaze = c.glaze.and_then(|g| glazes[&g].clone());
+        // A page with syntax errors is left to the checker, which reports
+        // them; its route cannot be made yet.
+        let glaze = match c.glaze {
+            Some(g) => match glazes[&g].clone() {
+                Some(glaze) => Some(glaze),
+                None => continue,
+            },
+            None => None,
+        };
         built.extend(candidate(inputs, c, segs, glaze.as_ref(), plan));
     }
     conflicts(inputs, &built, plan);

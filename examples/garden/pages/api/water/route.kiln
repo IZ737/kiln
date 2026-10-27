@@ -1,0 +1,9 @@
+// An endpoint with no page: it needs a server, so a static site leaves it
+// out.
+import web
+
+pub fn post(req: web.Request) -> web.Response {
+    return web.json({ watered: true })
+}
+
+pub const dynamic = true

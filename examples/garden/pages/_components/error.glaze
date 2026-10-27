@@ -1,0 +1,4 @@
+{% props status: Int %}
+{% layout "pages/_components/layout.glaze" title: "Not here" %}
+<h1>Nothing grows here</h1>
+<p>Error {status}.</p>

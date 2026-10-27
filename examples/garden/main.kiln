@@ -1,0 +1,16 @@
+// A small site whose pages are files: `app.file_routes("pages")` turns
+// `pages/about.glaze` into `GET /about` and `pages/plants/[slug]/` into
+// `GET /plants/{slug}`. `kiln run examples/garden` serves it, and
+// `kiln fire --static examples/garden` writes it to `dist/` for any static
+// host, from the same source.
+import web
+
+fn main() ! {
+    let app = web.app()
+    app.file_routes("pages")
+    app.on_error(fn(req, status, message) {
+        let r = web.render("pages/_components/error.glaze", { status: status })
+        return web.Response(status: status, headers: r.headers, body: r.body)
+    })
+    try app.listen("127.0.0.1:${env("PORT") ?? "8080"}")
+}

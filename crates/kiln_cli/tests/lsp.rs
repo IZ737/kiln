@@ -799,3 +799,58 @@ fn finds_references_and_renames_across_folders() {
     c.finish();
     let _ = std::fs::remove_dir_all(dir);
 }
+
+/// `app.file_routes`: errors in a page's route.kiln reach the editor at
+/// that file, hovering the mount lists its routes, and going to its
+/// definition lists the files they come from.
+#[test]
+fn understands_filesystem_routes() {
+    let dir = program_dir("file-routes");
+    let main = "import web\n\nfn main() ! {\n    let app = web.app()\n    app.file_routes(\"pages\")\n    try app.listen(\":8080\")\n}\n";
+    let page = "{% props id: Int, title: String %}\n<h1>{title}</h1>\n";
+    let route = "pub fn load(id: Int) -> { title: String, extra: Int } {\n    return { title: \"t\", extra: id }\n}\n";
+    std::fs::write(dir.join("main.kiln"), main).unwrap();
+    std::fs::create_dir_all(dir.join("pages/p/[id]")).unwrap();
+    std::fs::write(dir.join("pages/about.glaze"), "<h1>About</h1>\n").unwrap();
+    std::fs::write(dir.join("pages/p/[id]/index.glaze"), page).unwrap();
+    std::fs::write(dir.join("pages/p/[id]/route.kiln"), route).unwrap();
+    let main_uri = file_uri(&dir.join("main.kiln"));
+    let route_uri = file_uri(&dir.join("pages/p/[id]/route.kiln"));
+    let mut c = Client::start();
+    c.request("initialize", json!({"rootUri": file_uri(&dir)}));
+    c.open(&route_uri, route);
+    let published = loop {
+        let message = c.receive();
+        if message["method"] == "textDocument/publishDiagnostics"
+            && message["params"]["uri"] == route_uri.as_str()
+        {
+            break message;
+        }
+    };
+    let diagnostics = published["params"]["diagnostics"].as_array().unwrap();
+    assert!(
+        diagnostics.iter().any(|d| d["code"] == "E0240"
+            && d["message"].as_str().unwrap().contains("no prop `extra`")
+            && d["range"]["start"] == json!({"line": 0, "character": 41})),
+        "{diagnostics:#?}"
+    );
+    c.open(&main_uri, main);
+    let marked = main.replace("app.file_routes", "app.file_ro|utes");
+    let hover = hover_text(&c.at("textDocument/hover", &main_uri, &marked));
+    assert!(hover.contains("`GET /about` from `pages/about.glaze`"), "{hover}");
+    // The broken route is not made; with the unsaved fix it is.
+    assert!(!hover.contains("/p/"), "{hover}");
+    c.change(&route_uri, &route.replace(", extra: Int", "").replace(", extra: id", ""));
+    let hover = hover_text(&c.at("textDocument/hover", &main_uri, &marked));
+    assert!(hover.contains("`GET /p/{id: Int}` from `pages/p/[id]/index.glaze`"), "{hover}");
+    let definition = c.at("textDocument/definition", &main_uri, &marked);
+    let uris: Vec<&str> = definition
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|l| l["uri"].as_str())
+        .collect();
+    assert!(uris.iter().any(|u| u.ends_with("pages/about.glaze")), "{uris:?}");
+    c.finish();
+    let _ = std::fs::remove_dir_all(dir);
+}

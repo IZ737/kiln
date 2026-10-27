@@ -1,0 +1,10 @@
+// `/plants/{slug}`: the page's plant, and the plants a static site has.
+import plants
+
+pub fn load(slug: String) -> { plant: plants.Plant } ! {
+    return { plant: try plants.find(slug) }
+}
+
+pub fn static_params() -> List<String> {
+    return plants.all().map(fn(p) { p.slug })
+}
