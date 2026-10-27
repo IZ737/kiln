@@ -45,6 +45,7 @@ These are decisions reached in the design discussion, not claims of implemented 
 | Scope | The `_components` convention is specific to filesystem routing; it is **not** a reserved Kiln folder elsewhere |
 | Explicit routes | Coexist with discovered routes; preserve the current router's registration-order behaviour |
 | Shared infrastructure | Reuse current typed handlers, Glazes, Embers, hooks, SSG and error reporting |
+| Page data model | **Three levels:** automatic Glaze with typed URL props → optional typed `load` returning page props → ordinary full `get` handler |
 
 The exact method/options spelling, file naming conventions and handler contracts below are **provisional** until decided.
 
@@ -124,21 +125,67 @@ my-app/
 - Reject path traversal, unexpected symlinks, case-folded collisions and invalid parameter names. Treat case sensitivity consistently across supported operating systems.
 - Consider overlap/conflicts with reserved Kiln endpoints such as `/_kiln/rpc` during implementation review.
 
-## 5. Handler escape hatch: provisional
+## 5. Three-level page model — agreed direction; syntax provisional
 
-A page that needs data fetching, authentication, non-GET actions or custom responses may use a route directory:
+**Decision (2026-10-27):** Support **all three complementary levels**, so complexity is opt-in:
+
+1. **Just a Glaze:** pages with no custom data requirements are discovered and rendered automatically. Where a page's path contains parameters, Kiln automatically provides matching, **type-checked** URL parameter props.
+2. **Glaze + typed loader:** when data must be retrieved or transformed before rendering, an optional `load` function supplies a typed record of Glaze props. Kiln handles the ordinary rendering step; no repetitive `web.render` call is required.
+3. **Full handler:** when the application needs direct request/response control (authentication, redirect/status/headers, unusual content types, etc.), an ordinary typed `get` handler constructs the response explicitly using existing `web` functions.
+
+This is a **behavioural decision**. The `route.kiln` filename, function names and signatures below are *illustrative*, not final syntax or currently implemented functionality.
+
+### Level 1 — just a Glaze
+
+```text
+pages/
+  about.glaze        → GET /about
+  blog/
+    [slug].glaze     → GET /blog/{slug}
+```
+
+```glaze
+{# pages/blog/[slug].glaze — illustrative #}
+{% props slug: String %}
+<h1>Article: {slug}</h1>
+```
+
+For a request to `/blog/hello`, `slug` is supplied from the typed route parameter. A Glaze with other **required** props and no loader/handler must yield a helpful compile-time diagnostic; Kiln must not invent values. Pages without parameters and without required external props need no route code.
+
+### Level 2 — optional typed loader
+
+A page with dynamic data may graduate to a route directory, retaining the same public URL:
 
 ```text
 pages/
   blog/
     [slug]/
       index.glaze
-      route.kiln
+      route.kiln          # proposed convention
 ```
 
-Possible **illustrative** handler syntax:
+```kiln
+// Illustrative only: exact export name, arguments and errors TBD.
+import posts
+
+pub fn load(slug: String) -> { post: posts.Post } ! {
+    return { post: try posts.find(slug) }
+}
+```
+
+```glaze
+{% props post: posts.Post %}
+<article><h1>{post.title}</h1></article>
+```
+
+Kiln type-checks that the returned record satisfies the paired Glaze's required props and renders it automatically. Loader input should be typed, potentially including route parameters and request context when needed; the exact signature, failure/404 policy and any direct access to `web.Request` are still open.
+
+A loader is **optional**, not required for a parameterised route whose Glaze can render from URL props alone. Prefer no implicit database calls, request mutation or hidden runtime conventions.
+
+### Level 3 — ordinary full handler
 
 ```kiln
+// Illustrative only: exact export naming/module boundaries TBD.
 import web, posts
 
 pub fn get(req: web.Request, slug: String) -> web.Response ! {
@@ -147,21 +194,22 @@ pub fn get(req: web.Request, slug: String) -> web.Response ! {
 }
 ```
 
-This is *not* agreed syntax or behaviour; it is a design candidate.
+This handler uses the existing request, typed path parameters, response types, hooks and error behaviour. Additional `post`, `put`, `patch` and `delete` handlers should eventually use the same ordinary routing semantics, subject to the handler convention being settled. A full handler may return something other than HTML.
 
-The handler should ultimately be an ordinary typed Kiln function registered with the existing router. A route directory might also declare `post`, `put`, `patch` and `delete` handlers. Do not add a separate request/response type.
+**Design constraint:** these levels describe progressively greater *control*, not separate frameworks. Generate ordinary route registrations for all three. Do not create a parallel rendering, middleware, authentication or static-export pipeline.
 
-**To decide:** exact handler filename (possibly `route.kiln`), whether handlers can be colocated with a flat `about.glaze` or only in route directories, how their exports are discovered, where their module boundary lies, whether a missing `get` permits automatic Glaze rendering, and the contract for request, parameter and props types.
+## 6. Parameters, props, precedence and errors — remaining design work
 
-## 6. Dynamic URL parameters and data loading: not decided
+The **three levels above are agreed**; their exact contract needs decisions:
 
-Three options remain under consideration; previous discussion did **not** select one:
-
-- **A — Automatic parameter-to-Glaze prop injection.** For a handler-free `blog/[slug].glaze`, the route parameter `slug` becomes an ordinary Glaze prop with a type-checked contract. This is the most concise option for simple dynamic pages, but typing, default props and precedence require design.
-- **B — Require a handler for dynamic pages.** Avoids implicit data flow, but adds boilerplate to simple cases.
-- **C — An optional typed `load` function.** Returns a record of props automatically rendered by the paired Glaze, preserving full programmatic routing for advanced cases. Potentially elegant, but another convention to learn and maintain.
-
-Open details: typed `[id]` parameters (`Int`, `Bool`, etc.), optional versus required props, multi-segment parameter records, missing objects/404 and redirects, async/fallible handlers, and type-checker diagnostics. Prefer existing route-parameter and `web.render` rules whenever possible.
+- **Route parameters:** determine whether `[id]` is always a `String` unless a Glaze/loader/handler declares another allowed type; avoid conflicting type declarations. Preserve existing `Int`, `Float`, `Bool`, `String` matching/conversion, and type-check names and missing parameters.
+- **Prop combination:** specify how URL parameters, loader-returned record fields and Glaze prop defaults interact. Unambiguous type checking is mandatory; avoid silent shadowing of values.
+- **Handler discovery:** decide the exact file name (candidate `route.kiln`), where it can live, export names, inferred versus explicit route signatures, and how it participates in ordinary folder-module imports/privacy.
+- **`load` vs `get`:** decide whether both can coexist for one GET page, and if so their interaction; rejecting ambiguous duplicate rendering is preferable to guessing but **not yet decided**.
+- **Failure handling:** map loader errors to meaningful HTTP status/redirect/error responses without concealing errors or weakening server-side auth; `not found` must not become a successful empty HTML page.
+- **HTML and non-HTML:** only a route designed for page rendering should receive automatic Glaze behaviour. A full handler can return arbitrary `web.Response`.
+- **Upgrade path:** moving `blog/[slug].glaze` to `blog/[slug]/index.glaze` plus `route.kiln` should preserve `/blog/{slug}`; defining both forms simultaneously is a deterministic collision error.
+- **Testing:** include simple direct parameter props, typed loader props, full handlers, invalid prop/type contracts, access control, errors, cross-folder imports and consistent static export behaviour.
 
 ## 7. Layouts, components, aliases
 
@@ -211,6 +259,9 @@ If adopted as **Phase 6.7**, a reviewable breakdown might be:
 - [ ] Nested `_components` directories are excluded by default; `ignore:` changes the exclusion convention per mount; excluded components are still importable.
 - [ ] Collision and malformed path cases produce precise, source-linked diagnostics on Linux and Windows.
 - [ ] Parameter routes and complex handlers use the same type-checked request/response behaviour as the explicit router.
+- [ ] A handler-free dynamic Glaze receives declared URL parameters with type checking; unexpected/missing required props produce clear diagnostics.
+- [ ] A typed optional loader supplies a record of Glaze props, automatically rendered with consistent error handling.
+- [ ] A full GET handler may directly return `web.Response` without bypassing existing hooks, validation or SSG integration.
 - [ ] Static, dynamic, mixed, and Ember-using examples preserve Phase 6.6 semantics under `kiln fire --static`.
 - [ ] `kiln check`, `run`, `dev`, `test`, LSP and VS Code agree on the project route graph.
 - [ ] Real-browser tests cover SSR, selective hydration, typed RPC restrictions in static export and common error paths.
@@ -223,9 +274,10 @@ If adopted as **Phase 6.7**, a reviewable breakdown might be:
 - Coexistence with explicit `app.get` routing rather than replacing it.
 - Default `_components` exclusion, with mount-specific configurable exclusions.
 - Project-root aliases are a separate general import feature (see #76), and `_components` remains the routing convention by default.
+- **Three-level progressive routing**: simple Glaze page with automatic typed URL props; Glaze plus optional typed `load` for data; or a full ordinary route handler for control. Exact syntax remains under design.
 
 **Needs an explicit decision before locking the specification:**
-1. **Dynamic page model:** direct URL-parameter props, required handlers, or a typed optional loader? (§6)
+1. **Precise loader contract:** request/parameter inputs, typed return record, error/404 semantics, and conflicts with `get` (§§5–6).
 2. **Complex-route convention:** which handler filename, signatures, module boundaries and how flat Glaze files graduate to route directories? (§5)
 3. **Dynamic static export:** what supplies `.static(...)` values and allows `.dynamic()` for filesystem routes? (§8)
 4. **Route file naming:** `[slug]` spelling, typed parameters, extensions and optional `.ember` page files? (§4)
