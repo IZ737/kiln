@@ -1,6 +1,6 @@
 # Phase 6.6 — Static site generation
 
-**Status:** Done in 0.14.0. This phase comes after Phase 6.5 and Phase 6.5.1 (Ember shared stores), and before Phase 7 (Kiln 1.0 production hardening). It moves static site generation out of Phase 7; deployment automation is explicitly Phase 8. The user guide is [Static sites](../guides/static-sites.md).
+**Status:** Done in 0.14.0. This phase comes after Phase 6.5 and Phase 6.5.1 (Ember shared stores), and before planned Phase 6.7 (optional filesystem routing) and Phase 7 (Kiln 1.0 production hardening). It moves static site generation out of Phase 7; deployment automation is explicitly Phase 8. The user guide is [Static sites](../guides/static-sites.md).
 
 ## Goal
 
