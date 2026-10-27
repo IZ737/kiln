@@ -46,6 +46,7 @@ APIs. **Proposed syntax in a plan is not automatically implemented syntax.**
 - [Phase 4.2 — Multi-folder projects and local modules](plans/phase-4.2.md) (complete; included in v0.9.0)
 - [Phase 5 — SQL, ORM, migrations, forms, authentication and admin](plans/phase-5.md)
 - [Phase 6 — Wares, testing, tooling and agent integration](plans/phase-6.md) (complete; included in v0.11.0)
+- [Phase 6.5 — Language review and vision alignment](plans/phase-6.5.md) (complete; included in v0.12.0)
 - [Moving the runtime to Rust](plans/runtime-rust.md)
 - [Integrated testing — unit, integration and browser](plans/testing.md) (implemented as `kiln test`)
 

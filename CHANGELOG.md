@@ -1,5 +1,58 @@
 # Changelog
 
+## 0.12.0 (2026-10-27)
+
+Phase 6.5: a review of Kiln as a language against its vision, using the
+programs in this repository as evidence. Every decision, with its reason
+and what it breaks, is in `docs/decisions.md`; the review is recorded in
+`docs/plans/phase-6.5.md`. This release has breaking changes, listed
+first.
+
+**Breaking changes**
+
+- `env(name)` returns `String?`; write `env("PORT") ?? "8080"`. `os.env`
+  is removed.
+- The server answers 403 to a `POST`, `PUT`, `PATCH` or `DELETE` that a
+  browser sent from another site, unless `web.app(cross_site: [...])`
+  lists the path's prefix. Hand-written `same_origin` checks can go.
+- `fn rpc_guard` is removed: use `app.before("/_kiln/rpc", hook)`.
+- In embers, the submitted form's map is `event.fields`.
+- `ui` keys and words are snake_case: `max_w`, `text_size`,
+  `focus_visible`, `.row_reverse`, `.not_allowed`. The old names are
+  errors whose fix is the new name.
+- `base64.encode` takes `Bytes` and `base64.decode` returns `Bytes`;
+  encode text with `base64.encode(text.bytes())`.
+- `Decimal` is removed. `Any` and `Rest` are reserved for the standard
+  library (E0233), a `const` cannot be changed (E0207), and the standard
+  library's internals cannot be used (E0230).
+- `req.cookie` decodes `%XX` escapes, and a form's `String` field rejects
+  data that is not UTF-8.
+
+**Language**
+
+- `let some(post) = found else { return web.not_found() }`.
+- `.Variant` where the enum is known, in values and `match` arms.
+- Copies with changes: `Post(..post, title: "New")`, `{ ..record, x: 0 }`.
+- Map literals `["Ada": 36]` and `"""` multi-line strings.
+- Interfaces as bounds on generic functions:
+  `interface Named { fn name(self) -> String }` and
+  `fn label<T: Named>(x: T)`. A type fits by having the methods, built-in
+  types included; calls are compiled per type.
+- `Bytes`: `text.bytes()`, `data.text()`, `len`, `slice`,
+  `fs.read_bytes`, `fs.write_bytes`; Base64 in JSON and blobs in SQL.
+- `docs/reference/semantics.md` describes evaluation and sharing.
+
+**Web**
+
+- `status:` and `headers:` on every response function, `web.render`
+  included; `web.bytes(data, content_type:)`, `req.bytes()`, and file
+  fields read into `Bytes`.
+- `res.set_cookie(name, value, ...)` with `HttpOnly`, `Secure` and
+  `SameSite=Lax` by default, and several cookies on one response.
+- `app.before(prefix, hook)` runs ahead of the routes under a prefix.
+- A glaze's `request: web.Request` prop is filled in automatically.
+- `event.form<T>()` reads an ember's form as a struct.
+
 ## 0.11.0 (2026-10-27)
 
 Phase 6: the developer ecosystem. Projects use versioned Wares from a

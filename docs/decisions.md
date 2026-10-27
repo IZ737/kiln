@@ -5,11 +5,13 @@ means for existing code. A decision here is settled until new evidence
 reopens it; the [design overview](design.md) gives the goals and the
 [reference](README.md#language-reference) the rules as they stand.
 
-Phase 6.5 reviews the whole language against the [vision](vision.md); its
-decisions are added here as they are made.
+Phase 6.5 reviewed the whole language against the [vision](vision.md);
+[its record](plans/phase-6.5.md) lists every proposal by id.
 
 | Date | Decision | Why | Compatibility |
 | --- | --- | --- | --- |
+| 2026-10-27 | Deferred: forms typed once from one struct for both the page and its handler (Phase 7); `js.Handle<T>` for typed JavaScript objects (after 1.0); private fields (before Wares are widely published) | Each is worth doing, but none blocks 1.0 programs, and each needs design beyond this review | None |
+| 2026-10-27 | Models and the guides write `id: Int = 0`, so a new record is made without inventing a key | Examples passed `id: 0` by hand to every insert | None: a style change |
 | 2026-10-27 | Structural interfaces, used only as bounds on generic functions (`fn label<T: Named>(x: T)`), compiled per type with no dynamic dispatch; a type fits by having the methods | Generic code could only show, compare and hash, so Wares could not offer reusable code over the program's types; dynamic dispatch would need a runtime representation 1.0 does not need | Additive; `interface` is a keyword only at the start of a declaration |
 | 2026-10-27 | `Bytes` is real: `text.bytes()`, `data.text()` (which fails on bad UTF-8), `len`, `slice`, `fs.read_bytes`/`write_bytes`, `web.bytes`, `req.bytes()`, file fields in forms, Base64 in JSON and blobs in SQL | A server could not send an image or read an upload, and binary data hid in `String`s that are supposed to be text | `base64.encode` takes `Bytes` and `base64.decode` returns them; a form's `String` field rejects non-UTF-8 data |
 | 2026-10-27 | `Decimal` is removed; money is whole cents in an `Int` until a decimal type is designed | It was a name with no literals, methods or runtime, promising something 1.0 would not have | None: nothing could use it |
