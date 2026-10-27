@@ -6,7 +6,7 @@
 
 The implemented [Ember reference](../reference/glazes.md#embers) describes instance-local `{% state %}`, SSR/WasmGC hydration, handlers and typed RPC. It does **not** specify or expose importable shared reactive stores, optional scoped overrides, per-request store isolation, or client-side-navigation lifetime rules. These were agreed while designing Embers; completing Phase 4 and Phase 6 did not imply they shipped.
 
-**Design authority:** Preserve the confirmed decisions below. Examples of syntax are **illustrative** until the parser, checker, native/Wasm backends, runtime and docs agree. Do not present a proposed API spelling as an already ratified interface.
+**Design authority:** Preserve the confirmed decisions below. **`{% state %}` is the confirmed and already implemented declaration for reactive component-local Ember state.** Its spelling is settled: do not rename it to `{% var %}`. Shared-store API examples remain illustrative until the parser, checker, backends, runtime and docs agree.
 
 ## Previously agreed behaviour (non-negotiable)
 
@@ -20,11 +20,16 @@ The implemented [Ember reference](../reference/glazes.md#embers) describes insta
 8. **Local Ember state remains local.** Different instances don't accidentally share instance state; prop changes do not reset it, while removal/disposal and changed `key=` identity have defined cleanup/reset behaviour. Shared store changes should not force wholesale island recreation.
 9. **Tasks and subscriptions have owners.** Component-owned reactions/work cancel/dispose with the component. Any store-owned work has an explicit lifetime and must not be accidentally cancelled on client navigation or leak after application teardown. Preserve explicit cancellation and observable error behaviour.
 
-## Existing syntax discrepancy to reconcile before 1.0
+## Settled syntax — keep `{% state %}`
 
-The earlier Ember design also **accepted top-level `{% var %}` for reactive component-local state** instead of `{% state %}`, and distinguished mutable reactive roots from ordinary nonreactive values. However, Phase 4/4.1 *implemented* `{% state %}` and documented it as the public syntax.
+**Decision (2026-10-27): Keep `{% state %}` for reactive component-local Ember state.** The earlier proposal to use top-level `{% var %}` was reconsidered and rejected. The explicit `state` marker makes it immediately obvious to someone scanning a component which declarations participate in reactivity and are retained as component state.
 
-This phase must explicitly reconcile that mismatch: evaluate migration to the previously agreed `{% var %}` syntax against actual compiler/Glaze compatibility, settle the canonical pre-1.0 form in a recorded decision, update examples/reference/LSP/formatter/diagnostics, and add a transition diagnostic if a spelling is removed. **Do not silently claim `{% var %}` already works or change the existing syntax without documenting the break.** The shared-store behaviour above is not conditional on which spelling wins.
+- `{% state count = 0 %}` is the canonical, already implemented Ember-local reactive declaration. **Do not replace it with `{% var %}`.**
+- Ordinary `var` continues to mean a mutable local binding in Kiln; mutability alone does not imply reactive component state. Ordinary `{% let %}` remains nonreactive.
+- Shared stores must likewise opt into reactivity explicitly through their store/reactive-root definition. A `let` binding that refers to such a store can still refer to reactive data; the binding keyword itself is not what makes it reactive.
+- Preserve existing source compatibility: no migration, deprecation, alternative synonym, or formatter rewrite from `state` to `var` is required. Keep compiler, documentation, highlighter and LSP support for `state`.
+
+This phase implements the missing shared-store semantics **without reopening the local-state keyword choice**. See [the language decision log](../decisions.md).
 
 ## Candidate developer experience (API spelling not finalized)
 
@@ -58,7 +63,7 @@ The intent is: both Embers reference the **same store**, updates in one automati
 4. **Scope and SSR:** Prove parallel users/requests get independent state, hydration uses the corresponding typed snapshot, and explicit overrides can isolate tests or nested applications.
 5. **Navigation lifetime:** Provide an **opt-in** client-side navigation path, keep application store identity across it, and specify cleanup/cancellation and fallback to normal navigation. Verify that a full reload resets state by default.
 6. **Optional persistence:** Supply or formally define an explicit persistence mechanism, with tests for reload opt-in and no accidental persistence of server secrets. Do not turn persistence or syncing on by default.
-7. **Syntax alignment:** Resolve the `{% var %}` versus implemented `{% state %}` discrepancy above with an explicit decision and migration/tests if changed.
+7. **Syntax consistency:** Preserve the settled `{% state %}` declaration for component-local reactivity; test that ordinary `let`/`var` retain their existing semantics and that shared-store reactive roots are explicit. Do not add `{% var %}` as a competing reactive spelling.
 8. **Developer experience:** Update reference, design/decision log, introductory examples, docs site, LSP/VS Code highlighting/completion and `kiln test` browser/conformance coverage; keep static Glazes free of unnecessary Ember runtime assets.
 
 ## Completion gate
@@ -68,7 +73,7 @@ The intent is: both Embers reference the **same store**, updates in one automati
 - Request A's server render/hydration never sees request B's state; explicit test scopes can override one store independently.
 - Opt-in client navigation preserves the store; a normal full reload resets it, and explicit persistence alone enables reload retention.
 - Removed components unsubscribe and cancel their own work, while correctly owned app/store work survives internal navigation and is cleaned up at teardown.
-- All accepted pre-1.0 syntax decisions are reconciled with implemented `{% state %}`, and unsupported forms produce intentional diagnostics rather than silent mismatches.
+- `{% state %}` remains the canonical and documented local reactive-state syntax, with no `state` → `var` migration; ordinary `let`/`var` do not silently become reactive component declarations.
 - Browser tests, project/module tests, server isolation tests, and native/Wasm conformance pass; current example apps and Glazes keep working or get documented migrations.
 
 ## Explicit exclusions
