@@ -284,6 +284,15 @@ impl<'a> Gen<'a> {
         self.is_adt(ty, self.prims.string)
     }
 
+    fn is_bytes(&self, ty: &Ty) -> bool {
+        self.is_adt(ty, self.prims.bytes)
+    }
+
+    /// A `String` or `Bytes`: both are a `kstr`, compared byte by byte.
+    fn is_kstr(&self, ty: &Ty) -> bool {
+        self.is_string(ty) || self.is_bytes(ty)
+    }
+
     fn is_error(&self, ty: &Ty) -> bool {
         self.is_adt(ty, self.prims.error)
     }
@@ -324,7 +333,9 @@ impl<'a> Gen<'a> {
                 Ty::Opt(_) => "kbox *".into(),
                 Ty::Fn(_) => "kclosure *".into(),
                 Ty::Record(_) => "kv *".into(),
-                Ty::Adt(id, _) if *id == self.prims.string => "kstr *".into(),
+                Ty::Adt(id, _) if *id == self.prims.string || *id == self.prims.bytes => {
+                    "kstr *".into()
+                }
                 Ty::Adt(id, _) if *id == self.prims.list => "klist *".into(),
                 Ty::Adt(id, _) if *id == self.prims.map || *id == self.prims.set => "kmap *".into(),
                 Ty::Adt(id, _) => match &self.p.adts[*id].kind {
@@ -792,7 +803,7 @@ impl<'a> Gen<'a> {
                     CmpOp::Gt => ">",
                     CmpOp::Ge => ">=",
                 };
-                if self.is_string(&a.ty) {
+                if self.is_kstr(&a.ty) {
                     format!("(k_str_cmp({l}, {r}) {c_op} 0)")
                 } else {
                     format!("(({l}) {c_op} ({r}))")
@@ -1012,7 +1023,7 @@ impl<'a> Gen<'a> {
             }
             ExprKind::Env(v) => {
                 let x = self.expr(v);
-                self.store(&format!("k_env({x})"), &e.ty)
+                self.store(&format!("k_os_env({x})"), &e.ty)
             }
             ExprKind::Panic(v) => {
                 let x = self.expr(v);
@@ -1571,8 +1582,9 @@ impl<'a> Gen<'a> {
             ("io", "write" | "print_err") => {
                 (self.store(&format!("k_io_{name}({})", arg(0)), ty), false)
             }
-            ("os", "env" | "exit") => (self.store(&format!("k_os_{name}({})", arg(0)), ty), false),
+            ("os", "exit") => (self.store(&format!("k_os_{name}({})", arg(0)), ty), false),
             ("web", "not_found") => (self.store("(void *)k_web_not_found()", ty), false),
+            ("web", "__request") => (self.store("k_web_current_request()", ty), false),
             ("web", "app") => {
                 let call = format!("(void *)k_web_app({})", a.join(", "));
                 (self.store(&call, ty), false)
@@ -1581,10 +1593,21 @@ impl<'a> Gen<'a> {
                 let call = format!("(void *)k_web_error({}, {})", arg(0), arg(1));
                 (self.store(&call, ty), false)
             }
+            ("web", "App.before") => (
+                self.store(
+                    &format!("k_web_before({}, {}, {})", arg(0), arg(1), arg(2)),
+                    ty,
+                ),
+                false,
+            ),
             ("web", "App.on_error") => (
                 self.store(&format!("k_web_on_error({}, {})", arg(0), arg(1)), ty),
                 false,
             ),
+            ("web", "__with_headers") => {
+                let call = format!("(void *)k_web_with_headers((kv *){}, {})", arg(0), arg(1));
+                (self.store(&call, ty), false)
+            }
             ("web", "text" | "html" | "redirect") => {
                 let call = format!("(void *)k_web_{name}({}, {})", arg(0), arg(1));
                 (self.store(&call, ty), false)
@@ -1712,6 +1735,7 @@ impl<'a> Gen<'a> {
     fn display(&mut self, e: &str, ty: &Ty, span: Span) -> String {
         match ty {
             _ if self.is_string(ty) => e.to_string(),
+            _ if self.is_bytes(ty) => format!("k_bytes_show({e})"),
             Ty::Adt(id, _) if *id == self.prims.int => format!("k_int_str({e})"),
             Ty::Adt(id, _) if *id == self.prims.float => format!("k_float_str({e})"),
             Ty::Adt(id, _) if *id == self.prims.bool_ => format!("k_bool_str({e})"),
@@ -1746,6 +1770,7 @@ impl<'a> Gen<'a> {
         let (kind, title, parts, labels): (&str, Option<String>, Vec<String>, Vec<Option<String>>) =
             match ty {
                 _ if self.is_string(ty) => ("K_D_STR", None, vec![], vec![]),
+                _ if self.is_bytes(ty) => ("K_D_BYTES", None, vec![], vec![]),
                 Ty::Adt(id, _) if *id == p.int => ("K_D_INT", None, vec![], vec![]),
                 Ty::Adt(id, _) if *id == p.float => ("K_D_FLOAT", None, vec![], vec![]),
                 Ty::Adt(id, _) if *id == p.bool_ => ("K_D_BOOL", None, vec![], vec![]),
@@ -1879,6 +1904,7 @@ impl<'a> Gen<'a> {
                     "    return K_KV2P(kstr *, v);\n".to_string()
                 }
             }
+            _ if self.is_bytes(ty) => "    return k_bytes_show(K_KV2P(kstr *, v));\n".to_string(),
             Ty::Adt(id, _) if self.rep(ty) != Rep::Ptr => {
                 let v = self.unkv("v", ty);
                 let f = if *id == self.prims.float {
@@ -2015,7 +2041,7 @@ impl<'a> Gen<'a> {
             }
             _ => (a.to_string(), at.clone(), b.to_string()),
         };
-        if self.is_string(&at) {
+        if self.is_kstr(&at) {
             return format!("k_str_eq({a}, {b})");
         }
         match self.rep(&at) {
@@ -2035,7 +2061,7 @@ impl<'a> Gen<'a> {
         }
         let _ = writeln!(self.protos, "static bool {name}(kv a, kv b);");
         let body = match ty {
-            _ if self.is_string(ty) => {
+            _ if self.is_kstr(ty) => {
                 "    return k_str_eq(K_KV2P(kstr *, a), K_KV2P(kstr *, b));\n".to_string()
             }
             Ty::Adt(id, _) if *id == self.prims.float => {
@@ -2130,7 +2156,7 @@ impl<'a> Gen<'a> {
     /// The runtime hash function for map keys and set items of `ty`. Values
     /// that `eq_fn` finds equal hash the same.
     fn hash_fn(&mut self, ty: &Ty, span: Span) -> String {
-        if self.is_string(ty) {
+        if self.is_kstr(ty) {
             return "k_hash_str".into();
         }
         match self.rep(ty) {
@@ -2205,7 +2231,7 @@ impl<'a> Gen<'a> {
         }
         let _ = writeln!(self.protos, "static int {name}(kv a, kv b);");
         let body = match self.rep(ty) {
-            _ if self.is_string(ty) => {
+            _ if self.is_kstr(ty) => {
                 "    return k_str_cmp(K_KV2P(kstr *, a), K_KV2P(kstr *, b));\n".to_string()
             }
             Rep::Float => {

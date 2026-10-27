@@ -1,5 +1,5 @@
-{% props name: String, email: String, problems: List<String>, dark: Bool %}
-{% layout "shared/layout.glaze" title: "Sign up", dark: dark %}
+{% props name: String, email: String, problems: List<String> %}
+{% layout "shared/layout.glaze" title: "Sign up" %}
 <h1>Sign up</h1>
 <ui.FormErrors problems={problems} />
 <form method="post" action="/sign-up">

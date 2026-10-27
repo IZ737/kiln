@@ -34,6 +34,7 @@
 //! ```
 
 pub mod admin;
+pub mod forms;
 pub mod glaze;
 mod lower;
 mod print;
@@ -75,6 +76,7 @@ pub struct Prims {
     pub float: AdtId,
     pub bool_: AdtId,
     pub string: AdtId,
+    pub bytes: AdtId,
     pub duration: AdtId,
     pub list: AdtId,
     pub map: AdtId,

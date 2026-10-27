@@ -19,7 +19,7 @@ struct NewNote {
 }
 
 fn store() -> String {
-    return os.env("NOTES_FILE") ?? "notes.json"
+    return env("NOTES_FILE") ?? "notes.json"
 }
 
 fn load() -> List<Note> ! {
@@ -78,6 +78,6 @@ fn main() ! {
         return web.json({ error: message }, status: status)
     })
 
-    let port = os.env("PORT") ?? "8080"
+    let port = env("PORT") ?? "8080"
     try app.listen(":${port}")
 }

@@ -2,10 +2,14 @@
 
 // The whole file as text.
 fn read(path: String) -> String ! {}
+// The whole file as bytes, for a file that need not be text.
+fn read_bytes(path: String) -> Bytes ! {}
 // The file's lines, without their line endings.
 fn read_lines(path: String) -> List<String> ! {}
 // Replaces the file's contents, creating the file if needed.
 fn write(path: String, text: String) ! {}
+// Replaces the file's contents with `data`, creating the file if needed.
+fn write_bytes(path: String, data: Bytes) ! {}
 // Adds to the end of the file, creating the file if needed.
 fn append(path: String, text: String) ! {}
 fn exists(path: String) -> Bool {}

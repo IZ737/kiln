@@ -40,4 +40,20 @@ content-length: 40
 connection: close
 
 {"error":"the form has no field `name`"}
+### POST /avatar HTTP/1.1
+HTTP/1.1 200 OK
+content-type: image/gif
+x-name: Ada
+x-note: no note
+content-length: 13
+connection: close
+
+GIF89a pixels
+### POST /echo HTTP/1.1
+HTTP/1.1 200 OK
+content-type: application/octet-stream
+content-length: 8
+connection: close
+
+raw body
 ### GET /quit HTTP/1.1

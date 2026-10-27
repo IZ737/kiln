@@ -134,6 +134,7 @@ pub fn bind_entry(root: &Path, entry: &Path, texts: &[(PathBuf, String)]) -> Bou
                 ),
                 Item::Struct(s) => (&s.name, s.is_pub, true),
                 Item::Enum(e) => (&e.name, e.is_pub, true),
+                Item::Interface(i) => (&i.name, i.is_pub, true),
                 Item::Const(c) => (&c.name, c.is_pub, false),
                 _ => continue,
             };
@@ -424,6 +425,11 @@ impl Resolver<'_> {
         self.locals.push(BTreeSet::new());
         self.generics
             .push(f.generics.iter().map(|g| g.name.clone()).collect());
+        for b in &f.bounds {
+            for t in &b.interfaces {
+                self.ty(t, f.is_pub);
+            }
+        }
         self.params(&f.params, f.is_pub);
         if let Some(t) = &f.ret {
             self.ty(t, f.is_pub);
@@ -485,6 +491,12 @@ impl Resolver<'_> {
                     self.function(f, true);
                 }
                 self.generics.pop();
+            }
+            Item::Interface(i) => {
+                self.path(std::slice::from_ref(&i.name), false);
+                for m in &i.methods {
+                    self.function(m, true);
+                }
             }
             Item::Import(_) => {}
         }

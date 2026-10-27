@@ -83,6 +83,17 @@ pub struct FnSig {
     pub params: Vec<ParamSig>,
     pub ret: Ty,
     pub throws: Option<Ty>,
+    /// The interfaces each bounded type parameter must fit, by index into
+    /// the checker's interfaces: `T: Named` in `fn label<T: Named>(x: T)`.
+    pub bounds: Vec<(String, Vec<usize>)>,
+}
+
+/// `interface Named { fn name(self) -> String }`. A type fits it when it
+/// has each method, with `self` and the same parameter and result types.
+#[derive(Clone, Debug)]
+pub struct InterfaceDef {
+    pub name: String,
+    pub methods: Vec<FnSig>,
 }
 
 #[derive(Clone, Debug)]

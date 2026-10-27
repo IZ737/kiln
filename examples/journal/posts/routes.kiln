@@ -38,17 +38,19 @@ pub fn routes(app: web.App, db: sql.Db, sessions: auth.Sessions) {
             return res
         }
         let author = who.subject.to_int() ?? 0
-        let post = try orm.insert<shared.Post>(db, shared.Post(id: 0, user_id: author, title: form.title.trim(), body: form.body, published: form.published))
+        let post = try orm.insert(db, shared.Post(user_id: author, title: form.title.trim(), body: form.body, published: form.published))
         return web.redirect("/posts/${post.id}", status: 303)
     })
 
     app.get("/posts/{id: Int}", fn(req, id) {
         let who = try sessions.current(req)
         let found = try orm.find<shared.Post>(db).where(fn(p) { p.id == id }).include(.user).first()
-        if not (found is some(post) and shared.may_read(who, post)) {
+        let some(post) = found else {
             return web.not_found()
         }
-        let post = found ?? shared.Post(id: 0, user_id: 0, title: "", body: "")
+        if not shared.may_read(who, post) {
+            return web.not_found()
+        }
         let lines = try comment_lines(db, id)
         let editable = match who {
             some(w) => shared.may_edit(w, post)
@@ -135,7 +137,7 @@ fn add(db: sql.Db, sessions: auth.Sessions, req: web.Request, id: Int, body: Str
         throw web.error(422, checked.messages().join(" "))
     }
     let author = who.subject.to_int() ?? 0
-    try orm.insert<shared.Comment>(db, shared.Comment(id: 0, post_id: id, user_id: author, body: body.trim()))
+    try orm.insert(db, shared.Comment(post_id: id, user_id: author, body: body.trim()))
     return try comment_lines(db, id)
 }
 

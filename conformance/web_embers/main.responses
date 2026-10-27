@@ -126,10 +126,10 @@ connection: close
 ### POST /_kiln/rpc/add HTTP/1.1
 HTTP/1.1 403 Forbidden
 content-type: application/json
-content-length: 43
+content-length: 51
 connection: close
 
-{"error":"a call must come from this site"}
+{"error":"this request was sent from another site"}
 ### POST /_kiln/rpc/add HTTP/1.1
 HTTP/1.1 403 Forbidden
 content-type: application/json
@@ -140,10 +140,10 @@ connection: close
 ### POST /_kiln/rpc/add HTTP/1.1
 HTTP/1.1 403 Forbidden
 content-type: application/json
-content-length: 43
+content-length: 51
 connection: close
 
-{"error":"a call must come from this site"}
+{"error":"this request was sent from another site"}
 ### POST /_kiln/rpc/add HTTP/1.1
 HTTP/1.1 415 Unsupported Media Type
 content-type: application/json

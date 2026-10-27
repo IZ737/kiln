@@ -24,13 +24,12 @@ fn main() ! {
         return res
     })
     app.on_error(fn(req, status, message) {
-        let page = web.render("error.glaze", { status, message })
-        return web.html(page.body, status: status)
+        return web.render("error.glaze", { status, message }, status: status)
     })
     app.get("/quit", fn(req) {
         os.exit(0)
         return web.text("bye")
     })
-    let port = os.env("PORT") ?? "8080"
+    let port = env("PORT") ?? "8080"
     try app.listen("127.0.0.1:${port}")
 }

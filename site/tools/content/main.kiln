@@ -21,6 +21,7 @@ fn sources() -> List<Source> {
         Source(path: "reference/syntax", section: "Language reference"),
         Source(path: "reference/projects", section: "Language reference"),
         Source(path: "reference/types", section: "Language reference"),
+        Source(path: "reference/semantics", section: "Language reference"),
         Source(path: "reference/glazes", section: "Language reference"),
         Source(path: "reference/stdlib", section: "Language reference"),
         Source(path: "reference/data", section: "Language reference"),
@@ -32,6 +33,7 @@ fn sources() -> List<Source> {
         Source(path: "guides/agents", section: "Guides"),
         Source(path: "design", section: "Project"),
         Source(path: "vision", section: "Project"),
+        Source(path: "decisions", section: "Project"),
         Source(path: "plans/phase-2.5", section: "Plans"),
         Source(path: "plans/phase-3", section: "Plans"),
         Source(path: "plans/phase-4", section: "Plans"),
@@ -39,6 +41,7 @@ fn sources() -> List<Source> {
         Source(path: "plans/phase-4.2", section: "Plans"),
         Source(path: "plans/phase-5", section: "Plans"),
         Source(path: "plans/phase-6", section: "Plans"),
+        Source(path: "plans/phase-6.5", section: "Plans"),
         Source(path: "plans/runtime-rust", section: "Plans"),
         Source(path: "plans/testing", section: "Plans"),
     ]

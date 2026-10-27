@@ -1,18 +1,19 @@
 # Kiln design overview
 
 This is a summary of the language design. Decisions here can still change
-until 1.0; open questions are listed at the end. The broader product
+until 1.0; settled questions are in the [decision log](decisions.md). The broader product
 philosophy, frontend/backend developer experience, performance escape
 hatches, interoperability and adoption strategy are in
 [Kiln's long-term vision](vision.md). The [README roadmap](../README.md#roadmap)
 controls phase sequencing; aspirational ideas in the vision are not
 automatically commitments for 1.0.
 
-**Implementation status (v0.9.0):** native Linux/Windows builds, HTTP routing,
+**Implementation status (v0.11.0):** native Linux/Windows builds, HTTP routing,
 JSON, server-rendered Glazes, typed styles/themes, explicit WasmGC Embers,
-typed RPC, browser/npm interop and local folder modules are implemented.
-SQL/ORM, sessions/auth/admin, Wares, public `kiln test`, hot reload and the
-`kiln fire`/deployment workflow remain planned. The goals and examples below
+typed RPC, browser/npm interop, local folder modules, SQL/ORM, sessions,
+auth and the generated admin, Wares, `kiln test`, `kiln fmt`, `kiln dev`
+and `kiln mcp` are implemented. The `kiln fire`/deployment workflow
+remains planned. The goals and examples below
 include future design; use the [current references](README.md#language-reference)
 for supported syntax and APIs.
 
@@ -95,10 +96,13 @@ bindings).
 ## Types
 
 - Static types with local inference. Function signatures are always typed.
-- Primitives: `Int` (64-bit), `Float`, `Bool`, `String` (UTF-8), `Bytes`,
-  `Decimal` for money, `Duration` (`250ms`, `2s`).
+- Primitives: `Int` (64-bit), `Float`, `Bool`, `String` (UTF-8), `Bytes`
+  (binary data), `Duration` (`250ms`, `2s`). Money is whole cents in an
+  `Int` until a decimal type is designed.
 - `List<T>`, `Map<K, V>`, `Set<T>`; structs with defaults; enums with payloads
-  and exhaustive `match`; structural interfaces; generics by monomorphization.
+  and exhaustive `match`; structural interfaces as bounds on generic
+  functions (`fn label<T: Named>(x: T)`), with no interface values; generics
+  by monomorphization.
 - No null. `T?` is optional and the missing value is `none`.
 - Errors are values: `fn f() -> T ! E`, propagated with `try`, handled with
   `catch`. A bare `!` uses the standard `Error` and accepts any error; `! E`
@@ -467,22 +471,22 @@ needs no third-party package.
 
 ### Admin UI
 
-The `admin` module generates a Django-style admin site from ORM models, in
-one line:
+The `admin` module generates a Django-style admin site from ORM models, a
+line per model:
 
 ```kiln
-app.mount("/admin", admin.site(db, models: [Post, User, Comment]))
+let site = admin.site(db, sessions, fn(who, action, model) { who.roles.contains("admin") })
+admin.pages<Post>(app, "/admin/posts", site)
 ```
 
-- List, search, filter, create, edit and delete pages for every model, with
-  forms and validation derived from field types and relations.
-- Protected by `auth`, with per-model permissions.
-- **Fully customizable, in layers:** per-model options in code (columns,
-  search fields, filters, read-only fields, custom actions); any field
-  widget replaced by a component; and any page replaced by placing a glaze
-  at the matching path, such as `admin/post/edit.glaze`. The admin is built
-  from glazes, so overrides use the same component system as the rest of the
-  site.
+- List, search, sort, create, edit and delete pages for every model, with
+  forms derived from field types.
+- Protected by `auth`: nothing is allowed until the program's
+  `authorize` function says yes, per action and model.
+- **Customizable in layers (planned):** per-model options in code (columns,
+  search fields, filters, read-only fields, custom actions), field widgets
+  replaced by components, and pages replaced by glazes. The current API
+  and its scope are in [the data reference](reference/data.md#admin).
 
 ## Glazes and embers
 
@@ -628,9 +632,7 @@ program links next to the C runtime, for both backends and both targets.
 It exports C functions, so the backends call it like the rest of the
 runtime.
 
-## Open questions
+## Settled questions
 
-- Should a `.glaze` page with inline code be able to serve a route directly
-  (PHP style), or should every route go through a handler?
-- Whether the exact WasmGC browser support matches the plan should be
-  confirmed before Phase 4's WasmGC implementation.
+Questions that were open here are settled in the [decision log](decisions.md),
+which records every language decision with its reason.

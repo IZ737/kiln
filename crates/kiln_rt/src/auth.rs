@@ -316,13 +316,7 @@ fn set_cookie(s: &Settings, value: &str, seconds: i64) -> String {
 
 /// Puts a `set-cookie` header on a response, and returns it.
 unsafe fn with_cookie(res: Kv, value: &str) -> Kv {
-    // A `Response`'s slots are status, headers, body.
-    let headers = *ptr::<Kv>(res).add(1);
-    k_map_set(
-        ptr(headers),
-        string(b"set-cookie"),
-        string(value.as_bytes()),
-    );
+    crate::web::add_set_cookie(res, value);
     res
 }
 

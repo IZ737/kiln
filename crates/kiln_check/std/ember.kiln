@@ -3,13 +3,21 @@
 
 // What happened: `kind` is the event's name ("click", "input", ...),
 // `value` and `checked` are the target element's, `key` is the key of a
-// keyboard event, and `form` the fields of a submitted form.
+// keyboard event, and `fields` the text of a submitted form's fields, or
+// of the form the element is in.
 struct Event {
     kind: String
     value: String
     checked: Bool
     key: String
-    form: Map<String, String>
+    fields: Map<String, String>
+}
+
+impl Event {
+    // The form's fields as a struct: text as it is, numbers parsed, a
+    // checkbox `true` when it is checked, and an optional `none` when it
+    // is empty, as `req.form<T>()` reads them on the server.
+    fn form<T>(self) -> T ! {}
 }
 
 // A mounted ember: renders its HTML, runs its handlers by number, and

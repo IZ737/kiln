@@ -83,10 +83,9 @@ pub fn routes(app: web.App, db: sql.Db) {
 
     app.put("/v1/wares/{publisher}/{name}/{version}", fn(req, publisher, name, version) {
         let who = try store.account_for(db, req)
-        if not (who is some(_)) {
+        let some(account) = who else {
             return problem(401, "a publish token is needed: run `kiln login`")
         }
-        let account = who ?? throw "unreachable"
         if account.name != publisher {
             return problem(403, "the account ${account.name} cannot publish Wares of ${publisher}")
         }
@@ -129,8 +128,7 @@ pub fn routes(app: web.App, db: sql.Db) {
             }
             return problem(409, "${publisher}/${name} ${version} is already published with another checksum; publish a new version")
         }
-        try orm.insert<store.Release>(db, store.Release(
-            id: 0,
+        try orm.insert(db, store.Release(
             account_id: account.id,
             publisher: publisher,
             name: name,
@@ -150,10 +148,9 @@ pub fn routes(app: web.App, db: sql.Db) {
     // Yanking hides a release from new resolutions; it is never deleted.
     app.post("/v1/wares/{publisher}/{name}/{version}/yank", fn(req, publisher, name, version) {
         let who = try store.account_for(db, req)
-        if not (who is some(_)) {
+        let some(account) = who else {
             return problem(401, "a publish token is needed: run `kiln login`")
         }
-        let account = who ?? throw "unreachable"
         if account.name != publisher {
             return problem(403, "the account ${account.name} cannot yank Wares of ${publisher}")
         }
@@ -161,10 +158,9 @@ pub fn routes(app: web.App, db: sql.Db) {
         let found = try orm.find<store.Release>(db)
             .where(fn(r) { r.publisher == publisher and r.name == name and r.version == version })
             .first()
-        if not (found is some(_)) {
+        let some(release) = found else {
             return problem(404, "no release ${publisher}/${name} ${version}")
         }
-        var release = found ?? throw "unreachable"
         release.yanked = body.yanked
         try orm.update<store.Release>(db, release)
         let action = if body.yanked { "yank" } else { "unyank" }

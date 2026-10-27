@@ -80,16 +80,26 @@ pub(crate) fn signature(name: &str) -> Option<(&'static [C], Option<C>)> {
     const P2: &[C] = &[I64, I64];
     const P3: &[C] = &[I64, I64, I64];
     let sig: (&'static [C], Option<C>) = match name {
-        "k_take_error" | "k_time_now" | "k_os_args" | "k_os_cwd" | "k_os_temp_dir" | "k_os_pid"
-        | "k_os_platform" | "k_io_read_line" | "k_io_read_all" | "k_io_read_lines"
-        | "k_web_not_found" => (&[], Some(I64)),
+        "k_take_error"
+        | "k_time_now"
+        | "k_os_args"
+        | "k_os_cwd"
+        | "k_os_temp_dir"
+        | "k_os_pid"
+        | "k_os_platform"
+        | "k_io_read_line"
+        | "k_io_read_all"
+        | "k_io_read_lines"
+        | "k_web_not_found"
+        | "k_web_current_request" => (&[], Some(I64)),
         "k_io_flush" => (&[], None),
-        "k_web_app" => (&[I64, I64, I64, I64, Bool], Some(I64)),
+        "k_web_app" => (&[I64, I64, I64, I64, Bool, I64], Some(I64)),
         "k_alloc"
         | "k_neg"
         | "k_abs"
         | "k_int_str"
         | "k_duration_str"
+        | "k_bytes_show"
         | "k_box"
         | "k_list_first"
         | "k_list_last"
@@ -111,7 +121,6 @@ pub(crate) fn signature(name: &str) -> Option<(&'static [C], Option<C>)> {
         | "k_str_to_float"
         | "k_str_chars"
         | "k_str_lines"
-        | "k_env"
         | "k_time_year"
         | "k_time_month"
         | "k_time_day"
@@ -137,7 +146,7 @@ pub(crate) fn signature(name: &str) -> Option<(&'static [C], Option<C>)> {
         | "k_str_index_of" | "k_str_repeat" | "k_time_format" | "k_desc_hash" | "k_web_text"
         | "k_web_html" | "k_web_redirect" | "k_web_query" | "k_web_header" | "k_web_cookie"
         | "k_json_encode" | "k_json_decode" | "k_web_req_json" | "k_web_error"
-        | "k_rt_ui_merge" => (P2, Some(I64)),
+        | "k_rt_ui_merge" | "k_web_with_headers" => (P2, Some(I64)),
         "k_fail" | "k_list_push" | "k_set_add" | "k_fs_write" | "k_fs_append" | "k_fs_rename"
         | "k_web_listen" | "k_web_on_error" => (P2, None),
         "k_str_eq" | "k_list_any" | "k_list_all" | "k_map_contains" | "k_set_remove"
@@ -156,6 +165,7 @@ pub(crate) fn signature(name: &str) -> Option<(&'static [C], Option<C>)> {
         "k_list_extreme" => (&[I64, I64, I32], Some(I64)),
         "k_log" => (&[I64, I64, I32, I64], None),
         "k_web_route" => (&[I64, I64, I64, I64], None),
+        "k_web_before" => (P3, None),
         "k_web_json" => (P3, Some(I64)),
         "k_float_str" | "k_float_to_int" => (&[F64], Some(I64)),
         "k_float_fixed" => (&[F64, I64], Some(I64)),

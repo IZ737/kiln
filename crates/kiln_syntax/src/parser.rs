@@ -19,6 +19,10 @@ pub struct Parser {
     diags: Vec<Diagnostic>,
     /// A stack of modes: `true` when newlines end statements.
     newline_modes: Vec<bool>,
+    /// Set by `parse_stmt` when the statement it returned is a
+    /// `let pattern = value else { ... }`, which `parse_block` completes
+    /// with the statements after it.
+    let_else: bool,
 }
 
 /// Binding power of infix operators, lowest first.
@@ -38,6 +42,7 @@ impl Parser {
             pos: 0,
             diags: Vec::new(),
             newline_modes: vec![true],
+            let_else: false,
         }
     }
 
@@ -293,6 +298,7 @@ impl Parser {
                 {
                     return
                 }
+                TokenKind::Ident(word) if at_line_start && word == "interface" => return,
                 _ => self.pos += 1,
             }
         }
@@ -346,6 +352,11 @@ impl Parser {
                 );
                 Some(Item::Fn(self.parse_fn(is_pub, false, start)))
             }
+            TokenKind::Ident(word)
+                if word == "interface" && matches!(self.lookahead(1), TokenKind::Ident(_)) =>
+            {
+                Some(Item::Interface(self.parse_interface(is_pub, start)))
+            }
             TokenKind::Struct => Some(Item::Struct(self.parse_struct(is_pub, start))),
             TokenKind::Enum => Some(Item::Enum(self.parse_enum(is_pub, start))),
             TokenKind::Impl if !is_pub => Some(Item::Impl(self.parse_impl())),
@@ -390,20 +401,65 @@ impl Parser {
         }
     }
 
-    fn parse_generic_params(&mut self) -> Vec<Ident> {
-        if self.at(&TokenKind::Lt) {
-            self.delimited(TokenKind::Lt, TokenKind::Gt, |p| {
-                p.expect_ident("a type parameter")
-            })
-        } else {
-            Vec::new()
+    /// `<T, U: Named + Sized>`: the parameters, and the bounds of those
+    /// that have them.
+    fn parse_bounded_params(&mut self) -> (Vec<Ident>, Vec<Bound>) {
+        if !self.at(&TokenKind::Lt) {
+            return (Vec::new(), Vec::new());
         }
+        let mut bounds = Vec::new();
+        let generics = self.delimited(TokenKind::Lt, TokenKind::Gt, |p| {
+            let param = p.expect_ident("a type parameter");
+            if p.eat(&TokenKind::Colon) {
+                let mut interfaces = vec![p.parse_type()];
+                while p.eat(&TokenKind::Plus) {
+                    interfaces.push(p.parse_type());
+                }
+                bounds.push(Bound {
+                    param: param.clone(),
+                    interfaces,
+                });
+            }
+            param
+        });
+        (generics, bounds)
+    }
+
+    /// The type parameters of a struct or enum, which take no bounds.
+    fn parse_generic_params(&mut self) -> Vec<Ident> {
+        let (generics, bounds) = self.parse_bounded_params();
+        if let Some(b) = bounds.first() {
+            let span = b
+                .param
+                .span
+                .to(b.interfaces.last().map_or(b.param.span, |t| t.span));
+            self.error(
+                Diagnostic::error(
+                    codes::MISPLACED_BOUND,
+                    "only a function's type parameters take interfaces",
+                    span,
+                )
+                .with_help(format!(
+                    "write `{}` here, and the bound on the functions that need it",
+                    b.param.name
+                )),
+            );
+        }
+        generics
     }
 
     /// Parses a function after its `fn` keyword.
     fn parse_fn(&mut self, is_pub: bool, is_server: bool, start: Span) -> FnDecl {
+        let mut f = self.parse_fn_head(is_pub, is_server, start);
+        f.body = self.parse_block();
+        f.span = start.to(self.previous_span());
+        f
+    }
+
+    /// A function's name, parameters, result and error, with an empty body.
+    fn parse_fn_head(&mut self, is_pub: bool, is_server: bool, start: Span) -> FnDecl {
         let name = self.expect_member("a function name");
-        let generics = self.parse_generic_params();
+        let (generics, bounds) = self.parse_bounded_params();
         let params = self.parse_params(true);
         let ret = if self.eat(&TokenKind::Arrow) {
             Some(self.parse_type())
@@ -411,16 +467,61 @@ impl Parser {
             None
         };
         let throws = self.parse_throws();
-        let body = self.parse_block();
+        let span = start.to(self.previous_span());
         FnDecl {
             is_pub,
             is_server,
             name,
             generics,
+            bounds,
             params,
             ret,
             throws,
-            body,
+            body: Block {
+                stmts: Vec::new(),
+                span: Span::new(span.end as usize, span.end as usize),
+            },
+            span,
+        }
+    }
+
+    fn parse_interface(&mut self, is_pub: bool, start: Span) -> InterfaceDecl {
+        self.bump();
+        let name = self.expect_ident("an interface name");
+        if self.at(&TokenKind::Lt) {
+            let span = self.span();
+            self.error(Diagnostic::error(
+                codes::EXPECTED_TOKEN,
+                "an interface has no type parameters",
+                span,
+            ));
+            self.parse_generic_params();
+        }
+        let methods = self.member_list(|p| {
+            let start = p.span();
+            if !p.eat(&TokenKind::Fn) {
+                p.error_expected("`fn`");
+                return None;
+            }
+            let f = p.parse_fn_head(false, false, start);
+            if p.at(&TokenKind::LBrace) {
+                let span = p.span();
+                p.error(
+                    Diagnostic::error(
+                        codes::EXPECTED_TOKEN,
+                        "an interface's methods have no bodies",
+                        span,
+                    )
+                    .with_help("the types that fit the interface give the bodies"),
+                );
+                p.parse_block();
+            }
+            Some(f)
+        });
+        InterfaceDecl {
+            is_pub,
+            name,
+            methods,
             span: start.to(self.previous_span()),
         }
     }
@@ -678,6 +779,7 @@ impl Parser {
     pub fn parse_block(&mut self) -> Block {
         let start = self.span();
         let mut stmts = Vec::new();
+        let mut let_elses = Vec::new();
         self.with_newlines(true, |p| {
             if p.expect(&TokenKind::LBrace).is_none() {
                 return;
@@ -688,7 +790,11 @@ impl Parser {
                     break;
                 }
                 let before = p.pos;
+                p.let_else = false;
                 let stmt = p.parse_stmt();
+                if p.let_else {
+                    let_elses.push(stmts.len());
+                }
                 stmts.push(stmt);
                 if !p.expect_line_end() {
                     p.recover_to_line_end();
@@ -699,15 +805,114 @@ impl Parser {
             }
             p.expect(&TokenKind::RBrace);
         });
+        // `let some(x) = value else { leave }` then the rest of the block
+        // is `match value { some(x) => { rest }, _ => { leave } }`: the
+        // names it binds are in scope for exactly the statements after it.
+        for at in let_elses.into_iter().rev() {
+            let rest: Vec<Stmt> = stmts.drain(at + 1..).collect();
+            if let Some(Stmt::Expr(Expr {
+                kind: ExprKind::Match { arms, .. },
+                ..
+            })) = stmts.last_mut()
+            {
+                let end = arms[1].body.span.end as usize;
+                let rest_span = match rest.last() {
+                    Some(last) => Span::new(end, stmt_span(last).end as usize),
+                    None => Span::new(end, end),
+                };
+                arms[0].body = Expr {
+                    kind: ExprKind::Block(Block {
+                        stmts: rest,
+                        span: rest_span,
+                    }),
+                    span: rest_span,
+                };
+            }
+        }
         Block {
             stmts,
             span: start.to(self.previous_span()),
         }
     }
 
+    /// `let some(x) = value else { ... }`, after `let`: a match whose
+    /// first arm `parse_block` fills with the statements that follow.
+    fn parse_let_else(&mut self, start: Span) -> Stmt {
+        let pattern = self.parse_pattern();
+        self.expect(&TokenKind::Eq);
+        let value = self.parse_expr();
+        let else_span = self.span();
+        if self.expect(&TokenKind::Else).is_none() {
+            return Stmt::Expr(Expr {
+                kind: ExprKind::Error,
+                span: start.to(self.previous_span()),
+            });
+        }
+        let otherwise = self.parse_block();
+        if !leaves(&otherwise) {
+            let span = match otherwise.stmts.last() {
+                Some(last) => stmt_span(last),
+                None => else_span.to(otherwise.span),
+            };
+            self.error(
+                Diagnostic::error(
+                    codes::LET_ELSE_MUST_LEAVE,
+                    "the `else` of a `let ... else` must leave: end it with `return`, `throw`, `break`, `continue` or `panic(...)`",
+                    span,
+                )
+                .with_help("when the value does not match, there is nothing to bind the names to, so the code after it cannot run"),
+            );
+        }
+        let span = start.to(self.previous_span());
+        self.let_else = true;
+        let wildcard = Pattern {
+            kind: PatternKind::Wildcard,
+            span: else_span,
+        };
+        let otherwise = Expr {
+            span: otherwise.span,
+            kind: ExprKind::Block(otherwise),
+        };
+        let empty = Span::new(span.end as usize, span.end as usize);
+        Stmt::Expr(Expr {
+            kind: ExprKind::Match {
+                scrutinee: Box::new(value),
+                arms: vec![
+                    MatchArm {
+                        span: pattern.span,
+                        pattern,
+                        guard: None,
+                        body: Expr {
+                            kind: ExprKind::Block(Block {
+                                stmts: Vec::new(),
+                                span: empty,
+                            }),
+                            span: empty,
+                        },
+                    },
+                    MatchArm {
+                        span: else_span.to(otherwise.span),
+                        pattern: wildcard,
+                        guard: None,
+                        body: otherwise,
+                    },
+                ],
+            },
+            span,
+        })
+    }
+
     fn parse_stmt(&mut self) -> Stmt {
         let start = self.span();
         match self.peek().clone() {
+            TokenKind::Let
+                if matches!(self.lookahead(1), TokenKind::Dot)
+                    || (matches!(self.lookahead(1), TokenKind::Ident(_))
+                        && matches!(self.lookahead(2), TokenKind::LParen | TokenKind::Dot)) =>
+            {
+                self.bump();
+                self.parse_let_else(start)
+            }
             TokenKind::Let | TokenKind::Var => {
                 let mut mutable = self.bump().kind == TokenKind::Var;
                 if self.at_ident("mut") && matches!(self.lookahead(1), TokenKind::Ident(_)) {
@@ -962,12 +1167,48 @@ impl Parser {
         Expr { kind, span }
     }
 
+    /// Whether the next line starts a match arm on a variant, such as
+    /// `.Accent => ...` or `.Custom(name) if ok =>`, rather than
+    /// continuing a method chain.
+    fn at_variant_arm(&self) -> bool {
+        // Read raw tokens: the arm's `=>` or `if` must be on the same line.
+        let tokens = &self.tokens;
+        let mut i = self.pos;
+        while tokens[i].kind == TokenKind::Newline {
+            i += 1;
+        }
+        if tokens[i].kind != TokenKind::Dot || !matches!(tokens[i + 1].kind, TokenKind::Ident(_)) {
+            return false;
+        }
+        i += 2;
+        if tokens[i].kind == TokenKind::LParen {
+            let mut depth = 0;
+            loop {
+                match tokens[i].kind {
+                    TokenKind::LParen => depth += 1,
+                    TokenKind::RParen => {
+                        depth -= 1;
+                        if depth == 0 {
+                            i += 1;
+                            break;
+                        }
+                    }
+                    TokenKind::Eof => return false,
+                    _ => {}
+                }
+                i += 1;
+            }
+        }
+        matches!(tokens[i].kind, TokenKind::FatArrow | TokenKind::If)
+    }
+
     fn parse_postfix(&mut self, mut expr: Expr) -> Expr {
         loop {
             // A line starting with `.` continues a method chain.
             if self.newlines_significant()
                 && self.tokens[self.pos].kind == TokenKind::Newline
                 && *self.lookahead(0) == TokenKind::Dot
+                && !self.at_variant_arm()
             {
                 self.skip_newlines();
             }
@@ -1044,7 +1285,7 @@ impl Parser {
                 };
             Arg {
                 name,
-                value: p.parse_expr(),
+                value: p.parse_spread_or_expr(),
             }
         });
         Expr {
@@ -1054,6 +1295,20 @@ impl Parser {
                 type_args,
                 args,
             },
+        }
+    }
+
+    /// `..value` in a struct construction or a record: the fields not
+    /// named come from `value`. Anything else is an ordinary expression.
+    fn parse_spread_or_expr(&mut self) -> Expr {
+        if !self.at(&TokenKind::DotDot) {
+            return self.parse_expr();
+        }
+        let start = self.bump().span;
+        let inner = self.parse_expr();
+        Expr {
+            span: start.to(inner.span),
+            kind: ExprKind::Spread(Box::new(inner)),
         }
     }
 
@@ -1109,12 +1364,60 @@ impl Parser {
                 inner.kind
             }),
             TokenKind::LBracket => {
-                ExprKind::List(
-                    self.delimited(TokenKind::LBracket, TokenKind::RBracket, |p| p.parse_expr()),
-                )
+                // `[a, b]` is a list and `[k: v, ...]` a map: the first
+                // item decides.
+                let mut is_map = None;
+                let items = self.delimited(TokenKind::LBracket, TokenKind::RBracket, |p| {
+                    let key = p.parse_expr();
+                    let map = *is_map.get_or_insert(p.at(&TokenKind::Colon));
+                    if map {
+                        p.expect(&TokenKind::Colon);
+                        let value = p.parse_expr();
+                        (key, Some(value))
+                    } else {
+                        if p.at(&TokenKind::Colon) {
+                            let span = p.span();
+                            p.error(Diagnostic::error(
+                                codes::EXPECTED_TOKEN,
+                                "a list's items have no keys; this list started without one",
+                                span,
+                            ));
+                            p.bump();
+                            p.parse_expr();
+                        }
+                        (key, None)
+                    }
+                });
+                if is_map == Some(true) {
+                    ExprKind::Map(
+                        items
+                            .into_iter()
+                            .map(|(k, v)| {
+                                let v = v.unwrap_or(Expr {
+                                    kind: ExprKind::Error,
+                                    span: k.span,
+                                });
+                                (k, v)
+                            })
+                            .collect(),
+                    )
+                } else {
+                    ExprKind::List(items.into_iter().map(|(k, _)| k).collect())
+                }
             }
             TokenKind::LBrace => {
                 ExprKind::Record(self.delimited(TokenKind::LBrace, TokenKind::RBrace, |p| {
+                    if p.at(&TokenKind::DotDot) {
+                        let span = p.span();
+                        let value = p.parse_spread_or_expr();
+                        return RecordField {
+                            name: Ident {
+                                name: "..".into(),
+                                span,
+                            },
+                            value: Some(value),
+                        };
+                    }
                     let name = p.expect_ident("a field name");
                     let value = if p.eat(&TokenKind::Colon) {
                         Some(p.parse_expr())
@@ -1277,6 +1580,17 @@ impl Parser {
             | TokenKind::True
             | TokenKind::False
             | TokenKind::Minus => PatternKind::Literal(Box::new(self.parse_unary())),
+            // `.Accent`: a variant of the matched enum.
+            TokenKind::Dot if matches!(self.lookahead(1), TokenKind::Ident(_)) => {
+                self.bump();
+                let path = vec![self.expect_ident("a variant name")];
+                let args = if self.at(&TokenKind::LParen) {
+                    self.delimited(TokenKind::LParen, TokenKind::RParen, |p| p.parse_pattern())
+                } else {
+                    Vec::new()
+                };
+                PatternKind::Variant { path, args }
+            }
             TokenKind::Ident(_) => {
                 let mut path = vec![self.expect_ident("a name")];
                 while self.at(&TokenKind::Dot) {
@@ -1312,5 +1626,54 @@ impl Parser {
             kind,
             span: span.to(self.previous_span()),
         }
+    }
+}
+
+/// Where a statement is in the source.
+fn stmt_span(stmt: &Stmt) -> Span {
+    match stmt {
+        Stmt::Let { span, .. }
+        | Stmt::Assign { span, .. }
+        | Stmt::Return { span, .. }
+        | Stmt::For { span, .. }
+        | Stmt::While { span, .. } => *span,
+        Stmt::Break(span) | Stmt::Continue(span) => *span,
+        Stmt::Expr(e) => e.span,
+    }
+}
+
+/// Whether a block always leaves the code around it: its last statement
+/// returns, breaks, continues, throws or panics.
+fn leaves(block: &Block) -> bool {
+    match block.stmts.last() {
+        Some(Stmt::Return { .. } | Stmt::Break(_) | Stmt::Continue(_)) => true,
+        Some(Stmt::Expr(e)) => match &e.kind {
+            ExprKind::Throw(_) => true,
+            ExprKind::Call { callee, .. } => match &callee.kind {
+                ExprKind::Ident(name) => name == "panic",
+                ExprKind::Field { expr, name } => {
+                    name.name == "exit" && matches!(&expr.kind, ExprKind::Ident(m) if m == "os")
+                }
+                _ => false,
+            },
+            ExprKind::Block(b) => leaves(b),
+            ExprKind::If {
+                then,
+                otherwise: Some(otherwise),
+                ..
+            } => {
+                leaves(then)
+                    && match &otherwise.kind {
+                        ExprKind::Block(b) => leaves(b),
+                        ExprKind::If { .. } => leaves(&Block {
+                            stmts: vec![Stmt::Expr((**otherwise).clone())],
+                            span: otherwise.span,
+                        }),
+                        _ => false,
+                    }
+            }
+            _ => false,
+        },
+        _ => false,
     }
 }

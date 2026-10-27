@@ -15,6 +15,21 @@ impl Checker {
     pub(crate) fn declare_types(&mut self, module: &Module, scope: Scope) {
         let mut seen: HashMap<String, Span> = HashMap::new();
         for item in &module.items {
+            if let Item::Interface(i) = item {
+                let again = self.global_interfaces.contains_key(&i.name.name)
+                    || !self.declared_types.insert(i.name.name.clone());
+                if again {
+                    self.duplicate(&i.name.name, i.name.span);
+                    continue;
+                }
+                let id = self.interfaces.len();
+                self.interfaces.push(InterfaceDef {
+                    name: i.name.name.clone(),
+                    methods: Vec::new(),
+                });
+                self.global_interfaces.insert(i.name.name.clone(), id);
+                continue;
+            }
             let (name, generics) = match item {
                 Item::Struct(s) => (&s.name, &s.generics),
                 Item::Enum(e) => (&e.name, &e.generics),
@@ -53,6 +68,7 @@ impl Checker {
     pub(crate) fn define_items(&mut self, module: &Module, scope: Scope) {
         let mut seen_fns: HashMap<String, Span> = HashMap::new();
         for item in &module.items {
+            self.internal = self.std_adts == 0 || crate::checker::item_name(item).starts_with("__");
             match item {
                 Item::Struct(s) => {
                     if self.is_duplicate_type(&s.name) {
@@ -132,6 +148,7 @@ impl Checker {
                     }
                 }
                 Item::Impl(imp) => self.define_impl(imp, scope),
+                Item::Interface(i) => self.define_interface(i, scope),
                 Item::Const(c) => {
                     if matches!(scope, Scope::Global)
                         && !self.declared_values.insert(c.name.name.clone())
@@ -142,6 +159,46 @@ impl Checker {
                 Item::Import(_) => {}
             }
         }
+        self.internal = true;
+    }
+
+    fn define_interface(&mut self, i: &ast::InterfaceDecl, scope: Scope) {
+        let Some(&id) = self.global_interfaces.get(&i.name.name) else {
+            return;
+        };
+        if !self.interfaces[id].methods.is_empty() {
+            return;
+        }
+        let mut methods: Vec<FnSig> = Vec::new();
+        for m in &i.methods {
+            if methods.iter().any(|s| s.name == m.name.name) {
+                self.duplicate(&m.name.name, m.name.span);
+                continue;
+            }
+            if !m.generics.is_empty() {
+                self.error(Diagnostic::error(
+                    codes::INTERFACE_MISUSE,
+                    "an interface's methods have no type parameters",
+                    m.name.span,
+                ));
+            }
+            let sig = self.signature(m, &[], scope);
+            if !sig.has_self {
+                self.error(
+                    Diagnostic::error(
+                        codes::INTERFACE_MISUSE,
+                        format!("the interface method `{}` needs `self` first", m.name.name),
+                        m.name.span,
+                    )
+                    .with_help(
+                        "an interface lists methods called on a value: `fn name(self) -> String`",
+                    ),
+                );
+                continue;
+            }
+            methods.push(sig);
+        }
+        self.interfaces[id].methods = methods;
     }
 
     fn define_impl(&mut self, imp: &ast::ImplDecl, scope: Scope) {
@@ -210,6 +267,7 @@ impl Checker {
             None => Ty::Unit,
         };
         let throws = self.resolve_throws(&f.throws, &generics, scope);
+        let bounds = self.resolve_bounds(f, scope);
         FnSig {
             name: f.name.name.clone(),
             generics: f.generics.iter().map(|g| g.name.clone()).collect(),
@@ -218,7 +276,90 @@ impl Checker {
             params,
             ret,
             throws,
+            bounds,
         }
+    }
+
+    /// The interfaces of each bounded type parameter of `f`.
+    pub(crate) fn resolve_bounds(
+        &mut self,
+        f: &ast::FnDecl,
+        scope: Scope,
+    ) -> Vec<(String, Vec<usize>)> {
+        let mut out: Vec<(String, Vec<usize>)> = Vec::new();
+        for b in &f.bounds {
+            let mut ids = Vec::new();
+            for t in &b.interfaces {
+                if let Some(id) = self.resolve_interface(t, scope) {
+                    if !ids.contains(&id) {
+                        ids.push(id);
+                    }
+                }
+            }
+            match out.iter_mut().find(|(p, _)| *p == b.param.name) {
+                Some((_, have)) => {
+                    for id in ids {
+                        if !have.contains(&id) {
+                            have.push(id);
+                        }
+                    }
+                }
+                None => out.push((b.param.name.clone(), ids)),
+            }
+        }
+        out
+    }
+
+    /// The interface a bound names, reporting a name that is not one.
+    fn resolve_interface(&mut self, t: &TypeExpr, scope: Scope) -> Option<usize> {
+        let TypeKind::Named { path, args } = &t.kind else {
+            self.error(Diagnostic::error(
+                codes::INTERFACE_MISUSE,
+                "a bound names an interface",
+                t.span,
+            ));
+            return None;
+        };
+        if let [name] = &path[..] {
+            if let Some(&id) = self.global_interfaces.get(&name.name) {
+                self.refer(name.span, Ref::Interface(id));
+                if !args.is_empty() {
+                    self.error(Diagnostic::error(
+                        codes::INTERFACE_MISUSE,
+                        "an interface has no type arguments",
+                        t.span,
+                    ));
+                }
+                return Some(id);
+            }
+        }
+        let text: Vec<&str> = path.iter().map(|p| p.name.as_str()).collect();
+        let text = text.join(".");
+        let found_type = match &path[..] {
+            [name] => {
+                self.type_in_scope(&name.name, scope).is_some()
+                    || self.global_types.contains_key(&name.name)
+            }
+            _ => false,
+        };
+        let diag = if found_type {
+            Diagnostic::error(
+                codes::INTERFACE_MISUSE,
+                format!("`{text}` is a type, not an interface"),
+                t.span,
+            )
+            .with_help(
+                "a bound lists methods: declare `interface Name { fn ... }` and name it here",
+            )
+        } else {
+            Diagnostic::error(
+                codes::UNKNOWN_TYPE,
+                format!("unknown interface `{text}`"),
+                t.span,
+            )
+        };
+        self.error(diag);
+        None
     }
 
     pub(crate) fn resolve_throws(
@@ -289,6 +430,21 @@ impl Checker {
                     if generics.iter().any(|g| g == name) {
                         return Ty::Param(name.to_string());
                     }
+                    // The standard library describes what Kiln cannot say
+                    // yet with `Any` and `Rest`; programs use generics.
+                    if matches!(name, "Any" | "Rest") && self.std_adts > 0 {
+                        self.error(
+                            Diagnostic::error(
+                                codes::RESERVED_TYPE,
+                                format!("`{name}` is reserved for the standard library"),
+                                t.span,
+                            )
+                            .with_help(
+                                "a function that takes any type is generic: `fn show<T>(value: T)`",
+                            ),
+                        );
+                        return Ty::Unknown;
+                    }
                     match name {
                         "Any" => return Ty::Any,
                         "Rest" => return Ty::Rest,
@@ -306,6 +462,26 @@ impl Checker {
                         None => Completion::Types,
                     });
                     return Ty::Unknown;
+                }
+                if let [name] = &path[..] {
+                    if let Some(&id) = self.global_interfaces.get(&name.name) {
+                        self.refer(name.span, Ref::Interface(id));
+                        self.error(
+                            Diagnostic::error(
+                                codes::INTERFACE_MISUSE,
+                                format!(
+                                    "`{}` is an interface, so it is a bound, not a type",
+                                    name.name
+                                ),
+                                t.span,
+                            )
+                            .with_help(format!(
+                                "take a type parameter that fits it: `fn f<T: {0}>(x: T)`",
+                                name.name
+                            )),
+                        );
+                        return Ty::Unknown;
+                    }
                 }
                 let Some(id) = self.resolve_type_path(path, t.span, scope) else {
                     return Ty::Unknown;
@@ -359,6 +535,14 @@ impl Checker {
                     Scope::Global => self.imports.get(&module.name).copied(),
                     Scope::Module(_) => self.modules.iter().position(|d| d.name == module.name),
                 };
+                if let Some(m) = m {
+                    if !self.internal
+                        && crate::checker::internal_name(&self.modules[m].name, &name.name)
+                    {
+                        let what = format!("{}.{}", module.name, name.name);
+                        self.internal_error(&what, name.span);
+                    }
+                }
                 m.and_then(|m| self.modules[m].types.get(&name.name).copied())
             }
             _ => None,

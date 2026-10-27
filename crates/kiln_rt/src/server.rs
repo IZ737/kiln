@@ -25,7 +25,7 @@ use bytes::Bytes;
 use http_body_util::{BodyExt, Full, LengthLimitError, Limited};
 use hyper::body::{Body, Incoming};
 use hyper::ext::ReasonPhrase;
-use hyper::header::{HeaderName, HeaderValue, CONNECTION, CONTENT_LENGTH};
+use hyper::header::{HeaderName, HeaderValue, CONNECTION, CONTENT_LENGTH, SET_COOKIE};
 use hyper::http::request::Parts;
 use hyper::{Method, Request, Response, StatusCode, Version};
 
@@ -461,7 +461,18 @@ fn response(res: &[Kv], head: bool, mut keep: bool, http10: bool) -> Response<Fu
             continue;
         }
         let name: Vec<u8> = clean(bytes(unsafe { *map.keys.add(i) }));
-        let value: Vec<u8> = clean(bytes(unsafe { *map.vals.add(i) }));
+        let raw = bytes(unsafe { *map.vals.add(i) });
+        // `set-cookie` holds a line per cookie (`web::add_set_cookie`), each
+        // sent as a header of its own.
+        if name.eq_ignore_ascii_case(b"set-cookie") {
+            for line in raw.split(|&c| c == b'\n') {
+                if let Ok(value) = HeaderValue::from_bytes(&clean(line)) {
+                    headers.append(SET_COOKIE, value);
+                }
+            }
+            continue;
+        }
+        let value: Vec<u8> = clean(raw);
         let (Ok(name), Ok(value)) = (
             HeaderName::from_bytes(&name),
             HeaderValue::from_bytes(&value),

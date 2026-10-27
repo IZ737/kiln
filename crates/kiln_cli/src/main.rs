@@ -1384,14 +1384,13 @@ fn build_project(
     let mut ember_script = None;
     let mut server_fns = Vec::new();
     let mut rpc_version = String::new();
-    let mut rpc_guard = false;
     let user = kiln_syntax::parse(&combined);
     let reachable = reachable_components(&user.module, &glaze_refs, &styles.styling);
     if glaze_refs
         .iter()
         .any(|(name, g)| g.is_ember() && reachable.contains(*name))
     {
-        (server_fns, rpc_guard) = server_fns_of(&user.module, &combined);
+        server_fns = server_fns_of(&user.module, &combined);
         // Handlers wait for the npm functions that return promises as
         // they do for `server fn`s.
         let mut waits = server_fns.clone();
@@ -1405,7 +1404,12 @@ fn build_project(
         if !client.diagnostics.is_empty() {
             return Err(failed_in_glazes(&client.diagnostics));
         }
-        let text = format!("{combined}{}{}", client.text, npm::calls_source(&info.npm));
+        let mut text = format!("{combined}{}{}", client.text, npm::calls_source(&info.npm));
+        // The readers of `event.form<T>()`, written from the structs the
+        // handlers read.
+        if let Some(forms) = kiln_ir::forms::generate(&kiln_syntax::parse(&text).module) {
+            text.push_str(&forms);
+        }
         let report = |d| {
             report_diagnostics(
                 d,
@@ -1471,7 +1475,6 @@ fn build_project(
         ember_script: ember_script.as_deref(),
         server_fns: &server_fns,
         rpc_version: &rpc_version,
-        rpc_guard,
     };
     let generated = kiln_ir::glaze::generate(&inputs, &app);
     if let Some(g) = &generated {
@@ -1790,19 +1793,13 @@ fn indent(text: &str) -> String {
         .join("\n")
 }
 
-/// The program's `server fn`s, as written in `text`, and whether it
-/// defines `rpc_guard`, which every call of one passes first.
-fn server_fns_of(
-    module: &kiln_syntax::ast::Module,
-    text: &str,
-) -> (Vec<kiln_ir::glaze::ServerFn>, bool) {
+/// The program's `server fn`s, as written in `text`.
+fn server_fns_of(module: &kiln_syntax::ast::Module, text: &str) -> Vec<kiln_ir::glaze::ServerFn> {
     use kiln_syntax::ast::{Item, Throws};
     let at = |s: Span| text[s.start as usize..s.end as usize].to_string();
     let mut fns = Vec::new();
-    let mut guard = false;
     for item in &module.items {
         let Item::Fn(f) = item else { continue };
-        guard |= f.name.name == "rpc_guard";
         if !f.is_server {
             continue;
         }
@@ -1824,7 +1821,7 @@ fn server_fns_of(
             throws: !matches!(f.throws, Throws::Never),
         });
     }
-    (fns, guard)
+    fns
 }
 
 fn display_symbols(text: &str, names: &BTreeMap<String, String>) -> String {

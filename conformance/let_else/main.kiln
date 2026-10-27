@@ -1,0 +1,73 @@
+// let-else and `.Variant` where the enum is known.
+
+enum Tone {
+    Plain
+    Accent
+    Custom(name: String)
+}
+
+struct Post {
+    id: Int = 0
+    title: String
+    body: String
+    published: Bool = false
+}
+
+fn label(t: Tone) -> String {
+    return match t {
+        .Plain => "plain"
+        .Accent => "accent"
+        .Custom(name) => "custom ${name}"
+    }
+}
+
+fn find(id: Int) -> Post? {
+    if id == 1 {
+        return Post(id: 1, title: "Hi", body: "first")
+    }
+    return none
+}
+
+fn title_of(id: Int) -> String {
+    let some(post) = find(id) else {
+        return "missing"
+    }
+    let upper = post.title.upper()
+    return "${upper} (${post.id})"
+}
+
+fn first_custom(ts: List<Tone>) -> String {
+    for t in ts {
+        let .Custom(name) = t else {
+            continue
+        }
+        return name
+    }
+    return "none"
+}
+
+fn main() {
+    print(label(.Accent))
+    print(label(.Custom(name: "x")))
+    var t: Tone = .Plain
+    print(t == .Plain)
+    t = .Accent
+    print(t != .Plain)
+    print(title_of(1))
+    print(title_of(2))
+    print(first_custom([.Plain, .Custom(name: "c"), .Accent]))
+    let p = find(1) ?? Post(title: "", body: "")
+    let q = Post(..p, title: "Changed")
+    print(q)
+    print(p.title)
+    let r = { name: "Ada", age: 36 }
+    let s = { ..r, age: 37 }
+    print(s)
+    print(r)
+    let m = ["a": 1, "b": 2]
+    print(m)
+    let form: Map<String, String> = ["name": "Ada", "email": "a@b.c"]
+    print(form["email"] ?? "")
+    let opt: Tone? = .Accent
+    print(opt == .Accent)
+}

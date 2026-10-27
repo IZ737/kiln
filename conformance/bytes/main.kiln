@@ -1,0 +1,67 @@
+import base64
+import fs
+import json
+
+struct Upload {
+    name: String
+    data: Bytes
+}
+
+fn main() ! {
+    let data = "Kiln fires clay".bytes()
+    print(data)
+    print(data.len())
+    print(data.is_empty())
+    print("".bytes().is_empty())
+    print(base64.encode(data))
+    print(base64.encode("".bytes()))
+    print(data.slice(5, 10).text() catch err { "?" })
+    print(data.slice(-3, 4).text() catch err { "?" })
+    print(data.slice(12, 99).text() catch err { "?" })
+    print(data.slice(9, 2).len())
+
+    let back = base64.decode("S2lsbiBmaXJlcyBjbGF5") catch err { "".bytes() }
+    print(back == data)
+    print(back.text() catch err { "?" })
+    let bad = base64.decode("not base64!") catch err {
+        print("error: ${err.message}")
+        "".bytes()
+    }
+    print(bad.len())
+
+    // Bytes that are not UTF-8 are not text.
+    let png = base64.decode("iVBORw0KGgo=") catch err { "".bytes() }
+    print(png.len())
+    let text = png.text() catch err { "error: ${err.message}" }
+    print(text)
+
+    // Equal bytes are equal, as map keys and in sets too.
+    let seen: Map<Bytes, Int> = Map()
+    seen[data] = 1
+    seen["Kiln fires clay".bytes()] = 2
+    print(seen.len())
+    print([data, png].contains(png))
+    print([png, data])
+
+    try fs.write_bytes("bytes.out", png)
+    let read = try fs.read_bytes("bytes.out")
+    print(read == png)
+    try fs.remove("bytes.out")
+    let missing = fs.read_bytes("no/such/file") catch err {
+        print("error: ${err.message.starts_with("cannot read no/such/file: ")}")
+        "".bytes()
+    }
+    print(missing.len())
+
+    // JSON carries bytes as Base64.
+    let up = Upload(name: "logo.png", data: png)
+    let text_form = json.encode(up)
+    print(text_form)
+    let again = try json.decode<Upload>(text_form)
+    print(again.data == png)
+    let wrong = json.decode<Upload>("{\"name\": \"x\", \"data\": \"%%\"}") catch err {
+        print("error: ${err.message}")
+        up
+    }
+    print(wrong.name)
+}

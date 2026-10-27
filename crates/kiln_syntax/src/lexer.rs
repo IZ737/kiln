@@ -154,7 +154,10 @@ impl Lexer<'_> {
                 '\n' => TokenKind::Newline,
                 c if c.is_alphabetic() || c == '_' => self.ident(start),
                 c if c.is_ascii_digit() => self.number(start),
-                '"' => self.string(start),
+                '"' if self.peek() == Some('"') && self.peek_at(1) == Some('"') => {
+                    self.multiline_string(start)
+                }
+                '"' => self.string(start, None),
                 _ => match self.punct(c) {
                     Some(kind) => kind,
                     None => {
@@ -237,12 +240,99 @@ impl Lexer<'_> {
         }
     }
 
-    fn string(&mut self, start: usize) -> TokenKind {
+    /// A `"""` string: its lines run from the line after the opening
+    /// quotes to the line before the closing ones, and the indentation of
+    /// the closing quotes is taken off every line.
+    fn multiline_string(&mut self, start: usize) -> TokenKind {
+        self.pos += 2;
+        while matches!(self.peek(), Some(' ' | '\t' | '\r')) {
+            self.bump();
+        }
+        if self.peek() != Some('\n') {
+            self.error(
+                codes::UNTERMINATED_STRING,
+                "a `\"\"\"` string starts on the line after its opening quotes",
+                start,
+            );
+            return self.string(start, None);
+        }
+        self.bump();
+        // The closing quotes are alone on their line.
+        let rest = &self.src[self.pos..];
+        let mut close = None;
+        let mut line_start = 0;
+        for (i, c) in rest.char_indices() {
+            if i == line_start {
+                let line = &rest[i..];
+                let indent = line.len() - line.trim_start_matches([' ', '\t']).len();
+                if line[indent..].starts_with("\"\"\"") {
+                    close = Some((i, indent));
+                    break;
+                }
+            }
+            if c == '\n' {
+                line_start = i + 1;
+            }
+        }
+        let Some((close, indent)) = close else {
+            self.error(
+                codes::UNTERMINATED_STRING,
+                "this `\"\"\"` string is never closed: put `\"\"\"` alone on a line after it",
+                start,
+            );
+            self.pos = self.src.len();
+            return TokenKind::Str(vec![StrPart::Text(String::new())]);
+        };
+        let margin = rest[close..close + indent].to_string();
+        let end = self.pos + close;
+        self.string(start, Some((end, margin)))
+    }
+
+    /// The rest of a string after its opening quote. For a `"""` string,
+    /// `triple` is where its closing line starts and the margin to take off
+    /// each line.
+    fn string(&mut self, start: usize, triple: Option<(usize, String)>) -> TokenKind {
         let mut parts = Vec::new();
         let mut text = String::new();
+        let mut line_start = triple.is_some();
         loop {
+            if let Some((end, margin)) = &triple {
+                if line_start {
+                    line_start = false;
+                    let line = &self.src[self.pos..*end.max(&self.pos)];
+                    let blank = line.split('\n').next().unwrap_or("").trim().is_empty();
+                    if line.starts_with(margin.as_str()) {
+                        self.pos += margin.len();
+                    } else if !blank {
+                        let at = self.pos;
+                        self.error(
+                            codes::UNTERMINATED_STRING,
+                            "this line of a `\"\"\"` string is indented less than its closing quotes",
+                            at,
+                        );
+                    } else {
+                        while matches!(self.peek(), Some(' ' | '\t')) {
+                            self.bump();
+                        }
+                    }
+                }
+                if self.pos >= *end {
+                    // Drop the line break before the closing line.
+                    if text.ends_with('\n') {
+                        text.pop();
+                    }
+                    self.pos = *end + margin.len() + 3;
+                    break;
+                }
+                if self.peek() == Some('\n') {
+                    self.bump();
+                    text.push('\n');
+                    line_start = true;
+                    continue;
+                }
+            }
             match self.peek() {
-                Some('"') => {
+                Some('"') if triple.is_none() => {
                     self.bump();
                     break;
                 }
@@ -483,6 +573,39 @@ mod tests {
     fn bad_suffix_is_reported() {
         let (_, diags) = lex("let n = 12ab");
         assert_eq!(diags[0].code, codes::INVALID_NUMBER);
+    }
+
+    #[test]
+    fn triple_quoted_strings_lose_the_closing_indent() {
+        let (tokens, diags) =
+            lex("let s = \"\"\"\n    a \"b\"\n      c\n\n    d\n    \"\"\"\nlet t = 1");
+        assert!(diags.is_empty(), "{diags:?}");
+        assert_eq!(
+            tokens[3].kind,
+            Str(vec![StrPart::Text("a \"b\"\n  c\n\nd".into())])
+        );
+        assert!(tokens.iter().any(|t| t.kind == ident("t")));
+    }
+
+    #[test]
+    fn triple_quoted_strings_interpolate() {
+        let (tokens, diags) = lex("\"\"\"\n  Hi ${name}\n  \"\"\"");
+        assert!(diags.is_empty(), "{diags:?}");
+        let Str(parts) = &tokens[0].kind else {
+            panic!("expected a string")
+        };
+        assert_eq!(parts.len(), 2);
+        assert_eq!(parts[0], StrPart::Text("Hi ".into()));
+    }
+
+    #[test]
+    fn triple_quoted_string_errors() {
+        let (_, diags) = lex("let s = \"\"\"\n  a\n");
+        assert_eq!(diags[0].code, codes::UNTERMINATED_STRING);
+        let (_, diags) = lex("let s = \"\"\"a\n  \"\"\"");
+        assert_eq!(diags[0].code, codes::UNTERMINATED_STRING);
+        let (_, diags) = lex("let s = \"\"\"\n a\n    \"\"\"");
+        assert_eq!(diags.len(), 1, "{diags:?}");
     }
 
     #[test]

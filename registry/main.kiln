@@ -29,6 +29,6 @@ fn main() ! {
     admin.pages<store.Account>(app, "/admin/accounts", site)
     admin.pages<store.Review>(app, "/admin/reviews", site)
 
-    let address = if env("REGISTRY_ADDRESS") == "" { "127.0.0.1:8081" } else { env("REGISTRY_ADDRESS") }
+    let address = env("REGISTRY_ADDRESS") ?? "127.0.0.1:8081"
     try app.listen(address)
 }

@@ -79,7 +79,16 @@ fn conformance_programs_produce_expected_output() {
 
 /// Standard library modules the browser does not have yet.
 const NOT_IN_BROWSER: &[&str] = &[
-    "markdown", "time", "Instant", "Date", "orm", "sql", "validate", "admin",
+    "markdown",
+    "time",
+    "Instant",
+    "Date",
+    "orm",
+    "sql",
+    "validate",
+    "admin",
+    "Bytes",
+    "String.bytes",
 ];
 
 /// A Node.js that runs WasmGC: version 22 or later.
@@ -121,7 +130,9 @@ fn run_program(program: &Path, backend: &str, failures: &mut Vec<String>) {
             // browser, and neither do the modules not built for it yet.
             let browser_cannot = stderr.lines().filter(|l| l.starts_with("error[")).all(|l| {
                 l.starts_with("error[E0218]")
-                    || NOT_IN_BROWSER.iter().any(|m| l.contains(&format!("`{m}.")))
+                    || NOT_IN_BROWSER
+                        .iter()
+                        .any(|m| l.contains(&format!("`{m}.")) || l.contains(&format!("`{m}`")))
             });
             if !browser_cannot || !stderr.contains("error[") {
                 failures.push(format!(

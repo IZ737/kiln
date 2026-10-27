@@ -21,7 +21,7 @@ struct Author {
 }
 
 fn main() ! {
-    let db = try sql.open(env("DATABASE_URL"))
+    let db = try sql.open(env("DATABASE_URL") ?? "sqlite::memory:")
     print(try orm.find<Post>(db).include(.author).count())
 }
 "#;

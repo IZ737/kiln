@@ -2,7 +2,7 @@ import sql, auth, web
 
 // The database `DATABASE_URL` names; `kiln test` gives each test its own.
 pub fn database() -> sql.Db ! {
-    let url = if env("DATABASE_URL") == "" { "sqlite:guestbook.db" } else { env("DATABASE_URL") }
+    let url = env("DATABASE_URL") ?? "sqlite:guestbook.db"
     return try sql.open(url)
 }
 
@@ -10,15 +10,4 @@ pub fn database() -> sql.Db ! {
 // `GUESTBOOK_HTTP=1` says the app is served over plain HTTP.
 pub fn sessions(db: sql.Db) -> auth.Sessions ! {
     return try auth.sessions(db, secure: env("GUESTBOOK_HTTP") != "1")
-}
-
-// Whether a form came from a page of this site, for the forms sent before
-// there is a session (and so a CSRF token): signing up and in.
-pub fn same_origin(req: web.Request) -> Bool {
-    let origin = req.header("origin") ?? ""
-    if origin == "" {
-        return true
-    }
-    let host = req.header("host") ?? ""
-    return origin == "http://${host}" or origin == "https://${host}"
 }

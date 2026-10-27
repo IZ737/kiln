@@ -16,6 +16,6 @@ fn main() ! {
         os.exit(0)
         return web.text("bye")
     })
-    let port = os.env("PORT") ?? "8080"
+    let port = env("PORT") ?? "8080"
     try app.listen("127.0.0.1:${port}")
 }

@@ -18,6 +18,7 @@
 
 mod auth;
 mod base64;
+mod binary;
 mod form;
 mod html;
 mod json;
@@ -38,6 +39,10 @@ pub use auth::{
     k_rt_auth_sign_out_all, k_rt_auth_sweep, k_rt_auth_token, k_rt_auth_verify_password,
 };
 pub use base64::{k_rt_base64_decode, k_rt_base64_encode};
+pub use binary::{
+    k_rt_bytes_is_empty, k_rt_bytes_len, k_rt_bytes_slice, k_rt_bytes_text, k_rt_fs_read_bytes,
+    k_rt_fs_write_bytes, k_rt_string_bytes, k_rt_web_bytes, k_rt_web_request_bytes,
+};
 pub use form::k_rt_web_form;
 pub use html::{k_rt_html_escape, k_rt_html_safe_url};
 pub use json::{k_json_encode, k_rt_json_decode};

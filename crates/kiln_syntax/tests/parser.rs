@@ -323,3 +323,101 @@ fn where_names_a_method_after_a_dot() {
     )
     .is_empty());
 }
+
+#[test]
+fn let_else_becomes_a_match_over_the_rest_of_the_block() {
+    let body = stmts("let some(post) = find(id) else {\n    return 0\n}\nprint(post)\npost.id");
+    assert_eq!(body.len(), 1, "{body:?}");
+    let Stmt::Expr(e) = &body[0] else {
+        panic!("expected the match, got {:?}", body[0])
+    };
+    let ExprKind::Match { arms, .. } = &e.kind else {
+        panic!("expected a match, got {e:?}")
+    };
+    assert_eq!(arms.len(), 2);
+    assert!(matches!(&arms[0].pattern.kind, PatternKind::Variant { args, .. } if args.len() == 1));
+    let ExprKind::Block(rest) = &arms[0].body.kind else {
+        panic!("expected the rest of the block")
+    };
+    assert_eq!(rest.stmts.len(), 2);
+    assert_eq!(arms[1].pattern.kind, PatternKind::Wildcard);
+}
+
+#[test]
+fn let_else_must_leave() {
+    let src = "fn f(x: Int?) -> Int {\n    let some(n) = x else {\n        print(1)\n    }\n    return n\n}\n";
+    assert_eq!(error_codes(src), vec![codes::LET_ELSE_MUST_LEAVE]);
+    let src = "fn f(x: Int?) -> Int {\n    let some(n) = x else {\n        if true { return 1 } else { panic(\"no\") }\n    }\n    return n\n}\n";
+    assert!(error_codes(src).is_empty());
+}
+
+#[test]
+fn variants_without_their_enum() {
+    let e =
+        expr("match t {\n    .Plain => 1\n    .Custom(name) if name != \"\" => 2\n    _ => 3\n}");
+    let ExprKind::Match { arms, .. } = &e.kind else {
+        panic!()
+    };
+    assert_eq!(arms.len(), 3);
+    assert!(matches!(&arms[1].pattern.kind, PatternKind::Variant { args, .. } if args.len() == 1));
+    assert!(arms[1].guard.is_some());
+    // A `.` line that is not an arm still continues a chain.
+    assert_eq!(show(&expr("names\n    .first()")), "names.first()");
+}
+
+#[test]
+fn map_literals_and_spreads() {
+    let ExprKind::Map(entries) = expr("[\"a\": 1, \"b\": 2]").kind else {
+        panic!("expected a map")
+    };
+    assert_eq!(entries.len(), 2);
+    assert!(matches!(expr("[1, 2]").kind, ExprKind::List(_)));
+    let ExprKind::Call { args, .. } = expr("Post(..post, title: \"x\")").kind else {
+        panic!("expected a call")
+    };
+    assert!(matches!(args[0].value.kind, ExprKind::Spread(_)));
+    let ExprKind::Record(fields) = expr("{ ..point, x: 1 }").kind else {
+        panic!("expected a record")
+    };
+    assert_eq!(fields[0].name.name, "..");
+    assert_eq!(
+        error_codes("fn f() {\n    let m = [\"a\": 1, 2]\n}\n").len(),
+        1
+    );
+}
+
+#[test]
+fn interfaces_and_bounds() {
+    let src = "pub interface Named {\n    fn name(self) -> String\n    fn rename(self, to: String) !\n}\n\nfn label<T: Named, U: Named + Sized>(x: T, y: U) -> String {\n    return x.name()\n}\n";
+    let result = parse(src);
+    assert!(result.diagnostics.is_empty(), "{:#?}", result.diagnostics);
+    let Item::Interface(i) = &result.module.items[0] else {
+        panic!("expected an interface")
+    };
+    assert!(i.is_pub);
+    assert_eq!(i.name.name, "Named");
+    let names: Vec<&str> = i.methods.iter().map(|m| m.name.name.as_str()).collect();
+    assert_eq!(names, ["name", "rename"]);
+    assert!(i.methods.iter().all(|m| m.body.stmts.is_empty()));
+    assert_eq!(i.methods[1].throws, Throws::Default);
+    let Item::Fn(f) = &result.module.items[1] else {
+        panic!("expected a function")
+    };
+    assert_eq!(f.generics.len(), 2);
+    let bounds: Vec<(&str, usize)> = f
+        .bounds
+        .iter()
+        .map(|b| (b.param.name.as_str(), b.interfaces.len()))
+        .collect();
+    assert_eq!(bounds, [("T", 1), ("U", 2)]);
+    // `interface` is a word like any other where it is not a declaration.
+    assert!(error_codes("fn main() {\n    let interface = 1\n}\n").is_empty());
+}
+
+#[test]
+fn bounds_belong_to_functions() {
+    let src = "struct Shelf<T: Named> {\n    items: List<T>\n}\n";
+    assert_eq!(error_codes(src), vec![codes::MISPLACED_BOUND]);
+    let src = "interface Named {\n    fn name(self) -> String {\n        return \"\"\n    }\n}\n";
+    assert_eq!(error_codes(src), vec![codes::EXPECTED_TOKEN]);
+}

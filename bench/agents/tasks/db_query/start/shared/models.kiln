@@ -10,6 +10,6 @@ pub struct Post {
 
 // The database `DATABASE_URL` names.
 pub fn database() -> sql.Db ! {
-    let url = if env("DATABASE_URL") == "" { "sqlite:blog.db" } else { env("DATABASE_URL") }
+    let url = env("DATABASE_URL") ?? "sqlite:blog.db"
     return try sql.open(url)
 }

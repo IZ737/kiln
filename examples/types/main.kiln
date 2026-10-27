@@ -49,7 +49,7 @@ fn greeting(user: User?) -> String {
 }
 
 fn main() {
-    let db = sql.open(env("DATABASE_URL")) catch err {
+    let db = sql.open(env("DATABASE_URL") ?? "sqlite:blog.db") catch err {
         log.error("cannot open the database", err)
         return
     }

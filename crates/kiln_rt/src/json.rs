@@ -14,6 +14,8 @@
 //! over a value and its description.
 
 use crate::value::*;
+use base64::engine::general_purpose::STANDARD;
+use base64::Engine;
 use serde::de::{self, DeserializeSeed, IgnoredAny, MapAccess, SeqAccess, Visitor};
 use serde::ser::{Serialize, SerializeMap, SerializeSeq, Serializer};
 use std::cell::RefCell;
@@ -117,6 +119,7 @@ impl Serialize for Val<'_> {
         let (d, v) = (self.d, self.v);
         match d.kind {
             D_STR => s.serialize_str(&text(v)),
+            D_BYTES => s.serialize_str(&STANDARD.encode(bytes(v))),
             D_INT | D_DURATION => s.serialize_i64(v as i64),
             D_FLOAT => s.serialize_f64(f64::from_bits(v)),
             D_BOOL => s.serialize_bool(v != 0),
@@ -356,6 +359,7 @@ fn syntax(e: &serde_json::Error) -> String {
 fn expected(d: &KDesc) -> &'static str {
     match d.kind {
         D_STR => "a string",
+        D_BYTES => "a Base64 string",
         D_BOOL => "true or false",
         D_INT | D_DURATION => "an integer",
         D_FLOAT => "a number",
@@ -454,6 +458,12 @@ impl<'de> Visitor<'de> for Seed<'_> {
     fn visit_str<E: de::Error>(self, s: &str) -> Result<Kv, E> {
         match self.d.kind {
             D_STR => Ok(string(s.as_bytes())),
+            D_BYTES => match STANDARD.decode(s) {
+                Ok(data) => Ok(string(&data)),
+                Err(_) => Err(self
+                    .ctx
+                    .mismatch(expected(self.d), "a string that is not Base64")),
+            },
             D_ENUM => match variant(self.d, s) {
                 Some(i) if self.d.part(i).n == 0 => {
                     Ok(kv(unsafe { k_enum(i, 0, std::ptr::null()) }))

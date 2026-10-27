@@ -17,6 +17,53 @@ the details of any error.
   (E0212). Inside a generic function, its type parameters can be used in
   annotations: `var best: T? = none`.
 
+## Interfaces
+
+An interface lists methods, and a bound on a type parameter says the
+function calls them:
+
+```kiln
+interface Named {
+    fn name(self) -> String
+}
+
+fn label<T: Named>(x: T) -> String {
+    return "<${x.name()}>"
+}
+```
+
+- A type fits an interface when it has each method with `self` and the same
+  parameter, result and error types. Nothing declares that it fits: a
+  struct's `impl` method fits, and so does a built-in type's, so
+  `interface Sized { fn len(self) -> Int }` fits `String`, `Bytes` and
+  `List<T>`. A type that does not fit is E0234, naming the missing method.
+- Inside the function, `x.name()` is allowed because of the bound; a type
+  parameter without one has no methods (E0208). `T: Named + Sized` needs
+  both.
+- A generic function that calls a bounded one passes its own bound on:
+  `fn twice<T: Named>(x: T)` can call `label(x)`; `fn twice<T>(x: T)` cannot
+  (E0234).
+- An interface is not a type: there are no interface values, so
+  `fn label(x: Named)` is E0235. Each call is compiled for the type it is
+  given, like other generics; for a list of different kinds of things, use an
+  enum, or a struct of functions.
+
+## Bindings and values
+
+- `let` cannot be rebound and `var` can; neither copies. Structs, records,
+  lists, maps and sets are shared references: `let b = a` and passing `a`
+  to a function give the same value, and a change through one name is seen
+  through the other. Numbers, strings, booleans, optionals of them and
+  enums are values. See [semantics.md](semantics.md).
+- A `const` is read-only all the way down to its own value: assigning to
+  it, to one of its fields or entries, or calling a method that changes it
+  (`push`, `insert`, `set`, `remove`, ...) is E0207. Copy it to change it.
+- `Post(..p, title: "x")` and `{ ..r, x: 1 }` make a new value; the base
+  must have the type being made (E0202), and a record copy may only name
+  fields the base has.
+- `Any` and `Rest` are the standard library's own (E0233). A function that
+  takes any type is generic: `fn show<T>(value: T)`.
+
 ## Optionals
 
 - A `T` can be used where a `T?` is expected, but not the reverse (E0202).
@@ -51,6 +98,8 @@ the details of any error.
   records, structs and enums, compared by value: two structs with equal
   fields are the same key. Maps, sets and functions cannot be keys. Don't
   change a list or struct while it is a key.
+- `["a": 1, "b": 2]` is a `Map<String, Int>`: the keys share one type and
+  the values another (E0202).
 - `[3, none]` is a `List<Int?>`: like the branches of an `if`, the items of
   a list share one type.
 - Maps and sets keep their keys in the order they were first added, so
@@ -89,6 +138,14 @@ the details of any error.
 - Methods with `self` are called on a value (`post.slug()`); methods without
   `self` are called on the type (`Post.untitled()`).
 
+## Variants
+
+- `.Name` and `.Name(args)` make a variant of the enum the surrounding code
+  expects: an annotated `let`, an argument, a return value, a comparison
+  with an enum value, or a list whose type is known. Where no enum is
+  expected, write it out: `Tone.Accent` (E0212). The same short form works
+  in patterns.
+
 ## Match
 
 - `match` must cover every case of an enum, of `Bool`, and both `some` and
@@ -108,11 +165,13 @@ the details of any error.
 
 ## Glazes
 
-A directory is one app: its glazes see the types and functions of its `.kiln`
-files, and its `.kiln` files see the props of its glazes.
+A folder's glazes and embers see the types and functions of its `.kiln`
+files and of the folder modules those files import, and its `.kiln` files
+see the props of its glazes (see [projects.md](projects.md)).
 
 - `{value}` must have a text form: `String`, `Int`, `Float`, `Bool`,
-  `Decimal`, `Duration` or `Date` (E0217). Show a field of a struct, loop
+  `Duration` or `Date` (E0217); `Bytes` are shown with `.text()` or
+  `base64.encode(...)`. Show a field of a struct, loop
   over a list, unwrap an optional (`{note ?? ""}`), and `{% match %}` an enum.
   `{raw value}` takes a `String`.
 - `{% if %}` conditions are `Bool`; `{% if x is some(v) %}` binds `v` inside.
@@ -138,8 +197,7 @@ files, and its `.kiln` files see the props of its glazes.
   expected is a style: its keys and values are checked (E0220), and its
   tokens must be declared (E0221). See
   [Typed styles](glazes.md#typed-styles).
-- An ember (a glaze with `{% state %}` or an `on:` handler) runs in the
-  browser: `sql` and `auth` are server-only (E0218). Call a `server fn`
+- An ember (an `.ember` file) runs in the browser: `sql` and `auth` are server-only (E0218). Call a `server fn`
   instead. Handlers cannot fail, and a `server fn` called from one can (the
   network may), so the call takes a `catch`. Props cannot be reassigned;
   state can.

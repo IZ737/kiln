@@ -66,14 +66,14 @@ tables, to read and commit; `kiln db migrate` applies it.
 ```kiln
 // shared/models.kiln
 pub struct Account {
-    id: Int
+    id: Int = 0
     email: String
     name: String
     password: String
 }
 
 pub struct Entry {
-    id: Int
+    id: Int = 0
     account_id: Int
     message: String
     account: Account? = none     // loaded with include(.account)
@@ -102,7 +102,7 @@ app.post("/sign-up", fn(req) {
         return res
     }
     let hash = try auth.hash_password(form.password)
-    let account = try orm.insert<shared.Account>(db, shared.Account(id: 0, email: email, name: form.name.trim(), password: hash))
+    let account = try orm.insert(db, shared.Account(email: email, name: form.name.trim(), password: hash))
     return try sessions.sign_in(web.redirect("/", status: 303), "${account.id}")
 })
 ```

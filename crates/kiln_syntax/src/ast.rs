@@ -24,6 +24,7 @@ pub enum Item {
     Enum(EnumDecl),
     Impl(ImplDecl),
     Const(ConstDecl),
+    Interface(InterfaceDecl),
 }
 
 /// `import web, sql` or `import web.router`
@@ -40,10 +41,29 @@ pub struct FnDecl {
     pub is_server: bool,
     pub name: Ident,
     pub generics: Vec<Ident>,
+    /// `T: Named` in `fn label<T: Named>(x: T)`.
+    pub bounds: Vec<Bound>,
     pub params: Vec<Param>,
     pub ret: Option<TypeExpr>,
     pub throws: Throws,
     pub body: Block,
+    pub span: Span,
+}
+
+/// A type parameter's interfaces: `T: Named` or `T: Named + Sized`.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Bound {
+    pub param: Ident,
+    pub interfaces: Vec<TypeExpr>,
+}
+
+/// `interface Named { fn name(self) -> String }`: methods a type has, used
+/// only as a bound on a type parameter. The methods have no bodies.
+#[derive(Clone, Debug, PartialEq)]
+pub struct InterfaceDecl {
+    pub is_pub: bool,
+    pub name: Ident,
+    pub methods: Vec<FnDecl>,
     pub span: Span,
 }
 
@@ -218,6 +238,11 @@ pub enum ExprKind {
     None,
     Ident(String),
     List(Vec<Expr>),
+    /// `["a": 1, "b": 2]`, a map.
+    Map(Vec<(Expr, Expr)>),
+    /// `..value` as an argument of a struct construction, or `{ ..value }`
+    /// in a record (its field is named `..`): the fields not written.
+    Spread(Box<Expr>),
     /// `{ posts, title: "Home" }`
     Record(Vec<RecordField>),
     Unary {

@@ -173,8 +173,8 @@ underlying HTML.
 
 Kiln's browser-capable components are **Embers**, compiled to browser
 WebAssembly using WasmGC. The planned explicit `.ember` source suffix,
-separate from server-only `.glaze`, is specified in [Phase 4.1](plans/phase-4.1.md);
-the Phase 4 implementation currently infers Embers from interactive Glazes.
+separate from server-only `.glaze`, was introduced in [Phase 4.1](plans/phase-4.1.md),
+so a Glaze never silently becomes browser code.
 A static or mostly server-rendered page should not pay for a full client
 application just because one control is interactive.
 

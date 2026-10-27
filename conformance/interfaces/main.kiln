@@ -1,0 +1,81 @@
+// Interfaces bound type parameters: a type fits when it has the methods,
+// and each call is compiled for the type it is given.
+
+interface Named {
+    fn name(self) -> String
+}
+
+interface Sized {
+    fn len(self) -> Int
+}
+
+struct Dog {
+    nick: String
+}
+
+impl Dog {
+    fn name(self) -> String {
+        return "dog ${self.nick}"
+    }
+}
+
+enum Shape {
+    Circle(r: Int)
+    Square
+}
+
+impl Shape {
+    fn name(self) -> String {
+        return match self {
+            .Circle(r) => "circle ${r}",
+            .Square => "square",
+        }
+    }
+}
+
+fn label<T: Named>(x: T) -> String {
+    return "<${x.name()}>"
+}
+
+fn labels<T: Named>(xs: List<T>) -> List<String> {
+    return xs.map(fn(x) { label(x) })
+}
+
+fn biggest<T: Sized + Named>(xs: List<T>) -> String {
+    var best = ""
+    var size = -1
+    for x in xs {
+        if x.len() > size {
+            size = x.len()
+            best = x.name()
+        }
+    }
+    return best
+}
+
+fn total<T: Sized>(xs: List<T>) -> Int {
+    return xs.fold(0, fn(acc, x) { acc + x.len() })
+}
+
+struct Box {
+    label: String
+    items: List<Int>
+}
+
+impl Box {
+    fn name(self) -> String {
+        return self.label
+    }
+    fn len(self) -> Int {
+        return self.items.len()
+    }
+}
+
+fn main() {
+    print(label(Dog(nick: "Rex")))
+    print(label(Shape.Circle(r: 2)))
+    print(labels([Shape.Square, Shape.Circle(r: 1)]))
+    print(total(["ab", "cde"]))
+    print(total([[1, 2], [3]]))
+    print(biggest([Box(label: "a", items: [1]), Box(label: "b", items: [1, 2, 3])]))
+}

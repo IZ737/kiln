@@ -678,6 +678,7 @@ unsafe fn to_sql(d: &KDesc, v: Kv) -> SqlValue {
         D_FLOAT => SqlValue::Float(f64::from_bits(v)),
         D_BOOL => SqlValue::Bool(v != 0),
         D_STR => SqlValue::Text(String::from_utf8_lossy(bytes(v)).into_owned()),
+        D_BYTES => SqlValue::Blob(bytes(v).to_vec()),
         D_STRUCT if d.name() == "Instant" && d.n == 1 => {
             SqlValue::Text(crate::timefmt::iso(*ptr::<i64>(v)))
         }
@@ -745,6 +746,8 @@ unsafe fn from_sql(d: &KDesc, v: &SqlValue, what: &str) -> Result<Kv, String> {
         (D_BOOL, SqlValue::Int(1)) => Ok(1),
         (D_BOOL, SqlValue::Text(t)) if t == "t" || t == "f" => Ok((t == "t") as Kv),
         (D_STR, SqlValue::Text(t)) => Ok(string(t.as_bytes())),
+        (D_BYTES, SqlValue::Blob(b)) => Ok(string(b)),
+        (D_BYTES, SqlValue::Text(t)) => Ok(string(t.as_bytes())),
         (D_STR, SqlValue::Blob(b)) => match std::str::from_utf8(b) {
             Ok(s) => Ok(string(s.as_bytes())),
             Err(_) => Err(format!(
@@ -810,6 +813,7 @@ fn expected(d: &KDesc) -> &'static str {
         D_FLOAT => "a number",
         D_BOOL => "a boolean (0 or 1)",
         D_STR => "text",
+        D_BYTES => "binary data",
         D_OPT => "a value or NULL",
         D_STRUCT if d.name() == "Instant" => "a time",
         D_STRUCT if d.name() == "Date" => "a date",
@@ -824,6 +828,7 @@ fn expected_type(d: &KDesc) -> String {
         D_FLOAT => "Float".into(),
         D_BOOL => "Bool".into(),
         D_STR => "String".into(),
+        D_BYTES => "Bytes".into(),
         D_DURATION => "Duration".into(),
         _ if !d.name().is_empty() => d.name().to_string(),
         _ => "T".into(),

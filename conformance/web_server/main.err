@@ -27,3 +27,13 @@ info GET /crash 500 TIME
 info GET /todos/1 200 TIME
 info GET /nowhere 404 TIME
 info - - 400 TIME
+info GET /cookies 200 TIME
+info GET /admin/users 401 TIME
+info GET /admin/users 200 TIME
+info GET /admin/fail 403 TIME
+info GET /administrators 200 TIME
+info POST /notes 403 TIME
+info POST /notes 403 TIME
+info POST /notes 201 TIME
+info POST /notes 201 TIME
+info POST /hooks/payment 200 TIME

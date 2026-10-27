@@ -28,7 +28,7 @@ database the program opens.
 import sql
 
 fn main() ! {
-    let db = try sql.open(env("DATABASE_URL"))
+    let db = try sql.open(env("DATABASE_URL") ?? "sqlite:app.db")
     let posts = try db.query<Post>("select * from posts where published = $1", true)
     let one = try db.one<Post>("select * from posts where id = $1", id)
     let many = try db.scalar<Int>("select count(*) from posts")
@@ -51,7 +51,7 @@ fn main() ! {
 
 Opening a URL that is already open gives the same pool, with the settings
 it was first opened with, so a `server fn` can call
-`sql.open(env("DATABASE_URL"))` on every call without opening new
+`sql.open(env("DATABASE_URL") ?? "sqlite:app.db")` on every call without opening new
 connections each time. `db.close()` closes it for everyone.
 
 Values go in `$1`, `$2`, ... whatever the database, and the extra
@@ -95,7 +95,7 @@ and `id` is its key.
 import orm
 
 struct Post {
-    id: Int
+    id: Int = 0
     title: String
     summary: String? = none
     published: Bool = false
@@ -120,6 +120,10 @@ let published = try orm.find<Post>(db)
 | `orm.insert<T>(db, value) -> T !` | Stores a row and returns it with its new key |
 | `orm.update<T>(db, value) -> Int !` | Writes a row back by its key |
 | `orm.delete<T>(db, value) -> Int !` | Deletes a row by its key |
+
+Give an `Int` key the default `0` (`id: Int = 0`): `orm.insert(db,
+Post(title: "Hi", author_id: 1))` then stores the row with the key the
+database gives it. The type argument is inferred from the value.
 
 | Step | |
 | --- | --- |

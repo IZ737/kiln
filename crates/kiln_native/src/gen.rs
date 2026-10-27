@@ -77,6 +77,7 @@ mod desc {
     pub const ENUM: i64 = 12;
     pub const RECORD: i64 = 13;
     pub const VARIANT: i64 = 14;
+    pub const BYTES: i64 = 15;
 }
 
 /// What the runtime does with a type: show, compare, hash or order it.
@@ -307,6 +308,15 @@ impl<'a> Gen<'a> {
         self.is_adt(ty, self.prims.string)
     }
 
+    fn is_bytes(&self, ty: &Ty) -> bool {
+        self.is_adt(ty, self.prims.bytes)
+    }
+
+    /// A `String` or `Bytes`: both are a `kstr`, compared byte by byte.
+    fn is_kstr(&self, ty: &Ty) -> bool {
+        self.is_string(ty) || self.is_bytes(ty)
+    }
+
     fn is_error(&self, ty: &Ty) -> bool {
         self.is_adt(ty, self.prims.error)
     }
@@ -466,11 +476,9 @@ impl<'a> Gen<'a> {
         let p = self.prims;
         let rep = self.rep(ty);
         let simple = match op {
-            Op::Show | Op::Eq => {
-                self.is_string(ty) || (matches!(ty, Ty::Adt(..)) && rep != Rep::Ptr)
-            }
+            Op::Show | Op::Eq => self.is_kstr(ty) || (matches!(ty, Ty::Adt(..)) && rep != Rep::Ptr),
             Op::Hash | Op::Cmp => {
-                self.is_string(ty) || matches!(rep, Rep::Int | Rep::Bool | Rep::Float)
+                self.is_kstr(ty) || matches!(rep, Rep::Int | Rep::Bool | Rep::Float)
             }
         };
         if simple {
@@ -542,6 +550,7 @@ impl<'a> Gen<'a> {
         let (kind, name, parts, labels): (i64, Option<String>, Vec<DataId>, Vec<Option<String>>) =
             match ty {
                 _ if self.is_string(ty) => leaf(desc::STR),
+                _ if self.is_bytes(ty) => leaf(desc::BYTES),
                 Ty::Adt(id, _) if *id == p.int => leaf(desc::INT),
                 Ty::Adt(id, _) if *id == p.float => leaf(desc::FLOAT),
                 Ty::Adt(id, _) if *id == p.bool_ => leaf(desc::BOOL),
@@ -681,7 +690,7 @@ impl<'a> Gen<'a> {
 
     /// The hash function for map keys and set items of `ty`.
     fn hash_fn(&mut self, ty: &Ty, span: Span) -> ObjFn {
-        if self.is_string(ty) {
+        if self.is_kstr(ty) {
             return self.import("k_hash_str");
         }
         match self.rep(ty) {
@@ -1575,7 +1584,7 @@ impl Fx<'_, '_, '_> {
                     CmpOp::Gt => (IntCC::SignedGreaterThan, FloatCC::GreaterThan),
                     CmpOp::Ge => (IntCC::SignedGreaterThanOrEqual, FloatCC::GreaterThanOrEqual),
                 };
-                if self.g.is_string(&a.ty) {
+                if self.g.is_kstr(&a.ty) {
                     let c = self.call_rt("k_str_cmp", &[l, r]);
                     self.b.ins().icmp_imm_s(icc, c, 0)
                 } else if self.g.rep(&a.ty) == Rep::Float {
@@ -1821,7 +1830,7 @@ impl Fx<'_, '_, '_> {
             }
             ExprKind::Env(v) => {
                 let x = self.expr(v);
-                self.call_rt("k_env", &[x])
+                self.call_rt("k_os_env", &[x])
             }
             ExprKind::Panic(v) => {
                 let x = self.expr(v);
@@ -2038,6 +2047,7 @@ impl Fx<'_, '_, '_> {
         let p = self.g.prims;
         match ty {
             _ if self.g.is_string(ty) => v,
+            _ if self.g.is_bytes(ty) => self.call_rt("k_bytes_show", &[v]),
             Ty::Adt(id, _) if *id == p.int => self.call_rt("k_int_str", &[v]),
             Ty::Adt(id, _) if *id == p.float => self.call_rt("k_float_str", &[v]),
             Ty::Adt(id, _) if *id == p.bool_ => self.call_rt("k_bool_str", &[v]),
@@ -2066,7 +2076,7 @@ impl Fx<'_, '_, '_> {
             }
             _ => (a, at.clone(), b),
         };
-        if self.g.is_string(&at) {
+        if self.g.is_kstr(&at) {
             return self.call_rt("k_str_eq", &[a, b]);
         }
         match self.g.rep(&at) {
@@ -2414,7 +2424,6 @@ impl Fx<'_, '_, '_> {
                     "temp_dir" => "k_os_temp_dir",
                     "pid" => "k_os_pid",
                     "platform" => "k_os_platform",
-                    "env" => "k_os_env",
                     "exit" => "k_os_exit",
                     _ => return self.unsupported(span, format!("`{module}.{name}`")),
                 };
@@ -2464,11 +2473,14 @@ impl Fx<'_, '_, '_> {
                 let f: &'static str = match name {
                     "app" => "k_web_app",
                     "not_found" => "k_web_not_found",
+                    "__request" => "k_web_current_request",
                     "error" => "k_web_error",
                     "App.on_error" => "k_web_on_error",
+                    "App.before" => "k_web_before",
                     "text" => "k_web_text",
                     "html" => "k_web_html",
                     "redirect" => "k_web_redirect",
+                    "__with_headers" => "k_web_with_headers",
                     "Request.query" => "k_web_query",
                     "Request.header" => "k_web_header",
                     "Request.cookie" => "k_web_cookie",

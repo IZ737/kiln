@@ -5,3 +5,5 @@ info POST /signup 200 TIME
 info POST /signup 400 TIME
 info POST /signup 400 TIME
 info POST /signup 400 TIME
+info POST /avatar 200 TIME
+info POST /echo 200 TIME

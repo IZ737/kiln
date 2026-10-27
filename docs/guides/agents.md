@@ -97,11 +97,30 @@ this with tests.
   fails instead.
 - Patterns: `match x { some(v) => ..., none => ..., _ => ... }` and
   `if found is some(post) and post.published { ... }`.
+- Unwrap or leave with let-else: `let some(post) = found else { return
+  web.not_found() }`; the `else` block must `return`, `break`,
+  `continue` or `throw`.
+- Where the enum is known, a variant can drop its name: `.Accent`,
+  `.Custom(name: "x")`, and `.Accent =>` in a `match`.
+- `let` stops rebinding, not changes: structs, records, lists and maps
+  are shared references, so a function that pushes to a list it was given
+  changes the caller's list. Copy with `Post(..post, title: "New")` or
+  `{ ..record, x: 0 }`. A `const` cannot be changed at all (E0207).
 - Named arguments and defaults: `web.json(post, status: 201)`.
 - Generic calls name the type: `req.form<{ title: String }>()`,
   `orm.find<Post>(db)`, `json.decode<Post>(text)`.
-- Empty collections need a type: `let tags: List<String> = []`,
-  `let form: Map<String, String> = Map()`.
+- A generic function that calls methods on `T` bounds it with an
+  interface: `interface Named { fn name(self) -> String }` and
+  `fn label<T: Named>(x: T)`. Any type with those methods fits; an
+  interface is never a parameter's type itself.
+- `String` is text and `Bytes` is binary data: `text.bytes()`,
+  `data.text()` (can fail), `fs.read_bytes`, `web.bytes(data,
+  content_type: "image/png")`, `req.bytes()`, and `Bytes` form fields for
+  uploads.
+- Map literals: `["Ada": 36, "Grace": 45]`. Empty collections need a
+  type: `let tags: List<String> = []`, `let form: Map<String, String> = Map()`.
+- Multi-line text is a `"""` string: its lines start on the line after the
+  opening quotes, and the closing `"""` line's indentation is removed.
 
 ## Modules
 
@@ -141,17 +160,17 @@ folder; a path with `/` is from the project root.
 import sql, orm, auth
 
 pub struct Post {
-    id: Int                 // the primary key
+    id: Int = 0             // the primary key; 0 until inserted
     user_id: Int
     title: String
     published: Bool = false
     user: User? = none      // a relation: loaded with .include(.user)
 }
 
-let db = try sql.open(env("DATABASE_URL"))
+let db = try sql.open(env("DATABASE_URL") ?? "sqlite:app.db")
 let posts = try orm.find<Post>(db).where(.published).order_by(.id, descending: true).limit(20).all()
 let post = try orm.find<Post>(db).where(fn(p) { p.id == id }).first()     // Post?
-let saved = try orm.insert<Post>(db, Post(id: 0, user_id: 1, title: "Hi"))
+let saved = try orm.insert(db, Post(user_id: 1, title: "Hi"))
 ```
 
 `kiln db diff --name add_posts` writes a migration from the models (read
@@ -205,7 +224,7 @@ during tests.
 | Using another folder's private name | mark it `pub` | E0230 |
 
 Also: `return` cannot be a `match` arm's value (E0102); write
-`if x is some(v) { ... }` instead.
+`let some(v) = x else { return ... }` instead.
 
 ## More
 

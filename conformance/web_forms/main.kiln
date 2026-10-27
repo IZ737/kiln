@@ -1,6 +1,6 @@
 // A submitted form: read as a struct, checked with rules, and shown again
 // with what is wrong with it. A form the server cannot read at all is the
-// client's mistake, and gets 400.
+// client's mistake, and gets 400. A file arrives as `Bytes`.
 import web, validate, os
 
 struct Signup {
@@ -11,6 +11,13 @@ struct Signup {
     topics: List<String>
     newsletter: Bool
     about: String? = none
+}
+
+// A file field is `Bytes`; one sent without a file is `none`.
+struct Avatar {
+    name: String
+    picture: Bytes
+    note: Bytes? = none
 }
 
 fn problems(input: Signup) -> validate.Checked {
@@ -40,9 +47,19 @@ fn main() ! {
         return web.text("${input.name} <${input.email}> ${input.age} ${input.plan} [${input.topics.join(" ")}] news=${input.newsletter} about=${about}")
     })
 
+    app.post("/avatar", fn(req) {
+        let input = try req.form<Avatar>()
+        let note = if input.note is some(n) { "${n.len()} bytes" } else { "no note" }
+        return web.bytes(input.picture, content_type: "image/gif", headers: ["x-name": input.name, "x-note": note])
+    })
+
+    app.post("/echo", fn(req) {
+        return web.bytes(req.bytes())
+    })
+
     app.get("/quit", fn(req) {
         os.exit(0)
     })
 
-    try app.listen("127.0.0.1:${env("PORT")}")
+    try app.listen("127.0.0.1:${env("PORT") ?? "8080"}")
 }

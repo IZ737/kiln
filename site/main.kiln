@@ -120,7 +120,7 @@ fn samples() -> { main: String, glaze: String, ember: String, module: String } {
             "    let app = web.app()",
             "    app.get(\"/\", fn(req) { web.render(\"home.glaze\", { name: \"Kiln\" }) })",
             "    app.get(\"/hello/{name}\", fn(req, name) { web.text(greetings.message(name)) })",
-            "    let port = os.env(\"PORT\") ?? \"8080\"",
+            "    let port = env(\"PORT\") ?? \"8080\"",
             "    try app.listen(\"127.0.0.1:\${port}\")",
             "}",
         ].join("\n"),
@@ -174,7 +174,7 @@ fn main() ! {
         let r = web.render("error.glaze", { status: status, message: message })
         return web.Response(status: status, headers: r.headers, body: r.body)
     })
-    let port = os.env("PORT") ?? "8080"
-    let host = os.env("HOST") ?? "127.0.0.1"
+    let port = env("PORT") ?? "8080"
+    let host = env("HOST") ?? "127.0.0.1"
     try app.listen("${host}:${port}")
 }

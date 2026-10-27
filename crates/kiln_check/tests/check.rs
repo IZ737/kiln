@@ -585,3 +585,122 @@ fn admin_pages_need_a_model_with_an_int_key() {
         diags[0].message
     );
 }
+
+#[test]
+fn phase_six_and_a_half_language() {
+    ok(r#"
+enum Tone {
+    Plain
+    Custom(name: String)
+}
+
+struct Post {
+    id: Int = 0
+    title: String
+}
+
+fn label(t: Tone?) -> String {
+    let some(tone) = t else {
+        return "none"
+    }
+    return match tone {
+        .Plain => "plain"
+        .Custom(name) => name
+    }
+}
+
+fn main() {
+    print(label(.Custom(name: "x")))
+    let p = Post(title: "a")
+    let q = Post(..p, title: "b")
+    let r = { x: 1, y: 2 }
+    let s = { ..r, y: 3 }
+    let m = ["a": q.id, "b": s.y]
+    let n: Int = m["a"] ?? 0
+    print(n)
+}
+"#);
+}
+
+#[test]
+fn phase_six_and_a_half_language_errors() {
+    // `Any` and `Rest` belong to the standard library.
+    assert_eq!(
+        error_codes("fn f(x: Any) -> Int {\n    return 1\n}\n"),
+        vec![codes::RESERVED_TYPE]
+    );
+    // A constant cannot be changed, through a method or an assignment.
+    assert_eq!(
+        error_codes("const XS: List<Int> = [1]\nfn main() {\n    XS.push(2)\n}\n"),
+        vec![codes::ASSIGN_TO_IMMUTABLE]
+    );
+    // A spread base must be the type being made.
+    let src = "struct A {\n    x: Int\n}\nstruct B {\n    x: Int\n}\nfn main() {\n    let b = B(x: 1)\n    let a = A(..b)\n}\n";
+    assert_eq!(error_codes(src), vec![codes::TYPE_MISMATCH]);
+    // A record copy names fields its base has.
+    let src = "fn main() {\n    let r = { x: 1 }\n    let s = { ..r, z: 2 }\n}\n";
+    assert_eq!(error_codes(src).len(), 1);
+    // A map's values share one type.
+    let src = "fn main() {\n    let m = [\"a\": 1, \"b\": \"two\"]\n}\n";
+    assert_eq!(error_codes(src), vec![codes::TYPE_MISMATCH]);
+    // `.Variant` needs a known enum.
+    let src = "fn main() {\n    let t = .Plain\n}\n";
+    assert_eq!(error_codes(src).len(), 1);
+}
+
+#[test]
+fn bytes_are_not_text() {
+    // Text becomes bytes with `.bytes()`, and bytes text with `.text()`,
+    // which can fail.
+    let ok = "fn main() ! {\n    let b: Bytes = \"hi\".bytes()\n    let t: String = try b.slice(0, 1).text()\n    print(b.len() + t.len())\n}\n";
+    assert!(error_codes(ok).is_empty(), "{:?}", error_codes(ok));
+    assert_eq!(
+        error_codes("fn main() {\n    let b: Bytes = \"hi\"\n}\n"),
+        vec![codes::TYPE_MISMATCH]
+    );
+    assert_eq!(
+        error_codes("fn main() {\n    let t: String = \"hi\".bytes()\n}\n"),
+        vec![codes::TYPE_MISMATCH]
+    );
+    // `Decimal` is gone until a real one is designed.
+    assert_eq!(error_codes("fn f(x: Decimal) {}\nfn main() {}\n").len(), 1);
+}
+
+#[test]
+fn standard_library_internals_are_hidden() {
+    let src = "import sql\nfn main() {\n    let v = sql.__value(1)\n}\n";
+    assert_eq!(error_codes(src), vec![codes::LOCAL_MODULE]);
+    let src = "import ember\nfn f(r: ember.Reply) {}\nfn main() {}\n";
+    assert_eq!(error_codes(src), vec![codes::LOCAL_MODULE]);
+    // The compiler's own declarations, named `__`, may use them.
+    ok("import sql\nfn __glue() {\n    let v = sql.__value(1)\n}\nfn main() {}\n");
+}
+
+#[test]
+fn interfaces_bound_type_parameters() {
+    let decls = "interface Named {\n    fn name(self) -> String\n}\nstruct Dog {\n    nick: String\n}\nimpl Dog {\n    fn name(self) -> String {\n        return self.nick\n    }\n}\nstruct Rock {}\nfn label<T: Named>(x: T) -> String {\n    return x.name()\n}\n";
+    let ok = format!("{decls}fn main() {{\n    print(label(Dog(nick: \"Rex\")))\n}}\n");
+    assert!(error_codes(&ok).is_empty(), "{:?}", error_codes(&ok));
+    // A type without the method does not fit.
+    let src = format!("{decls}fn main() {{\n    print(label(Rock()))\n}}\n");
+    assert_eq!(error_codes(&src), vec![codes::UNMET_BOUND]);
+    // A generic caller passes the bound on.
+    let src =
+        format!("{decls}fn twice<T>(x: T) -> String {{\n    return label(x)\n}}\nfn main() {{}}\n");
+    assert_eq!(error_codes(&src), vec![codes::UNMET_BOUND]);
+    let src = format!(
+        "{decls}fn twice<T: Named>(x: T) -> String {{\n    return label(x)\n}}\nfn main() {{}}\n"
+    );
+    assert!(error_codes(&src).is_empty());
+    // Methods come from bounds, and an interface is not a type.
+    let src =
+        format!("{decls}fn f<T>(x: T) -> String {{\n    return x.name()\n}}\nfn main() {{}}\n");
+    assert_eq!(error_codes(&src), vec![codes::NO_SUCH_MEMBER]);
+    let src = format!("{decls}fn f(x: Named) {{}}\nfn main() {{}}\n");
+    assert_eq!(error_codes(&src), vec![codes::INTERFACE_MISUSE]);
+    let src = format!("{decls}fn f<T: Dog>(x: T) {{}}\nfn main() {{}}\n");
+    assert_eq!(error_codes(&src), vec![codes::INTERFACE_MISUSE]);
+    // Built-in types fit by their methods too.
+    let src = "interface Sized {\n    fn len(self) -> Int\n}\nfn total<T: Sized>(xs: List<T>) -> Int {\n    return xs.fold(0, fn(a, x) { a + x.len() })\n}\nfn main() {\n    print(total([\"a\", \"bc\"]))\n    print(total([[1], [2, 3]]))\n}\n";
+    assert!(error_codes(src).is_empty(), "{:?}", error_codes(src));
+}

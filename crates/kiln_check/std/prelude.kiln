@@ -4,8 +4,9 @@ struct Int {}
 struct Float {}
 struct Bool {}
 struct String {}
+// Binary data, such as an image or an upload. `text.bytes()` makes it
+// from text, and `data.text()` reads it as text when it is UTF-8.
 struct Bytes {}
-struct Decimal {}
 struct Duration {}
 
 // The default error type: a function declared with a bare `!` can fail with
@@ -29,7 +30,8 @@ struct Set<T> {}
 struct Ui {}
 
 fn print(value: Any) {}
-fn env(name: String) -> String {}
+// An environment variable, or none when it is not set.
+fn env(name: String) -> String? {}
 fn panic(message: String) -> Never {}
 
 impl Int {
@@ -81,6 +83,18 @@ impl String {
     fn pad_end(self, width: Int, fill: String) -> String {}
     fn trim_start(self) -> String {}
     fn trim_end(self) -> String {}
+    // The text's UTF-8 bytes.
+    fn bytes(self) -> Bytes {}
+}
+
+impl Bytes {
+    // The number of bytes.
+    fn len(self) -> Int {}
+    fn is_empty(self) -> Bool {}
+    // The bytes from `start` up to `end`, each kept within the data.
+    fn slice(self, start: Int, end: Int) -> Bytes {}
+    // The bytes as text; fails when they are not UTF-8.
+    fn text(self) -> String ! {}
 }
 
 impl List<T> {

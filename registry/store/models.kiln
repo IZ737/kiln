@@ -3,7 +3,7 @@
 
 // A publisher: the account that owns the Wares named `name/...`.
 pub struct Account {
-    id: Int
+    id: Int = 0
     name: String
     email: String
     password: String
@@ -15,7 +15,7 @@ pub struct Account {
 // A publish token. Only its SHA-256 is stored; the token itself is shown
 // once, when it is made.
 pub struct Token {
-    id: Int
+    id: Int = 0
     account_id: Int
     token_hash: String
     label: String
@@ -25,7 +25,7 @@ pub struct Token {
 // One published version of a Ware. A release never changes, except that
 // it can be yanked (and restored).
 pub struct Release {
-    id: Int
+    id: Int = 0
     account_id: Int
     publisher: String
     name: String
@@ -44,7 +44,7 @@ pub struct Release {
 // An independent review of one release, bound to its checksum: a review
 // says nothing about any other archive.
 pub struct Review {
-    id: Int
+    id: Int = 0
     publisher: String
     name: String
     version: String
@@ -55,7 +55,7 @@ pub struct Review {
 
 // What happened, for the audit log: publishes, yanks, tokens.
 pub struct Event {
-    id: Int
+    id: Int = 0
     account_id: Int
     action: String
     subject: String

@@ -84,46 +84,96 @@
       ]
     },
     "strings": {
-      "name": "string.quoted.double.kiln",
-      "begin": "\"",
-      "end": "\"|$",
-      "beginCaptures": {
-        "0": {
-          "name": "punctuation.definition.string.begin.kiln"
-        }
-      },
-      "endCaptures": {
-        "0": {
-          "name": "punctuation.definition.string.end.kiln"
-        }
-      },
       "patterns": [
         {
-          "name": "constant.character.escape.kiln",
-          "match": "\\\\[ntr0\\\\\"$]"
-        },
-        {
-          "name": "invalid.illegal.escape.kiln",
-          "match": "\\\\."
-        },
-        {
-          "name": "meta.interpolation.kiln",
-          "begin": "\\$\\{",
-          "end": "\\}",
+          "name": "string.quoted.triple.kiln",
+          "begin": "\"\"\"",
+          "end": "\"\"\"",
           "beginCaptures": {
             "0": {
-              "name": "punctuation.section.interpolation.begin.kiln"
+              "name": "punctuation.definition.string.begin.kiln"
             }
           },
           "endCaptures": {
             "0": {
-              "name": "punctuation.section.interpolation.end.kiln"
+              "name": "punctuation.definition.string.end.kiln"
             }
           },
-          "contentName": "source.kiln",
           "patterns": [
             {
-              "include": "#code"
+              "name": "constant.character.escape.kiln",
+              "match": "\\\\[ntr0\\\\\"$]"
+            },
+            {
+              "name": "invalid.illegal.escape.kiln",
+              "match": "\\\\."
+            },
+            {
+              "name": "meta.interpolation.kiln",
+              "begin": "\\$\\{",
+              "end": "\\}",
+              "beginCaptures": {
+                "0": {
+                  "name": "punctuation.section.interpolation.begin.kiln"
+                }
+              },
+              "endCaptures": {
+                "0": {
+                  "name": "punctuation.section.interpolation.end.kiln"
+                }
+              },
+              "contentName": "source.kiln",
+              "patterns": [
+                {
+                  "include": "#code"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "string.quoted.double.kiln",
+          "begin": "\"",
+          "end": "\"|$",
+          "beginCaptures": {
+            "0": {
+              "name": "punctuation.definition.string.begin.kiln"
+            }
+          },
+          "endCaptures": {
+            "0": {
+              "name": "punctuation.definition.string.end.kiln"
+            }
+          },
+          "patterns": [
+            {
+              "name": "constant.character.escape.kiln",
+              "match": "\\\\[ntr0\\\\\"$]"
+            },
+            {
+              "name": "invalid.illegal.escape.kiln",
+              "match": "\\\\."
+            },
+            {
+              "name": "meta.interpolation.kiln",
+              "begin": "\\$\\{",
+              "end": "\\}",
+              "beginCaptures": {
+                "0": {
+                  "name": "punctuation.section.interpolation.begin.kiln"
+                }
+              },
+              "endCaptures": {
+                "0": {
+                  "name": "punctuation.section.interpolation.end.kiln"
+                }
+              },
+              "contentName": "source.kiln",
+              "patterns": [
+                {
+                  "include": "#code"
+                }
+              ]
             }
           ]
         }
@@ -191,7 +241,7 @@
           }
         },
         {
-          "match": "\\b(struct|enum)\\s+([\\p{L}_][\\p{L}\\p{N}_]*)",
+          "match": "\\b(struct|enum|interface)\\s+([\\p{L}_][\\p{L}\\p{N}_]*)",
           "captures": {
             "1": {
               "name": "storage.type.$1.kiln"
@@ -269,7 +319,7 @@
       "patterns": [
         {
           "name": "support.type.primitive.kiln",
-          "match": "\\b(Int|Float|Bool|String|Duration|List|Map)\\b"
+          "match": "\\b(Int|Float|Bool|String|Bytes|Duration|List|Map)\\b"
         },
         {
           "name": "entity.name.type.kiln",

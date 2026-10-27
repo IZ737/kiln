@@ -9,7 +9,7 @@ pub struct Account {
 }
 
 pub fn database() -> sql.Db ! {
-    let url = if env("DATABASE_URL") == "" { "sqlite:app.db" } else { env("DATABASE_URL") }
+    let url = env("DATABASE_URL") ?? "sqlite:app.db"
     return try sql.open(url)
 }
 

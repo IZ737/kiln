@@ -34,6 +34,7 @@ static kstr *k_desc_fields(kstr *r, const kdesc *d, const kv *x) {
 kstr *k_desc_show(const kdesc *d, kv v, bool quote) {
     switch (d->kind) {
     case K_D_STR: return quote ? k_str_quote(K_KV2P(kstr *, v)) : K_KV2P(kstr *, v);
+    case K_D_BYTES: return k_bytes_show(K_KV2P(kstr *, v));
     case K_D_INT: return k_int_str((int64_t)v);
     case K_D_FLOAT: return k_float_str(k_kv2f(v));
     case K_D_BOOL: return k_bool_str(v != 0);
@@ -100,7 +101,8 @@ static bool k_desc_fields_eq(const kdesc *d, const kv *x, const kv *y) {
 /* Deep equality. */
 bool k_desc_eq(const kdesc *d, kv a, kv b) {
     switch (d->kind) {
-    case K_D_STR: return k_str_eq(K_KV2P(kstr *, a), K_KV2P(kstr *, b));
+    case K_D_STR:
+    case K_D_BYTES: return k_str_eq(K_KV2P(kstr *, a), K_KV2P(kstr *, b));
     case K_D_FLOAT: return k_kv2f(a) == k_kv2f(b);
     case K_D_INT:
     case K_D_BOOL:
@@ -146,7 +148,8 @@ bool k_desc_eq(const kdesc *d, kv a, kv b) {
 /* A hash for map keys and set items; values that are equal hash the same. */
 uint64_t k_desc_hash(const kdesc *d, kv v) {
     switch (d->kind) {
-    case K_D_STR: return k_hash_str(v);
+    case K_D_STR:
+    case K_D_BYTES: return k_hash_str(v);
     case K_D_INT:
     case K_D_BOOL:
     case K_D_DURATION: return k_hash_int(v);
@@ -194,7 +197,8 @@ static int k_desc_fields_cmp(const kdesc *d, const kv *x, const kv *y) {
  * field, and enums by variant, then fields. */
 int k_desc_cmp(const kdesc *d, kv a, kv b) {
     switch (d->kind) {
-    case K_D_STR: return k_str_cmp(K_KV2P(kstr *, a), K_KV2P(kstr *, b));
+    case K_D_STR:
+    case K_D_BYTES: return k_str_cmp(K_KV2P(kstr *, a), K_KV2P(kstr *, b));
     case K_D_FLOAT: {
         double x = k_kv2f(a), y = k_kv2f(b);
         return x < y ? -1 : x > y;

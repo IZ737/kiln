@@ -61,9 +61,6 @@ pub fn routes(app: web.App, db: sql.Db, sessions: auth.Sessions) {
     })
 
     app.post("/sign-up", fn(req) {
-        if not store.same_origin(req) {
-            throw web.error(403, "this form was sent from another site")
-        }
         let form = try req.form<{ name: String, email: String, password: String }>()
         let name = form.name.trim()
         let email = form.email.trim().lower()
@@ -83,7 +80,7 @@ pub fn routes(app: web.App, db: sql.Db, sessions: auth.Sessions) {
         }
         let role = if email == env("REGISTRY_ADMIN") { "admin" } else { "publisher" }
         let hash = try auth.hash_password(form.password)
-        let account = try orm.insert<store.Account>(db, store.Account(id: 0, name: name, email: email, password: hash, role: role))
+        let account = try orm.insert(db, store.Account(name: name, email: email, password: hash, role: role))
         return try sessions.sign_in(web.redirect("/tokens", status: 303), "${account.id}", roles: [account.role])
     })
 
@@ -92,9 +89,6 @@ pub fn routes(app: web.App, db: sql.Db, sessions: auth.Sessions) {
     })
 
     app.post("/sign-in", fn(req) {
-        if not store.same_origin(req) {
-            throw web.error(403, "this form was sent from another site")
-        }
         let form = try req.form<{ email: String, password: String }>()
         let email = form.email.trim().lower()
         let found = try orm.find<store.Account>(db).where(fn(a) { a.email == email }).first()
@@ -114,19 +108,17 @@ pub fn routes(app: web.App, db: sql.Db, sessions: auth.Sessions) {
 
     app.get("/tokens", fn(req) {
         let account_found = try signed_in(db, sessions, req)
-        if not (account_found is some(_)) {
+        let some(account) = account_found else {
             return web.redirect("/sign-in")
         }
-        let account = account_found ?? throw "unreachable"
         return try tokens_page(db, sessions, req, account, "")
     })
 
     app.post("/tokens", fn(req) {
         let account_found = try signed_in(db, sessions, req)
-        if not (account_found is some(_)) {
+        let some(account) = account_found else {
             return web.redirect("/sign-in")
         }
-        let account = account_found ?? throw "unreachable"
         let form = try req.form<{ csrf: String, label: String }>()
         try sessions.check(req, form.csrf)
         let label = if form.label.trim() == "" { "kiln publish" } else { form.label.trim() }

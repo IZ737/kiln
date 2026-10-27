@@ -44,6 +44,10 @@ pub(crate) struct FnCtx {
     bang_at: Option<Span>,
     /// Inference variables from generic calls that must be solved by the end.
     pending: Vec<(u32, Span, String, String)>,
+    /// Inference variables that must fit an interface, checked once the
+    /// function's types are known: the variable, the interface, the call
+    /// and the type parameter's name.
+    bound_checks: Vec<(u32, usize, Span, String)>,
 }
 
 pub struct Checker {
@@ -51,6 +55,10 @@ pub struct Checker {
     pub(crate) modules: Vec<ModuleDef>,
     pub(crate) global_fns: HashMap<String, FnSig>,
     pub(crate) global_types: HashMap<String, AdtId>,
+    pub(crate) interfaces: Vec<InterfaceDef>,
+    pub(crate) global_interfaces: HashMap<String, usize>,
+    /// The interfaces of the bounded type parameters in scope.
+    pub(crate) type_bounds: HashMap<String, Vec<usize>>,
     pub(crate) imports: HashMap<String, ModId>,
     pub(crate) consts: HashMap<String, Ty>,
     /// The names of the program's own types, and of its functions and
@@ -106,6 +114,10 @@ pub struct Checker {
     /// Types and functions with ids or names below these come from the
     /// standard library.
     pub(crate) std_adts: usize,
+    /// Whether the declaration being read may use the standard library's
+    /// internals: the library itself, and code the compiler writes, whose
+    /// declarations' names start with `__`.
+    pub(crate) internal: bool,
     /// Whether to record what names refer to, for the language server.
     pub(crate) recording: bool,
     pub(crate) references: Vec<(Span, Ref)>,
@@ -192,6 +204,9 @@ impl Checker {
             modules: Vec::new(),
             global_fns: HashMap::new(),
             global_types: HashMap::new(),
+            interfaces: Vec::new(),
+            global_interfaces: HashMap::new(),
+            type_bounds: HashMap::new(),
             imports: HashMap::new(),
             consts: HashMap::new(),
             declared_types: HashSet::new(),
@@ -217,6 +232,7 @@ impl Checker {
             expr_types: HashMap::new(),
             binding_types: HashMap::new(),
             std_adts: 0,
+            internal: true,
             recording: false,
             references: Vec::new(),
             models: HashMap::new(),
@@ -328,6 +344,7 @@ impl Checker {
     pub(crate) fn check_consts(&mut self, module: &Module) {
         for item in &module.items {
             if let Item::Const(c) = item {
+                self.internal = self.std_adts == 0 || c.name.name.starts_with("__");
                 self.enter_fn(Ty::Unit, None, None);
                 let ty = match &c.ty {
                     Some(t) => {
@@ -341,6 +358,7 @@ impl Checker {
                 self.consts.insert(c.name.name.clone(), ty);
             }
         }
+        self.internal = true;
     }
 
     /// Constants, function bodies and field defaults.
@@ -349,6 +367,7 @@ impl Checker {
         self.collect_mappings(module);
         self.check_consts(module);
         for item in &module.items {
+            self.internal = self.std_adts == 0 || item_name(item).starts_with("__");
             match item {
                 Item::Fn(f) => self.check_fn(f, None, &[]),
                 Item::Impl(imp) => {
@@ -781,6 +800,11 @@ impl Checker {
                         self.refer(m.name.span, Ref::Method(id, m.name.name.clone()));
                     }
                 }
+                Item::Interface(i) => {
+                    if let Some(&id) = self.global_interfaces.get(&i.name.name) {
+                        self.refer(i.name.span, Ref::Interface(id));
+                    }
+                }
                 Item::Import(_) => {}
             }
         }
@@ -797,6 +821,7 @@ impl Checker {
             infer_throws: None,
             bang_at,
             pending: Vec::new(),
+            bound_checks: Vec::new(),
         });
         self.push_scope();
     }
@@ -816,7 +841,163 @@ impl Checker {
                 );
             }
         }
+        for (v, iface, span, param) in &ctx.bound_checks {
+            let ty = self.resolve(&Ty::Var(*v));
+            self.check_bound(&ty, *iface, *span, param);
+        }
         ctx
+    }
+
+    /// Checks that `ty`, given for the type parameter `param` at `span`,
+    /// fits interface `iface`, or defers it while `ty` is not known yet.
+    pub(crate) fn check_bound(&mut self, ty: &Ty, iface: usize, span: Span, param: &str) {
+        let ty = self.resolve(ty);
+        let def = self.interfaces[iface].clone();
+        let problem = match &ty {
+            Ty::Var(v) => {
+                if let Some(ctx) = self.fns.last_mut() {
+                    ctx.bound_checks.push((*v, iface, span, param.to_string()));
+                }
+                return;
+            }
+            Ty::Unknown | Ty::Never | Ty::Any => return,
+            Ty::Param(name) => {
+                let fits = self.type_bounds.get(name).is_some_and(|have| {
+                    have.contains(&iface)
+                        || def.methods.iter().all(|m| {
+                            have.iter().any(|&h| {
+                                self.interfaces[h]
+                                    .methods
+                                    .iter()
+                                    .any(|n| self.same_method(n, m, &HashMap::new()))
+                            })
+                        })
+                });
+                if fits {
+                    return;
+                }
+                self.error(
+                    Diagnostic::error(
+                        codes::UNMET_BOUND,
+                        format!(
+                            "`{param}` must fit `{}`, but the type parameter `{name}` is not bounded by it",
+                            def.name
+                        ),
+                        span,
+                    )
+                    .with_help(format!("declare it as `{name}: {}`", def.name)),
+                );
+                return;
+            }
+            Ty::Adt(id, args) => {
+                let adt = self.adts[*id].clone();
+                let map: HashMap<String, Ty> = adt
+                    .params
+                    .iter()
+                    .cloned()
+                    .zip(args.iter().cloned())
+                    .collect();
+                let mut problem = None;
+                for m in &def.methods {
+                    match adt.methods.iter().find(|n| n.name == m.name) {
+                        None => {
+                            problem = Some(format!(
+                                "it has no method `{}`",
+                                self.show_method(m, &HashMap::new())
+                            ));
+                            break;
+                        }
+                        Some(n) if !self.same_method(n, m, &map) => {
+                            problem = Some(format!(
+                                "its method is `{}`, not `{}`",
+                                self.show_method(n, &map),
+                                self.show_method(m, &HashMap::new())
+                            ));
+                            break;
+                        }
+                        Some(_) => {}
+                    }
+                }
+                match problem {
+                    Some(p) => p,
+                    None => return,
+                }
+            }
+            _ if def.methods.is_empty() => return,
+            _ => "it has no methods".to_string(),
+        };
+        let shown = self.show(&ty);
+        self.error(Diagnostic::error(
+            codes::UNMET_BOUND,
+            format!(
+                "`{shown}` does not fit `{}`, which `{param}` must: {problem}",
+                def.name
+            ),
+            span,
+        ));
+    }
+
+    /// Whether `have`, a type's method with its type parameters in `map`,
+    /// has the signature of the interface method `want`.
+    fn same_method(&self, have: &FnSig, want: &FnSig, map: &HashMap<String, Ty>) -> bool {
+        have.has_self
+            && have.generics.is_empty()
+            && have.params.len() == want.params.len()
+            && have
+                .params
+                .iter()
+                .zip(&want.params)
+                .all(|(a, b)| substitute(&a.ty, map) == b.ty)
+            && substitute(&have.ret, map) == want.ret
+            && have.throws.as_ref().map(|t| substitute(t, map)) == want.throws
+    }
+
+    /// `name(self, x: Int) -> String !`, as a method is written.
+    fn show_method(&self, sig: &FnSig, map: &HashMap<String, Ty>) -> String {
+        let mut params = vec!["self".to_string()];
+        for p in &sig.params {
+            let ty = self.show(&substitute(&p.ty, map));
+            params.push(match &p.name {
+                Some(n) => format!("{n}: {ty}"),
+                None => ty,
+            });
+        }
+        let mut out = format!("{}({})", sig.name, params.join(", "));
+        let ret = substitute(&sig.ret, map);
+        if ret != Ty::Unit {
+            out.push_str(&format!(" -> {}", self.show(&ret)));
+        }
+        if sig.throws.is_some() {
+            out.push_str(" !");
+        }
+        out
+    }
+
+    /// Checks the bounds of a generic call's type arguments.
+    fn check_call_bounds(&mut self, sig: &FnSig, span: Span) {
+        if sig.bounds.is_empty() {
+            return;
+        }
+        let Some(map) = self.instantiations.get(&span).cloned() else {
+            return;
+        };
+        for (param, ifaces) in &sig.bounds {
+            let Some(ty) = map.get(param) else { continue };
+            for &iface in ifaces {
+                self.check_bound(ty, iface, span, param);
+            }
+        }
+    }
+
+    /// A method an interface gives a bounded type parameter.
+    fn bound_method(&self, param: &str, name: &str) -> Option<FnSig> {
+        self.type_bounds.get(param)?.iter().find_map(|&i| {
+            self.interfaces[i]
+                .methods
+                .iter()
+                .find(|m| m.name == name)
+                .cloned()
+        })
     }
 
     fn check_fn(&mut self, f: &FnDecl, self_ty: Option<Ty>, outer: &[String]) {
@@ -863,9 +1044,13 @@ impl Checker {
             self.must_cross(&ret, "what a `server fn` returns", t.span);
         }
         let outer_params = std::mem::replace(&mut self.type_params, generics);
+        let bounds: HashMap<String, Vec<usize>> =
+            self.resolve_bounds(f, Scope::Global).into_iter().collect();
+        let outer_bounds = std::mem::replace(&mut self.type_bounds, bounds);
         self.check_body(&f.body, &ret);
         self.type_params = outer_params;
         self.exit_fn();
+        self.type_bounds = outer_bounds;
     }
 
     fn check_body(&mut self, body: &Block, ret: &Ty) {
@@ -983,6 +1168,9 @@ impl Checker {
                         }
                     }
                 }
+                if let Some(name) = self.const_root(target) {
+                    self.changes_const(&name, target.span);
+                }
                 let mut target_ty = self.infer(target, &Expect::Value(None));
                 // `map[key]` reads a `V?`, but `map[key] = value` stores a `V`.
                 if let ExprKind::Index { expr, .. } = &target.kind {
@@ -1060,6 +1248,51 @@ impl Checker {
     pub(crate) fn check(&mut self, e: &Expr, expected: &Ty) {
         let ty = self.infer(e, &Expect::Value(Some(expected.clone())));
         self.coerce(&ty, expected, e.span);
+    }
+
+    /// The constant an assignment target or receiver is part of, such as
+    /// `LIMITS` in `LIMITS[0]` or `DEFAULTS.page.size`.
+    fn const_root(&self, e: &Expr) -> Option<String> {
+        match &e.kind {
+            // The compiler's own tables (`__` names) are state it manages.
+            ExprKind::Ident(name)
+                if self.local(name).is_none()
+                    && self.consts.contains_key(name)
+                    && !name.starts_with("__") =>
+            {
+                Some(name.clone())
+            }
+            ExprKind::Field { expr, .. } | ExprKind::Index { expr, .. } => self.const_root(expr),
+            _ => None,
+        }
+    }
+
+    /// A constant is the same value everywhere and always: nothing may
+    /// change it, or what is inside it.
+    fn changes_const(&mut self, name: &str, span: Span) {
+        self.error(
+            Diagnostic::error(
+                codes::ASSIGN_TO_IMMUTABLE,
+                format!("cannot change `{name}`: it is a constant, and constants never change"),
+                span,
+            )
+            .with_help(format!(
+                "change a copy instead: `var mine = {name}.slice(0, {name}.len())` for a list, or `Type(..{name})` for a struct"
+            )),
+        );
+    }
+
+    /// The enum a `.Variant` names: the expected type's, through an
+    /// optional.
+    fn expected_enum(&self, expect: &Expect) -> Option<AdtId> {
+        let ty = match self.expected_ty(expect)? {
+            Ty::Opt(inner) => self.resolve(&inner),
+            other => other,
+        };
+        match ty {
+            Ty::Adt(id, _) if matches!(self.adts[id].kind, AdtKind::Enum(_)) => Some(id),
+            _ => None,
+        }
     }
 
     fn expected_ty(&self, expect: &Expect) -> Option<Ty> {
@@ -1159,9 +1392,51 @@ impl Checker {
                 }
                 self.list_of(elem)
             }
+            ExprKind::Map(entries) => {
+                let (key, value) = match self.expected_ty(expect) {
+                    Some(Ty::Adt(id, args)) if id == self.global_types["Map"] => {
+                        (args[0].clone(), args[1].clone())
+                    }
+                    _ => {
+                        let keys = entries
+                            .iter()
+                            .map(|(k, _)| (self.infer(k, &Expect::Value(None)), k.span))
+                            .collect();
+                        let values = entries
+                            .iter()
+                            .map(|(_, v)| (self.infer(v, &Expect::Value(None)), v.span))
+                            .collect();
+                        let key = self.join(keys, &Expect::Value(None));
+                        let value = self.join(values, &Expect::Value(None));
+                        let map = self.global_types["Map"];
+                        return Ty::Adt(map, vec![key, value]);
+                    }
+                };
+                for (k, v) in entries {
+                    self.check(k, &key);
+                    self.check(v, &value);
+                }
+                Ty::Adt(self.global_types["Map"], vec![key, value])
+            }
+            ExprKind::Spread(inner) => {
+                self.error(Diagnostic::error(
+                    codes::BAD_ARGUMENTS,
+                    "`..value` belongs in a struct construction, as in `Post(..post, title: t)`, or first in a record, as in `{ ..r, n: 1 }`",
+                    e.span,
+                ));
+                self.infer(inner, &Expect::Value(None));
+                Ty::Unknown
+            }
+            ExprKind::Record(fields) if fields.first().is_some_and(|f| f.name.name == "..") => {
+                self.infer_record_update(fields, e.span)
+            }
             ExprKind::Record(fields) => {
                 let mut tys = Vec::new();
                 for f in fields {
+                    if f.name.name == ".." {
+                        self.infer(f.value.as_ref().unwrap(), &Expect::Value(None));
+                        continue;
+                    }
                     let ty = match &f.value {
                         Some(v) => self.infer(v, &Expect::Value(None)),
                         None => self.infer_ident(&f.name.name, f.name.span),
@@ -1194,6 +1469,19 @@ impl Checker {
                 ty
             }
             ExprKind::Binary { op, lhs, rhs } => self.infer_binary(*op, lhs, rhs, e.span),
+            // `.Viewer(since: d)` where a `Role` is expected.
+            ExprKind::Call { callee, args, .. }
+                if matches!(callee.kind, ExprKind::FieldShorthand(_))
+                    && self.expected_enum(expect).is_some() =>
+            {
+                let ExprKind::FieldShorthand(name) = &callee.kind else {
+                    unreachable!()
+                };
+                let id = self.expected_enum(expect).unwrap();
+                let ty = self.construct_variant(id, name, args, e.span);
+                self.expr_types.insert(callee.span, ty.clone());
+                ty
+            }
             ExprKind::Call { .. } => {
                 let (ty, throws) = self.infer_call(e);
                 if throws.is_some() {
@@ -1237,6 +1525,10 @@ impl Checker {
                         Ty::Unknown
                     }
                 }
+            }
+            ExprKind::FieldShorthand(name) if self.expected_enum(expect).is_some() => {
+                let id = self.expected_enum(expect).unwrap();
+                self.variant_value(id, name, e.span)
             }
             ExprKind::FieldShorthand(name) => {
                 let Some(Ty::Fn(f)) = self.expected_ty(expect) else {
@@ -1714,6 +2006,24 @@ impl Checker {
         }
     }
 
+    /// Reports a use of the standard library's internals outside it: its
+    /// `__` names, and the `ember` functions and types that generated
+    /// code uses.
+    pub(crate) fn std_internal(&mut self, m: ModId, name: &Ident) {
+        let module = self.modules[m].name.clone();
+        if !self.internal && internal_name(&module, &name.name) {
+            self.internal_error(&format!("{module}.{}", name.name), name.span);
+        }
+    }
+
+    pub(crate) fn internal_error(&mut self, what: &str, span: Span) {
+        self.error(Diagnostic::error(
+            codes::LOCAL_MODULE,
+            format!("`{what}` is internal to the standard library; programs cannot use it"),
+            span,
+        ));
+    }
+
     fn infer_field(&mut self, base: &Expr, name: &Ident, span: Span) -> Ty {
         if self.is_marker(&name.name) {
             self.complete_member(base);
@@ -2036,6 +2346,7 @@ impl Checker {
             }
             if let Some(m) = self.module_named(base) {
                 self.refer(base.span, Ref::Module(m));
+                self.std_internal(m, name);
                 if self.modules[m].fns.contains_key(&name.name) {
                     self.refer(name.span, Ref::ModuleFn(m, name.name.clone()));
                 } else if let Some(&id) = self.modules[m].types.get(&name.name) {
@@ -2043,13 +2354,15 @@ impl Checker {
                 }
                 self.use_module(m, base.span);
                 if self.modules[m].name == "web" && name.name == "render" && self.glazes.is_some() {
-                    let ret = self.modules[m].fns["render"].ret.clone();
-                    self.check_render(args, e.span);
+                    let sig = self.modules[m].fns["render"].clone();
+                    self.check_render(args, &sig.params, e.span);
+                    let ret = sig.ret;
                     return (ret, None);
                 }
                 if let Some(sig) = self.modules[m].fns.get(&name.name).cloned() {
                     let (params, ret, throws) = self.instantiate(&sig, &[], &explicit, e.span);
                     self.check_args(&params, args, e.span, &fn_name, None);
+                    self.check_call_bounds(&sig, e.span);
                     if self.modules[m].name == "orm" {
                         self.orm_call(&name.name, args, &explicit, e.span);
                     }
@@ -2077,6 +2390,7 @@ impl Checker {
                     self.refer(name.span, Ref::Method(id, name.name.clone()));
                     let (params, ret, throws) = self.instantiate(&sig, &[], &explicit, e.span);
                     self.check_args(&params, args, e.span, &fn_name, None);
+                    self.check_call_bounds(&sig, e.span);
                     return (ret, throws);
                 }
                 // `Enum.Variant(...)`
@@ -2097,6 +2411,7 @@ impl Checker {
                         params.remove(0);
                     }
                     self.check_args(&params, args, e.span, &fn_name, None);
+                    self.check_call_bounds(&sig, e.span);
                     if rpc && throws.is_none() {
                         throws = Some(self.error_ty());
                     }
@@ -2112,10 +2427,59 @@ impl Checker {
         // `value.method(...)`
         if let ExprKind::Field { expr: base, name } = &callee.kind {
             let base_ty = self.infer(base, &Expect::Value(None));
+            if let Some(constant) = self.const_root(base) {
+                if let Ty::Adt(id, _) = self.resolve(&base_ty) {
+                    let changes = match self.adts[id].name.as_str() {
+                        "List" => {
+                            ["push", "pop", "insert", "remove_at"].contains(&name.name.as_str())
+                        }
+                        "Map" => ["set", "remove"].contains(&name.name.as_str()),
+                        "Set" => ["add", "remove"].contains(&name.name.as_str()),
+                        _ => false,
+                    };
+                    if changes && id < self.std_adts {
+                        self.changes_const(&constant, callee.span);
+                    }
+                }
+            }
+            if let Ty::Param(param) = self.resolve(&base_ty) {
+                if let Some(sig) = self.bound_method(&param, &name.name) {
+                    let (params, ret, throws) = self.instantiate(&sig, &[], &explicit, e.span);
+                    self.check_args(&params, args, e.span, &fn_name, None);
+                    return (ret, throws);
+                }
+                if !self.is_marker(&name.name) {
+                    let mut diag = Diagnostic::error(
+                        codes::NO_SUCH_MEMBER,
+                        format!("the type parameter `{param}` has no method `{}`", name.name),
+                        name.span,
+                    );
+                    let offer: Vec<String> = self
+                        .interfaces
+                        .iter()
+                        .filter(|i| i.methods.iter().any(|m| m.name == name.name))
+                        .map(|i| format!("`{param}: {}`", i.name))
+                        .collect();
+                    diag = diag.with_help(if offer.is_empty() {
+                        format!(
+                            "a bound gives it methods: declare `interface Name {{ fn {}(self) }}` and write `{param}: Name`",
+                            name.name
+                        )
+                    } else {
+                        format!("bound it, as in {}", offer.join(" or "))
+                    });
+                    self.error(diag);
+                    self.infer_args_loosely(args);
+                    return (Ty::Unknown, None);
+                }
+            }
             if let Ty::Adt(id, recv_args) = self.resolve(&base_ty) {
                 let adt = self.adts[id].clone();
                 if let Some(sig) = adt.methods.iter().find(|m| m.name == name.name) {
                     self.refer(name.span, Ref::Method(id, name.name.clone()));
+                    if !self.internal && id < self.std_adts && name.name.starts_with("__") {
+                        self.internal_error(&format!("{}.{}", adt.name, name.name), name.span);
+                    }
                     if !sig.has_self {
                         let call = format!("{}.{}", adt.name, sig.name);
                         self.error(
@@ -2138,6 +2502,7 @@ impl Checker {
                         self.instantiate(sig, &recv_args, &explicit, e.span);
                     let route = self.route_handler_type(id, &name.name, args);
                     self.check_args(&params, args, e.span, &fn_name, route);
+                    self.check_call_bounds(sig, e.span);
                     if self.is_query_ty(&base_ty) {
                         self.orm_step(base, &name.name, args, e.span);
                     }
@@ -2222,12 +2587,46 @@ impl Checker {
             .cloned()
             .zip(type_args.iter().cloned())
             .collect();
+        // `Post(..post, title: t)`: the fields not given come from `post`.
+        let spread = args
+            .iter()
+            .position(|a| a.name.is_none() && matches!(a.value.kind, ExprKind::Spread(_)));
+        let own;
+        let args = match spread {
+            Some(i) => {
+                if let ExprKind::Spread(base) = &args[i].value.kind {
+                    let ty = Ty::Adt(id, type_args.clone());
+                    self.check(base, &ty);
+                    self.expr_types.insert(args[i].value.span, ty);
+                }
+                for extra in args.iter().skip(i + 1) {
+                    if extra.name.is_none() && matches!(extra.value.kind, ExprKind::Spread(_)) {
+                        self.error(Diagnostic::error(
+                            codes::BAD_ARGUMENTS,
+                            "a construction takes one `..value`",
+                            extra.value.span,
+                        ));
+                    }
+                }
+                own = args
+                    .iter()
+                    .enumerate()
+                    .filter(|(j, a)| {
+                        *j != i
+                            && !(a.name.is_none() && matches!(a.value.kind, ExprKind::Spread(_)))
+                    })
+                    .map(|(_, a)| a.clone())
+                    .collect::<Vec<_>>();
+                &own[..]
+            }
+            None => args,
+        };
         let params: Vec<ParamSig> = fields
             .iter()
             .map(|f| ParamSig {
                 name: Some(f.name.clone()),
                 ty: substitute(&f.ty, &map),
-                has_default: f.has_default,
+                has_default: f.has_default || spread.is_some(),
             })
             .collect();
         for arg in args {
@@ -2241,6 +2640,74 @@ impl Checker {
         }
         self.check_args(&params, args, span, &adt.name, None);
         Ty::Adt(id, type_args)
+    }
+
+    /// `{ ..base, name: value }`: the record `base` with some fields
+    /// replaced by values of the same types.
+    fn infer_record_update(&mut self, fields: &[RecordField], span: Span) -> Ty {
+        let Some(ExprKind::Spread(base)) = fields[0].value.as_ref().map(|v| &v.kind) else {
+            return Ty::Unknown;
+        };
+        let base_ty = self.infer(base, &Expect::Value(None));
+        let base_fields = match self.resolve(&base_ty) {
+            Ty::Record(fs) => fs,
+            Ty::Unknown => {
+                for f in &fields[1..] {
+                    if let Some(v) = &f.value {
+                        self.infer(v, &Expect::Value(None));
+                    }
+                }
+                return Ty::Unknown;
+            }
+            other => {
+                let shown = self.show(&other);
+                self.error(Diagnostic::error(
+                    codes::TYPE_MISMATCH,
+                    format!("`{{ ..value }}` copies a record, but this is a `{shown}`; a struct is copied with `{shown}(..value)`"),
+                    base.span,
+                ));
+                return Ty::Unknown;
+            }
+        };
+        for f in &fields[1..] {
+            if f.name.name == ".." {
+                self.error(Diagnostic::error(
+                    codes::BAD_ARGUMENTS,
+                    "a record takes one `..value`, before its fields",
+                    f.name.span,
+                ));
+                continue;
+            }
+            match base_fields.iter().find(|(n, _)| *n == f.name.name) {
+                Some((_, ty)) => {
+                    let ty = ty.clone();
+                    match &f.value {
+                        Some(v) => self.check(v, &ty),
+                        None => {
+                            let t = self.infer_ident(&f.name.name, f.name.span);
+                            self.coerce(&t, &ty, f.name.span);
+                        }
+                    }
+                }
+                None => {
+                    let names: Vec<&str> = base_fields.iter().map(|(n, _)| n.as_str()).collect();
+                    let mut diag = Diagnostic::error(
+                        codes::NO_SUCH_MEMBER,
+                        format!("the record has no field `{}` to replace", f.name.name),
+                        f.name.span,
+                    );
+                    if let Some(s) = similar(&f.name.name, names) {
+                        diag = diag.with_suggestion(format!("did you mean `{s}`?"), f.name.span, s);
+                    }
+                    self.error(diag);
+                    if let Some(v) = &f.value {
+                        self.infer(v, &Expect::Value(None));
+                    }
+                }
+            }
+        }
+        let _ = span;
+        Ty::Record(base_fields)
     }
 
     /// `DbError.Timeout(after: 5s)`
@@ -2871,4 +3338,27 @@ impl Default for Checker {
     fn default() -> Self {
         Self::new()
     }
+}
+
+/// The name a declaration declares, or "" for an import.
+pub(crate) fn item_name(item: &Item) -> &str {
+    match item {
+        Item::Fn(f) => &f.name.name,
+        Item::Const(c) => &c.name.name,
+        Item::Struct(s) => &s.name.name,
+        Item::Enum(e) => &e.name.name,
+        Item::Impl(imp) => match &imp.target.kind {
+            TypeKind::Named { path, .. } => path.last().map_or("", |n| n.name.as_str()),
+            _ => "",
+        },
+        Item::Interface(i) => &i.name.name,
+        Item::Import(_) => "",
+    }
+}
+
+/// Whether `module.name` is internal to the standard library.
+pub fn internal_name(module: &str, name: &str) -> bool {
+    STD_MODULES.iter().any(|(m, _)| *m == module)
+        && (name.starts_with("__")
+            || (module == "ember" && matches!(name, "call" | "npm" | "Island" | "Reply")))
 }

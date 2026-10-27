@@ -711,6 +711,7 @@ fn graph(path: &Path) -> Value {
                 Item::Struct(s) => ("struct", s.is_pub, &s.name.name, s.span),
                 Item::Enum(e) => ("enum", e.is_pub, &e.name.name, e.span),
                 Item::Const(c) => ("const", c.is_pub, &c.name.name, c.span),
+                Item::Interface(i) => ("interface", i.is_pub, &i.name.name, i.span),
                 Item::Impl(_) => continue,
             };
             if !public {

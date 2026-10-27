@@ -57,5 +57,5 @@ fn main() ! {
         os.exit(0)
     })
 
-    try app.listen("127.0.0.1:${env("PORT")}")
+    try app.listen("127.0.0.1:${env("PORT") ?? "8080"}")
 }

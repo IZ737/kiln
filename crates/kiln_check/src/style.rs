@@ -274,7 +274,7 @@ pub struct UiRule {
 const STATES: &[(&str, &str)] = &[
     ("hover", ":hover"),
     ("focus", ":focus"),
-    ("focusVisible", ":focus-visible"),
+    ("focus_visible", ":focus-visible"),
     ("disabled", ":disabled"),
 ];
 
@@ -312,7 +312,7 @@ enum Kind {
 const KEYS: &[(&str, &[&str], Kind)] = &[
     ("bg", &["background-color"], Kind::Color),
     ("fg", &["color"], Kind::Color),
-    ("borderColor", &["border-color"], Kind::Color),
+    ("border_color", &["border-color"], Kind::Color),
     (
         "p",
         &[
@@ -343,10 +343,10 @@ const KEYS: &[(&str, &[&str], Kind)] = &[
     ("gap", &["row-gap", "column-gap"], Kind::Space),
     ("w", &["width"], Kind::Size),
     ("h", &["height"], Kind::Size),
-    ("minW", &["min-width"], Kind::Size),
-    ("maxW", &["max-width"], Kind::Size),
-    ("minH", &["min-height"], Kind::Size),
-    ("maxH", &["max-height"], Kind::Size),
+    ("min_w", &["min-width"], Kind::Size),
+    ("max_w", &["max-width"], Kind::Size),
+    ("min_h", &["min-height"], Kind::Size),
+    ("max_h", &["max-height"], Kind::Size),
     ("rounded", &["border-radius"], Kind::Radius),
     ("border", &["border-style", "border-width"], Kind::Border),
     ("shadow", &["box-shadow"], Kind::Shadow),
@@ -359,9 +359,9 @@ const KEYS: &[(&str, &[&str], Kind)] = &[
     ("justify", &["justify-content"], Kind::Justify),
     ("wrap", &["flex-wrap"], Kind::Wrap),
     ("font", &["font-family"], Kind::Font),
-    ("textSize", &["font-size"], Kind::TextSize),
+    ("text_size", &["font-size"], Kind::TextSize),
     ("weight", &["font-weight"], Kind::Weight),
-    ("lineHeight", &["line-height"], Kind::LineHeight),
+    ("line_height", &["line-height"], Kind::LineHeight),
     ("align", &["text-align"], Kind::Align),
     ("tracking", &["letter-spacing"], Kind::Tracking),
     ("opacity", &["opacity"], Kind::Opacity),
@@ -407,7 +407,7 @@ impl Kind {
             Kind::Border => "`true` or a border width, such as `\"2px\"`",
             Kind::Shadow => "a shadow, such as `shadow.lg` or `.none`",
             Kind::Display(_) | Kind::Wrap | Kind::Underline => "`true` or `false`",
-            Kind::Direction => "`.row`, `.column`, `.rowReverse` or `.columnReverse`",
+            Kind::Direction => "`.row`, `.column`, `.row_reverse` or `.column_reverse`",
             Kind::Tracks => "a number of columns or rows, from 1 to 12",
             Kind::Items => "`.start`, `.center`, `.end`, `.stretch` or `.baseline`",
             Kind::Justify => "`.start`, `.center`, `.end`, `.between`, `.around` or `.evenly`",
@@ -470,8 +470,8 @@ impl Kind {
             Kind::Direction => &[
                 ("row", "row"),
                 ("column", "column"),
-                ("rowReverse", "row-reverse"),
-                ("columnReverse", "column-reverse"),
+                ("row_reverse", "row-reverse"),
+                ("column_reverse", "column-reverse"),
             ],
             Kind::Tracks => &[("none", "none")],
             Kind::Items => &[
@@ -518,7 +518,7 @@ impl Kind {
                 ("pointer", "pointer"),
                 ("default", "default"),
                 ("text", "text"),
-                ("notAllowed", "not-allowed"),
+                ("not_allowed", "not-allowed"),
                 ("grab", "grab"),
                 ("move", "move"),
                 ("wait", "wait"),
@@ -686,13 +686,23 @@ impl Checker {
                             format!("a style has no key `{name}`"),
                             f.name.span,
                         );
-                        d = match similar(name, key_names()) {
-                            Some(s) => {
-                                d.with_suggestion(format!("use `{s}`"), f.name.span, s.clone())
-                            }
-                            None => d.with_help(
-                                "rarer CSS properties go in a `<style>` or a stylesheet, with a class",
+                        let snake = snake_case(name);
+                        let renamed =
+                            (snake != name && key_names().any(|k| k == snake)).then_some(snake);
+                        d = match renamed {
+                            Some(s) => d.with_suggestion(
+                                format!("style keys are snake_case: `{s}`"),
+                                f.name.span,
+                                s,
                             ),
+                            None => match similar(name, key_names()) {
+                                Some(s) => {
+                                    d.with_suggestion(format!("use `{s}`"), f.name.span, s.clone())
+                                }
+                                None => d.with_help(
+                                    "rarer CSS properties go in a `<style>` or a stylesheet, with a class",
+                                ),
+                            },
                         };
                         self.error(d);
                         continue;
@@ -981,7 +991,18 @@ impl Checker {
                 }
                 match kind.keyword(&name.name) {
                     Some(v) => v.to_string(),
-                    None => return Err(wrong(format!("`.{}`", name.name))),
+                    None => {
+                        let mut d = wrong(format!("`.{}`", name.name));
+                        let snake = snake_case(&name.name);
+                        if kind.keyword(&snake).is_some() {
+                            d = d.with_suggestion(
+                                format!("style words are snake_case: `.{snake}`"),
+                                name.span,
+                                snake,
+                            );
+                        }
+                        return Err(d);
+                    }
                 }
             }
             ExprKind::Bool(b) => match kind {
@@ -1204,6 +1225,20 @@ impl Checker {
         self.styles.insert(span, expr);
         Some((ret, None))
     }
+}
+
+/// `textSize` as `text_size`: the spelling style keys and words use.
+fn snake_case(name: &str) -> String {
+    let mut out = String::with_capacity(name.len() + 2);
+    for c in name.chars() {
+        if c.is_ascii_uppercase() {
+            out.push('_');
+            out.push(c.to_ascii_lowercase());
+        } else {
+            out.push(c);
+        }
+    }
+    out
 }
 
 #[cfg(test)]

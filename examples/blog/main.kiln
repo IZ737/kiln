@@ -17,7 +17,7 @@ struct NewPost {
 }
 
 fn main() ! {
-    let db = try sql.open(env("DATABASE_URL"))
+    let db = try sql.open(env("DATABASE_URL") ?? "sqlite:blog.db")
     let app = web.app()
 
     app.get("/", fn(req) {
@@ -44,7 +44,7 @@ fn main() ! {
 // The ember calls `like_post(id)`; the server gives it the request, so
 // the function knows who is asking.
 server fn like_post(req: web.Request, id: Int) -> Int ! {
-    let db = try sql.open(env("DATABASE_URL"))
+    let db = try sql.open(env("DATABASE_URL") ?? "sqlite:blog.db")
     let sessions = try auth.sessions(db)
     let who = try sessions.require(req)
     try db.exec("insert into likes (post_id, user_id) values ($1, $2)", id, who.subject)
