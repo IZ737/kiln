@@ -298,7 +298,11 @@ impl Parser {
                 {
                     return
                 }
-                TokenKind::Ident(word) if at_line_start && word == "interface" => return,
+                TokenKind::Ident(word)
+                    if at_line_start && (word == "interface" || word == "store") =>
+                {
+                    return
+                }
                 _ => self.pos += 1,
             }
         }
@@ -361,6 +365,11 @@ impl Parser {
             TokenKind::Enum => Some(Item::Enum(self.parse_enum(is_pub, start))),
             TokenKind::Impl if !is_pub => Some(Item::Impl(self.parse_impl())),
             TokenKind::Const => Some(Item::Const(self.parse_const(is_pub, start))),
+            TokenKind::Ident(word)
+                if word == "store" && matches!(self.lookahead(1), TokenKind::Ident(_)) =>
+            {
+                Some(Item::Const(self.parse_const(is_pub, start)))
+            }
             other => {
                 let span = self.span();
                 let mut diag = Diagnostic::error(
@@ -689,9 +698,14 @@ impl Parser {
         }
     }
 
+    /// `const NAME: T = value`, or `store name: T = value [persist "key"]`.
     fn parse_const(&mut self, is_pub: bool, start: Span) -> ConstDecl {
-        self.bump();
-        let name = self.expect_ident("a constant name");
+        let is_store = self.bump().kind != TokenKind::Const;
+        let name = self.expect_ident(if is_store {
+            "a store name"
+        } else {
+            "a constant name"
+        });
         let ty = if self.eat(&TokenKind::Colon) {
             Some(self.parse_type())
         } else {
@@ -699,11 +713,40 @@ impl Parser {
         };
         self.expect(&TokenKind::Eq);
         let value = self.parse_expr();
+        let store = is_store.then(|| {
+            let mut persist = None;
+            if matches!(self.peek(), TokenKind::Ident(w) if w == "persist") {
+                let at = self.bump().span;
+                match self.peek().clone() {
+                    TokenKind::Str(parts) if parts.iter().all(|p| matches!(p, StrPart::Text(_))) => {
+                        let span = self.bump().span;
+                        let key = parts
+                            .iter()
+                            .map(|p| match p {
+                                StrPart::Text(t) => t.as_str(),
+                                _ => "",
+                            })
+                            .collect();
+                        persist = Some((key, at.to(span)));
+                    }
+                    other => {
+                        let span = self.span();
+                        self.error(Diagnostic::error(
+                            codes::EXPECTED_TOKEN,
+                            format!("expected the key to keep the store under, as `persist \"cart\"`, found {other}"),
+                            span,
+                        ));
+                    }
+                }
+            }
+            StoreDecl { persist }
+        });
         ConstDecl {
             is_pub,
             name,
             ty,
             value,
+            store,
             span: start.to(self.previous_span()),
         }
     }

@@ -728,6 +728,26 @@ let title = doc.get("title").as_string() catch err { "?" }
 let n = doc.as_float() catch err { 0.0 }   // err.message: "expected a number, found an object"
 ```
 
+## `stores`
+
+[Stores](glazes.md#shared-stores) are declared with `store`; this module
+scopes them.
+
+| Function | Meaning |
+| --- | --- |
+| `stores.scope(body: fn())` | Runs `body` with every store fresh (each starts from its first value when it is first read) and puts the stores outside back when it returns. |
+
+```kiln
+import shop, stores
+
+fn test_badge_counts_lines() {
+    stores.scope(fn() {
+        shop.cart = shop.Cart(lines: ["tea", "cake"])
+        test.equal(shop.cart.lines.len(), 2)
+    })
+}
+```
+
 ## npm packages
 
 `kiln add npm:<package>@<version>` adds a browser library for embers:

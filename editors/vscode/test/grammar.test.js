@@ -35,6 +35,7 @@ test("Kiln declarations, keywords and literals", async () => {
       "let p = try json.decode<Post>(text) catch err { throw err }",
       "/* block */ x ?? 1..10",
       "interface Named { fn name(self) -> Bytes }",
+      "pub store cart: Cart = Cart() persist \"cart\"",
     ].join("\n"),
   );
   assertScope(lines, 0, "import", "keyword.control.import.kiln");
@@ -62,6 +63,9 @@ test("Kiln declarations, keywords and literals", async () => {
   assertScope(lines, 9, "interface", "storage.type.interface.kiln");
   assertScope(lines, 9, "Named", "entity.name.type.kiln");
   assertScope(lines, 9, "Bytes", "support.type.primitive.kiln");
+  assertScope(lines, 10, "store", "storage.type.store.kiln");
+  assertScope(lines, 10, "cart", "variable.other.store.kiln");
+  assertScope(lines, 10, "persist", "storage.modifier.kiln");
   assertScope(lines, 6, "and", "keyword.operator.word.kiln");
   assertScope(lines, 6, "not", "keyword.operator.word.kiln");
   assertScope(lines, 6, "map", "entity.name.function.kiln");

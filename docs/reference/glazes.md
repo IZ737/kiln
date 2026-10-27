@@ -412,6 +412,7 @@ from the browser build. Layout files must be `.glaze` (E0316).
   call and `app.before("/_kiln/rpc/reset", hook)` one function: a response
   or an error from the hook is the answer, such as
   `throw web.error(403, "...")` (see [Before hooks](stdlib.md#web)).
+- **Shared state** between embers is a [store](#shared-stores).
 - **Hydration hints**, on the component's tag: `client:load` (the
   default), `client:idle` when the browser is idle, `client:visible` when
   the ember is on screen, and `client:only`, which the server does not
@@ -432,6 +433,75 @@ from the browser build. Layout files must be `.glaze` (E0316).
   `{% if %}`, say) starts from its state's first values, so their code runs
   in the browser; one whose state calls a `server fn` can only be started
   by the server.
+
+### Shared stores
+
+A `store` is application state that embers share without passing it
+through props or wrapping them in a provider. Declare it once in a `.kiln`
+file, with its type, and read and change it from any ember, handler or
+server code that sees the module:
+
+```kiln
+// shop/cart.kiln
+pub struct Cart {
+    lines: List<String> = []
+    note: String = ""
+}
+
+pub store cart: Cart = Cart()
+```
+
+```glaze
+{# cart_badge.ember #}
+<span>{shop.cart.lines.len()} items</span>
+```
+
+```glaze
+{# cart_button.ember #}
+<button on:click={ shop.cart.lines.push("Book") }>Add</button>
+```
+
+- **One store, every ember.** Both embers above use the same cart: a
+  click in one renders the other again. A store starts from its value the
+  first time it is read.
+- **Deep changes are seen.** Pushing to a list in the store, setting a
+  field of a struct in it or replacing it whole (`shop.cart = Cart()`)
+  all count. After each event (and each reply to a call), the bridge
+  compares each store with what the islands last saw, and renders again
+  only the islands that read a store that changed, once, in page order.
+  An island's own `{% state %}`, what the user typed and where the focus
+  is are kept.
+- **Reactivity is explicit.** Only `store` declarations are shared and
+  watched; `{% state %}` stays local to one island, and ordinary `let` and
+  `var` are never reactive.
+- **One per request on the server.** Each request starts with fresh
+  stores, so a handler can set one for its visitor before rendering
+  (`shop.cart = load_cart(req)`) without another visitor ever seeing it.
+  A page with embers carries the stores its request started as JSON
+  (`<script type="application/json" id="kiln-stores">`), and the browser
+  starts from them. A store's value is sent to the browser, so it must
+  never hold secrets.
+- **One per page in the browser.** A full load of a page, or a reload,
+  starts the stores again.
+- **Client navigation keeps them.** Links inside an element with
+  `client:navigate` load the next page into this one: its title, body and
+  stylesheets replace the old ones, the old page's islands stop (their
+  calls are cancelled) and the stores carry on. Other links, and pages that
+  fail or are not HTML, load the ordinary way. Back and forward work.
+
+  ```glaze
+  <nav client:navigate><a href="/cart">Cart</a> <a href="/">Shop</a></nav>
+  ```
+
+- **Persistence is opt-in.** `store prefs: Prefs = Prefs() persist
+  "prefs"` keeps the store in the browser's `localStorage` under
+  `kiln:store:prefs`, and a reload starts from it. Only stores with a key
+  are kept, and nothing is synced between browsers. When the store's type
+  changes so that a kept value no longer decodes, it is dropped; change the
+  key to drop old values on purpose.
+- **Tests get their own.** `stores.scope(fn() { ... })` runs code with
+  fresh stores and puts the old ones back after, so a test can give a
+  store a value of its own (see [`stores`](stdlib.md#stores)).
 
 ## Habits from other template languages
 

@@ -274,6 +274,25 @@
           }
         },
         {
+          "match": "\\b(store)\\s+([\\p{L}_][\\p{L}\\p{N}_]*)(?=\\s*[:=])",
+          "captures": {
+            "1": {
+              "name": "storage.type.store.kiln"
+            },
+            "2": {
+              "name": "variable.other.store.kiln"
+            }
+          }
+        },
+        {
+          "match": "\\b(persist)(?=\\s+\")",
+          "captures": {
+            "1": {
+              "name": "storage.modifier.kiln"
+            }
+          }
+        },
+        {
           "match": "\\b(let|var)\\b",
           "captures": {
             "1": {

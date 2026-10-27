@@ -370,6 +370,24 @@ impl Checker {
             );
             return;
         }
+        // `client:navigate` makes the links in the element navigate in
+        // the page, keeping its stores; the other `client:` attributes are
+        // hints on an ember's tag.
+        if let Some(what) = attr.name.name.strip_prefix("client:") {
+            if what != "navigate" || !matches!(attr.value, AttrValue::Flag) {
+                let diag = Diagnostic::error(
+                    codes::BAD_ARGUMENTS,
+                    format!("an element takes no `{}`", attr.name.name),
+                    attr.span,
+                );
+                self.error(if what == "navigate" {
+                    diag.with_suggestion("write it without a value", attr.span, "client:navigate")
+                } else {
+                    diag.with_help("`client:navigate` goes on a link or an element around links; hydration hints such as `client:idle` go on an ember's tag")
+                });
+            }
+            return;
+        }
         // `ui={{ p: space.md }}` styles the element.
         if attr.name.name == "ui" {
             match &attr.value {

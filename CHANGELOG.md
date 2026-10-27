@@ -1,5 +1,29 @@
 # Changelog
 
+## 0.13.0 (2026-10-27)
+
+Phase 6.5.1: embers share state through stores.
+
+- `store name: Type = value` declares application state in an ordinary
+  module. Any ember, handler or server code reads and changes it by name,
+  with no props or provider: `shop.cart.lines.push("tea")`,
+  `shop.cart = shop.Cart()`.
+- After each event, the islands that read a store that changed render
+  again, once and in page order, keeping their own `{% state %}`, focus
+  and typed text. Deep changes count, through any alias.
+- The server gives each request fresh stores, and a page with embers
+  carries the ones its request used as JSON for hydration.
+  `stores.scope(fn() { ... })` gives tests stores of their own.
+- `client:navigate` on a link, or an element around links, loads the
+  next page into the document and keeps the stores; back and forward work.
+  A reload starts the stores again.
+- `persist "key"` after a store keeps it in the browser's `localStorage`
+  across reloads. Nothing else is kept.
+- New errors: E0236 (a store without a written type, or a bad or reused
+  key). A glaze can now read a folder module's `pub const`.
+- `{% state %}` is unchanged and stays the way to declare an ember's own
+  state.
+
 ## 0.12.0 (2026-10-27)
 
 Phase 6.5: a review of Kiln as a language against its vision, using the

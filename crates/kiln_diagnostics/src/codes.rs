@@ -65,6 +65,7 @@ pub const BAD_QUERY: &str = "E0232";
 pub const RESERVED_TYPE: &str = "E0233";
 pub const UNMET_BOUND: &str = "E0234";
 pub const INTERFACE_MISUSE: &str = "E0235";
+pub const STORE_TYPE: &str = "E0236";
 
 pub const UNCLOSED_GLAZE_TAG: &str = "E0301";
 pub const MISMATCHED_CLOSING_TAG: &str = "E0302";
@@ -88,6 +89,13 @@ pub const NO_MAIN: &str = "E0402";
 pub const SERVER_CALL_PLACE: &str = "E0403";
 
 pub static ALL: &[ErrorCode] = &[
+    ErrorCode {
+        code: STORE_TYPE,
+        title: "A store without a written type or a usable key",
+        explanation: "A `store` is application state that embers share, and the browser decodes its value from JSON by its type, so the type is written out: `store cart: Cart = Cart()`. A store kept between reloads with `persist \"key\"` needs a key of letters, digits, `-`, `_` and `.`, which no other store uses; change the key when the store's type changes in a way old values no longer fit.",
+        wrong: "pub store cart = Cart()",
+        right: "pub store cart: Cart = Cart()",
+    },
     ErrorCode {
         code: RESERVED_TYPE,
         title: "A type only the standard library can use",

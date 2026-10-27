@@ -1098,6 +1098,7 @@ typedef struct ktask {
     kstr *lib_error, *client_error, *panic_message;
     int64_t client_status;
     void *request;
+    void *stores;
     void *panic_jmp[5];
 #if K_TASK_FIBER
     void *fiber;
@@ -1119,6 +1120,51 @@ K_API int64_t k_web_client_status = 400;
 /* The request the running task is handling, for glazes whose `request`
  * prop is filled in (`web.__request()`), or NULL. */
 K_API void *k_web_request = NULL;
+
+/* ----- stores -----
+ *
+ * The values of the program's `store`s: a table by store number, each a
+ * `ty?` that is NULL until the store is first read. Each request gets a
+ * table of its own (`k_web_handle` starts one), which its task keeps while
+ * others run, so one visitor never sees another's; outside requests the
+ * program has one. `stores.scope` enters a fresh table and leaves it. */
+typedef struct kstores {
+    void **slots;
+    int64_t len;
+    struct kstores *outer;
+} kstores;
+
+/* The running table, or NULL before one is needed. */
+K_API kstores *k_stores = NULL;
+
+static kstores *k_stores_new(kstores *outer) {
+    kstores *t = k_alloc(sizeof *t);
+    t->slots = NULL;
+    t->len = 0;
+    t->outer = outer;
+    return t;
+}
+
+K_API void **k_store_slot(int64_t id) {
+    if (!k_stores) k_stores = k_stores_new(NULL);
+    if (id >= k_stores->len) {
+        int64_t len = id + 8;
+        void **slots = k_alloc(len * sizeof *slots);
+        for (int64_t i = 0; i < len; i++) slots[i] = i < k_stores->len ? k_stores->slots[i] : NULL;
+        k_stores->slots = slots;
+        k_stores->len = len;
+    }
+    return &k_stores->slots[id];
+}
+
+K_API void k_store_enter(void) {
+    if (!k_stores) k_stores = k_stores_new(NULL);
+    k_stores = k_stores_new(k_stores);
+}
+
+K_API void k_store_leave(void) {
+    if (k_stores) k_stores = k_stores->outer;
+}
 
 K_API void *k_web_current_request(void) {
     if (!k_web_request)
@@ -1263,6 +1309,7 @@ static void k_task_switch(ktask *to) {
     from->client_error = k_web_client_error;
     from->client_status = k_web_client_status;
     from->request = k_web_request;
+    from->stores = k_stores;
     from->panic_trap = k_panic_trap;
     from->panic_message = k_panic_message;
     memcpy(from->panic_jmp, k_panic_jmp, sizeof k_panic_jmp);
@@ -1275,6 +1322,7 @@ static void k_task_switch(ktask *to) {
     k_web_client_error = to->client_error;
     k_web_client_status = to->client_status;
     k_web_request = to->request;
+    k_stores = to->stores;
     k_panic_trap = to->panic_trap;
     k_panic_message = to->panic_message;
     memcpy(k_panic_jmp, to->panic_jmp, sizeof k_panic_jmp);
@@ -1390,6 +1438,7 @@ K_API void k_task_spawn(void (*fn)(void *), void *arg) {
         t->error = 0;
         t->error_show = NULL;
         t->lib_error = t->client_error = t->panic_message = NULL;
+        t->stores = NULL;
         t->client_status = 400;
     } else {
         t = GC_MALLOC_UNCOLLECTABLE(sizeof *t);
@@ -2484,6 +2533,7 @@ K_EXPORT void k_web_access_log(kapp *a, kv *req, int64_t status, int64_t start) 
 K_EXPORT kv *k_web_handle(kapp *a, kv *req, int64_t status) {
     kv *res;
     k_web_request = req;
+    k_stores = k_stores_new(NULL);
     if (status) {
         res = k_web_error_response(a, req, status, k_str(k_web_reason(status)), false);
     } else {

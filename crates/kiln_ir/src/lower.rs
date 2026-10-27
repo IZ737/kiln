@@ -76,6 +76,7 @@ pub fn lower(
         builtin,
         prims: l.prims,
         globals: l.globals,
+        stores: l.stores,
         funcs: l
             .funcs
             .into_iter()
@@ -130,6 +131,8 @@ struct Lowerer<'a> {
     structs: HashMap<AdtId, &'a ast::StructDecl>,
     global_ids: HashMap<String, GlobalId>,
     globals: Vec<Global>,
+    store_ids: HashMap<String, StoreId>,
+    stores: Vec<Store>,
     funcs: Vec<Option<Func>>,
     ctxs: Vec<FnCtx>,
     diags: Vec<Diagnostic>,
@@ -172,6 +175,8 @@ impl<'a> Lowerer<'a> {
             structs: HashMap::new(),
             global_ids: HashMap::new(),
             globals: Vec::new(),
+            store_ids: HashMap::new(),
+            stores: Vec::new(),
             funcs: Vec::new(),
             ctxs: Vec::new(),
             diags: Vec::new(),
@@ -225,6 +230,27 @@ impl<'a> Lowerer<'a> {
                         }
                     }
                 }
+                ast::Item::Const(c) if c.store.is_some() => {
+                    let ty = self
+                        .p
+                        .consts
+                        .get(&c.name.name)
+                        .cloned()
+                        .unwrap_or(Ty::Unknown);
+                    let get = self.reserve();
+                    self.store_ids
+                        .insert(c.name.name.clone(), self.stores.len());
+                    self.stores.push(Store {
+                        name: c.name.name.clone(),
+                        ty,
+                        get,
+                        persist: c
+                            .store
+                            .as_ref()
+                            .and_then(|s| s.persist.as_ref())
+                            .map(|p| p.0.clone()),
+                    });
+                }
                 ast::Item::Const(c) => {
                     let ty = self
                         .p
@@ -261,6 +287,13 @@ impl<'a> Lowerer<'a> {
         self.main = main;
         self.init = self.reserve();
         self.init_fn();
+        for item in &module.items {
+            if let ast::Item::Const(c) = item {
+                if let Some(&id) = self.store_ids.get(&c.name.name) {
+                    self.store_fn(id, c);
+                }
+            }
+        }
         for item in &module.items {
             match item {
                 ast::Item::Fn(f) => {
@@ -408,6 +441,9 @@ impl<'a> Lowerer<'a> {
         let module = self.module;
         for item in &module.items {
             if let ast::Item::Const(c) = item {
+                if c.store.is_some() {
+                    continue;
+                }
                 let id = self.global_ids[&c.name.name];
                 let ty = self.globals[id].ty.clone();
                 let v = self.expr(&c.value);
@@ -423,6 +459,126 @@ impl<'a> Lowerer<'a> {
             Ty::Unit,
             body,
         );
+    }
+
+    /// A store's `get`: its value in the running scope's table, which it
+    /// starts from the declaration's value the first time.
+    fn store_fn(&mut self, id: StoreId, c: &ast::ConstDecl) {
+        let ty = self.stores[id].ty.clone();
+        let opt = Ty::Opt(Box::new(ty.clone()));
+        let span = c.span;
+        self.enter(false, ty.clone(), None);
+        let found = self.new_local("value", ty.clone(), false);
+        let slot = mk(ExprKind::StoreSlot(id), opt.clone(), span);
+        let is = mk(
+            ExprKind::Is {
+                value: Box::new(slot),
+                pattern: Box::new(Pattern::Some(Box::new(Pattern::Bind(found)), ty.clone())),
+            },
+            Ty::Adt(self.prims.bool_, Vec::new()),
+            span,
+        );
+        let first = self.new_local("first", ty.clone(), false);
+        let v = self.expr(&c.value);
+        let start = Block {
+            stmts: vec![
+                Stmt::Let(first, coerce(v, &ty)),
+                Stmt::SetStore(
+                    id,
+                    coerce(mk(ExprKind::Local(first), ty.clone(), span), &opt),
+                ),
+            ],
+            value: Some(Box::new(mk(ExprKind::Local(first), ty.clone(), span))),
+        };
+        let pick = mk(
+            ExprKind::If {
+                cond: Box::new(is),
+                then: Block {
+                    stmts: Vec::new(),
+                    value: Some(Box::new(mk(ExprKind::Local(found), ty.clone(), span))),
+                },
+                otherwise: Some(start),
+            },
+            ty.clone(),
+            span,
+        );
+        let body = Block {
+            stmts: vec![Stmt::Return(Some(pick))],
+            value: None,
+        };
+        let get = self.stores[id].get;
+        let name = format!("<store {}>", c.name.name);
+        self.finish(get, name, FuncKind::Fn, Vec::new(), ty, body);
+    }
+
+    /// `stores.scope(body)`, which runs `body` between entering and
+    /// leaving a fresh table of stores, and `stores.__ready(store)`.
+    fn stores_call(&mut self, name: &ast::Ident, args: &[ast::Arg], span: Span) -> Expr {
+        let bool_ = Ty::Adt(self.prims.bool_, Vec::new());
+        match (name.name.as_str(), args) {
+            ("__ready", [arg]) => {
+                let id = match &arg.value.kind {
+                    E::Ident(n) if self.lookup(n).is_none() => self.store_ids.get(n).copied(),
+                    _ => None,
+                };
+                let Some(id) = id else {
+                    return self
+                        .unsupported(span, "`stores.__ready` of something other than a store");
+                };
+                let opt = Ty::Opt(Box::new(self.stores[id].ty.clone()));
+                let slot = mk(ExprKind::StoreSlot(id), opt, span);
+                let none = mk(ExprKind::IsNone(Box::new(slot)), bool_.clone(), span);
+                mk(ExprKind::Not(Box::new(none)), bool_, span)
+            }
+            ("scope", [arg]) => {
+                let body = self.expr(&arg.value);
+                let lib = |name: &str| {
+                    mk(
+                        ExprKind::Lib {
+                            module: "stores".into(),
+                            name: name.into(),
+                            args: Vec::new(),
+                        },
+                        Ty::Unit,
+                        span,
+                    )
+                };
+                let call = mk(
+                    ExprKind::CallClosure {
+                        callee: Box::new(body),
+                        args: Vec::new(),
+                    },
+                    Ty::Unit,
+                    span,
+                );
+                mk(
+                    ExprKind::Block(Block {
+                        stmts: vec![
+                            Stmt::Expr(lib("enter")),
+                            Stmt::Expr(call),
+                            Stmt::Expr(lib("leave")),
+                        ],
+                        value: None,
+                    }),
+                    Ty::Unit,
+                    span,
+                )
+            }
+            _ => self.unsupported(span, format!("`stores.{}`", name.name)),
+        }
+    }
+
+    /// Reading a store: a call of its `get`.
+    fn store_read(&mut self, id: StoreId, span: Span) -> Expr {
+        let store = &self.stores[id];
+        mk(
+            ExprKind::Call {
+                func: store.get,
+                args: Vec::new(),
+            },
+            store.ty.clone(),
+            span,
+        )
     }
 
     fn function(
@@ -784,6 +940,25 @@ impl<'a> Lowerer<'a> {
         };
         let tt = self.ty(target);
         let (place, value) = match &target.kind {
+            E::Ident(name) if self.lookup(name).is_none() && self.store_ids.contains_key(name) => {
+                let id = self.store_ids[name];
+                let st = self.stores[id].ty.clone();
+                let v = self.expr(value);
+                let v = coerce(v, &st);
+                let v = match op {
+                    None => v,
+                    Some(op) => {
+                        let old = self.store_read(id, target.span);
+                        mk(
+                            ExprKind::Arith(op, Box::new(old), Box::new(v)),
+                            st.clone(),
+                            target.span,
+                        )
+                    }
+                };
+                let opt = Ty::Opt(Box::new(st));
+                return Some(Stmt::SetStore(id, coerce(v, &opt)));
+            }
             E::Ident(name) => {
                 let Some(local) = self.lookup(name) else {
                     self.unsupported(target.span, "assigning to this name");
@@ -1129,6 +1304,9 @@ impl<'a> Lowerer<'a> {
         }
         if let Some(&id) = self.global_ids.get(name) {
             return mk(ExprKind::Global(id), ty, span);
+        }
+        if let Some(&id) = self.store_ids.get(name) {
+            return coerce(self.store_read(id, span), &ty);
         }
         self.unsupported(span, format!("using `{name}` as a value"))
     }
@@ -2569,6 +2747,9 @@ impl<'a> Lowerer<'a> {
         rt: &Ty,
         span: Span,
     ) -> (Expr, Option<Ty>) {
+        if module == "stores" {
+            return (self.stores_call(name, args, span), None);
+        }
         if module == "log" && matches!(name.name.as_str(), "debug" | "info" | "warn" | "error") {
             if args.is_empty() {
                 return (self.unsupported(span, "this call"), None);

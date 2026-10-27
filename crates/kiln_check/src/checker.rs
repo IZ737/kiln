@@ -61,6 +61,10 @@ pub struct Checker {
     pub(crate) type_bounds: HashMap<String, Vec<usize>>,
     pub(crate) imports: HashMap<String, ModId>,
     pub(crate) consts: HashMap<String, Ty>,
+    /// The constants that are `store`s, which embers and handlers change.
+    pub(crate) stores: HashSet<String>,
+    /// The keys persisted stores are kept under, and their stores.
+    pub(crate) persist_keys: HashMap<String, String>,
     /// The names of the program's own types, and of its functions and
     /// constants, to report a name defined twice in a folder.
     pub(crate) declared_types: HashSet<String>,
@@ -194,6 +198,7 @@ const STD_MODULES: &[(&str, &str)] = &[
     ("ember", include_str!("../std/ember.kiln")),
     ("js", include_str!("../std/js.kiln")),
     ("browser", include_str!("../std/browser.kiln")),
+    ("stores", include_str!("../std/stores.kiln")),
 ];
 const PRELUDE: &str = include_str!("../std/prelude.kiln");
 
@@ -209,6 +214,8 @@ impl Checker {
             type_bounds: HashMap::new(),
             imports: HashMap::new(),
             consts: HashMap::new(),
+            stores: HashSet::new(),
+            persist_keys: HashMap::new(),
             declared_types: HashSet::new(),
             declared_values: HashSet::new(),
             duplicate_types: HashSet::new(),
@@ -355,10 +362,59 @@ impl Checker {
                     None => self.infer(&c.value, &Expect::Value(None)),
                 };
                 self.exit_fn();
+                if c.store.is_some() {
+                    self.check_store(c, &ty);
+                    self.stores.insert(c.name.name.clone());
+                }
                 self.consts.insert(c.name.name.clone(), ty);
             }
         }
         self.internal = true;
+    }
+
+    /// A store's type is written out, since the browser decodes its value
+    /// by it, and it must travel as JSON.
+    fn check_store(&mut self, c: &ConstDecl, ty: &Ty) {
+        let name = &c.name.name;
+        if c.ty.is_none() && !matches!(ty, Ty::Unknown) {
+            let shown = self.show(ty);
+            let at = Span::new(c.name.span.end as usize, c.name.span.end as usize);
+            self.error(
+                Diagnostic::error(
+                    codes::STORE_TYPE,
+                    format!("the store `{name}` needs its type written out"),
+                    c.name.span,
+                )
+                .with_suggestion(
+                    format!("write `{name}: {shown}`"),
+                    at,
+                    format!(": {shown}"),
+                ),
+            );
+        }
+        self.must_cross(ty, &format!("the store `{name}`"), c.name.span);
+        if let Some(persist) = c.store.as_ref().and_then(|s| s.persist.as_ref()) {
+            let key = &persist.0;
+            let fits = !key.is_empty()
+                && key
+                    .chars()
+                    .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_' | '.'));
+            if !fits {
+                self.error(Diagnostic::error(
+                    codes::STORE_TYPE,
+                    format!(
+                        "`{key}` cannot be a store's key: use letters, digits, `-`, `_` and `.`"
+                    ),
+                    persist.1,
+                ));
+            } else if let Some(other) = self.persist_keys.insert(key.clone(), name.clone()) {
+                self.error(Diagnostic::error(
+                    codes::STORE_TYPE,
+                    format!("the stores `{other}` and `{name}` are both kept under `{key}`"),
+                    persist.1,
+                ));
+            }
+        }
     }
 
     /// Constants, function bodies and field defaults.
@@ -1258,6 +1314,7 @@ impl Checker {
             ExprKind::Ident(name)
                 if self.local(name).is_none()
                     && self.consts.contains_key(name)
+                    && !self.stores.contains(name)
                     && !name.starts_with("__") =>
             {
                 Some(name.clone())

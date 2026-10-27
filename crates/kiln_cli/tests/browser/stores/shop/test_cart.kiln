@@ -1,0 +1,21 @@
+import test, stores
+
+fn test_adding_counts_lines() {
+    add("tea")
+    add("tea")
+    add("cake")
+    test.equal(count(), 3)
+    test.equal(cart.lines.len(), 2)
+}
+
+fn test_a_scope_gives_a_store_of_its_own() {
+    add("tea")
+    stores.scope(fn() {
+        test.equal(count(), 0)
+        cart = Cart(owner: "test", lines: [Line(name: "jam", count: 4)])
+        add("jam")
+        test.equal(count(), 5)
+    })
+    test.equal(count(), 1)
+    test.equal(cart.owner, "guest")
+}

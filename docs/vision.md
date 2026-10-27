@@ -185,13 +185,12 @@ handling. Caching, invalidation, optimistic updates and live updates
 them, but observable and explicit overrides. Avoid hidden invalidation
 behaviour that is impossible to inspect or debug.
 
-**Immediate follow-up (Phase 6.5.1):** Implement the previously agreed
-Zustand-style importable Ember stores, explicit deeply reactive roots,
-batched updates, request-isolated SSR state, optional scoped overrides and
+**Phase 6.5.1 (implemented):** Zustand-style importable Ember stores
+(`store cart: Cart = Cart()`), deep reactivity inside each explicit store,
+batched updates, request-isolated SSR state, scoped overrides for tests and
 opt-in client navigation that retains stores. A full reload resets state
-unless persistence is explicitly requested. These store capabilities are
-**planned**, not implemented in the current component-local `{% state %}`
-API. **`{% state %}` remains the explicit local reactive-state declaration**;
+unless persistence is explicitly requested with `persist "key"`. See
+[Shared stores](reference/glazes.md#shared-stores). **`{% state %}` remains the explicit local reactive-state declaration**;
 it will not be replaced by `{% var %}`, since readers should be able to
 recognize component state at a glance. See [the implementation
 plan](plans/phase-6.5.1.md).

@@ -1,0 +1,37 @@
+// The shop's state, which the embers on every page share: the cart, which
+// starts again with each visit, and the visitor's preferences, which the
+// browser keeps.
+pub struct Line {
+    name: String
+    count: Int = 1
+}
+
+pub struct Cart {
+    owner: String = "guest"
+    lines: List<Line> = []
+    note: String = ""
+}
+
+pub struct Prefs {
+    dark: Bool = false
+}
+
+pub store cart: Cart = Cart()
+
+pub store prefs: Prefs = Prefs() persist "shop.prefs"
+
+pub fn add(name: String) {
+    for line in cart.lines where line.name == name {
+        line.count += 1
+        return
+    }
+    cart.lines.push(Line(name: name))
+}
+
+pub fn count() -> Int {
+    var n = 0
+    for line in cart.lines {
+        n += line.count
+    }
+    return n
+}

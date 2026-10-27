@@ -238,10 +238,17 @@ fn describe(a: &Analysis, target: &Ref, text: &str) -> String {
             Some(sig) => a.show_fn(sig),
             None => format!("fn {name}"),
         },
-        Ref::Const(name) => match a.consts.get(name) {
-            Some(ty) => format!("const {name}: {}", a.show(ty)),
-            None => format!("const {name}"),
-        },
+        Ref::Const(name) => {
+            let kw = if a.stores.contains(name) {
+                "store"
+            } else {
+                "const"
+            };
+            match a.consts.get(name) {
+                Some(ty) => format!("{kw} {name}: {}", a.show(ty)),
+                None => format!("{kw} {name}"),
+            }
+        }
         Ref::Type(id) => a.show_adt(*id),
         Ref::Interface(id) => a.show_interface(*id),
         Ref::Field(id, name) => match a.field(*id, name) {
@@ -596,7 +603,7 @@ fn impl_name(imp: &kiln_syntax::ast::ImplDecl) -> Option<&str> {
 const KEYWORDS: &[&str] = &[
     "fn", "let", "var", "const", "struct", "enum", "impl", "pub", "import", "if", "else", "for",
     "in", "where", "while", "break", "continue", "return", "match", "try", "catch", "throw", "and",
-    "or", "not", "is", "true", "false", "none",
+    "or", "not", "is", "true", "false", "none", "store",
 ];
 
 // LSP completion item kinds.
@@ -882,7 +889,14 @@ fn symbols(path: &Path, text: &str) -> Vec<Symbol> {
     for item in &module.items {
         match item {
             Item::Fn(f) => out.push(symbol(&f.name.name, SYM_FUNCTION, f.span, f.name.span)),
-            Item::Const(c) => out.push(symbol(&c.name.name, SYM_CONSTANT, c.span, c.name.span)),
+            Item::Const(c) => {
+                let kind = if c.store.is_some() {
+                    SYM_VARIABLE
+                } else {
+                    SYM_CONSTANT
+                };
+                out.push(symbol(&c.name.name, kind, c.span, c.name.span))
+            }
             Item::Struct(s) => {
                 let mut sym = symbol(&s.name.name, SYM_STRUCT, s.span, s.name.span);
                 sym.children = s

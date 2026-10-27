@@ -1385,6 +1385,7 @@ fn build_project(
     let mut server_fns = Vec::new();
     let mut rpc_version = String::new();
     let user = kiln_syntax::parse(&combined);
+    let stores = kiln_ir::glaze::stores_of(&user.module, &combined);
     let reachable = reachable_components(&user.module, &glaze_refs, &styles.styling);
     if glaze_refs
         .iter()
@@ -1398,6 +1399,7 @@ fn build_project(
         let client_app = kiln_ir::glaze::App {
             reachable_components: Some(&reachable),
             server_fns: &waits,
+            stores: &stores,
             ..Default::default()
         };
         let client = kiln_ir::glaze::generate_client(&inputs, &client_app);
@@ -1475,6 +1477,7 @@ fn build_project(
         ember_script: ember_script.as_deref(),
         server_fns: &server_fns,
         rpc_version: &rpc_version,
+        stores: &stores,
     };
     let generated = kiln_ir::glaze::generate(&inputs, &app);
     if let Some(g) = &generated {

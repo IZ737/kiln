@@ -1213,6 +1213,12 @@ impl Fx<'_, '_, '_> {
                 let (addr, offset) = self.global_addr(*g);
                 self.store(v, addr, offset);
             }
+            Stmt::SetStore(id, value) => {
+                let v = self.expr(value);
+                let n = self.iconst(*id as i64);
+                let slot = self.call_rt("k_store_slot", &[n]);
+                self.store(v, slot, 0);
+            }
             Stmt::Assign { place, op, value } => self.assign(place, *op, value),
             Stmt::Return(value) => {
                 let v = match value {
@@ -1532,6 +1538,11 @@ impl Fx<'_, '_, '_> {
                 let ty = self.g.cty(&self.g.p.globals[*g].ty);
                 let (addr, offset) = self.global_addr(*g);
                 self.load(ty, addr, offset)
+            }
+            ExprKind::StoreSlot(id) => {
+                let n = self.iconst(*id as i64);
+                let slot = self.call_rt("k_store_slot", &[n]);
+                self.load(types::I64, slot, 0)
             }
             ExprKind::FuncRef(f) => {
                 let w = self.g.fn_wrapper(*f);
@@ -2469,6 +2480,8 @@ impl Fx<'_, '_, '_> {
                 (self.call_rt("k_web_json", &[addr, a[0], a[1]]), false)
             }
             ("web", "App.listen") => (self.call_rt("k_web_listen", a), true),
+            ("stores", "enter") => (self.call_rt("k_store_enter", a), false),
+            ("stores", "leave") => (self.call_rt("k_store_leave", a), false),
             ("web", _) => {
                 let f: &'static str = match name {
                     "app" => "k_web_app",

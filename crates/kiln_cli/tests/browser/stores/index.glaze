@@ -1,0 +1,10 @@
+<!doctype html>
+<html><head><title>Shop</title></head><body>
+<nav client:navigate><a id="to-about" href="/about">About</a></nav>
+<a id="full-about" href="/about">About, loading the page</a>
+<CartBadge />
+<CartButton item="tea" />
+<CartButton item="cake" />
+<NoteBox client:idle />
+<ThemeToggle />
+</body></html>

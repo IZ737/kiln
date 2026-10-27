@@ -57,6 +57,67 @@ pub struct App<'a> {
     /// Changes whenever the embers' code does, so a page loaded before a
     /// deploy cannot call the new server with the old arguments.
     pub rpc_version: &'a str,
+    /// The program's `store`s, in the order of the program's text.
+    pub stores: &'a [StoreInfo],
+}
+
+/// A `store`, as its declaration writes it.
+#[derive(Clone, Debug, PartialEq)]
+pub struct StoreInfo {
+    /// Its name in the program's text, which a folder module's stores have
+    /// with the module in it.
+    pub name: String,
+    /// Its name as the source writes it, `shop.cart`, which the page's
+    /// JSON uses.
+    pub key: String,
+    pub ty: String,
+    /// The key of `persist "key"`.
+    pub persist: Option<String>,
+}
+
+/// `shop.cart` for `__kiln_module_4_shop_symbol_cart`, the name the
+/// folder modules give `cart` in `shop/`.
+fn written_name(name: &str) -> String {
+    let Some(mut rest) = name.strip_prefix("__kiln_module_") else {
+        return name.to_string();
+    };
+    let mut parts = Vec::new();
+    loop {
+        if let Some(symbol) = rest.strip_prefix("symbol_") {
+            parts.push(symbol);
+            return parts.join(".");
+        }
+        let digits = rest.chars().take_while(char::is_ascii_digit).count();
+        let Ok(len) = rest[..digits].parse::<usize>() else {
+            return name.to_string();
+        };
+        let Some(segment) = rest.get(digits + 1..digits + 1 + len) else {
+            return name.to_string();
+        };
+        parts.push(segment);
+        rest = &rest[(digits + 1 + len + 1).min(rest.len())..];
+    }
+}
+
+/// The `store`s of a program, whose text is `text`, in order.
+pub fn stores_of(module: &kiln_syntax::ast::Module, text: &str) -> Vec<StoreInfo> {
+    module
+        .items
+        .iter()
+        .filter_map(|item| match item {
+            kiln_syntax::ast::Item::Const(c) => {
+                let store = c.store.as_ref()?;
+                let ty = c.ty.as_ref()?;
+                Some(StoreInfo {
+                    name: c.name.name.clone(),
+                    key: written_name(&c.name.name),
+                    ty: text[ty.span.start as usize..ty.span.end as usize].to_string(),
+                    persist: store.persist.as_ref().map(|p| p.0.clone()),
+                })
+            }
+            _ => None,
+        })
+        .collect()
 }
 
 /// A `server fn`, as its declaration writes it, or another function a
@@ -229,6 +290,9 @@ pub const CLIENT_EXPORTS: &[&str] = &[
     "__kiln_props",
     "__kiln_drop",
     "__kiln_reply",
+    "__kiln_store_names",
+    "__kiln_store_json",
+    "__kiln_store_load",
 ];
 
 fn generate_for(glazes: &[GlazeInput], app: &App, client: bool) -> GlazeSource {
@@ -285,6 +349,7 @@ fn generate_for(glazes: &[GlazeInput], app: &App, client: bool) -> GlazeSource {
              import ember\n\
              import browser\n\
              import js\n\
+             import stores\n\
              \n\
              fn __glaze_no_slot(__out: List<String>, __h: List<fn(ember.Event)>) {}\n",
         );
@@ -299,6 +364,7 @@ fn generate_for(glazes: &[GlazeInput], app: &App, client: bool) -> GlazeSource {
              import web\n\
              import base64\n\
              import json\n\
+             import stores\n\
              \n\
              fn __glaze_no_slot(__out: List<String>) {}\n",
         );
@@ -309,12 +375,17 @@ fn generate_for(glazes: &[GlazeInput], app: &App, client: bool) -> GlazeSource {
          fn __glaze_ui(style: Ui) -> String { ui.classes(style) }\n",
     );
     if let (Some(script), false) = (app.ember_script, client) {
+        store_snapshot(&mut g.text, app.stores);
         g.text.push_str(&format!(
             "\nfn __kiln_hydrate_page(html: String) -> String {{\n\
              \x20   if not html.contains(\"<kiln-island\") {{\n\
              \x20       return html\n\
              \x20   }}\n\
-             \x20   let tag = {}\n\
+             \x20   var tag = {}\n\
+             \x20   let snapshot = __kiln_store_snapshot()\n\
+             \x20   if snapshot != \"\" {{\n\
+             \x20       tag = \"<script type=\\\"application/json\\\" id=\\\"kiln-stores\\\">{{${{snapshot}}}}</script>${{tag}}\"\n\
+             \x20   }}\n\
              \x20   if html.contains(\"</head>\") {{\n\
              \x20       return html.replace(\"</head>\", \"${{tag}}</head>\")\n\
              \x20   }}\n\
@@ -329,6 +400,7 @@ fn generate_for(glazes: &[GlazeInput], app: &App, client: bool) -> GlazeSource {
     if client {
         g.server_proxies();
         g.dispatcher(glazes);
+        store_exports(&mut g.text, app.stores);
     } else if !app.assets.is_empty() || !app.server_fns.is_empty() {
         g.assets(app.assets);
         g.rpc_routes(app);
@@ -1310,6 +1382,12 @@ impl<'a> Gen<'a> {
     }
 
     fn attr(&mut self, attr: &Attr) {
+        // `client:navigate`: the bridge follows the links in the element
+        // without loading a new document.
+        if attr.name.name == "client:navigate" {
+            self.pending.push_str(" data-k-navigate");
+            return;
+        }
         if self.is_ember && attr.name.name == "key" {
             let renamed = Attr {
                 name: Ident {
@@ -1757,6 +1835,88 @@ impl ServerFn {
     }
 }
 
+/// `fn __kiln_store_snapshot() -> String`: the stores that have started,
+/// as the members of a JSON object, for the page the browser takes over.
+/// `<` is escaped so the JSON cannot end the `<script>` it is in.
+fn store_snapshot(text: &mut String, stores: &[StoreInfo]) {
+    text.push_str("\nfn __kiln_store_snapshot() -> String {\n    let __parts: List<String> = []\n");
+    for st in stores {
+        let n = &st.name;
+        text.push_str(&format!(
+            "    if stores.__ready({n}) {{\n        __parts.push({} + json.encode({n}))\n    }}\n",
+            kiln_string(&format!("{}:", serde_json_string(&st.key)))
+        ));
+    }
+    text.push_str(&format!(
+        "    return __parts.join(\",\").replace(\"<\", {})\n}}\n",
+        kiln_string("\\u003c")
+    ));
+}
+
+/// The functions the bridge reads and starts the stores with, by their
+/// numbers: their names and keys (`__kiln_store_names`), a store's value
+/// as JSON, `""` before it starts (`__kiln_store_json`), and starting one
+/// from JSON, unless it has started and `force` is false
+/// (`__kiln_store_load`).
+fn store_exports(text: &mut String, stores: &[StoreInfo]) {
+    let names: Vec<String> = stores
+        .iter()
+        .map(|st| {
+            format!(
+                "{{\"name\":{},\"persist\":{}}}",
+                serde_json_string(&st.key),
+                st.persist
+                    .as_deref()
+                    .map_or("null".to_string(), serde_json_string)
+            )
+        })
+        .collect();
+    text.push_str(&format!(
+        "\nfn __kiln_store_names() -> String {{\n    return {}\n}}\n",
+        kiln_string(&format!("[{}]", names.join(",")))
+    ));
+    text.push_str("\nfn __kiln_store_json(i: Int) -> String {\n");
+    for (i, st) in stores.iter().enumerate() {
+        let n = &st.name;
+        text.push_str(&format!(
+            "    if i == {i} and stores.__ready({n}) {{\n        return json.encode({n})\n    }}\n"
+        ));
+    }
+    text.push_str("    return \"\"\n}\n");
+    text.push_str("\nfn __kiln_store_load(i: Int, text: String, force: Bool) -> Bool {\n");
+    for (i, st) in stores.iter().enumerate() {
+        let n = &st.name;
+        text.push_str(&format!(
+            "    if i == {i} {{\n\
+             \x20       if not force and stores.__ready({n}) {{\n\
+             \x20           return false\n\
+             \x20       }}\n\
+             \x20       {n} = json.decode<{}>(text) catch __e {{\n\
+             \x20           return false\n\
+             \x20       }}\n\
+             \x20       return true\n\
+             \x20   }}\n",
+            st.ty
+        ));
+    }
+    text.push_str("    return false\n}\n");
+}
+
+/// A JSON string literal.
+fn serde_json_string(s: &str) -> String {
+    let mut out = String::from("\"");
+    for ch in s.chars() {
+        match ch {
+            '"' => out.push_str("\\\""),
+            '\\' => out.push_str("\\\\"),
+            c if (c as u32) < 0x20 => out.push_str(&format!("\\u{:04x}", c as u32)),
+            c => out.push(c),
+        }
+    }
+    out.push('"');
+    out
+}
+
 /// Whether the code `text` calls one of `fns`, by name.
 fn calls_any(text: &str, fns: &[ServerFn]) -> bool {
     fns.iter().filter(|f| f.module.is_none()).any(|f| {
@@ -2061,5 +2221,21 @@ mod tests {
     fn names() {
         assert_eq!(component_file("LikeButton"), "like_button.glaze");
         assert_eq!(render_fn("post-card.glaze"), "__render_post_card");
+    }
+}
+
+#[cfg(test)]
+mod store_tests {
+    #[test]
+    fn stores_are_named_as_the_source_writes_them() {
+        assert_eq!(
+            super::written_name("__kiln_module_4_shop_symbol_cart"),
+            "shop.cart"
+        );
+        assert_eq!(
+            super::written_name("__kiln_module_5_posts_6_search_symbol_query"),
+            "posts.search.query"
+        );
+        assert_eq!(super::written_name("cart"), "cart");
     }
 }

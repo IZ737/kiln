@@ -1,0 +1,8 @@
+{# Changes the cart, and keeps a count of its own. #}
+{% props item: String %}
+{% state clicks = 0 %}
+<button class="add" data-item={item} on:click={
+    shop.add(item)
+    clicks += 1
+}>Add {item}</button>
+<span class="clicks" data-item={item}>{clicks}</span>

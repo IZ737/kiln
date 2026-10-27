@@ -153,6 +153,12 @@ folder; a path with `/` is from the project root.
   `server fn` declared in Kiln code; validate its arguments on the server,
   as for any request. Prefer plain forms in glazes; use an ember only for
   interaction that needs it.
+- State several embers share is a `store` in a `.kiln` module:
+  `pub store cart: Cart = Cart()`, read and changed by name from any ember
+  (`shop.cart.lines.push(x)`); no props or provider. Each request has its
+  own, and its value is sent to the page, so keep secrets out of stores.
+  `client:navigate` on a `<nav>` keeps stores across pages; `persist "key"`
+  keeps one across reloads.
 
 ## Data and auth
 

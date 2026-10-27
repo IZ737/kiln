@@ -1,0 +1,6 @@
+<!doctype html>
+<html><head><title>About the shop</title></head><body>
+<h1 id="about">About</h1>
+<nav client:navigate><a id="to-home" href="/">Home</a></nav>
+<CartBadge />
+</body></html>

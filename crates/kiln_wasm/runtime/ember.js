@@ -14,6 +14,13 @@
 // to the caller; `data-k-on-<event>="<n>[:modifier...]"` marks an element
 // whose handler number `n` runs on that event; `data-k-key` keeps an
 // element's identity in a list.
+//
+// The program's `store`s live in the module, one set per page: the bridge
+// starts them from the JSON the server rendered the page with (in
+// `<script id="kiln-stores">`), learns which stores each island reads as it
+// renders, and after each event renders again the islands whose stores
+// changed. Links inside `data-k-navigate` load the next page into this one,
+// keeping the stores; a store with a key is kept in `localStorage` too.
 
 let ember = null;
 let loading = null;
@@ -44,6 +51,12 @@ function load() {
       const exports = await instantiate(module, { b: emberImports(), n: npmImports() });
       exports.init();
       ember = exports;
+      try {
+        stores = JSON.parse(exports.__kiln_store_names?.() ?? "[]").map((s) => ({ ...s, json: "" }));
+      } catch (err) {
+        console.error("kiln: cannot read the stores", err);
+      }
+      loadStores(document, true);
       return exports;
     })();
   }
@@ -114,7 +127,10 @@ async function mount(el) {
   }
   const island = { id, el, name, controllers: new Set(), pending: new Map(), stash: new Map(), dead: false };
   islands.set(el, island);
-  const rendered = el.hasAttribute("data-k-state") && el.getAttribute("data-k-hydrate") !== "only";
+  // After client navigation, or with a store kept from an earlier visit,
+  // the stores can differ from those the server rendered with.
+  const rendered =
+    el.hasAttribute("data-k-state") && el.getAttribute("data-k-hydrate") !== "only" && !storesMoved;
   render(island, rendered);
   el.setAttribute("data-k-ready", "");
 }
@@ -147,34 +163,130 @@ function fail(island, err) {
   island.dead = true;
 }
 
+// ----- stores -----
+
+/** The program's stores, in the module's order: `name`, the `persist` key
+ *  or null, and `json`, the value as the islands last saw it ("" before
+ *  the store starts). */
+let stores = [];
+/** The stores the island rendering now reads, by number. */
+let reading = null;
+/** Whether the stores may differ from those the page was rendered with. */
+let storesMoved = false;
+
+function storeKey(s) {
+  return `kiln:store:${s.persist}`;
+}
+
+/** Starts the stores that have not started from the values `doc` was
+ *  rendered with. On the first page, a store kept in `localStorage` comes
+ *  first; one that no longer decodes (its type changed) is forgotten. */
+function loadStores(doc, first) {
+  if (!stores.length) return;
+  let snapshot = {};
+  const el = doc.getElementById("kiln-stores");
+  if (el) {
+    try {
+      snapshot = JSON.parse(el.textContent);
+    } catch (err) {
+      console.error("kiln: the page's stores do not decode", err);
+    }
+  }
+  stores.forEach((s, i) => {
+    try {
+      if (first && s.persist) {
+        let kept = null;
+        try {
+          kept = localStorage.getItem(storeKey(s));
+        } catch {
+          // Storage is off: the store starts as the page says.
+        }
+        if (kept !== null) {
+          if (ember.__kiln_store_load(BigInt(i), kept, 1)) storesMoved = true;
+          else localStorage.removeItem(storeKey(s));
+        }
+      }
+      if (Object.hasOwn(snapshot, s.name)) {
+        ember.__kiln_store_load(BigInt(i), JSON.stringify(snapshot[s.name]), 0);
+      }
+      s.json = ember.__kiln_store_json(BigInt(i));
+    } catch (err) {
+      console.error(`kiln: the store "${s.name}" failed`, err);
+    }
+  });
+}
+
+/** Marks the islands that read a store that changed, and keeps the stores
+ *  that have keys. */
+function checkStores() {
+  stores.forEach((s, i) => {
+    let json;
+    try {
+      json = ember.__kiln_store_json(BigInt(i));
+    } catch {
+      return;
+    }
+    if (json === s.json) return;
+    s.json = json;
+    if (s.persist && json !== "") {
+      try {
+        localStorage.setItem(storeKey(s), json);
+      } catch {
+        // Storage is off or full: the store lives as long as the page.
+      }
+    }
+    for (const island of islands.values()) {
+      if (island.reads?.has(i)) dirty.add(island);
+    }
+  });
+}
+
 // ----- rendering -----
 
 const dirty = new Set();
 let queued = false;
 
 /** Renders an island again before the browser next paints, once however
- *  many of its handlers ran. */
+ *  many of its handlers ran, with the islands whose stores the handlers
+ *  changed, in the order they are on the page. */
 function invalidate(island) {
-  dirty.add(island);
+  if (island) dirty.add(island);
   if (queued) return;
   queued = true;
   queueMicrotask(() => {
     queued = false;
-    const list = [...dirty];
+    checkStores();
+    const list = [...dirty].sort((a, b) =>
+      a.el.compareDocumentPosition(b.el) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1,
+    );
     dirty.clear();
     for (const i of list) {
       if (!i.dead && islands.get(i.el) === i) render(i);
     }
+    // A store an island started as it rendered is where the islands
+    // that read it saw it.
+    stores.forEach((s, i) => {
+      if (s.json === "") {
+        try {
+          s.json = ember.__kiln_store_json(BigInt(i));
+        } catch {
+          // The island that read it failed.
+        }
+      }
+    });
   });
 }
 
 function render(island, check = false) {
   let html;
+  reading = island.reads = new Set();
   try {
     html = ember.__kiln_render(BigInt(island.id));
   } catch (err) {
     fail(island, err);
     return;
+  } finally {
+    reading = null;
   }
   const template = document.createElement("template");
   template.innerHTML = html;
@@ -467,6 +579,9 @@ function describe(v) {
 function emberImports() {
   return {
     ember_call: (name, args, done) => call(name, args, done),
+    store_read: (i) => {
+      if (reading) reading.add(i);
+    },
     browser_log: (m) => console.log(m),
     browser_warn: (m) => console.warn(m),
     browser_title: () => document.title,
@@ -706,6 +821,73 @@ function npmImports() {
   };
 }
 
+// ----- client navigation -----
+
+/** The page a click goes to without loading a new document: a same-origin
+ *  link inside `data-k-navigate`, clicked plainly. */
+function navigation(ev) {
+  if (ev.defaultPrevented || ev.button !== 0 || ev.metaKey || ev.ctrlKey || ev.shiftKey || ev.altKey) return null;
+  const a = ev.target instanceof Element ? ev.target.closest("a[href]") : null;
+  if (!a || !a.closest("[data-k-navigate]") || a.hasAttribute("download")) return null;
+  if (a.target && a.target !== "_self") return null;
+  const url = new URL(a.href, location.href);
+  if (url.origin !== location.origin || !/^https?:$/.test(url.protocol)) return null;
+  // A link to a part of this page is the browser's.
+  if (url.hash && url.pathname === location.pathname && url.search === location.search) return null;
+  return url;
+}
+
+let navigating = null;
+
+/** Shows the page at `url` in this document: the old page's islands stop,
+ *  and their calls with them, while the stores stay. Anything but an HTML
+ *  page (an error, a download) is loaded the ordinary way. */
+async function navigate(url, push) {
+  navigating?.abort();
+  const controller = (navigating = new AbortController());
+  let res, text;
+  try {
+    res = await fetch(url, {
+      credentials: "same-origin",
+      signal: controller.signal,
+      headers: { accept: "text/html" },
+    });
+    const kind = res.headers.get("content-type") ?? "";
+    if (!res.ok || !kind.startsWith("text/html")) throw new Error(`${url} answered ${res.status}`);
+    text = await res.text();
+  } catch {
+    if (controller.signal.aborted) return;
+    location.assign(url.href);
+    return;
+  }
+  if (controller !== navigating) return;
+  navigating = null;
+  const doc = new DOMParser().parseFromString(text, "text/html");
+  if (push) history.pushState({ kiln: true }, "", res.url || url.href);
+  dispose(document.body);
+  document.title = doc.title;
+  for (const el of doc.head.querySelectorAll('link[rel="stylesheet"], style')) {
+    if (![...document.head.children].some((old) => old.isEqualNode(el))) {
+      document.head.appendChild(document.importNode(el, true));
+    }
+  }
+  document.body.replaceWith(document.importNode(doc.body, true));
+  storesMoved = true;
+  // The stores that start now start from the new page's values; until the
+  // module is loaded, its loading reads them from this document.
+  const old = document.getElementById("kiln-stores");
+  const next = doc.getElementById("kiln-stores");
+  if (next) {
+    old?.remove();
+    document.head.appendChild(document.importNode(next, true));
+  }
+  if (ember) loadStores(document, false);
+  for (const el of document.querySelectorAll("kiln-island")) schedule(el);
+  const target = url.hash && document.getElementById(decodeURIComponent(url.hash.slice(1)));
+  if (target) target.scrollIntoView();
+  else if (push) scrollTo(0, 0);
+}
+
 // ----- start -----
 
 function boot() {
@@ -728,6 +910,18 @@ function boot() {
       for (const c of island.controllers) c.abort("dispose");
     }
   });
+  document.addEventListener("click", (ev) => {
+    const url = navigation(ev);
+    if (!url) return;
+    ev.preventDefault();
+    navigate(url, true);
+  });
+  addEventListener("popstate", (ev) => {
+    if (ev.state?.kiln) navigate(new URL(location.href), false);
+  });
+  if (document.querySelector("[data-k-navigate]") && !history.state) {
+    history.replaceState({ kiln: true }, "");
+  }
   for (const el of document.querySelectorAll("kiln-island")) schedule(el);
 }
 

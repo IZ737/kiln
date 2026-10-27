@@ -1,0 +1,10 @@
+before any read
+the cart starts
+3 items, 2 lines
+6 items: for Sunday
+visits: 2
+the cart starts
+in a scope: 0 items, 0 visits
+in a scope: 1 items: a test's own
+after the scope: 6 items: for Sunday
+replaced: 0 items

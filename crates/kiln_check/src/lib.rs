@@ -389,6 +389,10 @@ fn glaze_checker(
     for module in modules {
         checker.collect_module(module);
     }
+    // A glaze can read the constants and stores of the modules.
+    for module in modules {
+        checker.check_consts(module);
+    }
     // Errors in the modules are reported with the modules.
     checker.diags.clear();
     checker.glazes = Some(Default::default());
