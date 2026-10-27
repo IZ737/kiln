@@ -509,10 +509,11 @@ sharing validation across SSR and reactive forms.
 contract before 1.0: importable provider-free typed stores, automatic deep
 reactivity inside explicit roots, batched invalidation, per-request SSR
 isolation, optional scoped overrides, and opt-in client navigation with
-retained stores but no automatic persistence. The existing `{% state %}`
-syntax differs from the earlier agreed top-level `{% var %}` proposal; the
-phase must record and reconcile that difference rather than silently
-changing the shipped syntax. See [the plan](plans/phase-6.5.1.md).
+retained stores but no automatic persistence. The existing `{% state %}` syntax is **confirmed and retained** for
+Ember-local reactive state: readers can immediately distinguish it from
+ordinary `let` and `var`. An earlier top-level `{% var %}` proposal was
+reconsidered and rejected; no local-state syntax migration is part of this
+phase. See [the plan](plans/phase-6.5.1.md) and [decision log](decisions.md).
 
 ### Phase 3: native styling, Finishes and themes
 
