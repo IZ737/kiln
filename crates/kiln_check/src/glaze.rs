@@ -511,12 +511,13 @@ impl Checker {
     /// Reports a value that `{value}` cannot show as text.
     fn displayable(&mut self, ty: &Ty, span: Span) {
         let ty = self.resolve(ty);
-        const SHOWN: &[&str] = &[
-            "String", "Int", "Float", "Bool", "Decimal", "Duration", "Date",
-        ];
+        const SHOWN: &[&str] = &["String", "Int", "Float", "Bool", "Duration", "Date"];
         let help = match &ty {
             Ty::Unknown | Ty::Var(_) | Ty::Never | Ty::Any => return,
             t if SHOWN.iter().any(|n| self.is_prim(t, n)) => return,
+            t if self.is_prim(t, "Bytes") => {
+                "bytes need not be text: read them with `.text()`, or show them with `base64.encode(...)`".to_string()
+            }
             Ty::Opt(_) => "it may be `none`: give a default with `??`, or unwrap it with `{% if value is some(v) %}`".to_string(),
             Ty::Adt(id, _) if ["List", "Set", "Map"].iter().any(|n| self.global_types.get(*n) == Some(id)) => {
                 "loop over it with `{% for item in items %}`".to_string()

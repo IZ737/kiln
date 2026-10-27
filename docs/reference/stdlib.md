@@ -12,7 +12,7 @@ import `test`, which `kiln test` provides: see [Testing](testing.md).
 ## Prelude
 
 `print`, `env` and `panic`, and the methods of `Int`, `Float`, `String`,
-`Duration`, `List`, `Map` and `Set`. `env(name) -> String?` reads an
+`Bytes`, `Duration`, `List`, `Map` and `Set`. `env(name) -> String?` reads an
 environment variable, which is `none` when it is not set:
 `env("PORT") ?? "8080"`. The full list is in
 [`prelude.kiln`](../../crates/kiln_check/std/prelude.kiln); the ones most
@@ -22,7 +22,8 @@ programs reach for:
 | --- | --- |
 | `Int` | `to_string`, `to_float`, `abs`, `min`, `max`, `pow`, `clamp(lo, hi)` |
 | `Float` | `to_string`, `round`, `floor`, `ceil` (to `Int`), `abs`, `sqrt`, `min`, `max`, `fixed(digits)` (`3.14159.fixed(2)` is `"3.14"`) |
-| `String` | `len`, `upper`, `lower`, `trim`, `trim_start`, `trim_end`, `contains`, `starts_with`, `ends_with`, `index_of -> Int?`, `slice(start, end)`, `split`, `lines`, `chars`, `replace`, `repeat`, `pad_start(width, fill)`, `pad_end`, `to_int -> Int?`, `to_float -> Float?` |
+| `String` | `len`, `upper`, `lower`, `trim`, `trim_start`, `trim_end`, `contains`, `starts_with`, `ends_with`, `index_of -> Int?`, `slice(start, end)`, `split`, `lines`, `chars`, `replace`, `repeat`, `pad_start(width, fill)`, `pad_end`, `to_int -> Int?`, `to_float -> Float?`, `bytes -> Bytes` |
+| `Bytes` | `len`, `is_empty`, `slice(start, end) -> Bytes`, `text -> String !` |
 | `List<T>` | `len`, `first`, `last`, `get -> T?`, `push`, `pop -> T?`, `insert(index, item)`, `remove_at(index)`, `contains`, `index_of`, `slice`, `take`, `skip`, `concat`, `reverse`, `sort`, `sort_by(key)`, `min`, `max`, `filter`, `map`, `flat_map`, `find`, `any`, `all`, `count`, `fold(initial, combine)`, `join` |
 | `Map<K, V>` | `len`, `get`, `set`, `remove`, `contains`, `keys`, `values`, `entries -> List<{ key: K, value: V }>` |
 | `Set<T>` | `len`, `add`, `remove`, `contains`, `to_list` |
@@ -35,6 +36,16 @@ strings by their bytes, `false` before `true`, `none` before any value,
 lists item by item, structs and records field by field in the order they are
 written, and enums by variant and then fields. Maps, sets and functions
 have no order; sort those with `sort_by`.
+
+`Bytes` is binary data, such as an image, a download or an uploaded file.
+A `String` is always UTF-8 text, so the two do not mix: `text.bytes()` gives
+a string's bytes, and `data.text()` reads bytes as text, failing when they
+are not UTF-8. Bytes positions count bytes, and `slice` clamps its bounds.
+`print` shows bytes by their size (`<15 bytes>`), JSON carries them as
+Base64 text, and SQL as a blob. `fs.read_bytes`, `req.bytes()`, a form's
+file field and `base64.decode` make them, and `fs.write_bytes`,
+`web.bytes` and `base64.encode` take them. Embers do not have `Bytes` yet
+(E0401).
 
 ## `time`
 
@@ -78,8 +89,10 @@ as `cannot read notes.txt: No such file or directory`.
 | Function | |
 | --- | --- |
 | `fs.read(path) -> String !` | The whole file |
+| `fs.read_bytes(path) -> Bytes !` | The whole file as bytes |
 | `fs.read_lines(path) -> List<String> !` | Lines without `\n` or `\r\n` |
 | `fs.write(path, text) !` | Replaces the file, creating it if needed |
+| `fs.write_bytes(path, data) !` | Replaces the file with `data`, creating it if needed |
 | `fs.append(path, text) !` | Adds to the end, creating the file if needed |
 | `fs.exists(path) -> Bool` | |
 | `fs.is_dir(path) -> Bool` | |
@@ -211,6 +224,7 @@ lower case) and `body`.
 | `req.cookie(name) -> String?` | A cookie from the `cookie` header, with `%XX` escapes decoded |
 | `req.json<T>() -> T !` | The body read as JSON into a `T` (see [`json`](#json)) |
 | `req.form<T>() -> T !` | A submitted form read into a `T` (see [`validate`](#validate)) |
+| `req.bytes() -> Bytes` | The body as it came, for a body that need not be text |
 
 When `req.json` or `req.form` fails and the handler passes the error on
 with `try`, the server answers 400 with `{"error": "..."}` naming what was
@@ -222,17 +236,18 @@ struct. A form carries text, and the fields' types say what to make of it:
 
 | Field type | |
 | --- | --- |
-| `String` | The value as it was sent |
+| `String` | The value as it was sent; 400 when it is not UTF-8 text |
+| `Bytes` | The value's bytes: a file field's contents |
 | `Int`, `Float` | The value as a number, or 400 when it is not one |
 | `Bool` | `on`, `true`, `1` or `yes` is true; a box nobody ticked is not sent at all, so a missing `Bool` is `false` |
-| `T?` | `none` when the field is missing or empty |
+| `T?` | `none` when the field is missing or empty, or a file field sent without a file |
 | `List<T>` | Every value sent with that name, in order |
 | an enum | The name of a variant without fields |
 
 A field of another type, or a field that is missing and is neither
 optional, a `Bool` nor a `List`, is the client's mistake and answers 400.
-A `multipart` part's file name is read but its bytes are kept as the
-field's `String`; uploads to disk are not implemented yet.
+A file arrives as a `multipart` part: read it into a `Bytes` field, and
+save it with `fs.write_bytes`. Its file name is not a field yet.
 
 **Responses.** A `web.Response` has `status`, `headers` and `body`, and can
 be changed before it is returned (`res.headers["cache-control"] = "no-store"`)
@@ -245,7 +260,11 @@ or made directly with `web.Response(status: 204, headers: Map(), body: "")`.
 | `web.html(body, status: 200, headers: Map())` | `text/html; charset=utf-8` |
 | `web.render("page.glaze", { props }, status: 200, headers: Map())` | The glaze rendered as HTML (see [Rendering](glazes.md#rendering)) |
 | `web.redirect(to, status: 302, headers: Map())` | Sends the client to `to` |
+| `web.bytes(data, content_type: "application/octet-stream", status: 200, headers: Map())` | Binary data, such as an image or a download |
 | `web.not_found()` | 404, made like the server's own (see Errors) |
+
+A response's `body` is a `String`; one made by `web.bytes` holds its
+bytes as they are, which need not be text.
 
 `headers` are added to the ones the function sets itself and replace
 those with the same name: `web.json(page, headers: ["cache-control":
@@ -570,11 +589,11 @@ line breaks inside it, so `java\tscript:` is not safe either.
 
 | Function | |
 | --- | --- |
-| `base64.encode(data) -> String` | The bytes of `data` in standard Base64, with `=` padding |
-| `base64.decode(text) -> String !` | The bytes `text` encodes; fails when it is not Base64 |
+| `base64.encode(data: Bytes) -> String` | `data` in standard Base64, with `=` padding |
+| `base64.decode(text) -> Bytes !` | The bytes `text` encodes; fails when it is not Base64 |
 
-The decoded bytes need not be UTF-8, so a decoded image can be a
-response's body. Programs carry their binary files (see
+Text is encoded as its bytes: `base64.encode("hi".bytes())`. A decoded
+image can be sent with `web.bytes`. Programs carry their binary files (see
 [Styles](glazes.md#styles)) this way. The runtime uses the
 [base64](https://github.com/marshallpierce/rust-base64) crate.
 

@@ -10,6 +10,8 @@ decisions are added here as they are made.
 
 | Date | Decision | Why | Compatibility |
 | --- | --- | --- | --- |
+| 2026-10-27 | `Bytes` is real: `text.bytes()`, `data.text()` (which fails on bad UTF-8), `len`, `slice`, `fs.read_bytes`/`write_bytes`, `web.bytes`, `req.bytes()`, file fields in forms, Base64 in JSON and blobs in SQL | A server could not send an image or read an upload, and binary data hid in `String`s that are supposed to be text | `base64.encode` takes `Bytes` and `base64.decode` returns them; a form's `String` field rejects non-UTF-8 data |
+| 2026-10-27 | `Decimal` is removed; money is whole cents in an `Int` until a decimal type is designed | It was a name with no literals, methods or runtime, promising something 1.0 would not have | None: nothing could use it |
 | 2026-10-27 | `ui` keys and words are snake_case (`max_w`, `text_size`, `focus_visible`, `.row_reverse`) | Every other Kiln name is snake_case; camelCase keys were the one exception, a CSS habit | A camelCase key or word is an error whose fix is the snake_case name |
 | 2026-10-27 | The server refuses a `POST`, `PUT`, `PATCH` or `DELETE` a browser sent from another site, with 403; `web.app(cross_site: [...])` names prefixes that take them | Every example carried the same hand-written `same_origin` check; forgetting it was a CSRF hole | A cross-site form post that worked gets 403 unless its path is in `cross_site` |
 | 2026-10-27 | A glaze's `request: web.Request` prop is filled in with the request being handled | Layouts needed values from the request, so every route threaded them through every render | Additive |

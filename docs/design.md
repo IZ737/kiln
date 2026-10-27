@@ -96,8 +96,9 @@ bindings).
 ## Types
 
 - Static types with local inference. Function signatures are always typed.
-- Primitives: `Int` (64-bit), `Float`, `Bool`, `String` (UTF-8), `Bytes`,
-  `Decimal` for money, `Duration` (`250ms`, `2s`).
+- Primitives: `Int` (64-bit), `Float`, `Bool`, `String` (UTF-8), `Bytes`
+  (binary data), `Duration` (`250ms`, `2s`). Money is whole cents in an
+  `Int` until a decimal type is designed.
 - `List<T>`, `Map<K, V>`, `Set<T>`; structs with defaults; enums with payloads
   and exhaustive `match`; structural interfaces; generics by monomorphization.
 - No null. `T?` is optional and the missing value is `none`.

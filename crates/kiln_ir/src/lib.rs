@@ -76,6 +76,7 @@ pub struct Prims {
     pub float: AdtId,
     pub bool_: AdtId,
     pub string: AdtId,
+    pub bytes: AdtId,
     pub duration: AdtId,
     pub list: AdtId,
     pub map: AdtId,

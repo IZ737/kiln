@@ -615,6 +615,18 @@ impl<'a> Gen<'a> {
         format!("ref.func {name}")
     }
 
+    /// The E0401 message for `what` done with values of `ty`, naming
+    /// `Bytes`, which the browser does not have yet.
+    pub(crate) fn not_compiled(&self, ty: &Ty, what: &str) -> String {
+        if self.is_adt(ty, self.prims.bytes) {
+            "`Bytes` values are not supported in the browser yet".to_string()
+        } else if what.contains("JSON") {
+            format!("{what} is not supported in the browser yet")
+        } else {
+            format!("{what} is not supported by the compiler yet")
+        }
+    }
+
     pub fn unsupported(&mut self, span: Span, what: impl Into<String>) {
         self.diags.push(
             Diagnostic::error(
@@ -1977,7 +1989,12 @@ impl<'a> Gen<'a> {
                 for a in args {
                     self.discard(a);
                 }
-                self.unsupported(span, format!("`{module}.{name}`"));
+                // `Bytes` methods are the prelude's, written without a module.
+                let what = match module {
+                    "prelude" => format!("`{name}`"),
+                    _ => format!("`{module}.{name}`"),
+                };
+                self.unsupported(span, what);
             }
         }
     }
@@ -2185,11 +2202,8 @@ impl<'a> Gen<'a> {
                 g.line("global.get $s_empty");
             }
             _ => {
-                g.diags.push(Diagnostic::error(
-                    codes::NOT_COMPILED_YET,
-                    "showing a value of this type is not supported by the compiler yet",
-                    span,
-                ));
+                let what = g.not_compiled(ty, "showing a value of this type");
+                g.diags.push(Diagnostic::error(codes::NOT_COMPILED_YET, what, span));
                 g.line("global.get $s_empty");
             }
         });
@@ -2367,11 +2381,8 @@ impl<'a> Gen<'a> {
                 g.line("i32.const 1");
             }
             _ => {
-                g.diags.push(Diagnostic::error(
-                    codes::NOT_COMPILED_YET,
-                    "comparing values whose type is a generic parameter is not supported by the compiler yet",
-                    span,
-                ));
+                let what = g.not_compiled(ty, "comparing values whose type is a generic parameter");
+                g.diags.push(Diagnostic::error(codes::NOT_COMPILED_YET, what, span));
                 g.line("i32.const 0");
             }
         });
@@ -2445,11 +2456,8 @@ impl<'a> Gen<'a> {
                 g.line(&format!("local.get {r}"));
             }
             None => {
-                g.diags.push(Diagnostic::error(
-                    codes::NOT_COMPILED_YET,
-                    "a map key or set item of this type is not supported by the compiler yet",
-                    span,
-                ));
+                let what = g.not_compiled(ty, "a map key or set item of this type");
+                g.diags.push(Diagnostic::error(codes::NOT_COMPILED_YET, what, span));
                 g.line("i64.const 0");
             }
         });

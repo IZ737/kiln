@@ -139,7 +139,8 @@ files and of the folder modules those files import, and its `.kiln` files
 see the props of its glazes (see [projects.md](projects.md)).
 
 - `{value}` must have a text form: `String`, `Int`, `Float`, `Bool`,
-  `Decimal`, `Duration` or `Date` (E0217). Show a field of a struct, loop
+  `Duration` or `Date` (E0217); `Bytes` are shown with `.text()` or
+  `base64.encode(...)`. Show a field of a struct, loop
   over a list, unwrap an optional (`{note ?? ""}`), and `{% match %}` an enum.
   `{raw value}` takes a `String`.
 - `{% if %}` conditions are `Bool`; `{% if x is some(v) %}` binds `v` inside.

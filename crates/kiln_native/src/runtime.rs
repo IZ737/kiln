@@ -99,6 +99,7 @@ pub(crate) fn signature(name: &str) -> Option<(&'static [C], Option<C>)> {
         | "k_abs"
         | "k_int_str"
         | "k_duration_str"
+        | "k_bytes_show"
         | "k_box"
         | "k_list_first"
         | "k_list_last"

@@ -237,9 +237,10 @@ pub(super) fn encode_fn(g: &mut Gen, ty: &Ty, span: Span) -> String {
             }
         }
         _ => {
+            let what = g.not_compiled(ty, "writing a value of this type as JSON");
             g.diags.push(Diagnostic::error(
                 codes::NOT_COMPILED_YET,
-                "writing a value of this type as JSON is not supported in the browser yet",
+                what,
                 span,
             ));
             g.line("global.get $s_empty");
@@ -567,9 +568,10 @@ pub(super) fn decode_fn(g: &mut Gen, ty: &Ty, span: Span) -> String {
                 }
             }
             _ => {
+                let what = g.not_compiled(ty, "reading a value of this type from JSON");
                 g.diags.push(Diagnostic::error(
                     codes::NOT_COMPILED_YET,
-                    "reading a value of this type from JSON is not supported in the browser yet",
+                    what,
                     span,
                 ));
                 g.line("ref.null any");

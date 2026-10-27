@@ -649,6 +649,24 @@ fn phase_six_and_a_half_language_errors() {
 }
 
 #[test]
+fn bytes_are_not_text() {
+    // Text becomes bytes with `.bytes()`, and bytes text with `.text()`,
+    // which can fail.
+    let ok = "fn main() ! {\n    let b: Bytes = \"hi\".bytes()\n    let t: String = try b.slice(0, 1).text()\n    print(b.len() + t.len())\n}\n";
+    assert!(error_codes(ok).is_empty(), "{:?}", error_codes(ok));
+    assert_eq!(
+        error_codes("fn main() {\n    let b: Bytes = \"hi\"\n}\n"),
+        vec![codes::TYPE_MISMATCH]
+    );
+    assert_eq!(
+        error_codes("fn main() {\n    let t: String = \"hi\".bytes()\n}\n"),
+        vec![codes::TYPE_MISMATCH]
+    );
+    // `Decimal` is gone until a real one is designed.
+    assert_eq!(error_codes("fn f(x: Decimal) {}\nfn main() {}\n").len(), 1);
+}
+
+#[test]
 fn standard_library_internals_are_hidden() {
     let src = "import sql\nfn main() {\n    let v = sql.__value(1)\n}\n";
     assert_eq!(error_codes(src), vec![codes::LOCAL_MODULE]);

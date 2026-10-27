@@ -1,0 +1,26 @@
+<15 bytes>
+15
+false
+true
+S2lsbiBmaXJlcyBjbGF5
+
+fires
+Kiln
+lay
+0
+true
+Kiln fires clay
+error: cannot read Base64: Invalid symbol 32, offset 3.
+0
+8
+error: the bytes are not UTF-8 text: byte 0 is not part of a character
+1
+true
+[<8 bytes>, <15 bytes>]
+true
+error: cannot read no/such/file: No such file or directory
+0
+{"name":"logo.png","data":"iVBORw0KGgo="}
+true
+error: cannot read JSON: expected a Base64 string at $.data, found a string that is not Base64
+logo.png

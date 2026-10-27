@@ -160,6 +160,7 @@ impl<'a> Lowerer<'a> {
                 float: id("Float"),
                 bool_: id("Bool"),
                 string: id("String"),
+                bytes: id("Bytes"),
                 duration: id("Duration"),
                 list: id("List"),
                 map: id("Map"),
@@ -1868,6 +1869,25 @@ impl<'a> Lowerer<'a> {
             .zip(&sig.params)
             .map(|(v, p)| coerce(v, &p.ty))
             .collect();
+        // `Bytes` methods, and `String.bytes`, are in the Rust runtime.
+        let full = format!("{}.{name}", self.p.adts[id].name);
+        if (id == self.prims.bytes || id == self.prims.string)
+            && crate::rt::rt_fn("prelude", &full).is_some()
+        {
+            let mut all = vec![recv.expect("the receiver is kept")];
+            all.extend(vals);
+            let call = mk(
+                ExprKind::Lib {
+                    module: "prelude".into(),
+                    name: full,
+                    args: all,
+                },
+                sig.ret.clone(),
+                span,
+            );
+            let call = coerce_value(call, rt);
+            return Some((with_prelude(prelude, call), sig.throws.clone()));
+        }
         let recv = Box::new(recv.expect("the receiver is kept"));
         let call = mk(
             ExprKind::Method {
@@ -2794,7 +2814,7 @@ impl Lowerer<'_> {
 }
 
 /// `web` functions that make a response and take `status` and `headers`.
-const RESPONSES: &[&str] = &["json", "text", "html", "redirect"];
+const RESPONSES: &[&str] = &["json", "text", "html", "redirect", "bytes"];
 
 /// Takes a response call's last argument, its headers, off the call, and
 /// adds them to the response it makes unless there are none to add.

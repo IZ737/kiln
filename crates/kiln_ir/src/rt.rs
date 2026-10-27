@@ -54,6 +54,36 @@ const fn f(
 use DescOf::*;
 
 pub static RT_FNS: &[RtFn] = &[
+    f(
+        "prelude",
+        "String.bytes",
+        "k_rt_string_bytes",
+        1,
+        false,
+        None,
+    ),
+    f("prelude", "Bytes.len", "k_rt_bytes_len", 1, false, None),
+    f(
+        "prelude",
+        "Bytes.is_empty",
+        "k_rt_bytes_is_empty",
+        1,
+        false,
+        None,
+    ),
+    f("prelude", "Bytes.slice", "k_rt_bytes_slice", 3, false, None),
+    f("prelude", "Bytes.text", "k_rt_bytes_text", 1, true, None),
+    f("fs", "read_bytes", "k_rt_fs_read_bytes", 1, true, None),
+    f("fs", "write_bytes", "k_rt_fs_write_bytes", 2, true, None),
+    f("web", "bytes", "k_rt_web_bytes", 3, false, None),
+    f(
+        "web",
+        "Request.bytes",
+        "k_rt_web_request_bytes",
+        1,
+        false,
+        None,
+    ),
     f("sql", "open", "k_rt_sql_open", 3, true, None),
     f("sql", "error_kind", "k_rt_sql_error_kind", 1, false, None),
     f("sql", "__value", "k_rt_sql_value", 1, false, Arg(0)),

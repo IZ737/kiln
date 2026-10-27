@@ -898,9 +898,16 @@ impl<'a> Gen<'a> {
     }
 
     /// `fn __kiln_assets(app: web.App)`, which adds a route for each file.
-    /// Files that are not UTF-8 are carried in Base64 and decoded once,
-    /// when the routes are added.
+    /// Files that are not UTF-8 are carried in Base64, decoded once to
+    /// `Bytes` when the routes are added.
     fn assets(&mut self, assets: &[Asset]) {
+        if assets.iter().any(|a| std::str::from_utf8(&a.body).is_err()) {
+            self.text.push_str(
+                "\nfn __kiln_asset_bytes(content_type: String, cache: String, body: Bytes) -> web.Response {\n\
+                 \x20   return web.bytes(body, content_type: content_type, headers: [\"cache-control\": cache, \"x-content-type-options\": \"nosniff\"])\n\
+                 }\n",
+            );
+        }
         self.text.push_str(&format!(
             "\nfn __kiln_asset(content_type: String, cache: String, body: String) -> web.Response {{\n\
              \x20   let headers: Map<String, String> = Map()\n\
@@ -912,12 +919,15 @@ impl<'a> Gen<'a> {
              \nfn {ASSETS_FN}(app: web.App) {{\n"
         ));
         for (i, asset) in assets.iter().enumerate() {
-            let body = match std::str::from_utf8(&asset.body) {
-                Ok(text) => kiln_string(text),
+            let (body, make) = match std::str::from_utf8(&asset.body) {
+                Ok(text) => (kiln_string(text), "__kiln_asset"),
                 Err(_) => {
                     use base64::Engine;
                     let data = base64::engine::general_purpose::STANDARD.encode(&asset.body);
-                    format!("base64.decode(\"{data}\") catch err {{ \"\" }}")
+                    (
+                        format!("base64.decode(\"{data}\") catch err {{ \"\".bytes() }}"),
+                        "__kiln_asset_bytes",
+                    )
                 }
             };
             let cache = if asset.immutable {
@@ -926,7 +936,7 @@ impl<'a> Gen<'a> {
                 "no-cache"
             };
             self.text.push_str(&format!(
-                "    let __body{i} = {body}\n    app.get({}, fn(req) {{\n        return __kiln_asset({}, \"{cache}\", __body{i})\n    }})\n",
+                "    let __body{i} = {body}\n    app.get({}, fn(req) {{\n        return {make}({}, \"{cache}\", __body{i})\n    }})\n",
                 kiln_string(&asset.path),
                 kiln_string(asset.content_type),
             ));

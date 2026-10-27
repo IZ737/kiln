@@ -306,6 +306,13 @@ K_API kstr *k_float_fixed(double f, int64_t digits) {
     return k_str_n(buf, len);
 }
 
+/* How `print` shows `Bytes`: their size, since they need not be text. */
+K_API kstr *k_bytes_show(kstr *b) {
+    char buf[48];
+    snprintf(buf, sizeof buf, "<%lld bytes>", (long long)b->len);
+    return k_str(buf);
+}
+
 K_API kstr *k_duration_str(int64_t ns) {
     static const struct { int64_t unit; const char *name; } units[] = {
         {3600000000000LL, "h"}, {60000000000LL, "m"}, {1000000000LL, "s"},
@@ -391,6 +398,7 @@ enum {
     K_D_ENUM = 12,
     K_D_RECORD = 13,
     K_D_VARIANT = 14,
+    K_D_BYTES = 15,
 };
 
 /* A type. `parts` are the item type of an optional, list or set, the key
@@ -2072,7 +2080,7 @@ K_API void k_web_route(void *app, int64_t method, kstr *pattern, kclosure *handl
 
 /* ----- responses ----- */
 
-K_API kv *k_web_response(int64_t status, kstr *body, const char *type) {
+K_EXPORT kv *k_web_response(int64_t status, kstr *body, const char *type) {
     kv *r = k_alloc(sizeof(kv) * K_RES_FIELDS);
     kmap *h = k_web_headers();
     if (type) k_map_set(h, K_P2KV(k_str("content-type")), K_P2KV(k_str(type)));
@@ -2673,7 +2681,8 @@ K_API bool k_eq_int(kv a, kv b) { return a == b; }
  * type that decoding does not support. `kiln_rt` decodes into it. */
 K_EXPORT kmap *k_json_new_map(const kdesc *key) {
     switch (key->kind) {
-    case K_D_STR: return k_map_new(k_hash_str, k_web_str_eq);
+    case K_D_STR:
+    case K_D_BYTES: return k_map_new(k_hash_str, k_web_str_eq);
     case K_D_INT:
     case K_D_BOOL:
     case K_D_DURATION: return k_map_new(k_hash_int, k_eq_int);

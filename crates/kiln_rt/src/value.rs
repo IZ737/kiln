@@ -34,6 +34,7 @@ pub const D_SET: i64 = 10;
 pub const D_STRUCT: i64 = 11;
 pub const D_ENUM: i64 = 12;
 pub const D_RECORD: i64 = 13;
+pub const D_BYTES: i64 = 15;
 
 impl KDesc {
     /// Part `i`: an item, key or value type, a field's type or a variant.

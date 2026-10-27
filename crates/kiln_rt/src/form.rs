@@ -259,7 +259,9 @@ fn field(name: &str, d: &KDesc, found: &[&Field]) -> Result<Kv, String> {
         },
         D_OPT => match found.last() {
             None => Ok(0),
-            Some(f) if f.value.is_empty() && f.filename.is_none() => Ok(0),
+            Some(f) if f.value.is_empty() && f.filename.as_deref().unwrap_or("").is_empty() => {
+                Ok(0)
+            }
             Some(f) => {
                 let v = scalar(name, d.part(0), f)?;
                 Ok(kv(unsafe { k_box(v) }))
@@ -276,7 +278,11 @@ fn field(name: &str, d: &KDesc, found: &[&Field]) -> Result<Kv, String> {
 fn scalar(name: &str, d: &KDesc, f: &Field) -> Result<Kv, String> {
     let text = String::from_utf8_lossy(&f.value);
     match d.kind {
+        D_STR if std::str::from_utf8(&f.value).is_err() => Err(format!(
+            "the form field `{name}` is not text; read a file as `Bytes`"
+        )),
         D_STR => Ok(string(&f.value)),
+        D_BYTES => Ok(string(&f.value)),
         D_INT => text
             .trim()
             .parse::<i64>()

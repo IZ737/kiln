@@ -44,4 +44,28 @@ Content-Type: application/x-www-form-urlencoded
 
 email=ada%40example.com&age=36&plan=free
 ###
+POST /avatar HTTP/1.1
+Content-Type: multipart/form-data; boundary=kiln
+
+--kiln
+Content-Disposition: form-data; name="name"
+
+Ada
+--kiln
+Content-Disposition: form-data; name="picture"; filename="ada.gif"
+Content-Type: image/gif
+
+GIF89a pixels
+--kiln
+Content-Disposition: form-data; name="note"; filename=""
+Content-Type: application/octet-stream
+
+
+--kiln--
+###
+POST /echo HTTP/1.1
+Content-Type: application/octet-stream
+
+raw body
+###
 GET /quit HTTP/1.1

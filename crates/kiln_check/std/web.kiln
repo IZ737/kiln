@@ -55,6 +55,13 @@ fn render(
 fn json(value: Any, status: Int = 200, headers: Map<String, String> = Map()) -> Response {}
 fn text(body: String, status: Int = 200, headers: Map<String, String> = Map()) -> Response {}
 fn html(body: String, status: Int = 200, headers: Map<String, String> = Map()) -> Response {}
+// Binary data, such as an image or a download.
+fn bytes(
+    data: Bytes,
+    content_type: String = "application/octet-stream",
+    status: Int = 200,
+    headers: Map<String, String> = Map(),
+) -> Response {}
 fn redirect(to: String, status: Int = 302, headers: Map<String, String> = Map()) -> Response {}
 fn not_found() -> Response {}
 // The request being handled, for a glaze's `request` prop.
@@ -113,6 +120,8 @@ impl Response {
 impl Request {
     fn json<T>(self) -> T ! {}
     fn form<T>(self) -> T ! {}
+    // The body as it came, for a body that need not be text.
+    fn bytes(self) -> Bytes {}
     fn query(self, name: String) -> String? {}
     fn header(self, name: String) -> String? {}
     fn cookie(self, name: String) -> String? {}
