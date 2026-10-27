@@ -50,6 +50,7 @@ These are decisions reached in the design discussion, not claims of implemented 
 | GET ownership | **`load` and `get` are mutually exclusive within one route**; `post`, `put`, `patch` and `delete` may coexist with `load` |
 | Conventional logic file | **`route.kiln`** in the complex route's directory; exported `load` or HTTP-method functions live there |
 | Loader arguments | **Optional `req: web.Request` first**, followed by **typed path parameters matched by name**; request-free loaders need not mention `req` |
+| Loader URL parameter selection | **Declare only URL parameters the loader needs**; unmentioned route parameters are still parsed/typed in the route graph and available directly to Glaze props, without positional placeholders |
 | Glaze prop assembly | **Automatically combine typed URL path parameters with the `load` return record**; duplicate field names are a compile-time error |
 | Loader return-field matching | **Strict by name and type:** every field returned by `load` must match a declared Glaze prop; unexpected fields are compile-time errors. Glaze defaults need not be returned, and URL parameters are supplied separately |
 | Loader return types | **Allow both anonymous records and named structs** with statically known fields matching Glaze props. No forced manual reconstruction or relaxation of strict field checking |
@@ -255,7 +256,29 @@ pub fn load(req: web.Request, slug: String) -> { post: Post } ! {
 }
 ```
 
-A valid path parameter must match a named segment in the discovered URL pattern and have a compatible type with Kiln's existing typed route rules. Unsupported types, unknown names, duplicate parameter declarations, and a misplaced request parameter must fail with clear source-linked diagnostics. The **special request argument is explicitly opt-in**; it is not made available implicitly through magic globals. **The type is inferred from declarations in the Glaze, loader or route handler; otherwise it defaults to `String`.** Whether every URL parameter must be consumed by the loader/handler remains under design.
+A valid path parameter must match a named segment in the discovered URL pattern and have a compatible type with Kiln's existing typed route rules. Unsupported types, unknown names, duplicate parameter declarations, and a misplaced request parameter must fail with clear source-linked diagnostics. The **special request argument is explicitly opt-in**; it is not made available implicitly through magic globals. **The type is inferred from declarations in the Glaze, loader or route handler; otherwise it defaults to `String`.**
+
+**Decision (2026-10-27) — loader parameter selection, Option A:** a `load` function may declare **any subset** of the route's URL parameters, including none, and they are bound **by name**, not by their position in the URL. Omitted parameters do not require dummy arguments and are **not forwarded into the loader**. They remain part of the typed route pattern and can still supply the paired Glaze's matching declared props automatically. For example:
+
+```text
+pages/shops/[shop]/products/[id]/
+  index.glaze
+  route.kiln
+```
+
+```kiln
+// Conceptual route.kiln: the loader needs only id.
+pub fn load(id: Int) -> { product: Product } ! {
+    return { product: try products.find(id) }
+}
+```
+
+```glaze
+{% props shop: String, id: Int, product: Product %}
+<h1>{product.name}</h1>
+```
+
+For `/shops/acme/products/42`, the URL contributes `shop: "acme"` and `id: 42` to the Glaze, while `load` receives only `id: 42`. This does **not** weaken parameter type agreement: if the loader and Glaze give incompatible types to the same named parameter, compilation fails. Nor does it permit returning duplicate URL parameter names in the loader result. Whether **full HTTP method handlers** can similarly omit unused path arguments should be confirmed separately against their existing typed-handler contract.
 
 The presence of `req` does **not** imply a page is exportable as a static file: reuse existing Phase 6.6 analysis/checks of request-dependent behaviour. Conversely, merely accepting an optional `req` does not itself define a new static-export policy. Loader error handling is defined in §6 and uses existing Kiln semantics.
 
@@ -344,7 +367,7 @@ The main contract is the error semantics, not the particular lookup API or examp
 
 The **three levels above are agreed**; their other exact contracts need decisions:
 
-- **Route parameters — DECIDED:** the filename supplies **only a parameter name**, e.g. `[id]`; the compiler **infers its type** from matching declarations in the Glaze, `load` or full route handler. If no declaration supplies an explicit type, the parameter is a **`String`**. If two or more declarations disagree (e.g. `id: Int` in a loader and `id: String` in the Glaze), this is a **compile-time error**, not implicit coercion or precedence. Keep existing route matching/conversion rules for supported types (`Int`, `Float`, `Bool`, `String`). `load` still binds by parameter name and accepts optional first `req: web.Request`. Whether unused path parameters must appear in a handler signature remains open; all explicit declarations must agree.
+- **Route parameters — DECIDED for loaders:** the filename supplies **only a parameter name**, e.g. `[id]`; the compiler **infers its type** from matching declarations in the Glaze, `load` or full route handler. If no declaration supplies an explicit type, the parameter is a **`String`**. If two or more declarations disagree (e.g. `id: Int` in a loader and `id: String` in the Glaze), this is a **compile-time error**, not implicit coercion or precedence. Keep existing route matching/conversion rules for supported types (`Int`, `Float`, `Bool`, `String`). **Loaders explicitly declare only the subset of URL parameters they use**, bound by name, with optional first `req: web.Request`; omitted params remain available to the Glaze by its declared matching props. Whether **full HTTP handlers** may omit unused path parameters is a separate unresolved contract; all explicit declarations must agree.
 - **Prop combination and exact loader fields — DECIDED:** the Glaze receives the **union of URL parameter props and the loader-returned typed record or named struct fields**. Duplicate names across those sources are **compile-time errors**, even for equal values/types. **Every loader return field must match a declared Glaze prop by name with a compatible type**; extra/unused loader fields are compile-time errors. Missing required props are errors, but Glaze defaults, URL param props and an existing implicit request prop can satisfy their corresponding declared inputs without loader forwarding. **Named structs and anonymous typed records are both allowed** (Option A); strict matching applies to both, including fields defined in a reusable struct. Normal module access/privacy rules still apply.
 - **Handler discovery:** **`route.kiln` in the route directory is settled.** Determine its visibility/export rules, signature typing, how it participates in ordinary folder-module imports/privacy and which declarations may be used as route handlers.
 - **`load` vs `get` — DECIDED:** they are **mutually exclusive per route** and must trigger a **compile-time error** when both are defined. `load` may coexist with non-GET method exports (`post`, `put`, `patch`, `delete`). Do not invent fallback or invocation ordering between `load` and `get`.
@@ -566,6 +589,7 @@ If adopted as **Phase 6.7**, a reviewable breakdown might be:
 - [ ] The generated Glaze receives the type-checked combination of URL path props and loader result fields; the loader need not return an already-supplied URL parameter.
 - [ ] A duplicate prop name between a URL segment and loader result causes a source-linked compile error, never silent overriding; missing required Glaze props also fail clearly.
 - [ ] Loader functions work without `req` when only typed path data is needed, and with an explicitly declared first `req: web.Request` when request context is required.
+- [ ] A loader for `/shops/{shop}/products/{id}` may declare only `id: Int`; the Glaze still receives the compatible declared `shop` and `id` URL props, with no placeholder loader argument or ordering dependency. Missing, unknown or incompatible *declared* parameter names/types receive source-linked diagnostics.
 - [ ] URL parameter binding uses names and compatible types; invalid names, types, duplicate/misplaced request parameters and mismatches report precise errors.
 - [ ] `[id]` derives its type from matching Glaze, `load` or handler declarations, or defaults to `String`; conflicting annotations produce compile-time errors with both relevant source locations.
 - [ ] Bracketed dynamic `.glaze` filenames and route directories (e.g. `[slug].glaze`, `[slug]/index.glaze`) map consistently to Kiln `{slug}` route patterns. Curly-brace filename syntax, embedded partial segments and filename type annotations are not recognized as dynamic routes; malformed brackets/names report useful diagnostics.
@@ -607,6 +631,7 @@ If adopted as **Phase 6.7**, a reviewable breakdown might be:
 - **Glaze props (Option A):** combine typed URL route parameters with the typed record returned by `load`; duplicate names cause compile-time errors and required Glaze props are type-checked against that combination.
 - **Strict loader return fields (Option A):** extra/unused fields from `load` that are not declared by the Glaze are compile-time errors, even if they are part of a shared record type. Matching remains by name and type; URL params and defaulted props need not be forwarded by the loader.
 - **Named-struct loader returns (Option A):** loaders may return either anonymous typed records or named structs directly. Both use the same strict field name/type matching, duplicate detection and normal access/privacy rules; no redundant anonymous-record reconstruction required.
+- **Subset URL parameters in loaders (Option A):** `load` declares only the named path parameters it uses. Parameters omitted from its signature remain part of the compiled route and are provided to matching Glaze props independently. No unused dummy arguments or positional binding; type mismatches and duplicate returns remain errors.
 - **Parameter typing (Option A):** `[id]` is only a name; infer the route parameter type from matching Glaze, `load` or handler declarations, defaulting to `String` without an annotation. Conflicting declarations are compiler errors. Do not encode types in route filenames.
 - **Loader error handling (Option A):** use existing Kiln `try`/`throw`, `web.error`, unexpected-error 500 and `app.on_error` behaviour. No special `none` → 404 conversion.
 - **Filesystem SSG (Option A):** parameterised routes enumerate typed pages with route-local `static_params()` in `route.kiln`, or opt out through a route-local `dynamic` marker. The implementation must reuse the existing `.static(...)`/`.dynamic()` and static-export pipeline, not add a second exporter.
@@ -620,8 +645,8 @@ If adopted as **Phase 6.7**, a reviewable breakdown might be:
 - **Multiple filesystem mounts (Option A):** cross-mount overlaps resolve by mount registration order, with nonfatal shadowing warnings. Do not turn cross-mount overlaps into compile errors; retain hard duplicate checks only for claims *within* a single mount.
 
 **Needs an explicit decision before locking the specification:**
-1. **Remaining loader contract:** unused URL parameter rules and final precise return-type restrictions (§§5–6). Named parameter binding, optional first `req`, automatic props merging, **strict no-extra-fields matching**, named-struct/anonymous-record success returns, duplicate-name errors, type inference/default `String` and ordinary error/404 propagation are settled.
-2. **`route.kiln` contracts:** exact function signatures, module boundaries, exports and how flat Glaze files graduate to route directories (§5). The filename and permission for handler-only API routes are settled.
+1. **Remaining loader contract:** final precise return-type restrictions and minor syntax/visibility questions (§§5–6). Named parameter binding, **loader subset URL parameters**, optional first `req`, automatic props merging, **strict no-extra-fields matching**, named-struct/anonymous-record success returns, duplicate-name errors, type inference/default `String` and ordinary error/404 propagation are settled.
+2. **`route.kiln` contracts:** exact function signatures, whether **full HTTP method handlers** may omit unused URL parameters, module boundaries, exports and how flat Glaze files graduate to route directories (§5). The filename, loader subset binding, and permission for handler-only API routes are settled.
 3. **SSG refinements:** exact export/marker signatures, contradictory declarations and unusual handler results (§8). Route-local enumeration, server-startup pre-render, `static_refresh` alone on zero-parameter routes and rejection of request-dependent cached output (including explicit `.static(...)`) are settled.
 4. **Remaining route file naming:** filename/path character restrictions, handling reserved names, static-file extensions, catch-all or optional patterns and other edge cases (§4). Square-bracket `[name]` dynamic segments are now settled; standalone `.ember` pages are excluded.
 5. **Remaining collision policy:** partial overlaps of dynamic parameter patterns and reserved paths (§4). Registration-order precedence is settled for both explicit/file and file/file cross-mount overlaps; true duplicate claims inside one mount remain errors.
