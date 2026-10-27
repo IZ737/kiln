@@ -185,6 +185,17 @@ handling. Caching, invalidation, optimistic updates and live updates
 them, but observable and explicit overrides. Avoid hidden invalidation
 behaviour that is impossible to inspect or debug.
 
+**Immediate follow-up (Phase 6.5.1):** Implement the previously agreed
+Zustand-style importable Ember stores, explicit deeply reactive roots,
+batched updates, request-isolated SSR state, optional scoped overrides and
+opt-in client navigation that retains stores. A full reload resets state
+unless persistence is explicitly requested. These store capabilities are
+**planned**, not implemented in the current component-local `{% state %}`
+API. **`{% state %}` remains the explicit local reactive-state declaration**;
+it will not be replaced by `{% var %}`, since readers should be able to
+recognize component state at a glance. See [the implementation
+plan](plans/phase-6.5.1.md).
+
 The key promise is that **a Kiln server function and the UI calling it share
 one type contract**, without hand-authoring route wrappers, fetch boilerplate,
 duplicate DTOs or serialization code. Phase 4 implements this boundary using
@@ -525,16 +536,19 @@ The proposed roles are:
 | Command | Responsibility | Status |
 | --- | --- | --- |
 | `kiln upgrade` | Update the installed compiler through checksum-verified releases | Implemented; see the [README install instructions](../README.md#install) |
-| `kiln fire` | Produce an optimized release artifact | Planned |
-| `kiln deploy <target>` | Deliver and activate an artifact on configured infrastructure | Proposed |
-| `kiln release <target>` | Run checks/tests, build, prepare, confirm, deploy and verify | Proposed |
-| `kiln deploy <target> --dry-run` | Explain intended changes without applying them | Proposed |
+| `kiln fire --static` | Export a site as static HTML and assets | Planned for Phase 6.6 |
+| `kiln fire` | Produce an optimized native release artifact | Planned for Phase 7 |
+| `kiln deploy <target>` | Deliver and activate an artifact on configured infrastructure | Planned for Phase 8 (after 1.0) |
+| `kiln release <target>` | Run checks/tests, build, prepare, confirm, deploy and verify | Planned for Phase 8 (after 1.0) |
+| `kiln deploy <target> --dry-run` | Explain intended changes without applying them | Planned for Phase 8 (after 1.0) |
 
 The update/install workflow was developed ahead of Phase 2.5. The
 future commands and spellings are illustrative until implemented;
 the [roadmap](../README.md#roadmap) remains authoritative for scheduling.
 
 ### Application deployment, not another Terraform
+
+Deployment automation is a **Phase 8** milestone, after the Phase 7 Kiln 1.0 release. Kiln 1.0 binaries remain manually deployable without requiring `kiln deploy` or `kiln release`.
 
 The preferred model is an explicit `kiln-deploy.toml` describing **existing
 infrastructure**, deployment targets and overrides, rather than Kiln owning

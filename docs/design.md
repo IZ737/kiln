@@ -505,6 +505,16 @@ See the [Phase 4 implementation plan](plans/phase-4.md).
 Phase 5 adds database-backed and authenticated uses of those RPC contracts,
 sharing validation across SSR and reactive forms.
 
+**Phase 6.5.1 (planned):** Complete the earlier agreed Ember shared-state
+contract before 1.0: importable provider-free typed stores, automatic deep
+reactivity inside explicit roots, batched invalidation, per-request SSR
+isolation, optional scoped overrides, and opt-in client navigation with
+retained stores but no automatic persistence. The existing `{% state %}` syntax is **confirmed and retained** for
+Ember-local reactive state: readers can immediately distinguish it from
+ordinary `let` and `var`. An earlier top-level `{% var %}` proposal was
+reconsidered and rejected; no local-state syntax migration is part of this
+phase. See [the plan](plans/phase-6.5.1.md) and [decision log](decisions.md).
+
 ### Phase 3: native styling, Finishes and themes
 
 See [the full Phase 3 plan](plans/phase-3.md) for the ordered implementation steps,
@@ -532,7 +542,7 @@ reactive style updates, SQL/auth, Wares and SSG remain later milestones.
 ### Static site generation
 
 The same app can be built as a static site, for blogs, docs and marketing
-pages that need no server. Planned for phase 7:
+pages that need no server. Planned for phase 6.6:
 
 - `kiln fire --static` renders every route to HTML files, with assets, ready
   for any static host or CDN. Routes with parameters list their pages:
@@ -546,7 +556,7 @@ pages that need no server. Planned for phase 7:
 
 ### Installable apps (PWAs)
 
-Planned for phase 8+, after 1.0. Marking an app installable
+Planned for phase 9+, after 1.0. Marking an app installable
 (`app.pwa(name: "Notes", icon: "icon.png")`) makes `kiln fire` generate the
 web manifest, icons at every size and a service worker that caches the app
 shell and assets, versioned with each release. A standard library `local`
@@ -567,7 +577,7 @@ self-contained. Project templates remain a separate mechanism. A future
 Ware registry and Kiln's own documentation website are important
 dogfooding projects, not just showcase demos.
 
-The proposed `kiln deploy` and `kiln release` workflows should work with
+Phase 8 (after Kiln 1.0) covers deployment automation. The proposed `kiln deploy` and `kiln release` workflows should work with
 existing infrastructure defined in `kiln-deploy.toml` rather than attempt
 to replace Terraform. They should coordinate builds, migrations, process
 activation and health checks with an inspectable plan and explicit

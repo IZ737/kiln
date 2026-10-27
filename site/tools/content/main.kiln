@@ -42,6 +42,8 @@ fn sources() -> List<Source> {
         Source(path: "plans/phase-5", section: "Plans"),
         Source(path: "plans/phase-6", section: "Plans"),
         Source(path: "plans/phase-6.5", section: "Plans"),
+        Source(path: "plans/phase-6.5.1", section: "Plans"),
+        Source(path: "plans/phase-6.6", section: "Plans"),
         Source(path: "plans/runtime-rust", section: "Plans"),
         Source(path: "plans/testing", section: "Plans"),
     ]

@@ -222,7 +222,9 @@ Each step is a separately reviewable milestone with diagnostics, conformance/bro
 - **Phase 5:** SQL/ORM, schema import/migrations, typed forms/validation, sessions/auth, generated admin and authenticated database-backed Ember/RPC applications.
 - **Phase 4.2:** Local multi-folder modules, optional minimal `kiln.toml`, and compiler/editor module support.
 - **Phase 6:** Extended manifest dependency fields, `kiln.lock`, Wares/registry/global cache, official accessible UI Ware, public `kiln test` (with Ember tests **at launch**), formatter/live reload/refactoring and compiler MCP.
-- **Phase 7:** Deployment, static-site export, extensive optimization/hardening and long-term compatibility guarantees.
+- **Phase 6.6:** Static-site export with `kiln fire --static`.
+- **Phase 7:** Optimized native release builds, extensive hardening and 1.0 compatibility guarantees.
+- **Phase 8:** Deployment and release automation.
 - **Later:** Optional JavaScript fallback code generation for browsers without WasmGC (from the same checked Kiln semantics, subject to feasibility and cross-backend conformance), PWA offline/sync, advanced desktop reuse, arbitrary npm/React/Node compatibility, freestanding targets and complete debugger.
 - **Non-goals:** Forced SPA routing, client-side access to server data stores/secrets, runtime template interpretation or a mandatory second JavaScript framework.
 
