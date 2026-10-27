@@ -1,0 +1,30 @@
+import test
+
+fn test_signing_the_book() {
+    let page = test.page()
+    page.goto("/sign-up")
+    page.label("Name").fill("Ada")
+    page.label("Email").fill("ada@example.com")
+    page.label("Password").fill("correct horse battery")
+    page.role("button", name: "Sign up").click()
+    page.wait_for_path("/")
+
+    // An empty message is refused, and the form says why.
+    page.role("button", name: "Sign the book").click()
+    page.by_text("message is required").wait()
+
+    page.label("Message").fill("What a lovely <site>")
+    page.role("button", name: "Sign the book").click()
+    page.css(".entries li").expect_text("Ada: What a lovely <site>")
+    test.equal(page.errors(), [])
+}
+
+fn test_switching_the_theme() {
+    let page = test.page()
+    page.goto("/")
+    let light = page.css("body").style("background-color")
+    page.role("button", name: "Dark theme").click()
+    page.role("button", name: "Light theme").wait()
+    test.equal(page.css("body").style("background-color"), "rgb(31, 35, 43)")
+    test.not_equal(page.css("body").style("background-color"), light)
+}

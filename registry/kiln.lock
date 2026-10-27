@@ -1,0 +1,12 @@
+# The exact Wares this project builds with, written by kiln. Commit it.
+version = 1
+
+[root]
+ui = "kiln/ui"
+
+[[ware]]
+name = "kiln/ui"
+version = "0.1.0"
+source = "path+../wares/ui"
+capabilities = []
+dependencies = {}

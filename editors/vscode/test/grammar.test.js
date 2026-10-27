@@ -149,7 +149,9 @@ test("every example tokenizes with no rule left open", async () => {
   const examples = path.join(root, "..", "..", "examples");
   const files = fs
     .readdirSync(examples, { recursive: true })
-    .filter((f) => f.endsWith(".kiln") || f.endsWith(".glaze") || f.endsWith(".ember"));
+    .filter((f) => f.endsWith(".kiln") || f.endsWith(".glaze") || f.endsWith(".ember"))
+    // `kiln test` keeps its results in a `.kiln` folder.
+    .filter((f) => fs.statSync(path.join(examples, f)).isFile());
   assert.ok(files.length > 0);
   for (const file of files) {
     const scope = file.endsWith(".kiln") ? "source.kiln" : file.endsWith(".ember") ? "text.html.ember" : "text.html.glaze";

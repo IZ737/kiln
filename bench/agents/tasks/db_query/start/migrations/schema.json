@@ -1,0 +1,32 @@
+{
+  "tables": {
+    "posts": {
+      "columns": [
+        {
+          "name": "id",
+          "ty": "integer",
+          "not_null": false,
+          "key": true
+        },
+        {
+          "name": "title",
+          "ty": "text",
+          "not_null": true,
+          "key": false
+        },
+        {
+          "name": "body",
+          "ty": "text",
+          "not_null": true,
+          "key": false
+        },
+        {
+          "name": "published",
+          "ty": "boolean",
+          "not_null": true,
+          "key": false
+        }
+      ]
+    }
+  }
+}

@@ -64,7 +64,7 @@ function fakeVscode(settings) {
       }
     },
     TaskScope: { Workspace: 2 },
-    TaskGroup: { Build: "build" },
+    TaskGroup: { Build: "build", Test: "test" },
     TaskRevealKind: { Always: 1 },
   };
   const client = {
@@ -113,7 +113,7 @@ test("starts kiln lsp and runs commands as kiln tasks", async () => {
   await extension.activate(context());
   assert.strictEqual(log.clients.length, 1);
   assert.deepStrictEqual(log.clients[0].server, { command: kiln, args: ["lsp"] });
-  for (const c of ["kiln.check", "kiln.run", "kiln.build", "kiln.restartServer", "kiln.showOutput"]) {
+  for (const c of ["kiln.check", "kiln.run", "kiln.build", "kiln.test", "kiln.dev", "kiln.fmt", "kiln.restartServer", "kiln.showOutput"]) {
     assert.ok(log.commands[c], `${c} is registered`);
   }
   await log.commands["kiln.build"](vscode.Uri.file(path.join(program, "main.kiln")));
@@ -126,6 +126,12 @@ test("starts kiln lsp and runs commands as kiln tasks", async () => {
   await log.commands["kiln.run"](vscode.Uri.file(program));
   assert.deepStrictEqual(log.tasks[1].execution.args, ["run", program]);
   assert.deepStrictEqual(log.tasks[1].matchers, []);
+  // `test` reports in the Test group; `dev` keeps running.
+  await log.commands["kiln.test"](vscode.Uri.file(program));
+  assert.deepStrictEqual(log.tasks[2].execution.args, ["test", program]);
+  await log.commands["kiln.dev"](vscode.Uri.file(program));
+  assert.deepStrictEqual(log.tasks[3].execution.args, ["dev", program]);
+  assert.strictEqual(log.tasks[3].isBackground, true);
   // A task from tasks.json resolves to the same command.
   const [, provider] = log.providers[0];
   const resolved = provider.resolveTask({

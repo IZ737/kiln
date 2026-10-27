@@ -1,0 +1,11 @@
+{% props name: String %}
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Home</title></head>
+<body>
+{% if name != "" %}
+<h1>Hello, {name}</h1>
+{% else %}
+<h1>Welcome</h1>
+<p><a href="/sign-up">Sign up</a></p>
+{% end %}
+</body></html>

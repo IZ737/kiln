@@ -1,0 +1,65 @@
+import test
+
+fn sign_up(name: String, email: String) -> test.Page {
+    let page = test.page()
+    page.goto("/sign-up")
+    page.label("Name").fill(name)
+    page.label("Email").fill(email)
+    page.label("Password").fill("correct horse battery")
+    page.role("button", name: "Sign up").click()
+    page.wait_for_path("/")
+    page
+}
+
+fn test_writing_a_post_and_commenting() {
+    let ada = sign_up("Ada", "ada@example.com")
+    ada.role("link", name: "Write a post").click()
+    ada.wait_for_path("/posts/new")
+
+    // The shared rules run on the server, and the form says what is wrong.
+    ada.role("button", name: "Save").click()
+    ada.by_text("title is required").wait()
+    test.equal(ada.css(".problem").count(), 2)
+    test.equal(ada.by_text("title is required").style("color"), "rgb(180, 35, 24)")
+
+    // The keyboard moves through the form in order.
+    ada.label("Title").fill("Hello <world>")
+    ada.label("Title").press("Tab")
+    test.equal(ada.focused(), "textbox \"Text\"")
+    ada.type_text("First paragraph, typed.")
+    ada.label("Published").check()
+    test.is_true(ada.label("Published").is_checked())
+    ada.role("button", name: "Save").click()
+    ada.wait_for_path("/posts/1")
+    test.equal(ada.role("heading", name: "Hello <world>").text(), "Hello <world>")
+
+    // Someone else comments through the ember's server call, and the list
+    // changes without a reload.
+    let bob = sign_up("Bob", "bob@example.com")
+    bob.goto("/posts/1")
+    bob.css("#comments li").expect_text("No comments yet.")
+    bob.label("Comment").fill("Nice post")
+    bob.role("button", name: "Add comment").click()
+    bob.css("#comments li").expect_text("Bob: Nice post")
+    test.equal(bob.label("Comment").value(), "")
+    test.equal(bob.path(), "/posts/1")
+
+    // An empty comment is refused by the server, in the ember.
+    bob.role("button", name: "Add comment").click()
+    bob.css("#problem").expect_text("body is required")
+    test.equal(bob.errors(), [])
+
+    // Signing out.
+    ada.goto("/")
+    ada.role("button", name: "Sign out").click()
+    ada.role("link", name: "Sign in").wait()
+    test.equal(ada.role("link", name: "Write a post").count(), 0)
+}
+
+fn test_a_narrow_screen_keeps_the_form_usable() {
+    let page = test.page(width: 360, height: 640)
+    page.goto("/sign-up")
+    test.is_true(page.role("button", name: "Sign up").is_visible())
+    page.viewport(1280, 800)
+    test.equal(page.title(), "Sign up - Journal")
+}

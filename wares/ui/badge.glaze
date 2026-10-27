@@ -1,0 +1,10 @@
+{# A short label, such as a status. #}
+{% props tone: Tone = Tone.Neutral %}
+<span class="badge {tone_class(tone)}">{% slot %}</span>
+<style>
+.badge { display: inline-block; padding: 0.125rem 0.5rem; border-radius: 999px; font-size: 0.8125rem; font-weight: 600; }
+.neutral { background: var(--color-surface-muted, #e9e5de); color: var(--color-text, #1f232b); }
+.primary { background: var(--color-accent, #a8452a); color: var(--color-on-accent, #ffffff); }
+.danger { background: var(--color-danger, #b3261e); color: #ffffff; }
+.success { background: var(--color-success, #1e6b3a); color: #ffffff; }
+</style>

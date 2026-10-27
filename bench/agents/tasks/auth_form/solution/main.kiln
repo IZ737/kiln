@@ -1,0 +1,10 @@
+import web, accounts
+
+fn main() ! {
+    let db = try accounts.database()
+    let sessions = try accounts.sessions(db)
+    let app = web.app()
+    accounts.routes(app, db, sessions)
+    accounts.settings_routes(app, db, sessions)
+    try app.listen("127.0.0.1:8080")
+}

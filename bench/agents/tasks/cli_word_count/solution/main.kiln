@@ -1,0 +1,16 @@
+import fs, io, os, words
+
+fn main() {
+    let args = os.args()
+    if args.is_empty() {
+        io.print_err("usage: wordcount FILE")
+        os.exit(1)
+    }
+    let text = fs.read(args[0]) catch err {
+        io.print_err(err.message)
+        os.exit(1)
+    }
+    for c in words.top(text, 3) {
+        print("${c.word} ${c.count}")
+    }
+}

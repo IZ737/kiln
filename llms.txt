@@ -1,0 +1,32 @@
+# Kiln
+
+> Kiln is a compiled, garbage-collected language for web servers and sites. A program is a folder of `.kiln` files (folders are modules), server-rendered `.glaze` templates and browser-capable `.ember` components compiled to WebAssembly. One `kiln` binary checks, builds, runs, tests, formats and serves it.
+
+For a coding agent: run `kiln docs --llm` for the guide that matches the installed kiln, or start `kiln mcp` (Model Context Protocol) to check code, read the project graph and run tests with the compiler itself. `kiln check --json` gives diagnostics with exact fixes, and `kiln explain CODE` explains one.
+
+## Guides
+
+- [Kiln for coding agents](https://github.com/IZ737/kiln/blob/main/docs/guides/agents.md): the loop, a minimal app, the language, modules, glazes, data, auth, Wares, tests and common mistakes
+- [Your first Kiln site](https://github.com/IZ737/kiln/blob/main/docs/guides/first-site.md): from install to a tested multi-folder site with accounts and a Ware
+- [Formatting, live reload and agents](https://github.com/IZ737/kiln/blob/main/docs/guides/tooling.md): `kiln fmt`, `kiln dev` and `kiln mcp`
+
+## Reference
+
+- [Syntax](https://github.com/IZ737/kiln/blob/main/docs/reference/syntax.md)
+- [Type rules](https://github.com/IZ737/kiln/blob/main/docs/reference/types.md)
+- [Projects and modules](https://github.com/IZ737/kiln/blob/main/docs/reference/projects.md)
+- [Glazes, styles and embers](https://github.com/IZ737/kiln/blob/main/docs/reference/glazes.md)
+- [Standard library](https://github.com/IZ737/kiln/blob/main/docs/reference/stdlib.md)
+- [Databases, models and migrations](https://github.com/IZ737/kiln/blob/main/docs/reference/data.md)
+- [Wares](https://github.com/IZ737/kiln/blob/main/docs/reference/wares.md): packages, kiln.lock, the cache and registries
+- [Testing](https://github.com/IZ737/kiln/blob/main/docs/reference/testing.md): unit, integration and browser tests
+
+## Examples
+
+- [Guestbook](https://github.com/IZ737/kiln/tree/main/examples/guestbook): accounts, a Ware, themes and browser tests
+- [Journal](https://github.com/IZ737/kiln/tree/main/examples/journal): models, auth, an admin, an ember with a typed server call
+
+## Optional
+
+- [Design](https://github.com/IZ737/kiln/blob/main/docs/design.md)
+- [Vision](https://github.com/IZ737/kiln/blob/main/docs/vision.md)

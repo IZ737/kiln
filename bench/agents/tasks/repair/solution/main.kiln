@@ -1,0 +1,6 @@
+import cart
+
+fn main() ! {
+    let items = try cart.parse("tea 3 450\ncake 1 300")
+    print(cart.total(items))
+}

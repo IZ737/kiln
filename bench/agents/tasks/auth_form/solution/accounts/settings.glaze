@@ -1,0 +1,12 @@
+{% props name: String, csrf: String, problems: List<String> %}
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Settings</title></head>
+<body>
+<h1>Settings</h1>
+<ul>{% for p in problems %}<li>{p}</li>{% end %}</ul>
+<form method="post" action="/settings">
+  <input type="hidden" name="csrf" value={csrf}>
+  <label>Name <input name="name" value={name}></label>
+  <button type="submit">Save</button>
+</form>
+</body></html>

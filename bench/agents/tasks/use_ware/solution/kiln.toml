@@ -1,0 +1,6 @@
+[package]
+name = "contact"
+entry = "main.kiln"
+
+[dependencies]
+ui = { ware = "kiln/ui", path = "{{KILN_UI}}" }

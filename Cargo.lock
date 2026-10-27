@@ -655,7 +655,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d045de693cb712d0b22c6a64be5b953f67b3ce00ab5ad3dd5d8b441886ab8e1a"
 dependencies = [
  "quote",
- "syn 2.0.119",
+ "syn 3.0.9",
 ]
 
 [[package]]
@@ -1122,7 +1122,7 @@ dependencies = [
 
 [[package]]
 name = "kiln_check"
-version = "0.10.0"
+version = "0.11.0"
 dependencies = [
  "kiln_css",
  "kiln_diagnostics",
@@ -1131,7 +1131,7 @@ dependencies = [
 
 [[package]]
 name = "kiln_cli"
-version = "0.10.0"
+version = "0.11.0"
 dependencies = [
  "base64 0.22.1",
  "clap",
@@ -1147,11 +1147,13 @@ dependencies = [
  "kiln_wasm",
  "rusqlite",
  "rustls-native-certs",
+ "semver",
  "serde",
  "serde_json",
  "sha2",
  "tar",
  "toml",
+ "tungstenite",
  "ureq",
  "webpki-root-certs",
  "zip",
@@ -1159,7 +1161,7 @@ dependencies = [
 
 [[package]]
 name = "kiln_codegen"
-version = "0.10.0"
+version = "0.11.0"
 dependencies = [
  "kiln_check",
  "kiln_diagnostics",
@@ -1169,7 +1171,7 @@ dependencies = [
 
 [[package]]
 name = "kiln_css"
-version = "0.10.0"
+version = "0.11.0"
 dependencies = [
  "kiln_diagnostics",
  "lightningcss",
@@ -1177,7 +1179,7 @@ dependencies = [
 
 [[package]]
 name = "kiln_dbwire"
-version = "0.10.0"
+version = "0.11.0"
 dependencies = [
  "base64 0.23.1",
  "bytes",
@@ -1193,7 +1195,7 @@ dependencies = [
 
 [[package]]
 name = "kiln_diagnostics"
-version = "0.10.0"
+version = "0.11.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -1201,7 +1203,7 @@ dependencies = [
 
 [[package]]
 name = "kiln_ir"
-version = "0.10.0"
+version = "0.11.0"
 dependencies = [
  "base64 0.23.1",
  "html-escape",
@@ -1212,7 +1214,7 @@ dependencies = [
 
 [[package]]
 name = "kiln_native"
-version = "0.10.0"
+version = "0.11.0"
 dependencies = [
  "cranelift-codegen",
  "cranelift-frontend",
@@ -1228,7 +1230,7 @@ dependencies = [
 
 [[package]]
 name = "kiln_rt"
-version = "0.10.0"
+version = "0.11.0"
 dependencies = [
  "argon2",
  "base64 0.23.1",
@@ -1251,14 +1253,14 @@ dependencies = [
 
 [[package]]
 name = "kiln_syntax"
-version = "0.10.0"
+version = "0.11.0"
 dependencies = [
  "kiln_diagnostics",
 ]
 
 [[package]]
 name = "kiln_wasm"
-version = "0.10.0"
+version = "0.11.0"
 dependencies = [
  "kiln_check",
  "kiln_diagnostics",
@@ -2554,6 +2556,22 @@ dependencies = [
  "thread_local",
  "tracing",
  "tracing-core",
+]
+
+[[package]]
+name = "tungstenite"
+version = "0.30.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e48ac77174b19c110a50ab2128b24215ac9cb40e0e12e093fb602d175c569d22"
+dependencies = [
+ "bytes",
+ "data-encoding",
+ "http",
+ "httparse",
+ "log",
+ "rand 0.10.3",
+ "sha1",
+ "thiserror",
 ]
 
 [[package]]

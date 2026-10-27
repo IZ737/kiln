@@ -115,14 +115,23 @@ pub fn bind_entry(root: &Path, entry: &Path, texts: &[(PathBuf, String)]) -> Bou
         .iter()
         .map(|(p, t)| (!crate::is_glaze(p)).then(|| kiln_syntax::parse(t).module))
         .collect();
+    let packages = super::packages(root);
     let mut symbols = Symbols::new();
     for ((path, _), module) in texts.iter().zip(&parsed) {
         let owner = owner(root, path);
         let names = symbols.entry(owner.clone()).or_default();
         let Some(module) = module else { continue };
+        // A test file's `test_` functions are visible to the test harness.
+        let test_file = path
+            .file_name()
+            .is_some_and(|n| n.to_string_lossy().starts_with("test_"));
         for item in &module.items {
             let (name, public, nominal) = match item {
-                Item::Fn(f) => (&f.name, f.is_pub, false),
+                Item::Fn(f) => (
+                    &f.name,
+                    f.is_pub || (test_file && f.name.name.starts_with("test_")),
+                    false,
+                ),
                 Item::Struct(s) => (&s.name, s.is_pub, true),
                 Item::Enum(e) => (&e.name, e.is_pub, true),
                 Item::Const(c) => (&c.name, c.is_pub, false),
@@ -134,6 +143,10 @@ pub fn bind_entry(root: &Path, entry: &Path, texts: &[(PathBuf, String)]) -> Bou
                     && path.parent() == Some(entry)
                 {
                     "main".to_string()
+                } else if matches!(item, Item::Fn(_)) && name.name == "main" && owner.is_empty() {
+                    // The program's own `main`, in a test build whose entry
+                    // is the test harness.
+                    "__kiln_app_main".to_string()
                 } else {
                     qualified(&owner, &name.name, nominal)
                 },
@@ -164,7 +177,8 @@ pub fn bind_entry(root: &Path, entry: &Path, texts: &[(PathBuf, String)]) -> Bou
     let mut folder_imports: BTreeMap<String, BTreeMap<String, String>> = BTreeMap::new();
     for ((path, _), module) in texts.iter().zip(&parsed) {
         let Some(module) = module else { continue };
-        let seen = folder_imports.entry(owner(root, path)).or_default();
+        let own = owner(root, path);
+        let seen = folder_imports.entry(own.clone()).or_default();
         for item in &module.items {
             if let Item::Import(i) = item {
                 for path in &i.paths {
@@ -173,8 +187,9 @@ pub fn bind_entry(root: &Path, entry: &Path, texts: &[(PathBuf, String)]) -> Bou
                         .map(|p| p.name.as_str())
                         .collect::<Vec<_>>()
                         .join(".");
-                    if symbols.contains_key(&full) {
-                        seen.insert(path.last().unwrap().name.clone(), full);
+                    let key = super::translate_in(&packages, &own, &full);
+                    if symbols.contains_key(&key) {
+                        seen.insert(path.last().unwrap().name.clone(), key);
                     }
                 }
             }
@@ -183,6 +198,7 @@ pub fn bind_entry(root: &Path, entry: &Path, texts: &[(PathBuf, String)]) -> Bou
     for ((path, text), module) in texts.iter().zip(&parsed) {
         let own = owner(root, path);
         let mut resolver = Resolver {
+            packages: &packages,
             owner: &own,
             source: text,
             symbols: &symbols,
@@ -212,12 +228,9 @@ pub fn bind_entry(root: &Path, entry: &Path, texts: &[(PathBuf, String)]) -> Bou
                             resolver.diagnostics.push(super::diagnostic(format!("module alias `{alias}` conflicts with another import or declaration"),path.last().unwrap().span));
                         }
 
-                        if symbols.contains_key(&full) {
-                            if resolver
-                                .imports
-                                .insert(alias.clone(), full.clone())
-                                .is_some()
-                            {
+                        let key = super::translate_in(&packages, &own, &full);
+                        if symbols.contains_key(&key) {
+                            if resolver.imports.insert(alias.clone(), key).is_some() {
                                 resolver.diagnostics.push(super::diagnostic(
                                     format!("duplicate module alias `{alias}`"),
                                     i.span,
@@ -255,6 +268,7 @@ pub fn bind_entry(root: &Path, entry: &Path, texts: &[(PathBuf, String)]) -> Bou
     result
 }
 struct Resolver<'a> {
+    packages: &'a super::Packages,
     owner: &'a str,
     source: &'a str,
     symbols: &'a Symbols,
@@ -295,6 +309,18 @@ impl Resolver<'_> {
             self.local(first)
         } {
             return None;
+        }
+        if path.len() == 1
+            && self.owner == "__test"
+            && !self
+                .symbols
+                .get("__test")
+                .is_some_and(|m| m.contains_key(first))
+        {
+            // The test harness calls the tests of the root folder.
+            if let Some(symbol) = self.symbols.get("").and_then(|m| m.get(first)) {
+                return Some((symbol.qualified.clone(), 1));
+            }
         }
         let (module, name, count) = if let Some(module) = self.imports.get(first) {
             if path.len() < 2 {
@@ -675,6 +701,9 @@ impl Resolver<'_> {
                         e.span,
                         format!("\"{}/{}\"", self.owner.replace('.', "/"), path),
                     );
+                } else if let Some(ware) = super::ware_of(self.owner) {
+                    // A Ware's paths are relative to the Ware's root.
+                    self.edit(e.span, format!("\"{}/{}\"", ware.replace('.', "/"), path));
                 }
             }
         }
@@ -704,8 +733,31 @@ impl Resolver<'_> {
             match n {
                 Node::Expr { expr, .. } => self.expr(expr),
                 Node::Element(e) => {
-                    if e.is_component() && !self.owner.is_empty() && !e.name.name.contains('.') {
-                        let name = format!("{}.{}", self.owner, e.name.name);
+                    if e.name.name.starts_with("__") {
+                        self.diagnostics.push(super::diagnostic(
+                            "names starting with `__` are reserved for the compiler",
+                            e.name.span,
+                        ));
+                    }
+                    let qualified = e
+                        .name
+                        .name
+                        .rsplit_once('.')
+                        .map(|(module, component)| {
+                            (
+                                super::translate_in(self.packages, self.owner, module),
+                                module,
+                                component,
+                            )
+                        })
+                        .filter(|(key, module, _)| key != module)
+                        .map(|(key, _, component)| format!("{key}.{component}"));
+                    if e.is_component()
+                        && (qualified.is_some()
+                            || (!self.owner.is_empty() && !e.name.name.contains('.')))
+                    {
+                        let name =
+                            qualified.unwrap_or_else(|| format!("{}.{}", self.owner, e.name.name));
                         self.edit(e.name.span, name.clone());
                         let element = &self.source[e.span.start as usize..e.span.end as usize];
                         if let Some(close) = element.rfind("</") {

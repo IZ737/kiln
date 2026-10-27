@@ -1,0 +1,58 @@
+// Accounts: signing up, and the home page that greets you.
+import web, sql, orm, auth, validate
+
+pub struct Account {
+    id: Int
+    email: String
+    name: String
+    password: String
+}
+
+pub fn database() -> sql.Db ! {
+    let url = if env("DATABASE_URL") == "" { "sqlite:app.db" } else { env("DATABASE_URL") }
+    return try sql.open(url)
+}
+
+// Cookies go over HTTPS only, unless `APP_HTTP=1`.
+pub fn sessions(db: sql.Db) -> auth.Sessions ! {
+    return try auth.sessions(db, secure: env("APP_HTTP") != "1")
+}
+
+// The account of whoever sent the request, if they are signed in.
+pub fn signed_in(db: sql.Db, sessions: auth.Sessions, req: web.Request) -> Account? ! {
+    let who = try sessions.current(req)
+    if who is some(w) {
+        let id = w.subject.to_int() ?? 0
+        return try orm.find<Account>(db).where(fn(a) { a.id == id }).first()
+    }
+    return none
+}
+
+pub fn routes(app: web.App, db: sql.Db, sessions: auth.Sessions) {
+    app.get("/", fn(req) {
+        let account = try signed_in(db, sessions, req)
+        let name = if account is some(a) { a.name } else { "" }
+        return web.render("home.glaze", { name: name })
+    })
+
+    app.get("/sign-up", fn(req) {
+        return web.render("sign_up.glaze", { problems: [] })
+    })
+
+    app.post("/sign-up", fn(req) {
+        let form = try req.form<{ name: String, email: String, password: String }>()
+        let checked = validate.check([
+            validate.required("name", form.name.trim()),
+            validate.email("email", form.email),
+            validate.length("password", form.password, min: 10),
+        ])
+        if not checked.valid {
+            var res = web.render("sign_up.glaze", { problems: checked.messages() })
+            res.status = 422
+            return res
+        }
+        let hash = try auth.hash_password(form.password)
+        let account = try orm.insert<Account>(db, Account(id: 0, email: form.email.trim().lower(), name: form.name.trim(), password: hash))
+        return try sessions.sign_in(web.redirect("/", status: 303), "${account.id}")
+    })
+}

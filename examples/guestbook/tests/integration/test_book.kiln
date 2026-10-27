@@ -1,0 +1,41 @@
+import test
+
+fn sign_up(name: String, email: String) -> test.Response {
+    let form: Map<String, String> = Map()
+    form["name"] = name
+    form["email"] = email
+    form["password"] = "correct horse battery"
+    test.post_form("/sign-up", form)
+}
+
+fn test_the_book_is_open_to_read() {
+    let res = test.get("/")
+    test.equal(res.status, 200)
+    test.contains(res.body, "Nobody has signed the book yet.")
+    test.contains(res.body, "Sign in")
+}
+
+fn test_signing_up_signs_in() {
+    test.equal(sign_up("Ada", "ada@example.com").status, 303)
+    test.contains(test.get("/").body, "Sign the book")
+}
+
+fn test_strangers_cannot_sign_the_book() {
+    let form: Map<String, String> = Map()
+    form["csrf"] = "guess"
+    form["message"] = "hello"
+    test.not_equal(test.post_form("/entries", form).status, 303)
+    test.contains(test.get("/").body, "Nobody has signed the book yet.")
+}
+
+fn test_an_email_signs_up_once() {
+    test.equal(sign_up("Ada", "ada@example.com").status, 303)
+    test.equal(sign_up("Ada again", "ada@example.com").status, 422)
+}
+
+fn test_the_theme_is_remembered() {
+    let form: Map<String, String> = Map()
+    form["theme"] = "dark"
+    test.equal(test.post_form("/theme", form).status, 303)
+    test.contains(test.get("/").body, "Light theme")
+}

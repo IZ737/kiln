@@ -1,0 +1,63 @@
+// The registry's tables. `kiln db diff` writes the migrations for them,
+// and `migrations/` holds the ones written so far.
+
+// A publisher: the account that owns the Wares named `name/...`.
+pub struct Account {
+    id: Int
+    name: String
+    email: String
+    password: String
+    // Set by an administrator who has checked who the publisher is.
+    verified: Bool = false
+    role: String = "publisher"
+}
+
+// A publish token. Only its SHA-256 is stored; the token itself is shown
+// once, when it is made.
+pub struct Token {
+    id: Int
+    account_id: Int
+    token_hash: String
+    label: String
+    account: Account? = none
+}
+
+// One published version of a Ware. A release never changes, except that
+// it can be yanked (and restored).
+pub struct Release {
+    id: Int
+    account_id: Int
+    publisher: String
+    name: String
+    version: String
+    checksum: String
+    description: String
+    license: String
+    // JSON: the dependencies and capabilities, as the client sent them.
+    dependencies: String
+    capabilities: String
+    archive: String
+    yanked: Bool = false
+    published_at: String
+}
+
+// An independent review of one release, bound to its checksum: a review
+// says nothing about any other archive.
+pub struct Review {
+    id: Int
+    publisher: String
+    name: String
+    version: String
+    checksum: String
+    reviewer: String
+    notes: String
+}
+
+// What happened, for the audit log: publishes, yanks, tokens.
+pub struct Event {
+    id: Int
+    account_id: Int
+    action: String
+    subject: String
+    at: String
+}

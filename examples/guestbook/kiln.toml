@@ -1,0 +1,14 @@
+# The finished app of docs/guides/first-site.md: folder modules, the
+# kiln/ui Ware, one of its components copied in to own, accounts, a
+# theme switch and tests that drive a real browser.
+[package]
+name = "guestbook"
+kind = "app"
+entry = "main.kiln"
+
+[dependencies]
+ui = { ware = "kiln/ui", path = "../../wares/ui" }
+
+# `kiln test`: the app's server runs over plain HTTP on 127.0.0.1.
+[test]
+env = { GUESTBOOK_HTTP = "1" }

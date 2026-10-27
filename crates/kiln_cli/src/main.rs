@@ -2,12 +2,17 @@
 //! `upgrade`.
 
 mod db;
+mod dev;
+mod fmt;
 mod lsp;
+mod mcp;
 mod notice;
 mod npm;
 mod project;
 mod styles;
+mod testing;
 mod upgrade;
+mod ware;
 
 use clap::{Parser, Subcommand};
 use kiln_diagnostics::{codes, Diagnostic, SourceFile, Span};
@@ -21,6 +26,12 @@ use std::process::ExitCode;
 struct Cli {
     #[command(subcommand)]
     command: Command,
+    /// Use kiln.lock as it is: fail instead of updating it.
+    #[arg(long, global = true)]
+    locked: bool,
+    /// Make no network requests: Wares come from kiln.lock and the cache.
+    #[arg(long, global = true)]
+    offline: bool,
 }
 
 /// The code generators `build` and `run` can use.
@@ -93,8 +104,109 @@ enum Command {
         #[arg(trailing_var_arg = true)]
         args: Vec<String>,
     },
+    /// Run the project's tests: `fn test_*()` in files named `test_*.kiln`.
+    /// Tests under `tests/integration/` and `tests/browser/` can start the
+    /// app, use a database of their own and drive a real browser.
+    Test {
+        /// The project. Defaults to the current directory.
+        #[arg(default_value = ".")]
+        dir: PathBuf,
+        /// Only unit tests (any kind flags combine).
+        #[arg(long)]
+        unit: bool,
+        /// Only integration tests.
+        #[arg(long)]
+        integration: bool,
+        /// Only browser tests.
+        #[arg(long)]
+        browser: bool,
+        /// Only tests whose name contains this, such as `login`.
+        #[arg(long)]
+        filter: Option<String>,
+        /// Print the results as one JSON document (version 1).
+        #[arg(long)]
+        json: bool,
+        /// List the tests without running them.
+        #[arg(long)]
+        list: bool,
+        /// Also write the results as JUnit XML.
+        #[arg(long)]
+        junit: Option<PathBuf>,
+        /// Run the tests again whenever a file of the project changes.
+        #[arg(long)]
+        watch: bool,
+        /// How many tests run at once. Defaults to the number of CPUs.
+        #[arg(long)]
+        jobs: Option<usize>,
+        /// Seconds a test may take. Defaults to `[test] timeout`, or 60.
+        #[arg(long)]
+        timeout: Option<u64>,
+        /// Run a failing test up to this many more times; a test that
+        /// passes on a retry is reported as flaky.
+        #[arg(long, default_value_t = 0)]
+        retries: u32,
+        /// Show the browser instead of running it headless.
+        #[arg(long)]
+        headed: bool,
+        /// Download the pinned browser that browser tests use, and stop.
+        #[arg(long)]
+        install_browser: bool,
+        /// How to generate code, as for `kiln build`.
+        #[arg(long, value_enum)]
+        backend: Option<Backend>,
+    },
+    /// Format `.kiln` files, and the code in glazes' `{% %}` tags. Markup
+    /// and CSS are left as they are.
+    Fmt {
+        /// Files or folders. Defaults to the current directory.
+        paths: Vec<PathBuf>,
+        /// Change nothing: list the files that are not formatted, and fail
+        /// if there are any.
+        #[arg(long)]
+        check: bool,
+    },
+    /// Run a program's server while you work on it: kiln builds again and
+    /// restarts it when a file changes, keeps the last good build running
+    /// when a build fails, and reloads open pages.
+    Dev {
+        /// The program's folder. Defaults to the current directory.
+        #[arg(default_value = ".")]
+        dir: PathBuf,
+        /// The port pages are served on.
+        #[arg(long, default_value_t = 8080)]
+        port: u16,
+        /// The address to listen on. Only this machine can reach the
+        /// default.
+        #[arg(long, default_value = "127.0.0.1")]
+        host: String,
+        /// How to generate code, as for `kiln build`.
+        #[arg(long, value_enum)]
+        backend: Option<Backend>,
+    },
     /// Run the language server, for editors, over standard input and output.
     Lsp,
+    /// Run a Model Context Protocol server over standard input and output,
+    /// so a coding agent can read the project graph, check, explain, format
+    /// and (when allowed) run tests with this compiler.
+    Mcp {
+        /// A folder the agent may read. Defaults to the current directory;
+        /// give it more than once for more folders.
+        #[arg(long = "root")]
+        roots: Vec<PathBuf>,
+        /// Let the agent run the project's tests, which executes its code.
+        #[arg(long)]
+        allow_exec: bool,
+        /// Let the agent write files: format them, and build executables
+        /// into `.kiln/mcp/`.
+        #[arg(long)]
+        allow_write: bool,
+    },
+    /// Print Kiln's documentation for this version.
+    Docs {
+        /// The guide for coding agents, as one Markdown document.
+        #[arg(long)]
+        llm: bool,
+    },
     /// Print the syntax tree of a file.
     Parse { file: PathBuf },
     /// Explain an error code, with a wrong and a right example.
@@ -102,15 +214,119 @@ enum Command {
         /// An error code such as E0106.
         code: String,
     },
-    /// Add an npm package for embers to call, such as `npm:nanoid@5.0.9`.
-    /// Its files are kept in the program's folder under `npm/`, and
-    /// `npm.lock` records their checksums and the Kiln bindings.
+    /// Add a Ware, such as `kiln/ui` or `kiln/ui@0.1`, to kiln.toml and
+    /// kiln.lock; or an npm package for embers to call, such as
+    /// `npm:nanoid@5.0.9`, whose files are kept under `npm/` with `npm.lock`.
     Add {
-        /// The package: `npm:name@version`.
+        /// `publisher/name[@version]`, or `npm:name@version`.
         package: String,
         /// The program's folder. Defaults to the current directory.
         #[arg(default_value = ".")]
         dir: PathBuf,
+        /// A version requirement, such as `0.2` or `>=1.1, <2`.
+        #[arg(long)]
+        version: Option<String>,
+        /// A Ware in a local folder, whose source is used as it is.
+        #[arg(long)]
+        path: Option<PathBuf>,
+        /// A Ware in a Git repository.
+        #[arg(long)]
+        git: Option<String>,
+        /// With `--git`: a commit (40 hex digits).
+        #[arg(long)]
+        rev: Option<String>,
+        /// With `--git`: a branch, locked at its current commit.
+        #[arg(long)]
+        branch: Option<String>,
+        /// With `--git`: a tag, locked at its commit.
+        #[arg(long)]
+        tag: Option<String>,
+        /// The registry, if not the one kiln.toml names.
+        #[arg(long)]
+        registry: Option<String>,
+        /// The name to import it by. Defaults to the Ware's own name.
+        #[arg(long = "as")]
+        alias: Option<String>,
+        /// Accept Wares that need capabilities without asking.
+        #[arg(long)]
+        allow_capabilities: bool,
+    },
+    /// Remove a Ware from kiln.toml and kiln.lock.
+    Remove {
+        /// The name it is imported by, or `publisher/name`.
+        ware: String,
+        #[arg(default_value = ".")]
+        dir: PathBuf,
+    },
+    /// Choose the newest releases kiln.toml allows and write kiln.lock.
+    /// (`kiln upgrade` upgrades kiln itself.)
+    Update {
+        /// Only these Wares; defaults to all.
+        wares: Vec<String>,
+        #[arg(long, default_value = ".")]
+        dir: PathBuf,
+        /// Accept Wares that gain capabilities without asking.
+        #[arg(long)]
+        allow_capabilities: bool,
+    },
+    /// Show the Wares kiln.lock holds, and why each is there.
+    Tree {
+        #[arg(default_value = ".")]
+        dir: PathBuf,
+        /// Show the dependency chains that bring in this Ware.
+        #[arg(long)]
+        why: Option<String>,
+    },
+    /// Download every locked Ware into the cache, for offline builds.
+    Fetch {
+        #[arg(default_value = ".")]
+        dir: PathBuf,
+    },
+    /// Publish the Ware in a folder to a registry.
+    Publish {
+        #[arg(default_value = ".")]
+        dir: PathBuf,
+        /// The registry. Defaults to the one kiln.toml names.
+        #[arg(long)]
+        registry: Option<String>,
+        /// Show what would be published, and send nothing.
+        #[arg(long)]
+        dry_run: bool,
+    },
+    /// Save a registry's publish token, read from standard input.
+    Login {
+        #[arg(long)]
+        registry: String,
+    },
+    /// Stop new resolutions from choosing a release (`publisher/name@1.2.3`).
+    /// Lockfiles that already hold it keep working.
+    Yank {
+        release: String,
+        #[arg(long)]
+        registry: Option<String>,
+        /// Make the release choosable again.
+        #[arg(long)]
+        undo: bool,
+        #[arg(long, default_value = ".")]
+        dir: PathBuf,
+    },
+    /// Look after the per-user Ware cache.
+    Cache {
+        #[command(subcommand)]
+        action: CacheCommand,
+    },
+    /// Copy components of kiln/ui into your project, to own and change.
+    Ui {
+        #[command(subcommand)]
+        action: UiCommand,
+    },
+    /// Make a new web app in a new folder: a manifest, a page, a module and
+    /// tests. Nothing is fetched or run.
+    New { dir: PathBuf },
+    /// Check a locked Ware's source against kiln.lock and its capabilities.
+    Ware {
+        #[command(subcommand)]
+        action: WareCommand,
     },
     /// Replace this kiln with the latest release, or the one you name.
     Upgrade {
@@ -141,6 +357,53 @@ enum Command {
     /// Other commands start it in the background once an hour.
     #[command(hide = true)]
     UpdateCheck,
+}
+
+#[derive(Subcommand)]
+enum CacheCommand {
+    /// Print where the cache is.
+    Dir,
+    /// How much it holds.
+    Stats,
+    /// Check every cached Ware against its checksum.
+    Verify,
+    /// Remove Wares not used for a while, and leftovers of interrupted
+    /// downloads.
+    Prune {
+        /// Show what would be removed.
+        #[arg(long)]
+        dry_run: bool,
+        /// Remove Wares unused for this many days.
+        #[arg(long, default_value_t = 30)]
+        older_than: u64,
+    },
+}
+
+#[derive(Subcommand)]
+enum WareCommand {
+    /// Check a locked Ware: its checksum, and its declared capabilities.
+    Verify {
+        ware: String,
+        #[arg(long, default_value = ".")]
+        dir: PathBuf,
+    },
+}
+
+#[derive(Subcommand)]
+enum UiCommand {
+    /// Copy components, such as `button input`, or `all`. Files that exist
+    /// are never overwritten.
+    Add {
+        #[arg(required = true)]
+        components: Vec<String>,
+        /// The folder module to copy them into.
+        #[arg(long, default_value = "components")]
+        into: String,
+        #[arg(long, default_value = ".")]
+        dir: PathBuf,
+    },
+    /// List the components.
+    List,
 }
 
 #[derive(Subcommand)]
@@ -178,12 +441,21 @@ enum DbCommand {
 }
 
 fn main() -> ExitCode {
-    let command = Cli::parse().command;
+    kiln_diagnostics::set_path_display(project::shown);
+    let cli = Cli::parse();
+    ware::set_mode(ware::Mode {
+        locked: cli.locked,
+        offline: cli.offline,
+        ..Default::default()
+    });
+    let command = cli.command;
     // The language server talks to an editor, `upgrade` says itself what
     // is available, and JSON output is for programs.
     let notice = !matches!(
         command,
         Command::Lsp
+            | Command::Mcp { .. }
+            | Command::Docs { .. }
             | Command::Upgrade { .. }
             | Command::UpdateCheck
             | Command::Check { json: true, .. }
@@ -195,9 +467,83 @@ fn main() -> ExitCode {
     code
 }
 
+/// The guide for coding agents, as this version of kiln knows it.
+pub(crate) const AGENT_GUIDE: &str = include_str!("../../../docs/guides/agents.md");
+
 fn dispatch(command: Command) -> ExitCode {
     match command {
         Command::Check { paths, json } => check(paths, json),
+        Command::Fmt { paths, check } => fmt::run(paths, check),
+        Command::Dev {
+            dir,
+            port,
+            host,
+            backend,
+        } => {
+            let target = Target::host();
+            let backend = Backend::or_default(backend, target);
+            let builder = move |p: &project::Project, out: &Path| {
+                build_project(p, out, Emit::default(), backend, target).is_ok()
+            };
+            dev::run(dev::Options { dir, host, port }, &builder)
+        }
+        Command::Test {
+            dir,
+            unit,
+            integration,
+            browser,
+            filter,
+            json,
+            list,
+            junit,
+            watch,
+            jobs,
+            timeout,
+            retries,
+            headed,
+            install_browser,
+            backend,
+        } => {
+            if install_browser {
+                return report(testing::browser::install());
+            }
+            let mut kinds = Vec::new();
+            for (on, kind) in [
+                (unit, testing::Kind::Unit),
+                (integration, testing::Kind::Integration),
+                (browser, testing::Kind::Browser),
+            ] {
+                if on {
+                    kinds.push(kind);
+                }
+            }
+            let config = project::root(&dir)
+                .ok()
+                .and_then(|r| ware::manifest::Manifest::load(&r).ok().flatten())
+                .map(|m| m.test)
+                .unwrap_or_default();
+            let options = testing::Options {
+                path: dir,
+                kinds,
+                filter,
+                json,
+                list,
+                junit,
+                watch,
+                jobs: jobs
+                    .unwrap_or_else(|| std::thread::available_parallelism().map_or(2, |n| n.get())),
+                timeout: std::time::Duration::from_secs(timeout.or(config.timeout).unwrap_or(60)),
+                retries,
+                headed,
+                env: config.env,
+            };
+            let target = Target::host();
+            let backend = Backend::or_default(backend, target);
+            let builder = move |p: &project::Project, out: &Path| {
+                build_project(p, out, Emit::default(), backend, target).is_ok()
+            };
+            testing::run(&options, &builder)
+        }
         Command::Build {
             file,
             output,
@@ -238,18 +584,112 @@ fn dispatch(command: Command) -> ExitCode {
             args,
         } => run(&file, &args, Backend::or_default(backend, Target::host())),
         Command::Lsp => ExitCode::from(lsp::run() as u8),
+        Command::Mcp {
+            roots,
+            allow_exec,
+            allow_write,
+        } => mcp::run(mcp::Options {
+            roots: if roots.is_empty() {
+                vec![PathBuf::from(".")]
+            } else {
+                roots
+            },
+            allow_exec,
+            allow_write,
+        }),
+        Command::Docs { llm } => {
+            if llm {
+                print!("{AGENT_GUIDE}");
+            } else {
+                println!("Kiln {}: the documentation is at https://github.com/IZ737/kiln/tree/main/docs; `kiln docs --llm` prints the guide for coding agents.", env!("CARGO_PKG_VERSION"));
+            }
+            ExitCode::SUCCESS
+        }
         Command::Parse { file } => parse(&file),
         Command::Explain { code } => explain(&code),
-        Command::Add { package, dir } => match npm::add(&package, &dir) {
-            Ok(summary) => {
-                println!("{summary}");
-                ExitCode::SUCCESS
-            }
-            Err(err) => {
-                eprintln!("error: {err}");
-                ExitCode::FAILURE
-            }
-        },
+        Command::Add {
+            package,
+            dir,
+            version,
+            path,
+            git,
+            rev,
+            branch,
+            tag,
+            registry,
+            alias,
+            allow_capabilities,
+        } => report(if package.starts_with("npm:") {
+            npm::add(&package, &dir)
+        } else {
+            ware::commands::add(
+                &package,
+                &dir,
+                ware::commands::AddOptions {
+                    version,
+                    path,
+                    git,
+                    rev,
+                    branch,
+                    tag,
+                    registry,
+                    alias,
+                },
+                allow_capabilities,
+            )
+        }),
+        Command::Remove { ware: w, dir } => report(ware::commands::remove(&w, &dir)),
+        Command::Update {
+            wares,
+            dir,
+            allow_capabilities,
+        } => report(ware::commands::update(&wares, &dir, allow_capabilities)),
+        Command::Tree { dir, why } => report(ware::commands::tree(&dir, why.as_deref())),
+        Command::Fetch { dir } => report(ware::commands::fetch(&dir)),
+        Command::Publish {
+            dir,
+            registry,
+            dry_run,
+        } => report(ware::commands::publish(&dir, registry.as_deref(), dry_run)),
+        Command::Login { registry } => report(ware::commands::login(&registry)),
+        Command::Yank {
+            release,
+            registry,
+            undo,
+            dir,
+        } => report(ware::commands::yank(
+            &release,
+            registry.as_deref(),
+            &dir,
+            undo,
+        )),
+        Command::Cache { action } => report(ware::commands::cache_command(match action {
+            CacheCommand::Dir => ware::commands::CacheAction::Dir,
+            CacheCommand::Stats => ware::commands::CacheAction::Stats,
+            CacheCommand::Verify => ware::commands::CacheAction::Verify,
+            CacheCommand::Prune {
+                dry_run,
+                older_than,
+            } => ware::commands::CacheAction::Prune {
+                dry_run,
+                days: older_than,
+            },
+        })),
+        Command::Ui {
+            action:
+                UiCommand::Add {
+                    components,
+                    into,
+                    dir,
+                },
+        } => report(ware::ui::add(&dir, &into, &components)),
+        Command::Ui {
+            action: UiCommand::List,
+        } => report(Ok(ware::ui::names().join("\n"))),
+        Command::New { dir } => report(ware::ui::new_project(&dir)),
+        Command::Ware {
+            action: WareCommand::Verify { ware: w, dir },
+        } => report(ware::commands::verify_ware(&w, &dir)),
         Command::Upgrade {
             version,
             check,
@@ -279,7 +719,70 @@ fn dispatch(command: Command) -> ExitCode {
     }
 }
 
+/// Prints a command's summary, or its error.
+fn report(result: Result<String, String>) -> ExitCode {
+    match result {
+        Ok(summary) => {
+            println!("{summary}");
+            ExitCode::SUCCESS
+        }
+        Err(err) => {
+            eprintln!("error: {err}");
+            ExitCode::FAILURE
+        }
+    }
+}
+
 fn check(paths: Vec<PathBuf>, json: bool) -> ExitCode {
+    let report = match check_paths(paths) {
+        Ok(r) => r,
+        Err(err) => {
+            eprintln!("error: {err}");
+            return ExitCode::from(2);
+        }
+    };
+    if json {
+        let diagnostics: Vec<_> = report
+            .diagnostics
+            .iter()
+            .map(|(file, diag)| diag.to_json(file))
+            .collect();
+        let out = serde_json::json!({
+            "files_checked": report.files_checked,
+            "error_count": report.diagnostics.len(),
+            "diagnostics": diagnostics,
+        });
+        println!("{}", serde_json::to_string_pretty(&out).unwrap());
+    } else {
+        for (file, diag) in &report.diagnostics {
+            eprintln!("{}", diag.render(file));
+        }
+        if report.diagnostics.is_empty() {
+            eprintln!("checked {} file(s): no errors", report.files_checked);
+        } else {
+            eprintln!(
+                "checked {} file(s): {} error(s). Run `kiln explain <code>` for details.",
+                report.files_checked,
+                report.diagnostics.len()
+            );
+        }
+    }
+    if report.diagnostics.is_empty() {
+        ExitCode::SUCCESS
+    } else {
+        ExitCode::FAILURE
+    }
+}
+
+/// What `kiln check` found: how many files it read, and each error with
+/// its file.
+pub(crate) struct CheckReport {
+    pub files_checked: usize,
+    pub diagnostics: Vec<(SourceFile, Diagnostic)>,
+}
+
+/// Checks files and folders as `kiln check` does, for it and `kiln mcp`.
+pub(crate) fn check_paths(paths: Vec<PathBuf>) -> Result<CheckReport, String> {
     let paths = if paths.is_empty() {
         vec![PathBuf::from(".")]
     } else {
@@ -287,13 +790,19 @@ fn check(paths: Vec<PathBuf>, json: bool) -> ExitCode {
     };
     let mut files = Vec::new();
     for path in &paths {
-        if let Err(err) = collect_sources(path, &mut files) {
-            eprintln!("error: cannot read {}: {err}", path.display());
-            return ExitCode::from(2);
-        }
+        collect_sources(path, &mut files)
+            .map_err(|err| format!("cannot read {}: {err}", path.display()))?;
     }
     files.sort();
-
+    // Tests are built by `kiln test`, with the module they test and the
+    // harness, so a folder of them alone is not a program to check.
+    let named: Vec<&PathBuf> = paths.iter().filter(|p| p.is_file()).collect();
+    files.retain(|f| {
+        named.contains(&f)
+            || !(f.extension().is_some_and(|e| e == "kiln")
+                && f.file_name()
+                    .is_some_and(|n| n.to_string_lossy().starts_with("test_")))
+    });
     // Files are type-checked with the other files in their directory,
     // which form one app: glazes use the types of the `.kiln` files there.
     let mut dirs: BTreeMap<PathBuf, Vec<PathBuf>> = BTreeMap::new();
@@ -322,8 +831,7 @@ fn check(paths: Vec<PathBuf>, json: bool) -> ExitCode {
     for root in selected {
         dirs.entry(root).or_default();
     }
-    let mut error_count = 0;
-    let mut json_diags = Vec::new();
+    let mut found = Vec::new();
     let mut visited = std::collections::HashSet::new();
     for dir in dirs.keys() {
         let canonical = dir.canonicalize().unwrap_or_else(|_| dir.clone());
@@ -342,12 +850,7 @@ fn check(paths: Vec<PathBuf>, json: bool) -> ExitCode {
             Ok(project) => project,
             Err(err) => {
                 let (file, diag) = project::error_diagnostic(&err, &dir.join("kiln.toml"));
-                if json {
-                    json_diags.push(diag.to_json(&file));
-                } else {
-                    eprintln!("{}", diag.render(&file));
-                }
-                error_count += 1;
+                found.push((file, diag));
                 continue;
             }
         };
@@ -359,15 +862,10 @@ fn check(paths: Vec<PathBuf>, json: bool) -> ExitCode {
         let texts = project
             .files
             .iter()
-            .map(|p| std::fs::read_to_string(p).map(|text| (p.clone(), text)))
-            .collect::<Result<Vec<_>, _>>();
-        let app = match texts {
-            Ok(texts) => check_project_sources_entry(&project.root, &project.entry, texts).0,
-            Err(err) => {
-                eprintln!("error: {err}");
-                return ExitCode::from(2);
-            }
-        };
+            .map(|p| project::read(p).map(|text| (p.clone(), text)))
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|err| err.to_string())?;
+        let app = check_project_sources_entry(&project.root, &project.entry, texts).0;
         for (file, diagnostics) in app {
             if paths.iter().all(|p| p.is_file())
                 && Path::new(&file.name).parent() == Some(canonical.as_path())
@@ -377,37 +875,15 @@ fn check(paths: Vec<PathBuf>, json: bool) -> ExitCode {
             {
                 continue;
             }
-            error_count += diagnostics.len();
-            for diag in &diagnostics {
-                if json {
-                    json_diags.push(diag.to_json(&file));
-                } else {
-                    eprintln!("{}", diag.render(&file));
-                }
+            for diag in diagnostics {
+                found.push((file.clone(), diag));
             }
         }
     }
-
-    if json {
-        let report = serde_json::json!({
-            "files_checked": files.len(),
-            "error_count": error_count,
-            "diagnostics": json_diags,
-        });
-        println!("{}", serde_json::to_string_pretty(&report).unwrap());
-    } else if error_count == 0 {
-        eprintln!("checked {} file(s): no errors", files.len());
-    } else {
-        eprintln!(
-            "checked {} file(s): {error_count} error(s). Run `kiln explain <code>` for details.",
-            files.len()
-        );
-    }
-    if error_count == 0 {
-        ExitCode::SUCCESS
-    } else {
-        ExitCode::FAILURE
-    }
+    Ok(CheckReport {
+        files_checked: files.len(),
+        diagnostics: found,
+    })
 }
 
 enum Parsed {
@@ -654,8 +1130,8 @@ fn check_program_of(path: &Path) -> Result<(kiln_check::Program, PathBuf), Strin
     })?;
     let mut texts = Vec::new();
     for file in &project.files {
-        let text = std::fs::read_to_string(file)
-            .map_err(|err| format!("cannot read {}: {err}", file.display()))?;
+        let text =
+            project::read(file).map_err(|err| format!("cannot read {}: {err}", file.display()))?;
         texts.push((file.clone(), text));
     }
     let bound = project::bind::bind_entry(&project.root, &project.entry, &texts);
@@ -754,15 +1230,26 @@ fn build(
         eprintln!("{}", diag.render(&file));
         ExitCode::from(2)
     })?;
-    let dir = project.root;
-    let files = project.files;
+    build_project(&project, out, emit, backend, target)
+}
+
+/// [`build`], for a project already found, such as a test harness.
+fn build_project(
+    project: &project::Project,
+    out: &Path,
+    emit: Emit,
+    backend: Backend,
+    target: Target,
+) -> Result<(), ExitCode> {
+    let dir = project.root.clone();
+    let files = project.files.clone();
     let failed = |count: usize| {
         eprintln!("{count} error(s). Run `kiln explain <code>` for details.");
         ExitCode::FAILURE
     };
     let mut texts = Vec::new();
     for path in &files {
-        let text = std::fs::read_to_string(path).map_err(|err| {
+        let text = project::read(path).map_err(|err| {
             eprintln!("error: cannot read {}: {err}", path.display());
             ExitCode::from(2)
         })?;
@@ -1018,7 +1505,10 @@ fn build(
             ExitCode::from(2)
         })
     };
-    let ir = kiln_ir::lower(&parsed.module, &program).map_err(report)?;
+    kiln_ir::set_caller_location(Some(caller_locations(&kiln_files, &offsets, &info, &dir)));
+    let ir = kiln_ir::lower(&parsed.module, &program);
+    kiln_ir::set_caller_location(None);
+    let ir = ir.map_err(report)?;
     if let Some(ir_path) = emit.ir {
         write(ir_path, &ir.to_string())?;
     }
@@ -1043,6 +1533,52 @@ fn build(
     linked.map_err(|err| {
         eprintln!("error: {err}");
         ExitCode::from(2)
+    })
+}
+
+/// How a call is shown to a person, as `path:line:column` in its original
+/// file (relative to the project), from its offset in the program's text.
+fn caller_locations(
+    kiln_files: &[&SourceFile],
+    offsets: &[u32],
+    info: &AppInfo,
+    root: &Path,
+) -> Box<dyn Fn(u32) -> String + Send> {
+    type Placed = (
+        u32,
+        SourceFile,
+        Option<(SourceFile, project::bind::SourceMap)>,
+    );
+    let files: Vec<Placed> = kiln_files
+        .iter()
+        .zip(offsets)
+        .map(|(f, &o)| ((*f).clone(), o, info.source_maps.get(&f.name).cloned()))
+        .map(|(f, o, m)| (o, f, m))
+        .collect();
+    let root = project::real(root);
+    Box::new(move |offset| {
+        let Some(i) = files.iter().rposition(|(o, _, _)| *o <= offset) else {
+            return String::new();
+        };
+        let (start, file, map) = &files[i];
+        let local = offset - start;
+        let (file, local) = match map {
+            Some((original, map)) => (
+                original,
+                map.original(Span::new(local as usize, local as usize))
+                    .start,
+            ),
+            None => (file, local),
+        };
+        let at = file.line_col(local);
+        let path = PathBuf::from(project::shown(&file.name));
+        let path = path.strip_prefix(&root).unwrap_or(&path);
+        format!(
+            "{}:{}:{}",
+            path.display().to_string().replace('\\', "/"),
+            at.line,
+            at.column
+        )
     })
 }
 
@@ -1298,6 +1834,34 @@ fn display_symbols(text: &str, names: &BTreeMap<String, String>) -> String {
     for (name, display) in names {
         out = out.replace(name, display);
     }
+    ware_names(&out)
+}
+
+/// `__ware.kiln.ui.Button` as `kiln/ui.Button`, as people write Wares.
+fn ware_names(text: &str) -> String {
+    let mut out = String::new();
+    let mut rest = text;
+    while let Some(i) = rest.find("__ware.") {
+        out.push_str(&rest[..i]);
+        let after = &rest[i + "__ware.".len()..];
+        let mut parts = after.splitn(3, '.');
+        match (parts.next(), parts.next()) {
+            (Some(p), Some(n))
+                if !p.is_empty() && p.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') =>
+            {
+                let len = n
+                    .find(|c: char| !(c.is_ascii_alphanumeric() || c == '_'))
+                    .unwrap_or(n.len());
+                out.push_str(&format!("{p}/{}", &n[..len]));
+                rest = &after[p.len() + 1 + len..];
+            }
+            _ => {
+                out.push_str("__ware.");
+                rest = after;
+            }
+        }
+    }
+    out.push_str(rest);
     out
 }
 fn render_original(diag: &Diagnostic, file: &SourceFile, info: &AppInfo) -> String {

@@ -1,0 +1,25 @@
+import test
+
+fn test_bench_lists_products() {
+    let res = test.get("/")
+    test.equal(res.status, 200)
+    test.contains(res.body, "<h1>Shop</h1>")
+    test.contains(res.body, "Teapot")
+    test.contains(res.body, "$24.00")
+    test.contains(res.body, "$0.05")
+    test.contains(res.body, "Sold out")
+}
+
+fn test_bench_escapes_names() {
+    let res = test.get("/")
+    test.contains(res.body, "Saucer &lt;small&gt;")
+    test.is_false(res.body.contains("<small>"), "a product name went into the page as HTML")
+}
+
+fn test_bench_searches() {
+    let res = test.get("/?q=TEA")
+    test.contains(res.body, "Teapot")
+    test.contains(res.body, "Tea cup")
+    test.is_false(res.body.contains("Kettle"), "Kettle does not match `TEA`")
+    test.contains(test.get("/?q=zebra").body, "No products match.")
+}

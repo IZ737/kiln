@@ -1,0 +1,25 @@
+{# A group of radio buttons under one legend: `options={[ui.choice("a", "A")]}`.
+   The arrow keys move between them, as browsers do for a group. #}
+{% props label: String, name: String, options: List<Choice>, selected: String = "", hint: String = "", error: String = "", required: Bool = false, disabled: Bool = false, id: String = "" %}
+{% let field = field_id(id, name) %}
+<fieldset class="group" disabled={disabled} aria-invalid={if error != "" { "true" } else { "false" }} aria-describedby={described_by(field, hint, error)}>
+  <legend>{label}</legend>
+  {% if hint != "" %}<p class="hint" id="{field}-hint">{hint}</p>{% end %}
+  {% for option in options %}
+  <div class="option">
+    <input type="radio" id="{field}-{option.value}" name={name} value={option.value} checked={option.value == selected} required={required}>
+    <label for="{field}-{option.value}">{option.label}</label>
+  </div>
+  {% end %}
+  {% if error != "" %}<p class="error" id="{field}-error">{error}</p>{% end %}
+</fieldset>
+<style>
+.group { border: 0; padding: 0; margin: 0 0 var(--space-md, 1rem); display: grid; gap: var(--space-xs, 0.25rem); }
+legend { font-weight: 600; color: var(--color-text, #1f232b); padding: 0; margin-bottom: var(--space-xs, 0.25rem); }
+.option { display: flex; gap: var(--space-sm, 0.5rem); align-items: center; }
+input { width: 1.25rem; height: 1.25rem; accent-color: var(--color-accent, #a8452a); }
+input:focus-visible { outline: 3px solid var(--color-focus, #1f5fbf); outline-offset: 2px; }
+label { color: var(--color-text, #1f232b); }
+.hint { margin: 0; font-size: 0.875rem; color: var(--color-muted, #4f5560); }
+.error { margin: 0; font-size: 0.875rem; color: var(--color-danger, #b3261e); font-weight: 600; }
+</style>

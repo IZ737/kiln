@@ -1,0 +1,42 @@
+import test, fs
+
+fn test_bench_the_ware_is_locked() {
+    let lock = fs.read("kiln.lock") catch err {
+        test.fail("there is no kiln.lock: ${err.message}")
+    }
+    test.contains(lock, "name = \"kiln/ui\"")
+    let manifest = fs.read("kiln.toml") catch err {
+        test.fail(err.message)
+    }
+    test.contains(manifest, "kiln/ui")
+}
+
+fn test_bench_the_form_uses_the_components() {
+    let page = test.get("/contact")
+    test.equal(page.status, 200)
+    // kiln/ui's fields tie each label to its control.
+    test.contains(page.body, "for=\"field-name\">Name</label>")
+    test.contains(page.body, "for=\"field-email\">Email</label>")
+    test.contains(page.body, "for=\"field-message\">Message</label>")
+    test.contains(page.body, "id=\"field-message\" name=\"message\"")
+    test.contains(page.body, "class=\"button primary\"")
+}
+
+fn test_bench_problems_are_announced() {
+    let form: Map<String, String> = Map()
+    form["name"] = ""
+    form["email"] = "nope"
+    form["message"] = ""
+    let res = test.post_form("/contact", form)
+    test.equal(res.status, 422)
+    test.contains(res.body, "role=\"alert\"")
+    test.contains(res.body, "name is required")
+}
+
+fn test_bench_a_good_form_is_thanked() {
+    let form: Map<String, String> = Map()
+    form["name"] = "Ada"
+    form["email"] = "ada@example.com"
+    form["message"] = "Hello"
+    test.contains(test.post_form("/contact", form).body, "Thanks")
+}

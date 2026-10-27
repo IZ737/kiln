@@ -34,7 +34,7 @@ mod web;
 
 pub use auth::{
     k_rt_admin_site, k_rt_auth_check, k_rt_auth_csrf, k_rt_auth_current, k_rt_auth_hash_password,
-    k_rt_auth_require, k_rt_auth_sessions, k_rt_auth_sign_in, k_rt_auth_sign_out,
+    k_rt_auth_require, k_rt_auth_sessions, k_rt_auth_sha256, k_rt_auth_sign_in, k_rt_auth_sign_out,
     k_rt_auth_sign_out_all, k_rt_auth_sweep, k_rt_auth_token, k_rt_auth_verify_password,
 };
 pub use base64::{k_rt_base64_decode, k_rt_base64_encode};

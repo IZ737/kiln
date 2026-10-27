@@ -311,7 +311,7 @@ fn add_refuses_packages_it_cannot_load() {
     );
 
     let out = kiln(&["add", "nanoid", dir.to_str().unwrap()], &registry);
-    assert!(String::from_utf8_lossy(&out.stderr).contains("expected `npm:<package>@<version>`"));
+    assert!(String::from_utf8_lossy(&out.stderr).contains("`npm:<package>@<version>`"));
     let out = kiln(
         &["add", "npm:../evil@1.0.0", dir.to_str().unwrap()],
         &registry,

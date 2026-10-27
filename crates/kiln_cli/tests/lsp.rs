@@ -718,3 +718,84 @@ fn navigates_and_completes_folder_exports() {
     c.finish();
     let _ = std::fs::remove_dir_all(dir);
 }
+
+#[test]
+fn finds_references_and_renames_across_folders() {
+    let dir = std::env::temp_dir().join(format!("kiln-lsp-rename-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(dir.join("posts")).unwrap();
+    let main = "import posts\nfn main() {\n    print(posts.title())\n    print(posts.title())\n}\n";
+    let api = "pub fn title() -> String { return \"Hello\" }\nfn shout() -> String { return title().upper() }\n";
+    std::fs::write(dir.join("main.kiln"), main).unwrap();
+    std::fs::write(dir.join("posts/api.kiln"), api).unwrap();
+    let uri = format!("file://{}/main.kiln", dir.display());
+    let api_uri = format!("file://{}/posts/api.kiln", dir.display());
+    let mut c = Client::start();
+    let init = c.request(
+        "initialize",
+        json!({"rootUri": format!("file://{}", dir.display())}),
+    );
+    assert_eq!(init["capabilities"]["referencesProvider"], true);
+    assert_eq!(init["capabilities"]["renameProvider"], true);
+    assert_eq!(init["capabilities"]["documentFormattingProvider"], true);
+    c.open(&uri, main);
+    let (_, position) = unmark("import posts\nfn main() {\n    print(posts.ti|tle())\n");
+    let refs = c.request(
+        "textDocument/references",
+        json!({"textDocument": {"uri": uri}, "position": position, "context": {"includeDeclaration": true}}),
+    );
+    let refs = refs.as_array().unwrap();
+    // The declaration, its use in its own folder and the two in main.
+    assert_eq!(refs.len(), 4, "{refs:?}");
+    assert_eq!(refs.iter().filter(|r| r["uri"] == api_uri).count(), 2);
+    let edit = c.request(
+        "textDocument/rename",
+        json!({"textDocument": {"uri": uri}, "position": position, "newName": "heading"}),
+    );
+    let main_edits = edit["changes"][&uri].as_array().unwrap();
+    assert_eq!(main_edits.len(), 2);
+    // Only the name after `posts.` changes.
+    assert_eq!(
+        main_edits[0]["range"]["start"],
+        json!({"line": 2, "character": 16})
+    );
+    assert_eq!(main_edits[0]["newText"], "heading");
+    assert_eq!(edit["changes"][&api_uri].as_array().unwrap().len(), 2);
+    // A keyword is not a name.
+    c.send(
+        json!({"jsonrpc": "2.0", "id": 9, "method": "textDocument/rename",
+        "params": {"textDocument": {"uri": uri}, "position": position, "newName": "match"}}),
+    );
+    loop {
+        let m = c.receive();
+        if m["id"] == 9 {
+            assert!(m["error"]["message"]
+                .as_str()
+                .unwrap()
+                .contains("not a name"));
+            break;
+        }
+    }
+    // The standard library cannot be renamed.
+    let (_, at_print) = unmark("import posts\nfn main() {\n    pr|int(posts.title())\n");
+    let refs = c.request(
+        "textDocument/references",
+        json!({"textDocument": {"uri": uri}, "position": at_print, "context": {"includeDeclaration": true}}),
+    );
+    assert_eq!(refs, json!([]));
+    // Formatting uses `kiln fmt`.
+    c.change(
+        &uri,
+        "import posts\nfn main( ) {\n  print(posts.title( ))\n}",
+    );
+    let edits = c.request(
+        "textDocument/formatting",
+        json!({"textDocument": {"uri": uri}, "options": {"tabSize": 4, "insertSpaces": true}}),
+    );
+    assert_eq!(
+        edits[0]["newText"],
+        "import posts\nfn main() {\n    print(posts.title())\n}\n"
+    );
+    c.finish();
+    let _ = std::fs::remove_dir_all(dir);
+}

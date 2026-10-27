@@ -138,8 +138,16 @@ Run `cargo fmt --all`, `cargo clippy --all-targets -- -D warnings` and
   calls. The glaze compiler makes an ember's browser code with
   `kiln_ir::glaze::generate_client`; `tests/browser.rs` in `kiln_cli`
   drives it in Chromium (`tests/browser/*.mjs`, with Playwright).
-- `crates/kiln_cli`: the `kiln` binary (`check`, `build`, `run`, `lsp`,
-  `parse`, `explain`, `add`, `upgrade`). `npm.rs` is `kiln add npm:...`,
+- `crates/kiln_cli`: the `kiln` binary (`check`, `build`, `run`, `test`,
+  `fmt`, `dev`, `lsp`, `mcp`, `parse`, `explain`, `add`, `upgrade` and the
+  Ware commands). `ware/` is Wares: `manifest.rs` (`kiln.toml`),
+  `resolve.rs`, `lock.rs` (`kiln.lock`), `cache.rs`, `registry.rs`
+  (protocol v1), `git.rs`, `policy.rs` (capabilities) and `ui.rs`
+  (`kiln ui add`, `kiln new`). `testing/` is `kiln test`: `mod.rs` finds,
+  builds and runs tests, `http.rs` their requests and `browser.rs` drives
+  Chromium over CDP; the `test` module tests import is in `wares/test/`.
+  `fmt.rs` uses `kiln_syntax::format`, `dev.rs` is `kiln dev` and `mcp.rs`
+  is `kiln mcp`, whose tool schemas carry `SCHEMA_VERSION`. `npm.rs` is `kiln add npm:...`,
   `npm.lock` and the Kiln bindings made from TypeScript declarations. `lsp/mod.rs` is the language server; it
   reuses `check_sources` from `main.rs`, so editors and `kiln check` report
   the same errors. `lsp/features.rs` answers hover, definition, completion
@@ -183,6 +191,9 @@ Run `cargo fmt --all`, `cargo clippy --all-targets -- -D warnings` and
   change to those names changes them too, and `kiln upgrade`
   (`crates/kiln_cli/src/upgrade.rs`). `installers.yml` runs the scripts
   against the real releases.
+- `registry/` is a Ware registry written in Kiln, `wares/ui` the kiln/ui
+  Ware, and `bench/agents` the agent benchmark (`tests/bench.rs` checks
+  each task's start fails and its solution passes).
 - `examples/`: Kiln programs. Tests in `crates/kiln_syntax/tests/examples.rs`
   and `crates/kiln_check/tests/examples.rs` parse and type-check every one of
   them, so they must stay valid.

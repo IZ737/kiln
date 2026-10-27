@@ -1,0 +1,11 @@
+{% props name: String, email: String, problems: List<String>, dark: Bool %}
+{% layout "shared/layout.glaze" title: "Sign up", dark: dark %}
+<h1>Sign up</h1>
+<ui.FormErrors problems={problems} />
+<form method="post" action="/sign-up">
+  <ui.Input label="Name" name="name" value={name} required autocomplete="name" />
+  <ui.Input label="Email" name="email" type="email" value={email} required autocomplete="email" />
+  <ui.Input label="Password" name="password" type="password" hint="At least 10 characters." required autocomplete="new-password" />
+  <ui.Button type="submit">Sign up</ui.Button>
+</form>
+<p>Signed up already? <a href="/sign-in">Sign in</a></p>

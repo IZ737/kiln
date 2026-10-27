@@ -1,0 +1,188 @@
+// Assertions and fixtures for tests that `kiln test` runs. A call that
+// needs the runner (a failure, a database, the app's server, the browser)
+// writes one line to standard output and reads the runner's answer from
+// standard input. `kiln test` adds `at:` to each assertion call, so a
+// failure points at the line that made it.
+import io, json, os
+
+struct Reply {
+    ok: Bool
+    value: String
+    error: String
+}
+
+// A response from the app under test.
+pub struct Response {
+    status: Int
+    headers: Map<String, String>
+    body: String
+}
+
+impl Response {
+    // A header, by its lower-case name.
+    pub fn header(self, name: String) -> String? {
+        self.headers.get(name.lower())
+    }
+}
+
+// Sends a request to the runner and returns its answer's value, failing
+// the test with the runner's message when it could not do it.
+fn ask(request: String, at: String) -> String {
+    io.write("@@kiln-test@@ ${request}\n")
+    io.flush()
+    let line = io.read_line() ?? ""
+    if line == "" {
+        io.print_err("the test runner stopped answering")
+        os.exit(3)
+    }
+    let reply = json.decode<Reply>(line) catch err {
+        Reply(ok: false, value: "", error: "unreadable answer from the test runner: ${line}")
+    }
+    if not reply.ok {
+        fail(reply.error, at: at)
+    }
+    reply.value
+}
+
+// Asks the runner to do `op`, with arguments as name and value pairs.
+fn tell(op: String, at: String, pairs: List<String>) -> String {
+    let request: Map<String, String> = Map()
+    request["op"] = op
+    request["at"] = at
+    var i = 0
+    while i + 1 < pairs.len() {
+        request[pairs[i]] = pairs[i + 1]
+        i += 2
+    }
+    ask(json.encode(request), at)
+}
+
+// Fails the test now, with a message.
+pub fn fail(message: String, at: String = "@caller") -> Never {
+    io.write("@@kiln-test@@ ${json.encode({ op: "fail", message, at, expected: "", actual: "" })}\n")
+    io.flush()
+    os.exit(1)
+}
+
+fn differ(message: String, expected: String, actual: String, at: String) -> Never {
+    io.write("@@kiln-test@@ ${json.encode({ op: "fail", message, at, expected, actual })}\n")
+    io.flush()
+    os.exit(1)
+}
+
+// `actual` must equal `expected`.
+pub fn equal<T>(actual: T, expected: T, at: String = "@caller") {
+    if actual != expected {
+        differ("the values differ", "${expected}", "${actual}", at)
+    }
+}
+
+// `actual` must differ from `other`.
+pub fn not_equal<T>(actual: T, other: T, at: String = "@caller") {
+    if actual == other {
+        differ("the values are equal", "anything but ${other}", "${actual}", at)
+    }
+}
+
+pub fn is_true(value: Bool, message: String = "expected true", at: String = "@caller") {
+    if not value {
+        fail(message, at: at)
+    }
+}
+
+pub fn is_false(value: Bool, message: String = "expected false", at: String = "@caller") {
+    if value {
+        fail(message, at: at)
+    }
+}
+
+// `text` must contain `part`.
+pub fn contains(text: String, part: String, at: String = "@caller") {
+    if not text.contains(part) {
+        differ("the text does not contain what was expected", "text containing ${part}", text, at)
+    }
+}
+
+// `value` must be a value, not `none`; returns it.
+pub fn present<T>(value: T?, at: String = "@caller") -> T {
+    match value {
+        some(v) => v
+        none => fail("expected a value, found none", at: at)
+    }
+}
+
+// `run` must fail; returns its error's message.
+pub fn fails<T>(run: fn() -> T !, at: String = "@caller") -> String {
+    let message = run() catch err {
+        return err.message
+    }
+    differ("expected an error", "an error", "${message}", at)
+}
+
+// A folder of the test's own, empty when the test starts and removed
+// after it.
+pub fn temp_dir() -> String {
+    os.env("KILN_TEST_TMP") ?? os.temp_dir()
+}
+
+// A database of the test's own, with the project's migrations applied:
+// `sqlite:` in the test's folder. The app's server, if the test starts it,
+// uses the same database as `DATABASE_URL`.
+pub fn database_url(at: String = "@caller") -> String {
+    tell("database", at, [])
+}
+
+// The address of the app under test: kiln builds the project's program
+// and starts it for this test on a free port, on 127.0.0.1.
+pub fn base_url(at: String = "@caller") -> String {
+    tell("server", at, [])
+}
+
+// Sends a request to the app under test. `path` is relative to its
+// address. Cookies the app sets are kept for the rest of the test.
+pub fn request(
+    method: String,
+    path: String,
+    body: String = "",
+    headers: Map<String, String> = Map(),
+    at: String = "@caller",
+) -> Response {
+    let value = tell(
+        "http",
+        at,
+        ["method", method, "path", path, "body", body, "headers", json.encode(headers)],
+    )
+    json.decode<Response>(value) catch err {
+        fail("unreadable response from the runner: ${err.message}", at: at)
+    }
+}
+
+pub fn get(path: String, at: String = "@caller") -> Response {
+    request("GET", path, at: at)
+}
+
+// Posts a form, encoded as a browser does.
+pub fn post_form(path: String, fields: Map<String, String>, at: String = "@caller") -> Response {
+    var body = ""
+    for entry in fields.entries() {
+        if body != "" {
+            body = "${body}&"
+        }
+        body = "${body}${encode(entry.key)}=${encode(entry.value)}"
+    }
+    let headers: Map<String, String> = Map()
+    headers["content-type"] = "application/x-www-form-urlencoded"
+    request("POST", path, body: body, headers: headers, at: at)
+}
+
+// Posts JSON.
+pub fn post_json(path: String, body: String, at: String = "@caller") -> Response {
+    let headers: Map<String, String> = Map()
+    headers["content-type"] = "application/json"
+    request("POST", path, body: body, headers: headers, at: at)
+}
+
+// Percent-encodes text for a form or a URL.
+pub fn encode(text: String) -> String {
+    tell("encode", "", ["text", text])
+}

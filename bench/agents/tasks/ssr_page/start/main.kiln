@@ -1,0 +1,9 @@
+import web, shop
+
+fn main() ! {
+    let app = web.app()
+    app.get("/health", fn(req) {
+        return web.text("ok ${shop.products().len()}")
+    })
+    try app.listen("127.0.0.1:8080")
+}

@@ -160,6 +160,16 @@ fn main() ! {
     app.get("/docs/{dir}/{page}", fn(req, dir, page) { try show_doc("${dir}/${page}") })
     // The repository's README, which the docs link to.
     app.get("/README", fn(req) { web.redirect("https://github.com/IZ737/kiln#readme") })
+    // The guide for coding agents, as Markdown, where agents look for it.
+    app.get("/llms.txt", fn(req) {
+        let guide = doc_sources().find(fn(s) { s.path == "guides/agents" })
+        if guide is some(g) {
+            var res = web.text(g.lines.join("\n"))
+            res.headers["content-type"] = "text/markdown; charset=utf-8"
+            return res
+        }
+        return web.not_found()
+    })
     app.on_error(fn(req, status, message) {
         let r = web.render("error.glaze", { status: status, message: message })
         return web.Response(status: status, headers: r.headers, body: r.body)

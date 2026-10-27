@@ -1,0 +1,18 @@
+import test
+
+fn test_bench_most_common_first() {
+    let counts = top("the cat and the hat and the bat", 3)
+    test.equal(counts, [Count(word: "the", count: 3), Count(word: "and", count: 2), Count(word: "bat", count: 1)])
+}
+
+fn test_bench_letters_only_and_case() {
+    let counts = top("Hello, hello! HELLO? it's 42 times-two", 10)
+    test.equal(counts[0], Count(word: "hello", count: 3))
+    test.equal(counts.len(), 5)
+    test.equal(counts.map(.word).slice(1, 5), ["it", "s", "times", "two"])
+}
+
+fn test_bench_at_most_n() {
+    test.equal(top("", 3), [])
+    test.equal(top("one two three four", 2).len(), 2)
+}

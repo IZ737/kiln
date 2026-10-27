@@ -1,0 +1,20 @@
+// A library call's result passed straight to `json.encode`: its type comes
+// from the closure, not from the call's own generic signature.
+import json
+
+struct Post {
+    id: Int
+    title: String
+    tags: List<String>
+}
+
+fn main() {
+    let posts = [Post(id: 1, title: "First", tags: ["a"]), Post(id: 2, title: "Second", tags: [])]
+    print(json.encode(posts.map(fn(p) { p.title })))
+    print(json.encode(posts.map(.id)))
+    print(json.encode(posts.map(fn(p) { { id: p.id, count: p.tags.len() } })))
+    print(json.encode(posts.filter(fn(p) { p.id > 1 })))
+    print(json.encode(posts.find(fn(p) { p.id == 1 })))
+    print(json.encode(posts.flat_map(.tags)))
+    print(json.encode([1, 2, 3].fold(0, fn(sum, n) { sum + n })))
+}

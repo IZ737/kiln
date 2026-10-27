@@ -1,0 +1,32 @@
+{
+  "tables": {
+    "accounts": {
+      "columns": [
+        {
+          "name": "id",
+          "ty": "integer",
+          "not_null": false,
+          "key": true
+        },
+        {
+          "name": "email",
+          "ty": "text",
+          "not_null": true,
+          "key": false
+        },
+        {
+          "name": "name",
+          "ty": "text",
+          "not_null": true,
+          "key": false
+        },
+        {
+          "name": "password",
+          "ty": "text",
+          "not_null": true,
+          "key": false
+        }
+      ]
+    }
+  }
+}

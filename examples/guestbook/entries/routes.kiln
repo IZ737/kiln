@@ -1,0 +1,35 @@
+// The book: everyone can read it, and people who are signed in can sign it.
+import web, sql, orm, auth, ui, shared, components
+
+pub fn routes(app: web.App, db: sql.Db, sessions: auth.Sessions) {
+    app.get("/", fn(req) {
+        return try page(db, sessions, req, "", [], 200)
+    })
+
+    app.post("/entries", fn(req) {
+        let who = try sessions.require(req)
+        let form = try req.form<{ csrf: String, message: String }>()
+        try sessions.check(req, form.csrf)
+        let checked = shared.entry_problems(form.message.trim())
+        if not checked.valid {
+            return try page(db, sessions, req, form.message, checked.messages(), 422)
+        }
+        let account = who.subject.to_int() ?? 0
+        try orm.insert<shared.Entry>(db, shared.Entry(id: 0, account_id: account, message: form.message.trim()))
+        return web.redirect("/", status: 303)
+    })
+}
+
+// The book's page, with the form as it was sent and what is wrong with it.
+fn page(db: sql.Db, sessions: auth.Sessions, req: web.Request, message: String, problems: List<String>, status: Int) -> web.Response ! {
+    let who = try sessions.current(req)
+    let entries = try orm.find<shared.Entry>(db)
+        .include(.account)
+        .order_by(.id, descending: true)
+        .limit(100)
+        .all()
+    let token = try sessions.csrf(req)
+    var res = web.render("index.glaze", { entries: entries, signed_in: who != none, csrf: token, message: message, problems: problems, dark: shared.dark(req) })
+    res.status = status
+    return res
+}

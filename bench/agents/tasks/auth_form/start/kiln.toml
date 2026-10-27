@@ -1,0 +1,6 @@
+[package]
+name = "accounts_app"
+entry = "main.kiln"
+
+[test]
+env = { APP_HTTP = "1" }

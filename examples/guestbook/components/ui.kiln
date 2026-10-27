@@ -1,0 +1,54 @@
+// Copied from kiln/ui 0.1.0 (MIT licence, https://github.com/IZ737/kiln/tree/main/wares/ui) by `kiln ui add`. It is yours to change.
+// The types the components share. Each component is a Glaze in this
+// folder: `<ui.Button>` is button.glaze. Their colours, spacing and radii
+// are the app's design tokens (`--color-accent`, `--space-md`,
+// `--radius-card`...), with defaults, so a theme restyles them.
+
+// The intent of a button, alert or badge.
+pub enum Tone {
+    Neutral
+    Primary
+    Danger
+    Success
+}
+
+// One choice of a `<ui.Select>`.
+pub struct Choice {
+    value: String
+    label: String
+}
+
+pub fn choice(value: String, label: String) -> Choice {
+    return Choice(value: value, label: label)
+}
+
+// The class a tone adds to a component.
+pub fn tone_class(tone: Tone) -> String {
+    return match tone {
+        Tone.Neutral => "neutral"
+        Tone.Primary => "primary"
+        Tone.Danger => "danger"
+        Tone.Success => "success"
+    }
+}
+
+// The id a form control gets when none is given: from its name, so the
+// label, hint and error can refer to it.
+pub fn field_id(id: String, name: String) -> String {
+    if id != "" {
+        return id
+    }
+    return "field-${name}"
+}
+
+// The `aria-describedby` of a control: its hint and its error, if any.
+pub fn described_by(id: String, hint: String, error: String) -> String {
+    var ids: List<String> = []
+    if hint != "" {
+        ids.push("${id}-hint")
+    }
+    if error != "" {
+        ids.push("${id}-error")
+    }
+    return ids.join(" ")
+}

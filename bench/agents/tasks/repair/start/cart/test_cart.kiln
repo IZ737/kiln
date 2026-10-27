@@ -1,0 +1,24 @@
+import test
+
+fn test_parses_lines() {
+    let items = parse("tea 3 450\n\ncake 1 300\n") catch err {
+        test.fail(err.message)
+    }
+    test.equal(items.len(), 2)
+    test.equal(items[0], Item(name: "tea", quantity: 3, cents: 450))
+}
+
+fn test_refuses_a_bad_line() {
+    test.contains(test.fails(fn() { try parse("tea three 450") }), "not a quantity")
+}
+
+fn test_finds_items() {
+    let items = [Item(name: "tea", quantity: 1, cents: 1)]
+    test.equal(test.present(find(items, "tea")), Item(name: "tea", quantity: 1, cents: 1))
+    test.equal(find(items, "cake"), none)
+}
+
+fn test_ten_items_get_a_discount() {
+    test.equal(total([Item(name: "tea", quantity: 10, cents: 100)]), 900)
+    test.equal(total([Item(name: "tea", quantity: 9, cents: 100)]), 900)
+}

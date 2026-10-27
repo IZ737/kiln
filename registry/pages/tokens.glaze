@@ -1,0 +1,22 @@
+{% props account: store.Account, labels: List<String>, created: String, csrf: String %}
+{% layout "pages/layout.glaze" title: "Tokens", who: account %}
+<h1>Publish tokens</h1>
+<p>Signed in as <strong>{account.name}</strong>{% if account.verified %} <ui.Badge tone={ui.Tone.Success}>verified publisher</ui.Badge>{% end %}.</p>
+{% if created != "" %}
+<ui.Alert tone={ui.Tone.Success} title="Your new token">
+  <p>Copy it now: it is not shown again. Save it with <code>kiln login --registry ...</code>.</p>
+  <pre><code data-testid="token">{created}</code></pre>
+</ui.Alert>
+{% end %}
+<ui.Card title="Tokens">
+  {% for l in labels %}<p>{l}</p>{% empty %}<p>No tokens yet.</p>{% end %}
+</ui.Card>
+<form method="post" action="/tokens">
+  <input type="hidden" name="csrf" value={csrf}>
+  <ui.Input label="What the token is for" name="label" value="" placeholder="kiln publish on my laptop" />
+  <ui.Button type="submit">Make a token</ui.Button>
+</form>
+<form method="post" action="/sign-out">
+  <input type="hidden" name="csrf" value={csrf}>
+  <ui.Button type="submit" tone={ui.Tone.Neutral}>Sign out</ui.Button>
+</form>

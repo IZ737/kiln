@@ -1,0 +1,10 @@
+# kiln/ui: accessible components for server-rendered forms and pages,
+# built from ordinary Glazes and scoped CSS. Use it as a dependency
+# (`kiln add kiln/ui`), or copy a component into your project to own it
+# (`kiln ui add button`).
+[package]
+name = "kiln/ui"
+kind = "ware"
+version = "0.1.0"
+description = "Accessible Glaze components: buttons, form fields, alerts, cards and more"
+license = "MIT"

@@ -1,0 +1,13 @@
+{% props problems: List<String> %}
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Sign up</title></head>
+<body>
+<h1>Sign up</h1>
+<ul>{% for p in problems %}<li>{p}</li>{% end %}</ul>
+<form method="post" action="/sign-up">
+  <label>Name <input name="name"></label>
+  <label>Email <input name="email" type="email"></label>
+  <label>Password <input name="password" type="password"></label>
+  <button type="submit">Sign up</button>
+</form>
+</body></html>

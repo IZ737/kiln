@@ -1,5 +1,53 @@
 # Changelog
 
+## 0.11.0 (2026-10-27)
+
+Phase 6: the developer ecosystem. Projects use versioned Wares from a
+registry, Git or a folder, pinned by `kiln.lock` and kept once per user;
+`kiln test` runs unit, integration and real-browser tests written in
+Kiln; `kiln fmt`, `kiln dev`, references and rename make editing safe; and
+`kiln mcp` gives coding agents the compiler's own answers.
+
+- **Wares.** `[dependencies]` in `kiln.toml` (registry, `path` or `git`
+  with a pinned commit), SemVer resolution with one release per Ware,
+  a deterministic `kiln.lock`, `--locked` and `--offline` builds, and a
+  per-user content-addressed cache (`kiln cache dir/stats/verify/prune`).
+  `kiln add`, `remove`, `update`, `tree [--why]`, `fetch`, `publish`,
+  `login`, `yank` and `ware verify`. Wares declare capabilities that kiln
+  checks against their imports, and `[policy]` limits publishers,
+  sources, capabilities and trust tiers across the graph.
+- **A registry written in Kiln** (`registry/`), speaking registry protocol
+  version 1: accounts, publish tokens, immutable releases, yanking, and
+  an admin to verify publishers and record reviews.
+- **kiln/ui**, the first official Ware: accessible Glaze components styled
+  by design tokens. `kiln ui add` copies components into a project to own;
+  `kiln new` makes a new app with tests.
+- **`kiln test`**: `test_*` functions in `test_*.kiln` files; unit tests
+  beside the code, integration tests that start the app with a database
+  of their own, and browser tests that drive Chromium through kiln itself
+  (role, label and text locators, hydrated embers, keyboard, screenshots on
+  failure). `--filter`, `--watch`, `--json`, `--junit`, `--retries`,
+  `--jobs` and `--install-browser`; each test runs in its own process.
+- **`kiln fmt`**: one layout for Kiln code and glaze tags, which never
+  changes tokens or comments. **`kiln dev`**: rebuilds and restarts on
+  save, keeps the last good build running and reloads open pages.
+- **Editors**: find references, rename across folders and document
+  formatting in `kiln lsp`; Test, Dev Server and Format commands and tasks
+  in VS Code.
+- **Agents**: `kiln mcp`, a Model Context Protocol server with the
+  project graph, structured diagnostics, explanations, Wares, formatting
+  and tests (running code needs `--allow-exec`, writing `--allow-write`);
+  `kiln docs --llm` and `llms.txt` give the agent guide; `bench/agents`
+  holds seven benchmark tasks with hidden checks and a runner.
+- **Docs**: [Wares](docs/reference/wares.md), [Testing](docs/reference/testing.md),
+  [Your first Kiln site](docs/guides/first-site.md), [tooling](docs/guides/tooling.md)
+  and [the agent guide](docs/guides/agents.md); `examples/guestbook` is the
+  first-site guide's finished app.
+- `app.listen` uses `KILN_LISTEN` when it is set, and `auth.sha256`
+  hashes text.
+- Fixed: `json.encode(xs.map(f))` and `web.json(xs.map(f))` encoded every
+  item as `null` when the call was passed straight in.
+
 ## 0.10.0 (2026-10-26)
 
 Phase 5: data, auth and admin. Programs reach SQLite, PostgreSQL and

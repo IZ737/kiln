@@ -1046,6 +1046,19 @@ fn migrate(root: &Path, url: &str, dry_run: bool) -> Result<(), String> {
     Ok(())
 }
 
+/// Applies a program's migrations to a new database, quietly: a test's
+/// database starts with the schema the program's migrations give.
+pub fn prepare_test_database(root: &Path, url: &str) -> Result<(), String> {
+    let mut db = Database::open(url)?;
+    let applied = db.applied()?;
+    for m in read_migrations(root, db.dialect())? {
+        if !applied.iter().any(|(v, _)| *v == m.version) {
+            db.apply(&m)?;
+        }
+    }
+    Ok(())
+}
+
 /// `kiln db pull`: the models for the tables a database already has.
 fn pull(root: &Path, url: &str, out: Option<PathBuf>, check: bool) -> Result<(), String> {
     let mut db = Database::open(url)?;

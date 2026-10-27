@@ -1,0 +1,11 @@
+// Reading posts.
+import sql, orm, shared
+
+// The newest published posts, at most `limit`.
+pub fn published(db: sql.Db, limit: Int) -> List<shared.Post> ! {
+    return try orm.find<shared.Post>(db)
+        .where(.published)
+        .order_by(.id, descending: true)
+        .limit(limit)
+        .all()
+}

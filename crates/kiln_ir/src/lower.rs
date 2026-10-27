@@ -20,6 +20,29 @@ use std::rc::Rc;
 /// Lowers a program that type-checked without errors. Returns E0401 for
 /// the parts the compiler does not support yet, and E0402 when there is
 /// no `main`.
+/// A parameter whose default is the text `"@caller"` gets, when it is left
+/// out, where the call is: `kiln test` gives its assertions an `at:` this
+/// way, so a failure names the line of the test. The CLI says how an
+/// offset in the program's text is shown; without that, it is `""`.
+pub const CALLER_DEFAULT: &str = "@caller";
+
+type CallerLocation = Box<dyn Fn(u32) -> String + Send>;
+static CALLER_LOCATION: std::sync::Mutex<Option<CallerLocation>> = std::sync::Mutex::new(None);
+
+/// Sets how [`CALLER_DEFAULT`] parameters show a call's place.
+pub fn set_caller_location(f: Option<CallerLocation>) {
+    *CALLER_LOCATION.lock().unwrap() = f;
+}
+
+fn caller_location(offset: u32) -> String {
+    CALLER_LOCATION
+        .lock()
+        .unwrap()
+        .as_ref()
+        .map(|f| f(offset))
+        .unwrap_or_default()
+}
+
 pub fn lower(
     module: &ast::Module,
     program: &kiln_check::Program,
@@ -39,8 +62,16 @@ pub fn lower(
                 && matches!(&program.adts[id].kind, AdtKind::Struct(f) if f.is_empty())
         })
         .collect();
+    // A type from a folder module carries its module in its name; a value
+    // is shown with the name its source gave it.
+    let mut adts = program.adts.clone();
+    for adt in &mut adts {
+        if let Some(name) = source_name(&adt.name) {
+            adt.name = name;
+        }
+    }
     Ok(Program {
-        adts: program.adts.clone(),
+        adts,
         std_adts: program.std_adts,
         builtin,
         prims: l.prims,
@@ -114,6 +145,8 @@ struct Lowerer<'a> {
     /// Functions the lowering makes itself, such as the one each type of
     /// transaction runs through, by what they are for.
     helpers: HashMap<String, FuncId>,
+    /// The call whose arguments are being arranged, for `CALLER_DEFAULT`.
+    call_span: Span,
 }
 
 impl<'a> Lowerer<'a> {
@@ -146,6 +179,7 @@ impl<'a> Lowerer<'a> {
             instances: HashMap::new(),
             std_asts: HashMap::new(),
             helpers: HashMap::new(),
+            call_span: Span::new(0, 0),
             copies: HashMap::new(),
             pending: Vec::new(),
         }
@@ -1426,6 +1460,8 @@ impl<'a> Lowerer<'a> {
         lead: Option<Expr>,
         args: &[ast::Arg],
     ) -> (Vec<Stmt>, Option<Expr>, Vec<Expr>) {
+        // Lowering the arguments can arrange other calls.
+        let call_span = self.call_span;
         let mut slots: Vec<Option<Expr>> = (0..params.len()).map(|_| None).collect();
         let mut order = Vec::new();
         let mut next = 0;
@@ -1468,6 +1504,11 @@ impl<'a> Lowerer<'a> {
             let v = match slot {
                 Some(v) => v,
                 None => match defaults.get(i).copied().flatten() {
+                    Some(d) if is_caller_default(d) => mk(
+                        ExprKind::Str(caller_location(call_span.start)),
+                        params[i].ty.clone(),
+                        call_span,
+                    ),
                     Some(d) => {
                         let v = self.expr(d);
                         coerce(v, &params[i].ty)
@@ -1505,6 +1546,7 @@ impl<'a> Lowerer<'a> {
             .skip(usize::from(sig.has_self))
             .map(|p| p.default.as_ref())
             .collect();
+        self.call_span = span;
         let (prelude, recv, mut vals) = self.arrange(&sig.params, &defaults, recv, args);
         if let Some(r) = recv {
             vals.insert(0, r);
@@ -2652,4 +2694,18 @@ fn type_expr_name(t: &ast::TypeExpr) -> Option<&str> {
         }
         _ => None,
     }
+}
+
+/// `Post` for `KilnModule_5_posts_symbol_Post`, the name a folder
+/// module's type has inside a program.
+pub fn source_name(name: &str) -> Option<String> {
+    let rest = name.strip_prefix("KilnModule_")?;
+    let at = rest.rfind("_symbol_")?;
+    Some(rest[at + "_symbol_".len()..].to_string())
+}
+
+/// Whether a parameter's default is [`CALLER_DEFAULT`].
+fn is_caller_default(d: &ast::Expr) -> bool {
+    matches!(&d.kind, ast::ExprKind::Str(pieces)
+        if matches!(pieces.as_slice(), [ast::StrPiece::Text(t)] if t == CALLER_DEFAULT))
 }

@@ -2,3 +2,7 @@
 name = "journal"
 kind = "app"
 entry = "main.kiln"
+
+# `kiln test`: the app's server runs over plain HTTP on 127.0.0.1.
+[test]
+env = { JOURNAL_HTTP = "1", JOURNAL_ADMIN = "ada@example.com" }

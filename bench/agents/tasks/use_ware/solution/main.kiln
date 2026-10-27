@@ -1,0 +1,23 @@
+import web, validate, ui
+
+fn main() ! {
+    let app = web.app()
+    app.get("/contact", fn(req) {
+        return web.render("contact.glaze", { name: "", email: "", message: "", problems: [] })
+    })
+    app.post("/contact", fn(req) {
+        let form = try req.form<{ name: String, email: String, message: String }>()
+        let checked = validate.check([
+            validate.required("name", form.name),
+            validate.email("email", form.email),
+            validate.required("message", form.message),
+        ])
+        if not checked.valid {
+            var res = web.render("contact.glaze", { name: form.name, email: form.email, message: form.message, problems: checked.messages() })
+            res.status = 422
+            return res
+        }
+        return web.html("<!doctype html><title>Thanks</title><p>Thanks, we will write back.</p>")
+    })
+    try app.listen("127.0.0.1:8080")
+}

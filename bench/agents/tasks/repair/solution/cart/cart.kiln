@@ -1,0 +1,51 @@
+// A shopping cart: lines of `name quantity cents`.
+
+pub struct Item {
+    name: String
+    quantity: Int
+    cents: Int
+}
+
+// One line of a cart, such as `tea 3 450`.
+fn parse_line(line: String) -> Item ! {
+    let parts = line.trim().split(" ")
+    if parts.len() != 3 {
+        throw "a line is `name quantity cents`, not `${line}`"
+    }
+    let quantity = parts[1].to_int() ?? throw "`${parts[1]}` is not a quantity"
+    let cents = parts[2].to_int() ?? throw "`${parts[2]}` is not a price"
+    return Item(name: parts[0], quantity: quantity, cents: cents)
+}
+
+pub fn parse(text: String) -> List<Item> ! {
+    let items: List<Item> = []
+    for line in text.lines() {
+        if line.trim() != "" {
+            items.push(try parse_line(line))
+        }
+    }
+    return items
+}
+
+pub fn find(items: List<Item>, name: String) -> Item? {
+    for item in items {
+        if item.name == name {
+            return item
+        }
+    }
+    return none
+}
+
+// The total in cents. Orders of 10 items or more get 10% off.
+pub fn total(items: List<Item>) -> Int {
+    var sum = 0
+    var count = 0
+    for item in items {
+        sum += item.cents * item.quantity
+        count += item.quantity
+    }
+    if count >= 10 and sum > 0 {
+        return sum - sum / 10
+    }
+    return sum
+}

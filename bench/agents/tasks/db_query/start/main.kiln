@@ -1,0 +1,10 @@
+import web, shared
+
+fn main() ! {
+    let db = try shared.database()
+    let app = web.app()
+    app.get("/", fn(req) {
+        return web.text("blog")
+    })
+    try app.listen("127.0.0.1:8080")
+}

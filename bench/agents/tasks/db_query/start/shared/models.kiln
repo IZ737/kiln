@@ -1,0 +1,15 @@
+// The blog's tables.
+import sql
+
+pub struct Post {
+    id: Int
+    title: String
+    body: String
+    published: Bool = false
+}
+
+// The database `DATABASE_URL` names.
+pub fn database() -> sql.Db ! {
+    let url = if env("DATABASE_URL") == "" { "sqlite:blog.db" } else { env("DATABASE_URL") }
+    return try sql.open(url)
+}

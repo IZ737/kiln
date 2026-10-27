@@ -334,6 +334,76 @@ fn definition_bound(sources: &[Source], index: usize, offset: usize) -> Value {
     }
 }
 
+/// Every place the name at `offset` is used, and where it is declared.
+/// Names from the standard library, modules and styles have none.
+fn references_bound(sources: &[Source], index: usize, offset: usize) -> Value {
+    let program = Program::parse(sources);
+    let Some(analysis) = program.analyze(index) else {
+        return json!([]);
+    };
+    let Some(target) = analysis_ref(&analysis, offset) else {
+        return json!([]);
+    };
+    let mut found: Vec<(usize, Span)> = Vec::new();
+    match &target {
+        Ref::Local(def) => {
+            found.push((index, *def));
+            for (span, r) in &analysis.references {
+                if *r == target {
+                    found.push((index, *span));
+                }
+            }
+        }
+        Ref::Module(_)
+        | Ref::ModuleFn(..)
+        | Ref::StyleKey { .. }
+        | Ref::Token { .. }
+        | Ref::Theme(_)
+        | Ref::Component(_) => {
+            return json!([]);
+        }
+        _ => {
+            match find_decl(&program, index, &analysis, &Some(target.clone())) {
+                Some((DeclIn::File(i), decl)) => found.push((i, decl.name)),
+                // The standard library's names are not the program's to rename.
+                _ => return json!([]),
+            }
+            for i in 0..sources.len() {
+                let other;
+                let a = if i == index {
+                    &analysis
+                } else {
+                    match program.analyze(i) {
+                        Some(a) => {
+                            other = a;
+                            &other
+                        }
+                        None => continue,
+                    }
+                };
+                for (span, r) in &a.references {
+                    if *r == target {
+                        found.push((i, *span));
+                    }
+                }
+            }
+        }
+    }
+    found.sort_by_key(|(i, s)| (*i, s.start));
+    found.dedup();
+    Value::Array(
+        found
+            .into_iter()
+            .map(|(i, span)| {
+                json!({
+                    "uri": program.uri(i),
+                    "range": range(&sources[i].text, span.start as usize, span.end as usize),
+                })
+            })
+            .collect(),
+    )
+}
+
 /// Where the program's stylesheets first declare `needle`, a custom
 /// property (`--space-md`) or a class (`.theme-dark`).
 fn find_in_css(dir: &Path, needle: &str) -> Option<Value> {
@@ -947,6 +1017,9 @@ fn collect_sources(dir: &Path, out: &mut Vec<PathBuf>, depth: usize) {
 // resolved source and response ranges back to the user's original documents.
 pub(super) fn hover(sources: &[Source], index: usize, offset: usize) -> Value {
     bound_request(sources, index, offset, hover_bound)
+}
+pub(super) fn references(sources: &[Source], index: usize, offset: usize) -> Value {
+    bound_request(sources, index, offset, references_bound)
 }
 pub(super) fn definition(sources: &[Source], index: usize, offset: usize) -> Value {
     bound_request(sources, index, offset, definition_bound)

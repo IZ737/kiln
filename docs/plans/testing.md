@@ -1,10 +1,13 @@
 # Integrated testing — planned Kiln toolchain capability
 
-**Status:** Planned. The public-facing development workflow is a single
-`kiln test` command for unit, integration and **automated real-browser
-frontend/end-to-end tests**. This is distinct from Kiln's existing compiler
-conformance tests and CI checks: application developers should not need to
-assemble a separate test framework and browser automation stack.
+**Status:** Implemented in Phase 6 (v0.11.0) as `kiln test`; see the
+[testing reference](../reference/testing.md) for the commands and APIs as
+built. This plan stays as the record of the requirements they meet. The
+public-facing development workflow is a single `kiln test` command for
+unit, integration and **automated real-browser frontend/end-to-end tests**.
+This is distinct from Kiln's compiler conformance tests and CI checks:
+application developers should not need to assemble a separate test
+framework and browser automation stack.
 
 **Roadmap:** Phase 4 delivers Embers with compiler conformance and real-
 browser CI smoke tests; Phase 5 adds SQL/auth and associated browser

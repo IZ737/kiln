@@ -1,0 +1,36 @@
+// The guestbook's tables. `kiln db diff` writes the migrations for them.
+import validate
+
+pub struct Account {
+    id: Int
+    email: String
+    name: String
+    password: String
+}
+
+pub struct Entry {
+    id: Int
+    account_id: Int
+    message: String
+    // Loaded with `include(.account)`.
+    account: Account? = none
+}
+
+// The rules for an entry, which the server checks.
+pub fn entry_problems(message: String) -> validate.Checked {
+    return validate.check([
+        validate.required("message", message),
+        validate.length("message", message, max: 280),
+    ])
+}
+
+// The rules for a new account.
+pub fn account_problems(name: String, email: String, password: String, taken: Bool) -> validate.Checked {
+    return validate.check([
+        validate.required("name", name),
+        validate.length("name", name, max: 80),
+        validate.email("email", email),
+        validate.when(taken, "email", "someone has signed up with this email"),
+        validate.length("password", password, min: 10, max: 200),
+    ])
+}

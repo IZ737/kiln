@@ -1,0 +1,16 @@
+import test
+
+fn test_an_entry_needs_a_message() {
+    test.is_false(entry_problems("").valid)
+    test.equal(entry_problems("").messages(), ["message is required"])
+    test.is_true(entry_problems("Lovely site").valid)
+}
+
+fn test_messages_are_short() {
+    test.is_false(entry_problems("x".repeat(281)).valid)
+}
+
+fn test_a_taken_email_is_refused() {
+    let checked = account_problems("Ada", "ada@example.com", "correct horse battery", true)
+    test.equal(checked.messages(), ["someone has signed up with this email"])
+}

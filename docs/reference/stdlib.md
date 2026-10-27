@@ -6,7 +6,8 @@ everywhere; every other module is imported by name (`import fs`). This page
 lists the modules the compiler can build into native programs today. The
 parts of `web` not listed here type-check, and building a program that uses
 them reports E0401 until their phase arrives. `sql`, `orm` and `admin` have a
-page of their own: [databases, models and migrations](data.md).
+page of their own: [databases, models and migrations](data.md). Tests
+import `test`, which `kiln test` provides: see [Testing](testing.md).
 
 ## Prelude
 
@@ -372,6 +373,7 @@ fn main() ! {
 | `auth.hash_password(password) -> String !` | The hash to store; a different one every time |
 | `auth.verify_password(password, hash) -> Bool` | Whether the password is the one the hash was made from |
 | `auth.token(bytes: Int = 32) -> String` | A value no one can guess, for a link in an email or an API key |
+| `auth.sha256(text: String) -> String` | The SHA-256 of the text's bytes, as 64 lower-case hex digits: for checksums, and API keys stored hashed (never passwords) |
 | `auth.sessions(db, cookie: "kiln_session", idle: 12h, lifetime: 720h, secure: true) -> Sessions !` | Sessions in `db` |
 
 `auth.sessions` makes its table, `kiln_sessions`, when it is not there

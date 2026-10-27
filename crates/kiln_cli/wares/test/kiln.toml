@@ -1,0 +1,7 @@
+# kiln's test module: `import test` in tests that `kiln test` runs. It
+# comes with kiln, so it is never a dependency in kiln.toml.
+[package]
+name = "kiln/test"
+kind = "ware"
+version = "1.0.0"
+capabilities = ["environment"]

@@ -1,0 +1,11 @@
+{% props name: String, email: String, problems: List<String> %}
+{% layout "pages/layout.glaze" title: "Sign up" %}
+<h1>Sign up</h1>
+<p>Your publisher name is the first part of your Wares' names.</p>
+<form method="post" action="/sign-up">
+  <ui.FormErrors problems={problems} />
+  <ui.Input label="Publisher name" name="name" value={name} required autocomplete="username" />
+  <ui.Input label="Email" name="email" type="email" value={email} required autocomplete="email" />
+  <ui.Input label="Password" name="password" type="password" required hint="At least 10 characters." autocomplete="new-password" />
+  <ui.Button type="submit">Sign up</ui.Button>
+</form>
