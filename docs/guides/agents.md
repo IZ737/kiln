@@ -75,7 +75,9 @@ pub fn find(id: Int) -> Note? {
 ```
 
 `kiln run .` builds and serves it; `kiln new NAME` writes a starter like
-this with tests.
+this with tests. `kiln fire --static` writes the same app as a static
+site in `dist/`: every `GET` route without parameters, and the pages a
+route with parameters lists with `.static(fn() { [...] })`.
 
 ## Language essentials
 

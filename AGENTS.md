@@ -33,6 +33,8 @@ For Phase 5 data/auth/admin work, follow [docs/plans/phase-5.md](docs/plans/phas
 
 For Phase 6 Wares/testing/tooling/MCP work, follow [docs/plans/phase-6.md](docs/plans/phase-6.md), which divides the ecosystem into four reviewable subphases. Local module resolution and a minimal optional manifest arrive in Phase 4.2; Phase 6 extends project dependency metadata. Preserve manifest-free programs and the global per-user Ware cache. Syntax in plans is prospective until implemented, tested and documented.
 
+For Phase 6.6 static site work, follow [docs/plans/phase-6.6.md](docs/plans/phase-6.6.md) and the [Static sites guide](docs/guides/static-sites.md): `kiln fire --static` writes every `GET` route without parameters plus the pages `.static(...)` lists, `.dynamic()` opts out, and broken output is a build error rather than a silently missing page.
+
 For Phase 6 testing, read [docs/plans/testing.md](docs/plans/testing.md): the public
 `kiln test` tool must support unit, integration **and real-browser E2E**
 tests in one CLI, including Ember hydration and typed RPC from its first
@@ -146,6 +148,10 @@ Run `cargo fmt --all`, `cargo clippy --all-targets -- -D warnings` and
   (`kiln ui add`, `kiln new`). `testing/` is `kiln test`: `mod.rs` finds,
   builds and runs tests, `http.rs` their requests and `browser.rs` drives
   Chromium over CDP; the `test` module tests import is in `wares/test/`.
+  `fire.rs` is `kiln fire`, and with `--static` runs the program with
+  `KILN_EXPORT` so `app.listen` writes the pages (`k_web_export` in
+  `kiln.c`, files in `kiln_rt/src/export.rs`), then checks their links
+  and embers.
   `fmt.rs` uses `kiln_syntax::format`, `dev.rs` is `kiln dev` and `mcp.rs`
   is `kiln mcp`, whose tool schemas carry `SCHEMA_VERSION`. `npm.rs` is `kiln add npm:...`,
   `npm.lock` and the Kiln bindings made from TypeScript declarations. `lsp/mod.rs` is the language server; it

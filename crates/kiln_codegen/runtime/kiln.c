@@ -73,6 +73,13 @@ struct kstr *k_rt_base64_encode(struct kstr *s);
 struct kstr *k_rt_markdown_to_html(struct kstr *s);
 struct kstr *k_rt_ui_merge(struct kstr *a, struct kstr *b);
 struct kstr *k_rt_base64_decode(struct kstr *s, struct kstr **error);
+struct klist;
+struct klist *k_rt_static_paths(struct kstr *pattern, struct kstr *json, struct kstr **error);
+void k_rt_export_start(void);
+void k_rt_export_page(struct kstr *pattern, struct kstr *path, kv *res, const char *reads);
+void k_rt_export_problem(struct kstr *pattern, const char *kind, struct kstr *message);
+void k_rt_export_not_found(kv *res);
+int k_rt_export_finish(const char *dir, const char *report);
 
 static inline kv k_f2kv(double f) { kv v; memcpy(&v, &f, sizeof v); return v; }
 static inline double k_kv2f(kv v) { double f; memcpy(&f, &v, sizeof f); return f; }
@@ -2023,6 +2030,17 @@ typedef struct kroute {
     kstr **parts;
     char *kinds;
     kclosure *handler;
+    /* The pattern as written. */
+    kstr *pattern;
+    /* `.static(pages, refresh)`: whether it was called, the function
+     * listing the pages (NULL for a route without parameters), the type of
+     * the list it returns, and the time a page stays (0 for good). */
+    bool is_static;
+    kclosure *pages;
+    const kdesc *pages_desc;
+    int64_t refresh;
+    /* `.dynamic()`: never written to a static site. */
+    bool dynamic;
 } kroute;
 
 /* An app: its routes, `app.on_error`'s handler or NULL, and the settings
@@ -2037,6 +2055,9 @@ typedef struct kapp {
     kclosure *on_error;
     int64_t max_body, max_header, timeout, keep_alive;
     bool access_log;
+    /* The pages of `.static` routes a running server rendered: by path, a
+     * `kv[2]` of the response and when it was rendered (`k_mono_now`). */
+    kmap *prerendered;
 } kapp;
 
 static const char *const k_web_methods[] = {"GET", "POST", "PUT", "PATCH", "DELETE"};
@@ -2095,10 +2116,11 @@ K_API klist *k_web_segments(kstr *path) {
     return k_str_split(k_str_n(rest.data, rest.len), k_str("/"));
 }
 
-K_API void k_web_route(void *app, int64_t method, kstr *pattern, kclosure *handler) {
+K_API void *k_web_route(void *app, int64_t method, kstr *pattern, kclosure *handler) {
     kapp *a = app;
     kroute *r = k_alloc(sizeof(kroute));
     klist *segs = k_web_segments(pattern);
+    r->pattern = pattern;
     r->method = method;
     r->n = segs->len;
     r->parts = k_alloc(sizeof(kstr *) * (size_t)(segs->len + 1));
@@ -2125,6 +2147,22 @@ K_API void k_web_route(void *app, int64_t method, kstr *pattern, kclosure *handl
         a->cap *= 2;
     }
     a->routes[a->n++] = r;
+    return r;
+}
+
+/* `route.static(pages, refresh)`. `d` describes the list `pages` returns. */
+K_API void *k_web_route_static(void *route, kclosure *pages, kbox *refresh, const kdesc *d) {
+    kroute *r = route;
+    r->is_static = true;
+    r->pages = pages;
+    r->pages_desc = d;
+    r->refresh = refresh ? (int64_t)refresh->v : 0;
+    return r;
+}
+
+K_API void *k_web_route_dynamic(void *route) {
+    ((kroute *)route)->dynamic = true;
+    return route;
 }
 
 /* ----- responses ----- */
@@ -2177,16 +2215,23 @@ K_API kv *k_web_not_found(void) {
 
 /* ----- request data ----- */
 
+/* What of the request the page being rendered for a static site read
+ * first, such as "the query string", or NULL: a static host gives every
+ * visitor the same file, so such a page cannot be exported. */
+K_API const char *k_web_reads = NULL;
+
 /* Percent-decoding, query strings and cookies are in `kiln_rt`
  * (crates/kiln_rt/src/web.rs). */
 
 K_API kbox *k_web_query(void *request, kstr *name) {
     kv *req = request;
+    if (!k_web_reads) k_web_reads = "the query string";
     return (kbox *)k_rt_query(K_KV2P(kstr *, req[K_REQ_QUERY]), name);
 }
 
 K_API kbox *k_web_header(void *request, kstr *name) {
     kv *req = request;
+    if (!k_web_reads) k_web_reads = k_str_eq(name, k_str("cookie")) ? "a cookie" : "a header";
     kmap *h = K_KV2P(kmap *, req[K_REQ_HEADERS]);
     return k_map_get(h, K_P2KV(k_web_lower(name->data, name->len)));
 }
@@ -2198,6 +2243,7 @@ K_EXPORT kstr *k_rt_header(void *request, kstr *name) {
 }
 
 K_API kbox *k_web_cookie(void *request, kstr *name) {
+    if (!k_web_reads) k_web_reads = "a cookie";
     kbox *header = k_web_header(request, k_str("cookie"));
     if (!header) return NULL;
     return (kbox *)k_rt_cookie(K_KV2P(kstr *, header->v), name);
@@ -2447,10 +2493,24 @@ K_API kv *k_web_dispatch(kapp *a, kv *req) {
             else if (k_str_find(allow, name, 0) < 0) allow = k_concat(k_concat(allow, k_str(", ")), name);
             continue;
         }
+        /* A page of a `.static` route the server rendered when it started:
+         * served as it is, or rendered again once `refresh` has passed. */
+        kv *page = NULL;
+        if (r->is_static && a->prerendered) {
+            kbox *hit = k_map_get(a->prerendered, K_P2KV(path));
+            if (hit) {
+                page = K_KV2P(kv *, hit->v);
+                if (!r->refresh || k_mono_now() - (int64_t)page[1] < r->refresh) return K_KV2P(kv *, page[0]);
+            }
+        }
         int64_t status = 0;
         kstr *message = NULL;
         bool json = false;
         kv *res = k_web_call(r->handler, req, args, &status, &message, &json);
+        if (page && res && !k_web_marked(K_P2KV(res), K_RES_FIELDS) && res[K_RES_STATUS] == 200) {
+            page[0] = K_P2KV(res);
+            page[1] = (kv)k_mono_now();
+        }
         if (res && k_web_marked(K_P2KV(res), K_RES_FIELDS)) {
             /* `web.not_found()` */
             status = 404;
@@ -2553,6 +2613,133 @@ K_EXPORT kv *k_web_handle(kapp *a, kv *req, int64_t status) {
     return res;
 }
 
+/* ----- static pages -----
+ *
+ * `kiln fire --static` runs the program with `KILN_EXPORT` set to a
+ * folder: `listen` then renders each page a static site has, writes them
+ * there (through `kiln_rt`, crates/kiln_rt/src/export.rs), and exits
+ * instead of serving. A running server renders the pages of `.static`
+ * routes when it starts, and `k_web_dispatch` serves them from memory. */
+
+/* A `GET` request for `path`, with no query string, headers or body. */
+K_API kv *k_web_request_for(kstr *path) {
+    kv *req = k_alloc(sizeof(kv) * K_REQ_FIELDS);
+    req[K_REQ_METHOD] = K_P2KV(k_str("GET"));
+    req[K_REQ_PATH] = K_P2KV(path);
+    req[K_REQ_QUERY] = K_P2KV(k_str(""));
+    req[K_REQ_HEADERS] = K_P2KV(k_web_headers());
+    req[K_REQ_BODY] = K_P2KV(k_str(""));
+    return req;
+}
+
+/* Calls the function `.static` lists a route's pages with. Returns NULL
+ * with `*message` set when it fails or panics. In a function of its own
+ * for `__builtin_setjmp`, as `k_web_call` is. */
+K_API klist *k_web_call_pages(kroute *r, kstr **message) {
+    if (__builtin_setjmp(k_panic_jmp) != 0) {
+        k_failed = false;
+        *message = k_concat(k_str("panicked: "), k_panic_message);
+        return NULL;
+    }
+    kv none[1] = {0};
+    k_panic_trap = true;
+    kv res = r->pages->fn(r->pages->env, none);
+    k_panic_trap = false;
+    if (!k_failed) return K_KV2P(klist *, res);
+    *message = k_error_show(k_take_error());
+    return NULL;
+}
+
+/* The paths of a route's pages: its pattern when it has no parameters, and
+ * otherwise those its `.static` function lists. NULL with `*message` set
+ * when they cannot be listed. */
+K_API klist *k_web_static_paths(kroute *r, kstr **message) {
+    bool params = false;
+    for (int64_t i = 0; i < r->n; i++) params |= r->kinds[i] != 0;
+    if (!params) {
+        klist *one = k_list(0, NULL);
+        k_list_push(one, K_P2KV(r->pattern));
+        return one;
+    }
+    if (!r->pages) {
+        *message = k_str("it has parameters, so `.static(...)` lists its pages");
+        return NULL;
+    }
+    klist *items = k_web_call_pages(r, message);
+    if (!items) return NULL;
+    return k_rt_static_paths(r->pattern, k_json_encode(r->pages_desc, K_P2KV(items)), message);
+}
+
+/* Renders the pages of the `.static` routes, for `k_web_dispatch` to serve.
+ * A page that fails is logged and left to its handler. */
+K_API void k_web_prerender(kapp *a) {
+    for (int64_t i = 0; i < a->n; i++) {
+        kroute *r = a->routes[i];
+        if (!r->is_static || r->method != 0) continue;
+        kstr *message = NULL;
+        klist *paths = k_web_static_paths(r, &message);
+        fflush(stdout);
+        if (!paths) {
+            fprintf(stderr, "error cannot list the pages of %s: %s\n", k_cstr(r->pattern), k_cstr(message));
+            continue;
+        }
+        if (!a->prerendered) a->prerendered = k_web_headers();
+        for (int64_t j = 0; j < paths->len; j++) {
+            kstr *path = K_KV2P(kstr *, paths->items[j]);
+            kv *res = k_web_handle(a, k_web_request_for(path), 0);
+            fflush(stdout);
+            if (res[K_RES_STATUS] != 200) {
+                fprintf(stderr, "error the static page %s answered %" PRId64 "; it is rendered on each request\n",
+                        k_cstr(path), (int64_t)res[K_RES_STATUS]);
+                continue;
+            }
+            kv *page = k_alloc(sizeof(kv) * 2);
+            page[0] = K_P2KV(res);
+            page[1] = (kv)k_mono_now();
+            k_map_set(a->prerendered, K_P2KV(path), K_P2KV(page));
+        }
+    }
+    k_web_request = NULL;
+}
+
+/* `kiln fire --static`: writes the site's pages to `dir` and exits. */
+K_API _Noreturn void k_web_export(kapp *a, const char *dir) {
+    k_rt_export_start();
+    for (int64_t i = 0; i < a->n; i++) {
+        kroute *r = a->routes[i];
+        if (r->method != 0 || r->dynamic) continue;
+        bool params = false;
+        for (int64_t k = 0; k < r->n; k++) params |= r->kinds[k] != 0;
+        if (params && !r->is_static) {
+            k_rt_export_problem(r->pattern, "unlisted", k_str(""));
+            continue;
+        }
+        kstr *message = NULL;
+        klist *paths = k_web_static_paths(r, &message);
+        if (!paths) {
+            k_rt_export_problem(r->pattern, "pages", message);
+            continue;
+        }
+        for (int64_t j = 0; j < paths->len; j++) {
+            kstr *path = K_KV2P(kstr *, paths->items[j]);
+            k_web_reads = NULL;
+            kv *res = k_web_handle(a, k_web_request_for(path), 0);
+            k_rt_export_page(r->pattern, path, res, k_web_reads);
+        }
+    }
+    if (a->on_error) {
+        kv *req = k_web_request_for(k_str("/404.html"));
+        k_web_request = req;
+        k_stores = k_stores_new(NULL);
+        k_rt_export_not_found(k_web_error_response(a, req, 404, k_str("Not Found"), false));
+    }
+    fflush(stdout);
+    int code = k_rt_export_finish(dir, getenv("KILN_EXPORT_REPORT"));
+    fflush(stdout);
+    fflush(stderr);
+    exit(code);
+}
+
 /* The connection itself (reading requests, body framing, keep-alive and
  * writing responses) is hyper's, in `kiln_rt` (crates/kiln_rt/src/
  * server.rs), driven on this task. */
@@ -2612,6 +2799,9 @@ K_API void k_web_listen_error(kstr *address, const char *why) {
  * `KILN_LISTEN`, when set, replaces the address the program gives, so that
  * `kiln test` and `kiln dev` can start any server on a port they choose. */
 K_API void k_web_listen(void *app, kstr *address) {
+    const char *export_dir = getenv("KILN_EXPORT");
+    if (export_dir && *export_dir) k_web_export(app, export_dir);
+    k_web_prerender(app);
     const char *over = getenv("KILN_LISTEN");
     if (over && *over) address = k_str(over);
     const char *s = k_cstr(address);
@@ -2766,6 +2956,7 @@ K_API void *k_web_json(const kdesc *d, kv v, int64_t status) {
  * the handler passes the error on, the server answers 400. */
 K_API kv k_web_req_json(const kdesc *d, void *request) {
     kv *req = request;
+    if (!k_web_reads) k_web_reads = "the body";
     kv v = k_json_decode(d, K_KV2P(kstr *, req[K_REQ_BODY]));
     if (k_lib_error) k_web_client_error = k_lib_error;
     return v;

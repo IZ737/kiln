@@ -192,6 +192,146 @@ fn the_sites_embers_work_in_a_real_browser() {
     drive("site", "site", "site.mjs");
 }
 
+/// `examples/static_blog`, exported with `kiln fire --static` and served
+/// by a plain file server with no Kiln program running: its pages, styles,
+/// image and feed load, a redirect page and the 404 page work, and its
+/// ember hydrates and runs.
+#[test]
+fn a_static_export_works_in_a_real_browser() {
+    let Some(node) = node() else { return };
+    let dir = std::env::temp_dir().join(format!("kiln-static-blog-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    let fired = Command::new(env!("CARGO_BIN_EXE_kiln"))
+        .args(["fire", "--static", "-o"])
+        .arg(&dir)
+        .arg(root().join("examples/static_blog"))
+        .output()
+        .unwrap();
+    assert!(
+        fired.status.success(),
+        "the export failed:\n{}",
+        String::from_utf8_lossy(&fired.stderr)
+    );
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let address = listener.local_addr().unwrap();
+    let site = dir.clone();
+    std::thread::spawn(move || {
+        for stream in listener.incoming().flatten() {
+            let site = site.clone();
+            std::thread::spawn(move || serve_file(stream, &site));
+        }
+    });
+    let out = Command::new(&node)
+        .arg(root().join("crates/kiln_cli/tests/browser/static_blog.mjs"))
+        .arg(format!("http://{address}"))
+        .output()
+        .unwrap();
+    let _ = std::fs::remove_dir_all(&dir);
+    assert!(
+        out.status.success(),
+        "the browser did not run:\n{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let result: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    eprintln!("static_blog: {}", result["metrics"]);
+    let failures: Vec<&str> = result["failures"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|f| f.as_str())
+        .collect();
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
+/// Answers one request as a plain static host does: the file at the path,
+/// a folder's `index.html` (after a redirect to the path with a `/`), or
+/// `404.html` with status 404.
+fn serve_file(mut stream: std::net::TcpStream, site: &Path) {
+    use std::io::{BufRead, BufReader, Write};
+    let mut line = String::new();
+    let mut reader = BufReader::new(stream.try_clone().unwrap());
+    if reader.read_line(&mut line).is_err() {
+        return;
+    }
+    loop {
+        let mut header = String::new();
+        if reader.read_line(&mut header).is_err() || header.trim().is_empty() {
+            break;
+        }
+    }
+    let target = line.split_whitespace().nth(1).unwrap_or("/");
+    let path = target.split(['?', '#']).next().unwrap_or("/");
+    let mut decoded = Vec::new();
+    let bytes = path.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'%' && i + 2 < bytes.len() {
+            if let Ok(b) = u8::from_str_radix(&path[i + 1..i + 3], 16) {
+                decoded.push(b);
+                i += 3;
+                continue;
+            }
+        }
+        decoded.push(bytes[i]);
+        i += 1;
+    }
+    let path = String::from_utf8_lossy(&decoded).into_owned();
+    let mut file = site.join(path.trim_start_matches('/'));
+    if path.split('/').any(|p| p == "..") {
+        file = site.join("missing");
+    }
+    let respond = |stream: &mut std::net::TcpStream,
+                   status: &str,
+                   kind: &str,
+                   extra: &str,
+                   body: &[u8]| {
+        let head = format!(
+            "HTTP/1.1 {status}\r\ncontent-type: {kind}\r\ncontent-length: {}\r\n{extra}connection: close\r\n\r\n",
+            body.len()
+        );
+        let _ = stream.write_all(head.as_bytes());
+        let _ = stream.write_all(body);
+    };
+    if file.is_dir() {
+        if !path.ends_with('/') {
+            let extra = format!("location: {path}/\r\n");
+            respond(
+                &mut stream,
+                "301 Moved Permanently",
+                "text/plain",
+                &extra,
+                b"",
+            );
+            return;
+        }
+        file = file.join("index.html");
+    }
+    let kind = match file.extension().and_then(|e| e.to_str()) {
+        Some("html") => "text/html; charset=utf-8",
+        Some("css") => "text/css",
+        Some("js" | "mjs") => "text/javascript",
+        Some("wasm") => "application/wasm",
+        Some("svg") => "image/svg+xml",
+        Some("png") => "image/png",
+        Some("xml") => "application/xml",
+        Some("json") => "application/json",
+        _ => "application/octet-stream",
+    };
+    match std::fs::read(&file) {
+        Ok(body) => respond(&mut stream, "200 OK", kind, "", &body),
+        Err(_) => {
+            let body = std::fs::read(site.join("404.html")).unwrap_or_default();
+            respond(
+                &mut stream,
+                "404 Not Found",
+                "text/html; charset=utf-8",
+                "",
+                &body,
+            );
+        }
+    }
+}
+
 /// Builds the app in `app`, runs it, and drives it in Chromium with the
 /// script `script` in `tests/browser`, which prints the checks that
 /// failed.

@@ -2558,7 +2558,27 @@ impl Checker {
                     let (params, ret, throws) =
                         self.instantiate(sig, &recv_args, &explicit, e.span);
                     let route = self.route_handler_type(id, &name.name, args);
-                    self.check_args(&params, args, e.span, &fn_name, route);
+                    if let Ty::Adt(route_id, route_args) = &ret {
+                        if self.is_web_type(*route_id, "Route") && route_args.len() == 1 {
+                            let page = match &route {
+                                Some((_, _, _, page)) => page.clone(),
+                                None => self.route_page_type(args),
+                            };
+                            let arg = route_args[0].clone();
+                            if let Ty::Var(v) = self.resolve(&arg) {
+                                self.subst[v as usize] = Some(page);
+                            }
+                        }
+                    }
+                    let route = route.map(|(handler, count, span, _)| (handler, count, span));
+                    if self.is_web_type(id, "Route")
+                        && name.name == "static"
+                        && self.check_static_pages(&recv_args, args, e.span)
+                    {
+                        self.infer_args_loosely(args);
+                    } else {
+                        self.check_args(&params, args, e.span, &fn_name, route);
+                    }
                     self.check_call_bounds(sig, e.span);
                     if self.is_query_ty(&base_ty) {
                         self.orm_step(base, &name.name, args, e.span);
@@ -2814,14 +2834,98 @@ impl Checker {
         Ty::Adt(id, type_args)
     }
 
+    /// Whether `adt` is the `web` module's type `name`.
+    fn is_web_type(&self, adt: AdtId, name: &str) -> bool {
+        self.modules
+            .iter()
+            .find(|m| m.name == "web")
+            .is_some_and(|m| m.types.get(name) == Some(&adt))
+    }
+
+    /// The type that tells a route's pages apart (see `web.Route`) when its
+    /// pattern is built from pieces, as in `"${prefix}/{key: Int}"`: read
+    /// from the pieces written out.
+    fn route_page_type(&mut self, args: &[Arg]) -> Ty {
+        let Some(ExprKind::Str(pieces)) = args.first().map(|a| &a.value.kind) else {
+            return Ty::Unknown;
+        };
+        let text: String = pieces
+            .iter()
+            .map(|p| match p {
+                StrPiece::Text(t) => t.as_str(),
+                _ => "",
+            })
+            .collect();
+        let mut fields = Vec::new();
+        let mut rest = text.as_str();
+        while let Some(open) = rest.find('{') {
+            let Some(close) = rest[open..].find('}') else {
+                break;
+            };
+            let segment = &rest[open + 1..open + close];
+            let (name, ty) = segment.split_once(':').unwrap_or((segment, "String"));
+            let ty = match ty.trim() {
+                t @ ("Int" | "String" | "Float" | "Bool") => self.prim(t),
+                _ => Ty::Unknown,
+            };
+            fields.push((name.trim().to_string(), ty));
+            rest = &rest[open + close + 1..];
+        }
+        match fields.len() {
+            0 => Ty::Unit,
+            1 => fields.remove(0).1,
+            _ => Ty::Record(fields),
+        }
+    }
+
+    /// `route.static(pages)`: a route with parameters lists its pages, and
+    /// one without has nothing to list. Returns whether it reported an
+    /// error about the list, which then is not checked further.
+    fn check_static_pages(&mut self, recv_args: &[Ty], args: &[Arg], span: Span) -> bool {
+        let Some(page) = recv_args.first() else {
+            return false;
+        };
+        let page = self.resolve(page);
+        let pages = args
+            .iter()
+            .find(|a| a.name.as_ref().is_none_or(|n| n.name == "pages"));
+        match (&page, pages) {
+            (Ty::Unit, Some(arg)) => {
+                self.error(
+                    Diagnostic::error(
+                        codes::STATIC_PAGES,
+                        "this route has no parameters, so it has one page and nothing to list",
+                        arg.value.span,
+                    )
+                    .with_help("write `.static()`"),
+                );
+                true
+            }
+            (Ty::Unit | Ty::Unknown | Ty::Var(_), None) => false,
+            (_, None) => {
+                self.error(
+                    Diagnostic::error(
+                        codes::STATIC_PAGES,
+                        "a route with parameters lists its pages: `.static(fn() { [...] })`",
+                        span,
+                    )
+                    .with_help("give a function that returns the parameters of each page"),
+                );
+                false
+            }
+            _ => false,
+        }
+    }
+
     /// For `app.get("/posts/{id: Int}", handler)`, the handler's type with
-    /// one parameter per route segment.
+    /// one parameter per route segment, and the type that tells its pages
+    /// apart (see `web.Route`).
     fn route_handler_type(
         &mut self,
         adt: AdtId,
         method: &str,
         args: &[Arg],
-    ) -> Option<(Ty, usize, Span)> {
+    ) -> Option<(Ty, usize, Span, Ty)> {
         let web = self.modules.iter().position(|m| m.name == "web")?;
         if self.modules[web].types.get("App") != Some(&adt)
             || !matches!(method, "get" | "post" | "put" | "patch" | "delete")
@@ -2838,12 +2942,14 @@ impl Checker {
         let request = Ty::Adt(self.modules[web].types["Request"], Vec::new());
         let response = Ty::Adt(self.modules[web].types["Response"], Vec::new());
         let mut params = vec![request];
+        let mut names = Vec::new();
         let mut rest = pattern.as_str();
         while let Some(open) = rest.find('{') {
             let Some(close) = rest[open..].find('}') else {
                 break;
             };
             let segment = &rest[open + 1..open + close];
+            names.push(segment.split(':').next().unwrap_or("").trim().to_string());
             let ty_name = segment
                 .split_once(':')
                 .map(|(_, t)| t.trim())
@@ -2863,6 +2969,11 @@ impl Checker {
             rest = &rest[open + close + 1..];
         }
         let count = params.len() - 1;
+        let page = match count {
+            0 => Ty::Unit,
+            1 => params[1].clone(),
+            _ => Ty::Record(names.into_iter().zip(params[1..].iter().cloned()).collect()),
+        };
         let error = self.error_ty();
         Some((
             Ty::Fn(Rc::new(FnTy {
@@ -2872,6 +2983,7 @@ impl Checker {
             })),
             count,
             first.value.span,
+            page,
         ))
     }
 

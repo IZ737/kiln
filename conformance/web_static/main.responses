@@ -1,0 +1,64 @@
+### GET / HTTP/1.1
+HTTP/1.1 200 OK
+content-type: text/html; charset=utf-8
+content-length: 13
+connection: close
+
+<h1>Home</h1>
+### GET / HTTP/1.1
+HTTP/1.1 200 OK
+content-type: text/html; charset=utf-8
+content-length: 13
+connection: close
+
+<h1>Home</h1>
+### GET /posts/1 HTTP/1.1
+HTTP/1.1 200 OK
+content-type: text/html; charset=utf-8
+content-length: 15
+connection: close
+
+<h1>Post 1</h1>
+### GET /posts/2?draft=1 HTTP/1.1
+HTTP/1.1 200 OK
+content-type: text/html; charset=utf-8
+content-length: 15
+connection: close
+
+<h1>Post 2</h1>
+### GET /posts/3 HTTP/1.1
+HTTP/1.1 200 OK
+content-type: text/html; charset=utf-8
+content-length: 15
+connection: close
+
+<h1>Post 3</h1>
+### GET /posts/9 HTTP/1.1
+HTTP/1.1 404 Not Found
+content-type: text/plain; charset=utf-8
+content-length: 9
+connection: close
+
+Not Found
+### GET /pairs/x%20y/true HTTP/1.1
+HTTP/1.1 200 OK
+content-type: text/plain; charset=utf-8
+content-length: 8
+connection: close
+
+x y true
+### GET /clock HTTP/1.1
+HTTP/1.1 200 OK
+content-type: text/plain; charset=utf-8
+content-length: 4
+connection: close
+
+tick
+### GET /search?q=kiln HTTP/1.1
+HTTP/1.1 200 OK
+content-type: text/plain; charset=utf-8
+content-length: 4
+connection: close
+
+kiln
+### GET /quit HTTP/1.1

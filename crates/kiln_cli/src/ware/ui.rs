@@ -199,7 +199,7 @@ pub fn new_project(dir: &Path) -> Result<String, String> {
         ("home.glaze", NEW_HOME.to_string()),
         ("notes/test_notes.kiln", NEW_UNIT.to_string()),
         ("tests/integration/test_pages.kiln", NEW_INTEGRATION.to_string()),
-        (".gitignore", ".kiln/\n*.db\n".to_string()),
+        (".gitignore", ".kiln/\n*.db\ndist/\n".to_string()),
     ];
     for (file, text) in files {
         let path = dir.join(file);

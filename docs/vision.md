@@ -535,8 +535,8 @@ The proposed roles are:
 | Command | Responsibility | Status |
 | --- | --- | --- |
 | `kiln upgrade` | Update the installed compiler through checksum-verified releases | Implemented; see the [README install instructions](../README.md#install) |
-| `kiln fire --static` | Export a site as static HTML and assets | Planned for Phase 6.6 |
-| `kiln fire` | Produce an optimized native release artifact | Planned for Phase 7 |
+| `kiln fire --static` | Export a site as static HTML and assets | Implemented in Phase 6.6; see [Static sites](guides/static-sites.md) |
+| `kiln fire` | Produce an optimized native release artifact | Builds as `kiln build` does today; optimized builds are planned for Phase 7 |
 | `kiln deploy <target>` | Deliver and activate an artifact on configured infrastructure | Planned for Phase 8 (after 1.0) |
 | `kiln release <target>` | Run checks/tests, build, prepare, confirm, deploy and verify | Planned for Phase 8 (after 1.0) |
 | `kiln deploy <target> --dry-run` | Explain intended changes without applying them | Planned for Phase 8 (after 1.0) |

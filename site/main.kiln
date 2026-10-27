@@ -152,12 +152,19 @@ fn main() ! {
     app.get("/search", fn(req) {
         let q = req.query("q") ?? ""
         web.render("results.glaze", { q: q, hits: find_pages(q.slice(0, 100)) })
-    })
+    }).dynamic()
+    // The documentation's pages are rendered once, when the site starts.
     app.get("/docs", fn(req) { web.redirect("/docs/", 301) })
-    app.get("/docs/", fn(req) { try show_doc("README") })
+    app.get("/docs/", fn(req) { try show_doc("README") }).static()
     app.get("/docs/README", fn(req) { web.redirect("/docs/", 301) })
-    app.get("/docs/{page}", fn(req, page) { try show_doc(page) })
-    app.get("/docs/{dir}/{page}", fn(req, dir, page) { try show_doc("${dir}/${page}") })
+    app.get("/docs/{page}", fn(req, page) { try show_doc(page) }).static(fn() {
+        doc_sources().map(fn(s) { s.path }).filter(fn(p) { p != "README" and not p.contains("/") })
+    })
+    app.get("/docs/{dir}/{page}", fn(req, dir, page) { try show_doc("${dir}/${page}") }).static(fn() {
+        doc_sources().map(fn(s) { s.path.split("/") }).filter(fn(parts) { parts.len() == 2 }).map(fn(parts) {
+            { dir: parts[0], page: parts[1] }
+        })
+    })
     // The repository's README, which the docs link to.
     app.get("/README", fn(req) { web.redirect("https://github.com/IZ737/kiln#readme") })
     // The guide for coding agents, as Markdown, where agents look for it.

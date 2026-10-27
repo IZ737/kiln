@@ -66,6 +66,7 @@ pub const RESERVED_TYPE: &str = "E0233";
 pub const UNMET_BOUND: &str = "E0234";
 pub const INTERFACE_MISUSE: &str = "E0235";
 pub const STORE_TYPE: &str = "E0236";
+pub const STATIC_PAGES: &str = "E0237";
 
 pub const UNCLOSED_GLAZE_TAG: &str = "E0301";
 pub const MISMATCHED_CLOSING_TAG: &str = "E0302";
@@ -87,8 +88,39 @@ pub const EMBER_LAYOUT: &str = "E0316";
 pub const NOT_COMPILED_YET: &str = "E0401";
 pub const NO_MAIN: &str = "E0402";
 pub const SERVER_CALL_PLACE: &str = "E0403";
+pub const STATIC_PAGE: &str = "E0404";
+pub const STATIC_EMBER: &str = "E0405";
+pub const STATIC_LINK: &str = "E0406";
 
 pub static ALL: &[ErrorCode] = &[
+    ErrorCode {
+        code: STATIC_PAGES,
+        title: "A static route that lists the wrong pages",
+        explanation: "`.static(...)` marks a route whose pages are rendered ahead of time: by `kiln fire --static` into files, or once by a running server. A route with parameters cannot know its pages by itself, so it is given a function that returns the parameters of each one: the parameter's value for a route with one, such as `Int` for `/posts/{id: Int}`, and a record with a field per parameter for more. A route without parameters has one page, so `.static()` takes nothing.",
+        wrong: "app.get(\"/posts/{id: Int}\", fn(req, id) { show(id) }).static()",
+        right: "app.get(\"/posts/{id: Int}\", fn(req, id) { show(id) }).static(fn() { [1, 2, 3] })",
+    },
+    ErrorCode {
+        code: STATIC_PAGE,
+        title: "A page a static site cannot serve",
+        explanation: "`kiln fire --static` renders each page once, with an empty request, and writes it to a file that any static host serves as it is. So a page cannot depend on the request: its query string, headers, cookies or body, which differ from visit to visit. Its handler must answer 200 (or redirect), and a page that is not HTML needs a file extension in its path, such as `/feed.xml`, so the host knows its type. Leave a page that needs a server out of the export with `.dynamic()`.",
+        wrong: "app.get(\"/search\", fn(req) { results(req.query(\"q\") ?? \"\") })",
+        right: "app.get(\"/search\", fn(req) { results(req.query(\"q\") ?? \"\") }).dynamic()",
+    },
+    ErrorCode {
+        code: STATIC_EMBER,
+        title: "An ember that needs a server on a static page",
+        explanation: "Embers run in the browser, so they work on a static site, but a `server fn` runs on the server, and a static host has none. An ember that calls one cannot be on an exported page: its calls would fail. Move the work into the ember, render the data into the page ahead of time, or leave the page out of the export with `.dynamic()`.",
+        wrong: "<button on:click={ count = try add_like(id) }>Like</button>",
+        right: "<button on:click={ count += 1 }>Like</button>",
+    },
+    ErrorCode {
+        code: STATIC_LINK,
+        title: "A link to a page the static site does not have",
+        explanation: "After `kiln fire --static` writes the pages, it follows every link, form and file each one points to on the same site. One that points to a page the export did not write would be broken on the static host: a route with parameters that does not list that page, a `POST` route a form sends to, or a route left out with `.dynamic()`. List the page with `.static(...)`, or point somewhere that exists.",
+        wrong: "app.get(\"/posts/{id: Int}\", show).static(fn() { [1] })\n// a page links to /posts/2",
+        right: "app.get(\"/posts/{id: Int}\", show).static(fn() { [1, 2] })",
+    },
     ErrorCode {
         code: STORE_TYPE,
         title: "A store without a written type or a usable key",

@@ -2,7 +2,7 @@
   "name": "kiln",
   "displayName": "Kiln",
   "description": "Kiln, Glaze and Ember language support: highlighting, file icons, completion, hover, go to definition, and Check, Run, Build, Test, Dev and Format commands, from the Kiln language server.",
-  "version": "0.13.0",
+  "version": "0.14.0",
   "publisher": "iz737",
   "license": "MIT",
   "icon": "icons/kiln.png",

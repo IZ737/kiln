@@ -1,0 +1,4 @@
+{% props status: Int %}
+{% layout "layout.glaze" title: "Not found" %}
+<h1>{if status == 404 { "This page is not here" } else { "Something went wrong" }}</h1>
+<p><a href="/">Go to the posts</a></p>

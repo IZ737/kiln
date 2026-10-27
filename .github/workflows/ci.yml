@@ -176,6 +176,14 @@ jobs:
         shell: bash
         # Only Git's own tools (bash, diff) on the PATH: no C compiler.
         run: PATH=/usr/bin scripts/windows-check.sh kiln.exe
+      - name: kiln fire --static writes a site with kiln.exe
+        shell: bash
+        run: |
+          ./kiln.exe fire --static examples/static_blog -o site-out
+          test -f site-out/index.html
+          test -f site-out/posts/first-firing/index.html
+          test -f site-out/404.html
+          ls site-out/_kiln/*.wasm
       - name: kiln test, kiln fmt and a locked Ware with kiln.exe
         shell: bash
         run: |
