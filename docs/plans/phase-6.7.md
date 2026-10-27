@@ -49,6 +49,7 @@ These are decisions reached in the design discussion, not claims of implemented 
 | Page data model | **Three levels:** automatic Glaze with typed URL props → optional typed `load` returning page props → ordinary full `get` handler |
 | GET ownership | **`load` and `get` are mutually exclusive within one route**; `post`, `put`, `patch` and `delete` may coexist with `load` |
 | Conventional logic file | **`route.kiln`** in the complex route's directory; exported `load` or HTTP-method functions live there |
+| Entrypoint visibility | **Only `pub fn` exports named `load` or supported HTTP methods are discovered**; private `fn` declarations are ordinary module helpers and do not claim routes |
 | Loader arguments | **Optional `req: web.Request` first**, followed by **typed path parameters matched by name**; request-free loaders need not mention `req` |
 | Loader URL parameter selection | **Declare only URL parameters the loader needs**; unmentioned route parameters are still parsed/typed in the route graph and available directly to Glaze props, without positional placeholders |
 | HTTP handler URL parameter selection | **Like loaders, full method handlers may declare only the path parameters they need**, matched by name with consistent typed route validation; no unused positional arguments |
@@ -163,7 +164,23 @@ my-app/
 
 **The convention is agreed:** route-specific logic lives in a file named **`route.kiln`** inside the relevant route directory. That file may export **`load`** for typed page data or ordinary HTTP-method functions such as **`get`**, **`post`**, **`put`**, **`patch`** and **`delete`** for direct request/response handling. 
 
-The **filename, general roles, `load`/`get` exclusivity, optional request/typed path-parameter argument model, and standard Kiln error propagation** are decided; detailed return contracts, exports/visibility and other edge cases remain open. Examples below are illustrative Kiln-like pseudocode and **are not currently implemented**.
+The **filename, general roles, `load`/`get` exclusivity, optional request/typed path-parameter argument model, `pub` entrypoint requirement, and standard Kiln error propagation** are decided; detailed return contracts and other edge cases remain open. Examples below are illustrative Kiln-like pseudocode and **are not currently implemented**.
+
+**Decision (2026-10-27) — route function visibility, Option A:** filesystem discovery only treats **publicly exported** functions with recognised entrypoint names as route logic: `pub fn load(...)` for the paired Glaze or `pub fn get(...)`, `pub fn post(...)`, `pub fn put(...)`, `pub fn patch(...)` and `pub fn delete(...)` for matching HTTP methods. The public marker means ordinary Kiln module visibility, not a routing-specific implicit export. A private function named `get` or `load` is **not discovered** as an endpoint/loader; private helpers remain fully usable from within `route.kiln`.
+
+```kiln
+// Conceptual route.kiln: public entrypoint plus private helper.
+pub fn get() -> web.Response {
+    return web.text(greeting())
+}
+
+fn greeting() -> String {
+    return "Hello!"
+}
+```
+
+The compiler/LSP should flag likely missing-`pub` mistakes with a useful diagnostic when a private recognised name appears in a route context but cannot be discovered; do not silently promote private declarations into public exports. **`pub` applies to route entrypoints**, not to all helper functions or all source declarations in a route directory. Other route-local metadata (`static_params()`, `dynamic`, `static_refresh`) has its own declaration form; confirm any remaining visibility/constant requirements in §8 rather than inferring extra syntax from this decision.
+
 
 ### Level 1 — just a Glaze
 
@@ -411,7 +428,7 @@ The **three levels above are agreed**; their other exact contracts need decision
 
 - **Route parameters — DECIDED for loaders and full HTTP handlers:** the filename supplies **only a parameter name**, e.g. `[id]`; the compiler **infers its type** from matching declarations in the Glaze, `load` or full route handler. If no declaration supplies an explicit type, the parameter is a **`String`**. If two or more declarations disagree (e.g. `id: Int` in a loader and `id: String` in the Glaze), this is a **compile-time error**, not implicit coercion or precedence. Keep existing route matching/conversion rules for supported types (`Int`, `Float`, `Bool`, `String`). **Loaders and full HTTP handlers each declare only the subset of URL parameters they use**, bound by name; omitted params still participate in full URL pattern matching and Glaze may receive them as declared props. Optional first `req: web.Request` is now settled for **both loaders and filesystem HTTP handlers**: omit it entirely when unused, otherwise place it first. All explicit path-type declarations must agree.
 - **Prop combination and exact loader fields — DECIDED:** the Glaze receives the **union of URL parameter props and the loader-returned typed record or named struct fields**. Duplicate names across those sources are **compile-time errors**, even for equal values/types. **Every loader return field must match a declared Glaze prop by name with a compatible type**; extra/unused loader fields are compile-time errors. Missing required props are errors, but Glaze defaults, URL param props and an existing implicit request prop can satisfy their corresponding declared inputs without loader forwarding. **Named structs and anonymous typed records are both allowed** (Option A); strict matching applies to both, including fields defined in a reusable struct. Normal module access/privacy rules still apply.
-- **Handler discovery:** **`route.kiln` in the route directory is settled.** Determine its visibility/export rules, signature typing, how it participates in ordinary folder-module imports/privacy and which declarations may be used as route handlers.
+- **Handler discovery — DECIDED:** **`route.kiln` in the route directory is settled**, and only `pub fn load` or `pub fn` with a supported HTTP-method name participates in automatic route discovery. A same-named private `fn` remains a normal helper, never an implicitly exported handler. Reuse ordinary module visibility and show actionable diagnostics for likely missing `pub` mistakes. Precise module boundaries, return/error contracts and the visibility of route-local static metadata remain for implementation/design review.
 - **`load` vs `get` — DECIDED:** they are **mutually exclusive per route** and must trigger a **compile-time error** when both are defined. `load` may coexist with non-GET method exports (`post`, `put`, `patch`, `delete`). Do not invent fallback or invocation ordering between `load` and `get`.
 - **Failure handling — DECIDED:** reuse `web.error(status, message)`, ordinary `try`/`throw`, existing unexpected-error (500) handling, and `app.on_error`; **do not** convert `none` to 404 automatically. Authentication and authorization failures must be propagated through this same path. Exact examples and language type signatures still require implementation-time validation.
 - **HTML and non-HTML — DECIDED:** API-only `route.kiln` directories may omit `index.glaze` and expose ordinary HTTP-method handlers; `load` without an `index.glaze` is an error. Full handlers can return arbitrary `web.Response`, subject to existing static-export constraints.
@@ -642,6 +659,7 @@ If adopted as **Phase 6.7**, a reviewable breakdown might be:
 - [ ] No filename-encoded type syntax is required; generated route matching uses the same typed conversion rules as explicit Kiln routes.
 - [ ] A full GET handler may directly return `web.Response` without bypassing existing hooks, validation or SSG integration.
 - [ ] Route directories discover their `route.kiln` consistently; its `load` and HTTP-method functions retain the ordinary language's type checking.
+- [ ] Only `pub fn load` and supported `pub fn` HTTP-method exports are registered as route logic. Private helper functions (including private `fn get` or `fn load`) are not implicitly discovered; likely missing-`pub` mistakes receive useful diagnostics without changing Kiln module visibility.
 - [ ] Defining both `load` and `get` for the same filesystem route is a compile-time diagnostic with a useful fix; `load` plus a `post`/`put`/`patch`/`delete` handler compiles and dispatches by method correctly.
 - [ ] `pages/api/users/route.kiln` without a Glaze registers exported `get`/`post` (and other supported methods), with ordinary typed responses and 404/405 handling; `load` without a sibling `index.glaze` fails compilation.
 - [ ] A sibling `index.glaze` remains an implicit GET when `route.kiln` defines only non-GET handlers; API responses retain current Phase 6.6 static-export rules, including non-HTML and dynamic-only behaviour.
@@ -671,7 +689,8 @@ If adopted as **Phase 6.7**, a reviewable breakdown might be:
 - Default `_components` exclusion, with mount-specific configurable exclusions.
 - Project-root aliases are a separate general import feature (see #76), and `_components` remains the routing convention by default.
 - **Three-level progressive routing**: simple Glaze page with automatic typed URL props; Glaze plus optional typed `load` for data; or a full ordinary route handler for control. Exact signatures remain under design.
-- **Complex route convention:** route-specific functions belong in a file named **`route.kiln`** inside the route directory; it may export `load` or an ordinary `get` handler, plus other HTTP-method functions including `post`, `put`, `patch` and `delete`. Exact signatures are still under design.
+- **Complex route convention:** route-specific functions belong in a file named **`route.kiln`** inside the route directory; it may export `load` or an ordinary `get` handler, plus other HTTP-method functions including `post`, `put`, `patch` and `delete`. Exact return/error contracts are still under design.
+- **Explicit `pub` entrypoint requirement (Option A):** only publicly exported `load` and supported HTTP-method functions in `route.kiln` are automatically discovered. Private functions are ordinary helpers, including when named `get` or `load`; no implicit visibility promotion.
 - **GET exclusivity:** `load` and `get` cannot coexist for the same route; diagnose the conflict at compile time. `load` can coexist with handlers for other HTTP methods.
 - **Loader inputs (Option A):** loaders may optionally declare `req: web.Request` **first**, followed by typed URL path parameters bound by name. Request-free loaders remain concise.
 - **Glaze props (Option A):** combine typed URL route parameters with the typed record returned by `load`; duplicate names cause compile-time errors and required Glaze props are type-checked against that combination.
@@ -694,7 +713,7 @@ If adopted as **Phase 6.7**, a reviewable breakdown might be:
 
 **Needs an explicit decision before locking the specification:**
 1. **Remaining loader contract:** final precise return-type restrictions and minor syntax/visibility questions (§§5–6). Named parameter binding, **loader subset URL parameters**, optional first `req`, automatic props merging, **strict no-extra-fields matching**, named-struct/anonymous-record success returns, duplicate-name errors, type inference/default `String` and ordinary error/404 propagation are settled.
-2. **`route.kiln` contracts:** remaining exact function return/error typing, module boundaries, **export visibility**, and how flat Glaze files graduate to route directories (§5). The filename, optional request context for both loaders and HTTP handlers, subset URL parameter binding for both, and permission for handler-only API routes are settled.
+2. **`route.kiln` contracts:** remaining exact function return/error typing, module boundaries, and how flat Glaze files graduate to route directories (§5). The filename, **`pub` requirement for loader/HTTP handler discovery**, optional request context for both, subset URL parameter binding for both, and permission for handler-only API routes are settled.
 3. **SSG refinements:** exact export/marker signatures, contradictory declarations and unusual handler results (§8). Route-local enumeration, server-startup pre-render, `static_refresh` alone on zero-parameter routes and rejection of request-dependent cached output (including explicit `.static(...)`) are settled.
 4. **Remaining route file naming:** filename/path character restrictions, handling reserved names, static-file extensions, catch-all or optional patterns and other edge cases (§4). Square-bracket `[name]` dynamic segments are now settled; standalone `.ember` pages are excluded.
 5. **Remaining collision policy:** partial overlaps of dynamic parameter patterns and reserved paths (§4). Registration-order precedence is settled for both explicit/file and file/file cross-mount overlaps; true duplicate claims inside one mount remain errors.
