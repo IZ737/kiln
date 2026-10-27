@@ -532,7 +532,7 @@ reactive style updates, SQL/auth, Wares and SSG remain later milestones.
 ### Static site generation
 
 The same app can be built as a static site, for blogs, docs and marketing
-pages that need no server. Planned for phase 7:
+pages that need no server. Planned for phase 6.6:
 
 - `kiln fire --static` renders every route to HTML files, with assets, ready
   for any static host or CDN. Routes with parameters list their pages:
@@ -546,7 +546,7 @@ pages that need no server. Planned for phase 7:
 
 ### Installable apps (PWAs)
 
-Planned for phase 8+, after 1.0. Marking an app installable
+Planned for phase 9+, after 1.0. Marking an app installable
 (`app.pwa(name: "Notes", icon: "icon.png")`) makes `kiln fire` generate the
 web manifest, icons at every size and a service worker that caches the app
 shell and assets, versioned with each release. A standard library `local`
@@ -567,7 +567,7 @@ self-contained. Project templates remain a separate mechanism. A future
 Ware registry and Kiln's own documentation website are important
 dogfooding projects, not just showcase demos.
 
-The proposed `kiln deploy` and `kiln release` workflows should work with
+Phase 8 (after Kiln 1.0) covers deployment automation. The proposed `kiln deploy` and `kiln release` workflows should work with
 existing infrastructure defined in `kiln-deploy.toml` rather than attempt
 to replace Terraform. They should coordinate builds, migrations, process
 activation and health checks with an inspectable plan and explicit
