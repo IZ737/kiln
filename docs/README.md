@@ -48,7 +48,8 @@ APIs. **Proposed syntax in a plan is not automatically implemented syntax.**
 - [Phase 6 — Wares, testing, tooling and agent integration](plans/phase-6.md) (complete; included in v0.11.0)
 - [Phase 6.5 — Language review and vision alignment](plans/phase-6.5.md) (complete; included in v0.12.0)
 - [Phase 6.5.1 — Ember shared stores and reactivity alignment](plans/phase-6.5.1.md) (done)
-- [Phase 6.6 — Static site generation](plans/phase-6.6.md) (planned; next)
+- [Phase 6.6 — Static site generation](plans/phase-6.6.md) (complete; included in v0.14.0)
+- [Phase 6.7 — Optional filesystem routing](plans/phase-6.7.md) (planned; next; design RFC agreed, implementation not started)
 - [Moving the runtime to Rust](plans/runtime-rust.md)
 - [Integrated testing — unit, integration and browser](plans/testing.md) (implemented as `kiln test`)
 
