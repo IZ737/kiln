@@ -20,7 +20,7 @@ pub fn routes(app: web.App, db: sql.Db, sessions: auth.Sessions) {
             return res
         }
         let hash = try auth.hash_password(form.password)
-        let account = try orm.insert<shared.Account>(db, shared.Account(id: 0, email: email, name: form.name.trim(), password: hash))
+        let account = try orm.insert(db, shared.Account(email: email, name: form.name.trim(), password: hash))
         return try sessions.sign_in(web.redirect("/", status: 303), "${account.id}")
     })
 

@@ -83,7 +83,7 @@ pub fn routes(app: web.App, db: sql.Db, sessions: auth.Sessions) {
         }
         let role = if email == env("REGISTRY_ADMIN") { "admin" } else { "publisher" }
         let hash = try auth.hash_password(form.password)
-        let account = try orm.insert<store.Account>(db, store.Account(id: 0, name: name, email: email, password: hash, role: role))
+        let account = try orm.insert(db, store.Account(name: name, email: email, password: hash, role: role))
         return try sessions.sign_in(web.redirect("/tokens", status: 303), "${account.id}", roles: [account.role])
     })
 

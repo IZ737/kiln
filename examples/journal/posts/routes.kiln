@@ -38,7 +38,7 @@ pub fn routes(app: web.App, db: sql.Db, sessions: auth.Sessions) {
             return res
         }
         let author = who.subject.to_int() ?? 0
-        let post = try orm.insert<shared.Post>(db, shared.Post(id: 0, user_id: author, title: form.title.trim(), body: form.body, published: form.published))
+        let post = try orm.insert(db, shared.Post(user_id: author, title: form.title.trim(), body: form.body, published: form.published))
         return web.redirect("/posts/${post.id}", status: 303)
     })
 
@@ -135,7 +135,7 @@ fn add(db: sql.Db, sessions: auth.Sessions, req: web.Request, id: Int, body: Str
         throw web.error(422, checked.messages().join(" "))
     }
     let author = who.subject.to_int() ?? 0
-    try orm.insert<shared.Comment>(db, shared.Comment(id: 0, post_id: id, user_id: author, body: body.trim()))
+    try orm.insert(db, shared.Comment(post_id: id, user_id: author, body: body.trim()))
     return try comment_lines(db, id)
 }
 

@@ -129,8 +129,7 @@ pub fn routes(app: web.App, db: sql.Db) {
             }
             return problem(409, "${publisher}/${name} ${version} is already published with another checksum; publish a new version")
         }
-        try orm.insert<store.Release>(db, store.Release(
-            id: 0,
+        try orm.insert(db, store.Release(
             account_id: account.id,
             publisher: publisher,
             name: name,

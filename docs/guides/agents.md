@@ -141,7 +141,7 @@ folder; a path with `/` is from the project root.
 import sql, orm, auth
 
 pub struct Post {
-    id: Int                 // the primary key
+    id: Int = 0             // the primary key; 0 until inserted
     user_id: Int
     title: String
     published: Bool = false
@@ -151,7 +151,7 @@ pub struct Post {
 let db = try sql.open(env("DATABASE_URL"))
 let posts = try orm.find<Post>(db).where(.published).order_by(.id, descending: true).limit(20).all()
 let post = try orm.find<Post>(db).where(fn(p) { p.id == id }).first()     // Post?
-let saved = try orm.insert<Post>(db, Post(id: 0, user_id: 1, title: "Hi"))
+let saved = try orm.insert(db, Post(user_id: 1, title: "Hi"))
 ```
 
 `kiln db diff --name add_posts` writes a migration from the models (read

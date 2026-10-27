@@ -28,7 +28,7 @@ pub fn routes(app: web.App, db: sql.Db, sessions: auth.Sessions) {
         // The person named by `JOURNAL_ADMIN` becomes an administrator.
         let role = if email == env("JOURNAL_ADMIN") { "admin" } else { "writer" }
         let hash = try auth.hash_password(form.password)
-        let user = try orm.insert<shared.User>(db, shared.User(id: 0, email: email, name: form.name.trim(), password: hash, role: role))
+        let user = try orm.insert(db, shared.User(email: email, name: form.name.trim(), password: hash, role: role))
         return try sessions.sign_in(web.redirect("/"), "${user.id}", roles: [user.role])
     })
 

@@ -3,7 +3,7 @@
 import validate, auth
 
 pub struct User {
-    id: Int
+    id: Int = 0
     email: String
     name: String
     password: String
@@ -11,7 +11,7 @@ pub struct User {
 }
 
 pub struct Post {
-    id: Int
+    id: Int = 0
     user_id: Int
     title: String
     body: String
@@ -22,7 +22,7 @@ pub struct Post {
 }
 
 pub struct Comment {
-    id: Int
+    id: Int = 0
     post_id: Int
     user_id: Int
     body: String

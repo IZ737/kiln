@@ -29,14 +29,14 @@ pub fn account_for(db: sql.Db, req: web.Request) -> Account? ! {
 // Makes a token for an account, returning the token, which is not stored.
 pub fn new_token(db: sql.Db, account: Account, label: String) -> String ! {
     let token = "kiln_${auth.token()}"
-    try orm.insert<Token>(db, Token(id: 0, account_id: account.id, token_hash: auth.sha256(token), label: label))
+    try orm.insert(db, Token(account_id: account.id, token_hash: auth.sha256(token), label: label))
     try record(db, account.id, "token", label)
     return token
 }
 
 // A line in the audit log.
 pub fn record(db: sql.Db, account_id: Int, action: String, subject: String) ! {
-    try orm.insert<Event>(db, Event(id: 0, account_id: account_id, action: action, subject: subject, at: time.now().iso()))
+    try orm.insert(db, Event(account_id: account_id, action: action, subject: subject, at: time.now().iso()))
 }
 
 // Every release of a Ware, oldest first.

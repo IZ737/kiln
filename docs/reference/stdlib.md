@@ -292,7 +292,6 @@ HTTP does not allow is left out (with an error logged), and the
 Query strings are decoded as forms are, path segments by their `%XX`
 escapes, and cookies as the `cookie` header lays them out; decoded bytes
 that are not UTF-8 become U+FFFD.
-`req.form` comes later.
 
 **Settings.** `web.app()` works as it is in production, and takes
 settings for when the defaults do not fit:

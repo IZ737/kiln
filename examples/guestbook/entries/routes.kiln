@@ -15,7 +15,7 @@ pub fn routes(app: web.App, db: sql.Db, sessions: auth.Sessions) {
             return try page(db, sessions, req, form.message, checked.messages(), 422)
         }
         let account = who.subject.to_int() ?? 0
-        try orm.insert<shared.Entry>(db, shared.Entry(id: 0, account_id: account, message: form.message.trim()))
+        try orm.insert(db, shared.Entry(account_id: account, message: form.message.trim()))
         return web.redirect("/", status: 303)
     })
 }

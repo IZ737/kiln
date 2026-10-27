@@ -30,6 +30,7 @@ are not yet executable. Check their status notes before relying on a feature.
 
 - [Design overview](design.md) — architecture and technical decisions
 - [Long-term vision](vision.md) — principles, ecosystem and future scope
+- [Language decisions](decisions.md) — what was decided, why, and what it changed
 - [Roadmap](../README.md#roadmap) — milestones and completion status
 
 ## Implementation plans

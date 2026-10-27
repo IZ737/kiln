@@ -95,7 +95,7 @@ and `id` is its key.
 import orm
 
 struct Post {
-    id: Int
+    id: Int = 0
     title: String
     summary: String? = none
     published: Bool = false
@@ -120,6 +120,10 @@ let published = try orm.find<Post>(db)
 | `orm.insert<T>(db, value) -> T !` | Stores a row and returns it with its new key |
 | `orm.update<T>(db, value) -> Int !` | Writes a row back by its key |
 | `orm.delete<T>(db, value) -> Int !` | Deletes a row by its key |
+
+Give an `Int` key the default `0` (`id: Int = 0`): `orm.insert(db,
+Post(title: "Hi", author_id: 1))` then stores the row with the key the
+database gives it. The type argument is inferred from the value.
 
 | Step | |
 | --- | --- |

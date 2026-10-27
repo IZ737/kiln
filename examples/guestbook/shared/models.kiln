@@ -2,14 +2,14 @@
 import validate
 
 pub struct Account {
-    id: Int
+    id: Int = 0
     email: String
     name: String
     password: String
 }
 
 pub struct Entry {
-    id: Int
+    id: Int = 0
     account_id: Int
     message: String
     // Loaded with `include(.account)`.

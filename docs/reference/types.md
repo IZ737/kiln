@@ -108,8 +108,9 @@ the details of any error.
 
 ## Glazes
 
-A directory is one app: its glazes see the types and functions of its `.kiln`
-files, and its `.kiln` files see the props of its glazes.
+A folder's glazes and embers see the types and functions of its `.kiln`
+files and of the folder modules those files import, and its `.kiln` files
+see the props of its glazes (see [projects.md](projects.md)).
 
 - `{value}` must have a text form: `String`, `Int`, `Float`, `Bool`,
   `Decimal`, `Duration` or `Date` (E0217). Show a field of a struct, loop
@@ -138,8 +139,7 @@ files, and its `.kiln` files see the props of its glazes.
   expected is a style: its keys and values are checked (E0220), and its
   tokens must be declared (E0221). See
   [Typed styles](glazes.md#typed-styles).
-- An ember (a glaze with `{% state %}` or an `on:` handler) runs in the
-  browser: `sql` and `auth` are server-only (E0218). Call a `server fn`
+- An ember (an `.ember` file) runs in the browser: `sql` and `auth` are server-only (E0218). Call a `server fn`
   instead. Handlers cannot fail, and a `server fn` called from one can (the
   network may), so the call takes a `catch`. Props cannot be reassigned;
   state can.
