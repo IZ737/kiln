@@ -342,7 +342,12 @@ enum Command {
     },
     /// Make a new web app in a new folder: a manifest, a page, a module and
     /// tests. Nothing is fetched or run.
-    New { dir: PathBuf },
+    New {
+        dir: PathBuf,
+        /// Make its pages files in `pages/`, served by `app.file_routes`.
+        #[arg(long)]
+        pages: bool,
+    },
     /// Check a locked Ware's source against kiln.lock and its capabilities.
     Ware {
         #[command(subcommand)]
@@ -723,7 +728,7 @@ fn dispatch(command: Command) -> ExitCode {
         Command::Ui {
             action: UiCommand::List,
         } => report(Ok(ware::ui::names().join("\n"))),
-        Command::New { dir } => report(ware::ui::new_project(&dir)),
+        Command::New { dir, pages } => report(ware::ui::new_project(&dir, pages)),
         Command::Ware {
             action: WareCommand::Verify { ware: w, dir },
         } => report(ware::commands::verify_ware(&w, &dir)),

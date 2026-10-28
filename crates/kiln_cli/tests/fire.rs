@@ -214,7 +214,10 @@ fn file_routes_are_exported() {
         "import web\n\nfn main() ! {\n    let app = web.app()\n    app.file_routes(\"pages\")\n    try app.listen(\":8080\")\n}\n",
     );
     write("pages/index.glaze", "<a href=\"/tags/a\">a</a>\n");
-    write("pages/tags/[tag].glaze", "{% props tag: String %}\n<h1>{tag}</h1>\n");
+    write(
+        "pages/tags/[tag].glaze",
+        "{% props tag: String %}\n<h1>{tag}</h1>\n",
+    );
     write(
         "pages/hook/route.kiln",
         "import web\n\npub fn post(req: web.Request) -> web.Response {\n    return web.text(\"ok\")\n}\n",
@@ -234,7 +237,10 @@ fn file_routes_are_exported() {
     }
     // Listed and left out, the site is complete.
     std::fs::remove_file(app.join("pages/tags/[tag].glaze")).unwrap();
-    write("pages/tags/[tag]/index.glaze", "{% props tag: String %}\n<h1>{tag}</h1>\n");
+    write(
+        "pages/tags/[tag]/index.glaze",
+        "{% props tag: String %}\n<h1>{tag}</h1>\n",
+    );
     write(
         "pages/tags/[tag]/route.kiln",
         "pub fn static_params() -> List<String> {\n    return [\"a\", \"b\"]\n}\n",

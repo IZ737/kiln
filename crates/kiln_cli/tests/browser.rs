@@ -198,7 +198,12 @@ fn the_sites_embers_work_in_a_real_browser() {
 /// ember hydrates and runs.
 #[test]
 fn a_static_export_works_in_a_real_browser() {
-    drive_export("static_blog", "examples/static_blog", "static_blog.mjs", &[]);
+    drive_export(
+        "static_blog",
+        "examples/static_blog",
+        "static_blog.mjs",
+        &[],
+    );
 }
 
 /// `examples/garden`, whose routes are files (`app.file_routes`): the

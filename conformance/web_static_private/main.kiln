@@ -2,7 +2,7 @@
 // so a page that reads the request (a cookie, a header, the query string)
 // while it is rendered is not kept: it is logged and rendered on each
 // request, and one visitor never gets another's page.
-import web, os
+import web, os, time
 
 fn main() ! {
     let app = web.app(access_log: false)
@@ -14,6 +14,11 @@ fn main() ! {
         let who = if req.method == "HEAD" { req.cookie("user") ?? "?" } else { "everyone" }
         web.text("news for ${who}")
     }).static(refresh: 1ms)
+    // Lets the refresh time pass between requests.
+    app.get("/wait", fn(req) {
+        time.sleep(20ms)
+        web.text("waited")
+    })
     app.get("/quit", fn(req) {
         os.exit(0)
     })

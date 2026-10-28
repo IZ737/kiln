@@ -837,12 +837,21 @@ fn understands_filesystem_routes() {
     c.open(&main_uri, main);
     let marked = main.replace("app.file_routes", "app.file_ro|utes");
     let hover = hover_text(&c.at("textDocument/hover", &main_uri, &marked));
-    assert!(hover.contains("`GET /about` from `pages/about.glaze`"), "{hover}");
+    assert!(
+        hover.contains("`GET /about` from `pages/about.glaze`"),
+        "{hover}"
+    );
     // The broken route is not made; with the unsaved fix it is.
     assert!(!hover.contains("/p/"), "{hover}");
-    c.change(&route_uri, &route.replace(", extra: Int", "").replace(", extra: id", ""));
+    c.change(
+        &route_uri,
+        &route.replace(", extra: Int", "").replace(", extra: id", ""),
+    );
     let hover = hover_text(&c.at("textDocument/hover", &main_uri, &marked));
-    assert!(hover.contains("`GET /p/{id: Int}` from `pages/p/[id]/index.glaze`"), "{hover}");
+    assert!(
+        hover.contains("`GET /p/{id: Int}` from `pages/p/[id]/index.glaze`"),
+        "{hover}"
+    );
     let definition = c.at("textDocument/definition", &main_uri, &marked);
     let uris: Vec<&str> = definition
         .as_array()
@@ -850,7 +859,10 @@ fn understands_filesystem_routes() {
         .iter()
         .filter_map(|l| l["uri"].as_str())
         .collect();
-    assert!(uris.iter().any(|u| u.ends_with("pages/about.glaze")), "{uris:?}");
+    assert!(
+        uris.iter().any(|u| u.ends_with("pages/about.glaze")),
+        "{uris:?}"
+    );
     c.finish();
     let _ = std::fs::remove_dir_all(dir);
 }

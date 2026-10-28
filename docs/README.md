@@ -23,6 +23,8 @@ are not yet executable. Check their status notes before relying on a feature.
 ## Guides
 
 - [Your first Kiln site](guides/first-site.md) — from install to a tested multi-folder site
+- [Static sites](guides/static-sites.md) — `kiln fire --static` for any static host
+- [Pages as files](guides/file-routes.md) — `app.file_routes` and `route.kiln`
 - [Editor setup](guides/editors.md) — LSP, VS Code, Neovim and Helix
 - [Formatting, live reload and agents](guides/tooling.md) — `kiln fmt`, `kiln dev` and `kiln mcp`
 - [Kiln for coding agents](guides/agents.md) — the guide `kiln docs --llm` prints
@@ -49,7 +51,7 @@ APIs. **Proposed syntax in a plan is not automatically implemented syntax.**
 - [Phase 6.5 — Language review and vision alignment](plans/phase-6.5.md) (complete; included in v0.12.0)
 - [Phase 6.5.1 — Ember shared stores and reactivity alignment](plans/phase-6.5.1.md) (done)
 - [Phase 6.6 — Static site generation](plans/phase-6.6.md) (complete; included in v0.14.0)
-- [Phase 6.7 — Optional filesystem routing](plans/phase-6.7.md) (planned; next; design RFC agreed, implementation not started)
+- [Phase 6.7 — Optional filesystem routing](plans/phase-6.7.md) (complete; included in v0.15.0)
 - [Moving the runtime to Rust](plans/runtime-rust.md)
 - [Integrated testing — unit, integration and browser](plans/testing.md) (implemented as `kiln test`)
 

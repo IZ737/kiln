@@ -8,6 +8,8 @@ GET /me HTTP/1.1
 ###
 GET /news HTTP/1.1
 ###
+GET /wait HTTP/1.1
+###
 HEAD /news HTTP/1.1
 cookie: user=ann
 ###

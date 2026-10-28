@@ -218,7 +218,17 @@ for `/posts/{id: Int}`), or by a record for more than one
 parameters and the pages these list, and `.dynamic()` leaves a `GET` route
 out. A running server renders a `.static` route's pages once, when it
 starts, and serves them from memory, again after `refresh: 10m` has passed
-if given. See [Static sites](../guides/static-sites.md).
+if given. A page kept this way must not depend on the request: one whose
+handler reads the query string, a header, a cookie or the body is logged
+as an error and rendered on each request instead (hooks may read it). See
+[Static sites](../guides/static-sites.md).
+
+**Pages as files.** `app.file_routes("pages", at: "/", ignore:
+["_components"])` adds a route for each `.glaze` page in a project folder
+and for the handlers of each `route.kiln` beside one, when the program is
+compiled: `pages/about.glaze` answers `GET /about` and
+`pages/posts/[id]/index.glaze` `GET /posts/{id}`. See
+[Pages as files](../guides/file-routes.md).
 
 The routes of `server fn`s are under `/_kiln/rpc/<name>`, so a hook on
 `/_kiln/rpc` guards every call from an ember, and one on

@@ -35,6 +35,8 @@ For Phase 6 Wares/testing/tooling/MCP work, follow [docs/plans/phase-6.md](docs/
 
 For Phase 6.6 static site work, follow [docs/plans/phase-6.6.md](docs/plans/phase-6.6.md) and the [Static sites guide](docs/guides/static-sites.md): `kiln fire --static` writes every `GET` route without parameters plus the pages `.static(...)` lists, `.dynamic()` opts out, and broken output is a build error rather than a silently missing page.
 
+For Phase 6.7 filesystem routing, follow [docs/plans/phase-6.7.md](docs/plans/phase-6.7.md) and the [Pages as files guide](docs/guides/file-routes.md): `app.file_routes(...)` is expanded when the program is compiled into ordinary route registrations (`crates/kiln_cli/src/project/routes.rs`), never by scanning folders at run time, and every error points at the page or `route.kiln` it is about.
+
 For Phase 6 testing, read [docs/plans/testing.md](docs/plans/testing.md): the public
 `kiln test` tool must support unit, integration **and real-browser E2E**
 tests in one CLI, including Ember hydration and typed RPC from its first

@@ -26,6 +26,13 @@ content-length: 17
 connection: close
 
 news for everyone
+### GET /wait HTTP/1.1
+HTTP/1.1 200 OK
+content-type: text/plain; charset=utf-8
+content-length: 6
+connection: close
+
+waited
 ### HEAD /news HTTP/1.1
 HTTP/1.1 200 OK
 content-type: text/plain; charset=utf-8
