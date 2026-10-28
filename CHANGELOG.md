@@ -1,5 +1,42 @@
 # Changelog
 
+## 0.15.0 (2026-10-27)
+
+Phase 6.7: pages as files. A site can keep its pages in a folder and let
+their paths be their URLs, mixed freely with routes written in code.
+
+- `app.file_routes("pages", at: "/", ignore: ["_components"])` adds a
+  route for each `.glaze` page in a project folder when the program is
+  compiled: `about.glaze` answers `GET /about`, `index.glaze` its folder's
+  URL, and a `[slug]` file or folder is a URL parameter, typed from the
+  page's props or the handlers that take it. The routes are ordinary
+  `app.get`/`post`/... routes, tried literal segments first, so hooks,
+  error pages, tests, embers, pre-rendering and static export work as
+  before.
+- A `route.kiln` beside an `index.glaze` gives the page its props
+  (`pub fn load`), answers methods (`pub fn get`, `post`, `put`, `patch`,
+  `delete`), lists its static pages (`pub fn static_params`), and sets
+  `pub const static_refresh` and `pub const dynamic`. A folder with only a
+  `route.kiln` is an endpoint.
+- Mistakes are errors at the file they are about: mount arguments
+  (E0238), two routes for the same URL or overlapping in part, or on
+  `/_kiln` (E0239), and a page or `route.kiln` that does not fit its
+  URL, such as a missing prop or a parameter of two types (E0240).
+  Catch-alls, optional segments and route groups are errors that say what
+  to do instead. A filesystem route that an earlier explicit route
+  shadows is warning E0241: `kiln check` now reports warnings, which do
+  not fail a build.
+- `kiln fire --static` writes the pages, and an API-only `route.kiln`
+  must say `pub const dynamic = true` rather than be left out silently.
+- A running server no longer keeps a `.static` page that reads the
+  request (a cookie, a header, the query or the body): it logs an error
+  and renders that page on each request.
+- In the editor, hovering `app.file_routes` lists its routes, and go to
+  definition opens their files.
+- `kiln new --pages` makes an app whose pages are files, and
+  `examples/garden` is a complete one. New guide:
+  `docs/guides/file-routes.md`.
+
 ## 0.14.0 (2026-10-27)
 
 Phase 6.6: static sites. The same Kiln web app can be written as plain

@@ -1,0 +1,6 @@
+// The home page's data: `load` returns the page's props.
+import plants
+
+pub fn load() -> { plants: List<plants.Plant> } {
+    return { plants: plants.all() }
+}

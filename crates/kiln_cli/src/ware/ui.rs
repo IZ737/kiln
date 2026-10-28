@@ -163,8 +163,10 @@ fn kiln_copy(text: &str) -> String {
 }
 
 /// `kiln new`: a small web app with a manifest, a page, a folder module
-/// and a test. It writes files only; nothing is run or fetched.
-pub fn new_project(dir: &Path) -> Result<String, String> {
+/// and a test. With `pages`, its pages are files in `pages/` that
+/// `app.file_routes` serves. It writes files only; nothing is run or
+/// fetched.
+pub fn new_project(dir: &Path, pages: bool) -> Result<String, String> {
     let name = dir
         .file_name()
         .map(|n| n.to_string_lossy().to_string())
@@ -189,19 +191,40 @@ pub fn new_project(dir: &Path) -> Result<String, String> {
             dir.display()
         ));
     }
-    let files: &[(&str, String)] = &[
+    let mut files: Vec<(&str, String)> = vec![
         (
             "kiln.toml",
             format!("[package]\nname = \"{name}\"\nversion = \"0.1.0\"\nkind = \"app\"\nentry = \"main.kiln\"\n"),
         ),
-        ("main.kiln", NEW_MAIN.to_string()),
         ("notes/notes.kiln", NEW_NOTES.to_string()),
-        ("home.glaze", NEW_HOME.to_string()),
         ("notes/test_notes.kiln", NEW_UNIT.to_string()),
-        ("tests/integration/test_pages.kiln", NEW_INTEGRATION.to_string()),
         (".gitignore", ".kiln/\n*.db\ndist/\n".to_string()),
     ];
-    for (file, text) in files {
+    if pages {
+        files.extend([
+            ("main.kiln", NEW_PAGES_MAIN.to_string()),
+            ("pages/route.kiln", NEW_PAGES_ROUTE.to_string()),
+            (
+                "pages/index.glaze",
+                NEW_HOME.replace("<main>", NEW_PAGES_NAV),
+            ),
+            ("pages/about.glaze", NEW_PAGES_ABOUT.to_string()),
+            (
+                "tests/integration/test_pages.kiln",
+                NEW_PAGES_INTEGRATION.to_string(),
+            ),
+        ]);
+    } else {
+        files.extend([
+            ("main.kiln", NEW_MAIN.to_string()),
+            ("home.glaze", NEW_HOME.to_string()),
+            (
+                "tests/integration/test_pages.kiln",
+                NEW_INTEGRATION.to_string(),
+            ),
+        ]);
+    }
+    for (file, text) in &files {
         let path = dir.join(file);
         std::fs::create_dir_all(path.parent().unwrap())
             .map_err(|e| format!("{}: {e}", path.display()))?;
@@ -280,5 +303,61 @@ fn test_home_lists_notes() {
     let res = test.get("/")
     test.equal(res.status, 200)
     test.contains(res.body, "Write a page")
+}
+"#;
+
+const NEW_PAGES_MAIN: &str = r#"import web
+
+// Each file in pages/ is a page: pages/index.glaze answers `GET /` and
+// pages/about.glaze `GET /about`. `kiln run` serves them, and `kiln fire
+// --static` writes them to dist/ for a static host.
+fn main() ! {
+    let app = web.app()
+    app.file_routes("pages")
+    // A health check only a running server answers.
+    app.get("/health", fn(req) {
+        return web.text("ok")
+    }).dynamic()
+    try app.listen(":8080")
+}
+"#;
+
+const NEW_PAGES_ROUTE: &str = r#"// The data of the page beside it: `load` returns pages/index.glaze's props.
+import notes
+
+pub fn load() -> { items: List<notes.Note> } {
+    return { items: notes.all() }
+}
+"#;
+
+const NEW_PAGES_NAV: &str = "<nav><a href=\"/about\">About</a></nav>\n<main>";
+
+const NEW_PAGES_ABOUT: &str = r#"<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>About</title>
+</head>
+<body>
+<nav><a href="/">Notes</a></nav>
+<main>
+  <h1>About</h1>
+  <p>A page is a file: add pages/contact.glaze and it answers /contact.</p>
+</main>
+</body>
+</html>
+"#;
+
+const NEW_PAGES_INTEGRATION: &str = r#"import test
+
+fn test_home_lists_notes() {
+    let res = test.get("/")
+    test.equal(res.status, 200)
+    test.contains(res.body, "Write a page")
+}
+
+fn test_about_is_a_page() {
+    test.contains(test.get("/about").body, "A page is a file")
 }
 "#;

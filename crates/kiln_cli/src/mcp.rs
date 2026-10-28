@@ -407,12 +407,17 @@ impl Server {
         let total = report.diagnostics.len();
         let page: Vec<_> = report.diagnostics.iter().skip(offset).take(limit).collect();
         let diagnostics: Vec<Value> = page.iter().map(|(f, d)| d.to_json(f)).collect();
+        let errors = report.errors();
         let mut text = if total == 0 {
             format!("checked {} file(s): no errors", report.files_checked)
         } else {
             format!(
-                "checked {} file(s): {total} error(s){}\n\n",
+                "checked {} file(s): {errors} error(s){}{}\n\n",
                 report.files_checked,
+                match total - errors {
+                    0 => String::new(),
+                    n => format!(", {n} warning(s)"),
+                },
                 if page.len() < total {
                     format!(", showing {} from {}", page.len(), offset + 1)
                 } else {
@@ -429,7 +434,8 @@ impl Server {
             json!({
                 "schema": SCHEMA_VERSION,
                 "files_checked": report.files_checked,
-                "error_count": total,
+                "error_count": errors,
+                "warning_count": total - errors,
                 "diagnostics": diagnostics,
                 "next_offset": next,
             }),

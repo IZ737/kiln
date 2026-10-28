@@ -895,12 +895,22 @@ impl GlazeParser<'_> {
 
     // ----- elements -----
 
-    /// The tag name starting at byte `at`, or an empty string.
+    /// The tag name starting at byte `at`, or an empty string. A
+    /// component's module path may name a route folder such as `[slug]`
+    /// (`<pages.blog.[slug].Comments />`), so brackets are part of a name
+    /// after its first character.
     fn tag_name(&self, at: usize) -> String {
-        self.src[at..]
-            .chars()
-            .take_while(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.' | ':'))
-            .collect()
+        let mut name = String::new();
+        for c in self.src[at..].chars() {
+            let fits = c.is_ascii_alphanumeric()
+                || matches!(c, '-' | '_' | '.' | ':')
+                || (!name.is_empty() && matches!(c, '[' | ']'));
+            if !fits {
+                break;
+            }
+            name.push(c);
+        }
+        name
     }
 
     fn parse_element(&mut self) -> Element {

@@ -67,6 +67,10 @@ pub const UNMET_BOUND: &str = "E0234";
 pub const INTERFACE_MISUSE: &str = "E0235";
 pub const STORE_TYPE: &str = "E0236";
 pub const STATIC_PAGES: &str = "E0237";
+pub const FILE_ROUTES: &str = "E0238";
+pub const ROUTE_CONFLICT: &str = "E0239";
+pub const ROUTE_FILE: &str = "E0240";
+pub const ROUTE_SHADOWED: &str = "E0241";
 
 pub const UNCLOSED_GLAZE_TAG: &str = "E0301";
 pub const MISMATCHED_CLOSING_TAG: &str = "E0302";
@@ -93,6 +97,34 @@ pub const STATIC_EMBER: &str = "E0405";
 pub const STATIC_LINK: &str = "E0406";
 
 pub static ALL: &[ErrorCode] = &[
+    ErrorCode {
+        code: FILE_ROUTES,
+        title: "A filesystem route mount or route file name kiln cannot use",
+        explanation: "`app.file_routes(\"pages\")` turns the `.glaze` pages and `route.kiln` files under a project folder into routes when the program is compiled, so its folder, `at:` prefix and `ignore:` list must be written out as literals: a folder below the project root, a URL path starting with `/`, and plain folder names (no paths or globs). In a mounted folder, `[name]` is a whole-segment URL parameter; catch-all `[...name]`, optional `[[name]]` and `(group)` folders are not supported, and names may only use letters, digits, `-`, `_`, `.` and `~`.",
+        wrong: "app.file_routes(\"pages\", at: \"admin\", ignore: [\"**/_components\"])\n// pages/(marketing)/about.glaze",
+        right: "app.file_routes(\"pages\", at: \"/admin\", ignore: [\"_components\"])\n// pages/marketing/about.glaze",
+    },
+    ErrorCode {
+        code: ROUTE_CONFLICT,
+        title: "Filesystem routes that claim the same URLs",
+        explanation: "Inside one `app.file_routes` mount, every method and URL has one owner. Two files for the same route (`about.glaze` and `about/index.glaze`), two parameter routes of the same shape (`[id].glaze` and `[slug].glaze`), and two routes that each match URLs the other does not but share one (`[section]/new.glaze` and `docs/[slug].glaze` both match `/docs/new`) are errors; a literal route that is a strict case of a parameter route (`docs/new.glaze` and `docs/[slug].glaze`) is fine and wins. Filesystem routes may not claim kiln's own URLs under `/_kiln`, such as `POST /_kiln/rpc/<name>`, whatever order they are registered in.",
+        wrong: "pages/blog/[id].glaze\npages/blog/[slug].glaze",
+        right: "pages/blog/[slug].glaze\npages/blog/new.glaze",
+    },
+    ErrorCode {
+        code: ROUTE_FILE,
+        title: "A page or route.kiln that does not fit its route",
+        explanation: "A filesystem page gets its props from its URL parameters and, with a `route.kiln` beside it, from `pub fn load`, which returns a record or struct whose every field is a prop of the page. `load` and `pub fn get` cannot both answer `GET`; handlers take an optional first `req: web.Request` and then any of the route's parameters by name, typed `String`, `Int`, `Float` or `Bool`, the same wherever a parameter is declared. `pub fn static_params()` lists the pages of a route with parameters, `pub const static_refresh` renders them again after a while in a running server, and `pub const dynamic = true` leaves the route out of a static site; `dynamic` cannot be combined with the other two.",
+        wrong: "// pages/blog/[slug]/route.kiln\npub fn load(slug: Int) -> { post: Post, slug: String } ! { ... }\npub fn get() -> web.Response { ... }",
+        right: "// pages/blog/[slug]/route.kiln\npub fn load(slug: String) -> { post: Post } ! { ... }",
+    },
+    ErrorCode {
+        code: ROUTE_SHADOWED,
+        title: "A route that an earlier one answers first (a warning)",
+        explanation: "The router answers a request with the first route, in the order they were added, whose method and pattern match it, whether it was written with `app.get` or found by `app.file_routes`. A route that an earlier one always answers first never runs. This is only a warning, since it may be on purpose; move the registration that should win before the other.",
+        wrong: "app.file_routes(\"pages\")   // pages/about.glaze\napp.get(\"/about\", about)",
+        right: "app.get(\"/about\", about)\napp.file_routes(\"pages\")",
+    },
     ErrorCode {
         code: STATIC_PAGES,
         title: "A static route that lists the wrong pages",

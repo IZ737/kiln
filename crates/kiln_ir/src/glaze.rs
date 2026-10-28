@@ -84,18 +84,32 @@ fn written_name(name: &str) -> String {
     let mut parts = Vec::new();
     loop {
         if let Some(symbol) = rest.strip_prefix("symbol_") {
-            parts.push(symbol);
+            parts.push(symbol.to_string());
             return parts.join(".");
         }
         let digits = rest.chars().take_while(char::is_ascii_digit).count();
         let Ok(len) = rest[..digits].parse::<usize>() else {
             return name.to_string();
         };
-        let Some(segment) = rest.get(digits + 1..digits + 1 + len) else {
+        // A folder whose name is not an identifier, in hex after an `e`.
+        let hex = rest[digits..].starts_with('e');
+        let skip = digits + 1 + usize::from(hex);
+        let Some(segment) = rest.get(skip..skip + len) else {
             return name.to_string();
         };
-        parts.push(segment);
-        rest = &rest[(digits + 1 + len + 1).min(rest.len())..];
+        if hex {
+            let bytes: Option<Vec<u8>> = (0..segment.len())
+                .step_by(2)
+                .map(|i| u8::from_str_radix(segment.get(i..i + 2)?, 16).ok())
+                .collect();
+            match bytes.and_then(|b| String::from_utf8(b).ok()) {
+                Some(s) => parts.push(s),
+                None => return name.to_string(),
+            }
+        } else {
+            parts.push(segment.to_string());
+        }
+        rest = &rest[(skip + len + 1).min(rest.len())..];
     }
 }
 
@@ -145,6 +159,19 @@ pub struct Asset {
     /// Whether the path changes when the content does, so browsers may
     /// keep it for good.
     pub immutable: bool,
+}
+
+/// The URLs kiln itself answers, which filesystem routes may not claim
+/// (see `app.file_routes`): everything under this prefix, which holds the
+/// app's files (`/_kiln/app-<hash>.css`, ember code, npm packages)...
+pub const RESERVED_PREFIX: &str = "/_kiln";
+/// ...and these routes, as method and pattern, which a route with
+/// parameters could otherwise match.
+pub const RESERVED_ROUTES: &[(&str, &str)] = &[("POST", "/_kiln/rpc/{name}")];
+
+/// The URL of a `server fn`'s route, one of [`RESERVED_ROUTES`].
+pub fn rpc_path(name: &str) -> String {
+    format!("/_kiln/rpc/{name}")
 }
 
 /// The function that adds the routes serving the app's files to a
@@ -978,7 +1005,7 @@ impl<'a> Gen<'a> {
             };
             self.text.push_str(&format!(
                 "    app.post({}, fn(req) {{\n        try __kiln_rpc_check(req)\n{read}{reply}    }})\n",
-                kiln_string(&format!("/_kiln/rpc/{}", f.name)),
+                kiln_string(&rpc_path(&f.name)),
             ));
         }
     }
@@ -2183,7 +2210,8 @@ fn html_attr(text: &str) -> String {
         .replace('<', "&lt;")
 }
 
-fn kiln_string(text: &str) -> String {
+/// `text` as a Kiln string literal.
+pub fn kiln_string(text: &str) -> String {
     format!("\"{}\"", kiln_string_body(text))
 }
 

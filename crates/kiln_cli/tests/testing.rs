@@ -153,6 +153,37 @@ fn the_guestbook_tests_pass() {
     examples_tests_pass("examples/guestbook");
 }
 
+/// `kiln new`'s two templates, with routes in `main.kiln` and with pages
+/// in `pages/`, make apps whose own tests pass.
+#[test]
+fn new_projects_pass_their_tests() {
+    for pages in [false, true] {
+        let scratch = Scratch::new(&[]);
+        let dir = scratch.0.join("notes_app");
+        let mut new = Command::new(env!("CARGO_BIN_EXE_kiln"));
+        new.arg("new").arg(&dir).env("KILN_NO_UPDATE_CHECK", "1");
+        if pages {
+            new.arg("--pages");
+        }
+        let out = new.output().unwrap();
+        assert!(out.status.success(), "{}", text(&out));
+        assert_eq!(dir.join("pages/index.glaze").exists(), pages);
+        let out = kiln_test(&dir, &["--unit", "--integration"]);
+        assert!(out.status.success(), "{}", text(&out));
+        assert!(text(&out).contains("0 failed"), "{}", text(&out));
+        if pages {
+            let out = Command::new(env!("CARGO_BIN_EXE_kiln"))
+                .args(["fire", "--static"])
+                .arg(&dir)
+                .env("KILN_NO_UPDATE_CHECK", "1")
+                .output()
+                .unwrap();
+            assert!(out.status.success(), "{}", text(&out));
+            assert!(dir.join("dist/about/index.html").exists());
+        }
+    }
+}
+
 fn examples_tests_pass(dir: &str) {
     let mut args = vec!["--unit", "--integration", "--locked"];
     if browser_available() {

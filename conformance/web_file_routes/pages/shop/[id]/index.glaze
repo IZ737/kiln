@@ -1,0 +1,2 @@
+{% props id: Int, name: String, price: Float %}
+<h1>{id}: {name} at {price}</h1>

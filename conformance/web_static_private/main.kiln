@@ -1,0 +1,26 @@
+// A running server keeps the pages of `.static` routes for every visitor,
+// so a page that reads the request (a cookie, a header, the query string)
+// while it is rendered is not kept: it is logged and rendered on each
+// request, and one visitor never gets another's page.
+import web, os, time
+
+fn main() ! {
+    let app = web.app(access_log: false)
+    app.get("/me", fn(req) {
+        web.text("hello ${req.cookie("user") ?? "guest"}")
+    }).static()
+    // Reads a cookie only for a HEAD request, after it has been kept.
+    app.get("/news", fn(req) {
+        let who = if req.method == "HEAD" { req.cookie("user") ?? "?" } else { "everyone" }
+        web.text("news for ${who}")
+    }).static(refresh: 1ms)
+    // Lets the refresh time pass between requests.
+    app.get("/wait", fn(req) {
+        time.sleep(20ms)
+        web.text("waited")
+    })
+    app.get("/quit", fn(req) {
+        os.exit(0)
+    })
+    try app.listen("127.0.0.1:${env("PORT") ?? "8080"}")
+}

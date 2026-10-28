@@ -1,0 +1,7 @@
+import web
+
+pub fn get() -> web.Response {
+    return web.json({ status: "ok" })
+}
+
+pub const dynamic = true

@@ -1,0 +1,26 @@
+// The garden's plants: what the pages show.
+import web
+
+pub struct Plant {
+    slug: String
+    name: String
+    light: String
+    note: String
+}
+
+pub fn all() -> List<Plant> {
+    return [
+        Plant(slug: "fern", name: "Fern", light: "shade", note: "Keeps its soil damp and its fronds out of the sun."),
+        Plant(slug: "moss", name: "Moss", light: "shade", note: "Grows on whatever stays still long enough."),
+        Plant(slug: "sage", name: "Sage", light: "sun", note: "Wants little water and a lot of light."),
+    ]
+}
+
+// The plant with this slug, or a 404 the server shows as its error page.
+pub fn find(slug: String) -> Plant ! {
+    let found = all().find(fn(p) { p.slug == slug })
+    if found is some(plant) {
+        return plant
+    }
+    throw web.error(404, "no plant named ${slug}")
+}

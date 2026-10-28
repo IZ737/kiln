@@ -94,6 +94,15 @@ impl App {
     // the next hook and then its route. Hooks run in the order they were
     // added, so register them before anything they guard is reached.
     fn before(self, prefix: String, hook: fn(Request) -> Response? !) {}
+    // Adds a route for each page in a project folder, here in the order
+    // of routes: `pages/about.glaze` answers `GET /about`, `index.glaze`
+    // its folder's URL and `[slug].glaze` `GET /{slug}`, and a
+    // `route.kiln` beside a page gives it data (`pub fn load`), handlers
+    // (`pub fn get`, `post`, ...) and static pages (`pub fn
+    // static_params`). The routes are found when the program is compiled,
+    // so `dir`, `at` (the URL they go under) and `ignore` (folder names
+    // that hold components rather than pages) are written out.
+    fn file_routes(self, dir: String, at: String = "/", ignore: List<String> = ["_components"]) {}
     fn listen(self, address: String) ! {}
 }
 

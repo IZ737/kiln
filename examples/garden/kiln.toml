@@ -1,0 +1,3 @@
+[package]
+name = "garden"
+kind = "app"

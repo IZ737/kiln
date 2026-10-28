@@ -79,6 +79,13 @@ this with tests. `kiln fire --static` writes the same app as a static
 site in `dist/`: every `GET` route without parameters, and the pages a
 route with parameters lists with `.static(fn() { [...] })`.
 
+Pages can also be files: `app.file_routes("pages")` makes
+`pages/about.glaze` answer `GET /about` and `pages/posts/[id]/index.glaze`
+`GET /posts/{id}`, and a `route.kiln` beside a page exports `pub fn load`
+(its props), `pub fn post` and other methods, and `pub fn static_params`.
+Folders named `_components` hold components, not pages. `kiln new NAME
+--pages` starts an app this way; docs/guides/file-routes.md has the rules.
+
 ## Language essentials
 
 - No semicolons; a newline ends a statement. No `null`: optional values

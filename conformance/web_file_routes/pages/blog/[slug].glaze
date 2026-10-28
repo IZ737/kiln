@@ -1,0 +1,2 @@
+{% props slug: String, title: String = "untitled" %}
+<h1>{slug}: {title}</h1>

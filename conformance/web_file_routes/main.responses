@@ -1,0 +1,158 @@
+### GET / HTTP/1.1
+HTTP/1.1 200 OK
+content-type: text/html; charset=utf-8
+content-length: 28
+connection: close
+
+<h1>Home</h1>
+<nav>nav</nav>
+### GET /about HTTP/1.1
+HTTP/1.1 200 OK
+content-type: text/html; charset=utf-8
+content-length: 14
+connection: close
+
+<h1>About</h1>
+### GET /feed.xml HTTP/1.1
+HTTP/1.1 200 OK
+content-type: text/html; charset=utf-8
+content-length: 13
+connection: close
+
+<feed></feed>
+### GET /_components/nav HTTP/1.1
+HTTP/1.1 404 Not Found
+content-type: text/plain; charset=utf-8
+content-length: 9
+connection: close
+
+Not Found
+### GET /blog HTTP/1.1
+HTTP/1.1 200 OK
+content-type: text/html; charset=utf-8
+content-length: 13
+connection: close
+
+<h1>Blog</h1>
+### GET /blog/new HTTP/1.1
+HTTP/1.1 200 OK
+content-type: text/html; charset=utf-8
+content-length: 17
+connection: close
+
+<h1>New post</h1>
+### GET /blog/hello%20world HTTP/1.1
+HTTP/1.1 200 OK
+content-type: text/html; charset=utf-8
+content-length: 30
+connection: close
+
+<h1>hello world: untitled</h1>
+### GET /blog/5 HTTP/1.1
+HTTP/1.1 200 OK
+content-type: text/plain; charset=utf-8
+content-length: 14
+connection: close
+
+written post 5
+### GET /docs/guide/3 HTTP/1.1
+HTTP/1.1 200 OK
+content-type: text/html; charset=utf-8
+content-length: 13
+connection: close
+
+<p>page 3</p>
+### GET /docs/guide/three HTTP/1.1
+HTTP/1.1 404 Not Found
+content-type: text/plain; charset=utf-8
+content-length: 9
+connection: close
+
+Not Found
+### GET /shop/1 HTTP/1.1
+HTTP/1.1 200 OK
+content-type: text/html; charset=utf-8
+content-length: 27
+connection: close
+
+<h1>1: Widget 1 at 2.5</h1>
+### GET /shop/7 HTTP/1.1
+HTTP/1.1 200 OK
+content-type: text/html; charset=utf-8
+content-length: 27
+connection: close
+
+<h1>7: Widget 7 at 2.5</h1>
+### GET /shop/500 HTTP/1.1
+HTTP/1.1 404 Not Found
+content-type: text/plain; charset=utf-8
+content-length: 14
+connection: close
+
+no product 500
+### POST /shop/7 HTTP/1.1
+HTTP/1.1 201 Created
+content-type: text/plain; charset=utf-8
+content-length: 13
+connection: close
+
+bought 7: two
+### DELETE /shop/7 HTTP/1.1
+HTTP/1.1 405 Method Not Allowed
+content-type: text/plain; charset=utf-8
+allow: POST, GET
+content-length: 18
+connection: close
+
+Method Not Allowed
+### GET /api/status HTTP/1.1
+HTTP/1.1 200 OK
+content-type: application/json
+content-length: 15
+connection: close
+
+{"status":"ok"}
+### GET /api/hook HTTP/1.1
+HTTP/1.1 405 Method Not Allowed
+content-type: text/plain; charset=utf-8
+allow: POST
+content-length: 18
+connection: close
+
+Method Not Allowed
+### POST /api/hook HTTP/1.1
+HTTP/1.1 200 OK
+content-type: text/plain; charset=utf-8
+content-length: 6
+connection: close
+
+hooked
+### GET /clock HTTP/1.1
+HTTP/1.1 200 OK
+content-type: text/html; charset=utf-8
+content-length: 11
+connection: close
+
+<p>tick</p>
+### GET /clock HTTP/1.1
+HTTP/1.1 200 OK
+content-type: text/html; charset=utf-8
+content-length: 11
+connection: close
+
+<p>tick</p>
+### GET /admin HTTP/1.1
+HTTP/1.1 200 OK
+content-type: text/html; charset=utf-8
+content-length: 14
+connection: close
+
+<h1>Admin</h1>
+### GET /admin/_components HTTP/1.1
+HTTP/1.1 200 OK
+content-type: text/html; charset=utf-8
+content-length: 25
+connection: close
+
+<h1>Admin components</h1>
+### GET /quit HTTP/1.1

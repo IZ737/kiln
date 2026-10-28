@@ -136,6 +136,15 @@ impl Diagnostic {
         }
     }
 
+    /// A diagnostic that does not stop the build, such as a route that an
+    /// earlier one shadows.
+    pub fn warning(code: &'static str, message: impl Into<String>, span: Span) -> Self {
+        Diagnostic {
+            severity: Severity::Warning,
+            ..Diagnostic::error(code, message, span)
+        }
+    }
+
     pub fn with_help(mut self, help: impl Into<String>) -> Self {
         self.help = Some(help.into());
         self

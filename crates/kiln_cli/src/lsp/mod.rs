@@ -401,7 +401,7 @@ fn lsp_diagnostic(d: &Diagnostic, text: &str) -> Value {
     }
     json!({
         "range": range(text, d.span.start as usize, d.span.end as usize),
-        "severity": 1,
+        "severity": if d.severity == kiln_diagnostics::Severity::Warning { 2 } else { 1 },
         "code": d.code,
         "source": "kiln",
         "message": message,

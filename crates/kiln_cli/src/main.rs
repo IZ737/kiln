@@ -342,7 +342,12 @@ enum Command {
     },
     /// Make a new web app in a new folder: a manifest, a page, a module and
     /// tests. Nothing is fetched or run.
-    New { dir: PathBuf },
+    New {
+        dir: PathBuf,
+        /// Make its pages files in `pages/`, served by `app.file_routes`.
+        #[arg(long)]
+        pages: bool,
+    },
     /// Check a locked Ware's source against kiln.lock and its capabilities.
     Ware {
         #[command(subcommand)]
@@ -723,7 +728,7 @@ fn dispatch(command: Command) -> ExitCode {
         Command::Ui {
             action: UiCommand::List,
         } => report(Ok(ware::ui::names().join("\n"))),
-        Command::New { dir } => report(ware::ui::new_project(&dir)),
+        Command::New { dir, pages } => report(ware::ui::new_project(&dir, pages)),
         Command::Ware {
             action: WareCommand::Verify { ware: w, dir },
         } => report(ware::commands::verify_ware(&w, &dir)),
@@ -786,7 +791,8 @@ fn check(paths: Vec<PathBuf>, json: bool) -> ExitCode {
             .collect();
         let out = serde_json::json!({
             "files_checked": report.files_checked,
-            "error_count": report.diagnostics.len(),
+            "error_count": report.errors(),
+            "warning_count": report.diagnostics.len() - report.errors(),
             "diagnostics": diagnostics,
         });
         println!("{}", serde_json::to_string_pretty(&out).unwrap());
@@ -794,17 +800,24 @@ fn check(paths: Vec<PathBuf>, json: bool) -> ExitCode {
         for (file, diag) in &report.diagnostics {
             eprintln!("{}", diag.render(file));
         }
-        if report.diagnostics.is_empty() {
-            eprintln!("checked {} file(s): no errors", report.files_checked);
+        let warnings = match report.diagnostics.len() - report.errors() {
+            0 => String::new(),
+            n => format!(" and {n} warning(s)"),
+        };
+        if report.errors() == 0 {
+            eprintln!(
+                "checked {} file(s): no errors{warnings}",
+                report.files_checked
+            );
         } else {
             eprintln!(
-                "checked {} file(s): {} error(s). Run `kiln explain <code>` for details.",
+                "checked {} file(s): {} error(s){warnings}. Run `kiln explain <code>` for details.",
                 report.files_checked,
-                report.diagnostics.len()
+                report.errors()
             );
         }
     }
-    if report.diagnostics.is_empty() {
+    if report.errors() == 0 {
         ExitCode::SUCCESS
     } else {
         ExitCode::FAILURE
@@ -816,6 +829,16 @@ fn check(paths: Vec<PathBuf>, json: bool) -> ExitCode {
 pub(crate) struct CheckReport {
     pub files_checked: usize,
     pub diagnostics: Vec<(SourceFile, Diagnostic)>,
+}
+
+impl CheckReport {
+    /// How many of the diagnostics are errors rather than warnings.
+    pub fn errors(&self) -> usize {
+        self.diagnostics
+            .iter()
+            .filter(|(_, d)| d.severity == kiln_diagnostics::Severity::Error)
+            .count()
+    }
 }
 
 /// Checks files and folders as `kiln check` does, for it and `kiln mcp`.
@@ -902,8 +925,9 @@ pub(crate) fn check_paths(paths: Vec<PathBuf>) -> Result<CheckReport, String> {
             .map(|p| project::read(p).map(|text| (p.clone(), text)))
             .collect::<Result<Vec<_>, _>>()
             .map_err(|err| err.to_string())?;
-        let app = check_project_sources_entry(&project.root, &project.entry, texts).0;
-        for (file, diagnostics) in app {
+        let (app, info) = check_project_sources_entry(&project.root, &project.entry, texts);
+        let warnings = info.warnings.into_iter().map(|(f, w)| (f, vec![w]));
+        for (file, diagnostics) in app.into_iter().chain(warnings) {
             if paths.iter().all(|p| p.is_file())
                 && Path::new(&file.name).parent() == Some(canonical.as_path())
                 && !paths
@@ -955,7 +979,13 @@ pub(crate) fn check_sources(texts: Vec<(PathBuf, String)>) -> Vec<(SourceFile, V
                 .collect();
         }
     }
-    check_project_sources(&root, texts).0
+    let (mut checked, info) = check_project_sources(&root, texts);
+    for (file, warning) in info.warnings {
+        if let Some((_, diagnostics)) = checked.iter_mut().find(|(f, _)| f.name == file.name) {
+            diagnostics.push(warning);
+        }
+    }
+    checked
 }
 
 /// What `kiln build` needs besides the checked files: what each glaze's
@@ -970,6 +1000,9 @@ struct AppInfo {
     npm_error: Option<String>,
     source_maps: HashMap<String, (SourceFile, project::bind::SourceMap)>,
     symbol_names: BTreeMap<String, String>,
+    /// Warnings, such as routes that earlier ones shadow, which do not
+    /// stop a build.
+    warnings: Vec<(SourceFile, Diagnostic)>,
 }
 
 /// What the checker found each value a glaze outputs to be, for each glaze
@@ -993,12 +1026,16 @@ fn check_project_sources_entry(
             texts
                 .into_iter()
                 .zip(bound.diagnostics)
-                .map(|((p, t), d)| (SourceFile::new(p.display().to_string(), t), d))
+                .zip(bound.warnings)
+                .map(|(((p, t), mut d), w)| {
+                    d.extend(w);
+                    (SourceFile::new(p.display().to_string(), t), d)
+                })
                 .collect(),
             AppInfo::default(),
         );
     }
-    let (mut checked, mut info) = check_app_sources_at(root, bound.texts);
+    let (mut checked, mut info) = check_app_sources_at(root, bound.texts.clone());
     info.source_maps = texts
         .iter()
         .zip(&bound.maps)
@@ -1012,20 +1049,47 @@ fn check_project_sources_entry(
             )
         })
         .collect();
-    info.symbol_names = bound.names;
+    info.symbol_names = bound.names.clone();
 
+    // Errors in the code `app.file_routes` wrote point at the page or
+    // route file they are about.
+    let mut moved: Vec<(usize, Diagnostic)> = Vec::new();
+    for (i, (_, diagnostics)) in checked.iter_mut().enumerate() {
+        for mut diagnostic in std::mem::take(diagnostics) {
+            diagnostic.message = display_symbols(&diagnostic.message, &info.symbol_names);
+            let (target, span) = bound.original(i, diagnostic.span);
+            diagnostic.span = span;
+            if let Some(s) = &mut diagnostic.suggestion {
+                if target == i {
+                    s.span = bound.maps[i].original(s.span);
+                } else {
+                    diagnostic.suggestion = None;
+                }
+            }
+            if target != i && diagnostic.help.is_none() {
+                diagnostic.help =
+                    Some("in the route `app.file_routes` made from this file".to_string());
+            }
+            moved.push((target, diagnostic));
+        }
+    }
+    for (target, diagnostic) in moved {
+        if !checked[target].1.contains(&diagnostic) {
+            checked[target].1.push(diagnostic);
+        }
+    }
     for (i, (file, diagnostics)) in checked.iter_mut().enumerate() {
         if diagnostics.is_empty() {
             continue;
         }
-        for diagnostic in diagnostics {
-            diagnostic.message = display_symbols(&diagnostic.message, &info.symbol_names);
-            diagnostic.span = bound.maps[i].original(diagnostic.span);
-            if let Some(s) = &mut diagnostic.suggestion {
-                s.span = bound.maps[i].original(s.span);
-            }
-        }
+        diagnostics.sort_by_key(|d| d.span.start);
         *file = SourceFile::new(texts[i].0.display().to_string(), texts[i].1.clone());
+    }
+    for (i, warnings) in bound.warnings.into_iter().enumerate() {
+        for w in warnings {
+            let file = SourceFile::new(texts[i].0.display().to_string(), texts[i].1.clone());
+            info.warnings.push((file, w));
+        }
     }
     (checked, info)
 }
@@ -1153,6 +1217,7 @@ fn check_app_sources_at(
         npm_error,
         source_maps: HashMap::new(),
         symbol_names: BTreeMap::new(),
+        warnings: Vec::new(),
     };
     (out, info)
 }
@@ -1297,6 +1362,9 @@ fn build_project(
         texts.push((path.clone(), text));
     }
     let (checked, info) = check_project_sources_entry(&dir, &project.entry, texts);
+    for (file, warning) in &info.warnings {
+        eprintln!("{}", warning.render(file));
+    }
     let glaze_values = &info.glaze_values;
     let glaze_states = &info.glaze_states;
     let styles = &info.styles;

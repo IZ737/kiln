@@ -1,0 +1,7 @@
+import web
+
+pub fn post(req: web.Request) -> web.Response {
+    return web.text("hooked")
+}
+
+pub const dynamic = true

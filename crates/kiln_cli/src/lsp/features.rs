@@ -1057,12 +1057,84 @@ fn collect_sources(dir: &Path, out: &mut Vec<PathBuf>, depth: usize) {
 // Folder binding is shared with the compiler. Translate request offsets into
 // resolved source and response ranges back to the user's original documents.
 pub(super) fn hover(sources: &[Source], index: usize, offset: usize) -> Value {
+    if let Some((span, routes)) = mount_at(sources, index, offset) {
+        let mut shown = format!(
+            "**`app.file_routes`** adds {} route(s) here, tried in this order:\n",
+            routes.len()
+        );
+        let root = crate::project::common_root(sources.iter().map(|s| s.path.as_path()));
+        for r in &routes {
+            let file = sources[r.file]
+                .path
+                .strip_prefix(&root)
+                .unwrap_or(&sources[r.file].path)
+                .to_string_lossy()
+                .replace('\\', "/");
+            shown.push_str(&format!(
+                "\n- `{} {}` from `{file}`{}",
+                r.method.to_uppercase(),
+                r.pattern,
+                if r.dynamic { " (dynamic)" } else { "" }
+            ));
+        }
+        return json!({
+            "contents": {"kind": "markdown", "value": shown},
+            "range": range(&sources[index].text, span.start as usize, span.end as usize),
+        });
+    }
     bound_request(sources, index, offset, hover_bound)
+}
+
+/// The `app.file_routes(...)` call at `offset`, and the routes it adds.
+fn mount_at(
+    sources: &[Source],
+    index: usize,
+    offset: usize,
+) -> Option<(Span, Vec<crate::project::routes::RouteInfo>)> {
+    if crate::is_glaze(&sources[index].path) {
+        return None;
+    }
+    let module = kiln_syntax::parse(&sources[index].text).module;
+    let call = crate::project::routes::mount_calls(&module)
+        .into_iter()
+        .find(|c| c.span.start as usize <= offset && offset <= c.span.end as usize)?;
+    let root = crate::project::common_root(sources.iter().map(|s| s.path.as_path()));
+    let texts: Vec<_> = sources
+        .iter()
+        .map(|s| (s.path.clone(), s.text.clone()))
+        .collect();
+    let bound = crate::project::bind::bind(&root, &texts);
+    let routes = bound
+        .routes
+        .into_iter()
+        .filter(|r| r.mount == (index, call.span))
+        .collect();
+    Some((call.span, routes))
 }
 pub(super) fn references(sources: &[Source], index: usize, offset: usize) -> Value {
     bound_request(sources, index, offset, references_bound)
 }
 pub(super) fn definition(sources: &[Source], index: usize, offset: usize) -> Value {
+    // From a mount, the files its routes come from.
+    if let Some((_, routes)) = mount_at(sources, index, offset) {
+        let mut seen = Vec::new();
+        let locations: Vec<Value> = routes
+            .iter()
+            .filter(|r| {
+                let new = !seen.contains(&r.file);
+                seen.push(r.file);
+                new
+            })
+            .map(|r| {
+                let s = &sources[r.file];
+                json!({
+                    "uri": s.uri.clone().unwrap_or_else(|| path_to_uri(&s.path)),
+                    "range": range(&s.text, r.span.start as usize, r.span.end as usize),
+                })
+            })
+            .collect();
+        return Value::Array(locations);
+    }
     bound_request(sources, index, offset, definition_bound)
 }
 pub(super) fn completion(sources: &[Source], index: usize, offset: usize) -> Value {

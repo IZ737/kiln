@@ -151,13 +151,41 @@ fn export(dir: &Path, root: &Path, out: &Path, scratch: &Path, backend: Backend)
         })
         .collect();
     let sources = sources(root);
+    let file_routes = crate::project::file_routes(root);
     let mut errors = 0;
     // Links to the routes these errors are about are not reported again.
     let mut reported = Vec::new();
     for problem in report["problems"].as_array().into_iter().flatten() {
         errors += 1;
-        eprintln!("{}", problem_message(problem, &sources));
+        eprintln!("{}", problem_message(problem, &sources, &file_routes));
         reported.push(problem["pattern"].as_str().unwrap_or("").to_string());
+    }
+    // A route folder with handlers but no page and no GET has nothing a
+    // static host can serve, so it says so with `dynamic`.
+    let mut unexported = BTreeSet::new();
+    for (file, route) in &file_routes {
+        if route.unexported && unexported.insert(file.name.clone()) {
+            errors += 1;
+            let methods: Vec<String> = file_routes
+                .iter()
+                .filter(|(f, r)| f.name == file.name && r.unexported)
+                .map(|(_, r)| r.method.to_uppercase())
+                .collect();
+            eprintln!(
+                "{}",
+                Diagnostic::error(
+                    codes::STATIC_PAGE,
+                    format!(
+                        "this route.kiln answers only {} {}, which a static host cannot serve",
+                        methods.join(", "),
+                        route.pattern
+                    ),
+                    route.span,
+                )
+                .with_help("add `pub const dynamic = true` to this route.kiln to leave it out of the static site; it still runs on a server")
+                .render(file)
+            );
+        }
     }
     let site = Site::new(&pages);
     let mut calls = calls.into_inner();
@@ -268,9 +296,52 @@ fn sources(root: &Path) -> Vec<SourceFile> {
 }
 
 /// The error for a page the program could not write, at its route.
-fn problem_message(problem: &serde_json::Value, sources: &[SourceFile]) -> String {
+fn problem_message(
+    problem: &serde_json::Value,
+    sources: &[SourceFile],
+    file_routes: &[(SourceFile, crate::project::routes::RouteInfo)],
+) -> String {
     let get = |k: &str| problem[k].as_str().unwrap_or("").to_string();
     let (pattern, path, kind, message) = (get("pattern"), get("path"), get("kind"), get("message"));
+    // A route `app.file_routes` found: the page or route.kiln it is from.
+    if let Some((file, route)) = file_routes
+        .iter()
+        .find(|(_, r)| r.method == "get" && r.pattern == pattern)
+    {
+        let (code, text, help) = match kind.as_str() {
+            "unlisted" => (
+                codes::STATIC_PAGES,
+                format!("the route {pattern} has parameters, so a static site has only the pages it lists"),
+                "list them with `pub fn static_params()` in a route.kiln beside the page (move `[x].glaze` to `[x]/index.glaze` first), or leave the route out with `pub const dynamic = true`",
+            ),
+            "pages" => (
+                codes::STATIC_PAGES,
+                format!("cannot list the pages of {pattern}: {message}"),
+                "`static_params` must succeed for the site to be complete",
+            ),
+            "reads" => (
+                codes::STATIC_PAGE,
+                format!("the page {path} reads {message}, which a static host gives no page"),
+                "leave the route out of the static site with `pub const dynamic = true` in its route.kiln",
+            ),
+            "status" => (
+                codes::STATIC_PAGE,
+                format!("{message}, so it cannot be a page of the site"),
+                "a page of a static site answers 200 or redirects; leave the route out with `pub const dynamic = true` in its route.kiln",
+            ),
+            "type" => (
+                codes::STATIC_PAGE,
+                message,
+                "give the page a file extension in its name, such as `feed.xml.glaze`, or leave it out with `pub const dynamic = true`",
+            ),
+            _ => (codes::STATIC_PAGE, message, ""),
+        };
+        let mut diag = Diagnostic::error(code, text, route.span);
+        if !help.is_empty() {
+            diag = diag.with_help(help);
+        }
+        return diag.render(file);
+    }
     let (code, text, help): (&str, String, Option<String>) = match kind.as_str() {
         "unlisted" => (
             codes::STATIC_PAGES,

@@ -1,0 +1,15 @@
+// Filesystem routes: `app.file_routes` turns the pages under a folder
+// into routes, at the place of the call among the routes written out.
+import web, os
+
+fn main() ! {
+    let app = web.app(access_log: false)
+    // Written before the mount, so it answers /blog/5 before
+    // `pages/blog/[slug].glaze` does; /blog/hello is the page's.
+    app.get("/blog/{n: Int}", fn(req, n) { web.text("written post ${n}") })
+    app.file_routes("pages")
+    // Another folder under a prefix, where `_components` is a page too.
+    app.file_routes("admin", at: "/admin/", ignore: [])
+    app.get("/quit", fn(req) { os.exit(0) }).dynamic()
+    try app.listen("127.0.0.1:${env("PORT") ?? "8080"}")
+}

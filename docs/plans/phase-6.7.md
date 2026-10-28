@@ -1,9 +1,11 @@
 # Phase 6.7 — Optional filesystem routing (design RFC)
 
-**Status: Planned roadmap phase; design decisions recorded, implementation not started.**  
+**Status: complete; included in v0.15.0.** What shipped is documented in
+[Pages as files](../guides/file-routes.md) and the
+[`web` reference](../reference/stdlib.md#web); where this RFC's examples differ
+from those pages, the pages are authoritative.  
 **Last discussed: 2026-10-27.**  
-**Roadmap placement: Phase 6.7, after completed Phase 6.6 and before Phase 7 (Kiln 1.0 readiness).**  
-**Implementation: none.** All API examples below are proposed, not valid Kiln code today.
+**Roadmap placement: Phase 6.7, after completed Phase 6.6 and before Phase 7 (Kiln 1.0 readiness).**
 
 This is the **agreed design RFC for planned Phase 6.7**. Validate proposed APIs against the compiler during implementation; the original design PR is closed. Do not infer acceptance of an item merely because it appears in an illustrative example. The [current HTTP API](../reference/stdlib.md#web), [project/module model](../reference/projects.md), [Glazes/Embers](../reference/glazes.md), and [static-site behaviour](../guides/static-sites.md) remain authoritative until implementation and documentation are updated.
 
@@ -714,7 +716,7 @@ The planned **Phase 6.7** implementation can be divided into reviewable parts:
 2. **6.7B — Dynamic pages.** URL parameters, settled handler/loading convention, validated props, methods and SSG enumeration.
 3. **6.7C — Developer experience.** LSP navigation and diagnostics, `kiln new` template, full E2E/browser/static-site tests and reference docs.
 
-**Roadmap order is committed:** Phase 6.7 follows 6.6 and precedes Phase 7. Implementation has not started; the design RFC is not evidence of shipped syntax.
+**Roadmap order is committed:** Phase 6.7 follows 6.6 and precedes Phase 7. All three parts shipped together in v0.15.0.
 
 ## 10A. Consolidated review against existing Kiln contracts (2026-10-27)
 

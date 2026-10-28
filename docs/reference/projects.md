@@ -96,6 +96,13 @@ inside the project. Root `static/` files use `/static/...`; a module's files use
 `/static/posts/...` (including nested module segments). Duplicate asset URLs are
 errors. Only imported modules contribute assets.
 
+A folder that `app.file_routes("pages")` mounts is part of the project too,
+with its subfolders, whether or not anything imports it: its `.glaze` pages
+become routes, each `route.kiln` is a module of its folder, and its
+components are named like any others (`<pages._components.Card />`,
+`<pages.plants.[slug].Card />` in a folder named with brackets). See
+[Pages as files](../guides/file-routes.md).
+
 The executable dogfood application is in
 `crates/kiln_cli/tests/fieldnotes/`: `posts` and `accounts` register routes,
 module-local CSS styles an Ember form, and a typed `server fn` validates its

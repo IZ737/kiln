@@ -1,0 +1,3 @@
+{# Runs in the browser, so it works on a static host too. #}
+{% state times = 0 %}
+<button type="button" class="water" on:click={ times += 1 }>Watered {times} times</button>

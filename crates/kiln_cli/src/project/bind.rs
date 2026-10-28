@@ -78,6 +78,40 @@ pub struct Bound {
     pub texts: Vec<(PathBuf, String)>,
     pub maps: Vec<SourceMap>,
     pub diagnostics: Vec<Vec<Diagnostic>>,
+    /// Warnings, which do not stop a build, by file.
+    pub warnings: Vec<Vec<Diagnostic>>,
+    /// Code `app.file_routes` mounts wrote into a file's text: the file,
+    /// the range in its bound text, and the file and span an error there
+    /// is about.
+    pub regions: Vec<Region>,
+    /// The routes the mounts add.
+    pub routes: Vec<super::routes::RouteInfo>,
+}
+
+#[derive(Clone, Debug)]
+pub struct Region {
+    pub file: usize,
+    pub start: usize,
+    pub end: usize,
+    pub target: usize,
+    pub span: Span,
+}
+
+impl Bound {
+    /// The file and span of the original source that a span in a file's
+    /// bound text stands for.
+    pub fn original(&self, file: usize, span: Span) -> (usize, Span) {
+        let start = span.start as usize;
+        if let Some(r) = self
+            .regions
+            .iter()
+            .filter(|r| r.file == file && r.start <= start && start < r.end)
+            .min_by_key(|r| r.end - r.start)
+        {
+            return (r.target, r.span);
+        }
+        (file, self.maps[file].original(span))
+    }
 }
 fn owner(root: &Path, path: &Path) -> String {
     path.parent()
@@ -98,13 +132,26 @@ fn qualified(module: &str, name: &str, nominal: bool) -> String {
     };
     format!(
         "{prefix}_{}_symbol_{}",
-        module
-            .split('.')
-            .map(|s| format!("{}_{}", s.len(), s))
-            .collect::<Vec<_>>()
-            .join("_"),
+        module.split('.').map(segment).collect::<Vec<_>>().join("_"),
         name
     )
+}
+
+/// A folder's part of a module symbol: `5_posts`. A folder name that is
+/// not an identifier, such as a route folder `[slug]`, is written in hex
+/// after an `e` (`12e_5b736c75675d`), which no other folder's part has.
+fn segment(s: &str) -> String {
+    if s.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
+        format!("{}_{}", s.len(), s)
+    } else {
+        let hex: String = s.bytes().map(|b| format!("{b:02x}")).collect();
+        format!("{}e_{hex}", hex.len())
+    }
+}
+
+/// The symbol a folder module gives one of its functions or constants.
+pub fn module_symbol(module: &str, name: &str) -> String {
+    qualified(module, name, false)
 }
 
 pub fn bind(root: &Path, texts: &[(PathBuf, String)]) -> Bound {
@@ -172,7 +219,26 @@ pub fn bind_entry(root: &Path, entry: &Path, texts: &[(PathBuf, String)]) -> Bou
         texts: Vec::new(),
         maps: Vec::new(),
         diagnostics: Vec::new(),
+        warnings: Vec::new(),
+        regions: Vec::new(),
+        routes: Vec::new(),
     };
+    // `app.file_routes` mounts become functions that add their routes.
+    let mut plan = super::routes::analyze(&super::routes::Inputs {
+        root,
+        texts,
+        modules: &parsed,
+        packages: &packages,
+    });
+    let mut route_diagnostics: BTreeMap<usize, Vec<Diagnostic>> = BTreeMap::new();
+    for (file, d) in plan.diagnostics.drain(..) {
+        route_diagnostics.entry(file).or_default().push(d);
+    }
+    let mut route_warnings: BTreeMap<usize, Vec<Diagnostic>> = BTreeMap::new();
+    for (file, d) in plan.warnings.drain(..) {
+        route_warnings.entry(file).or_default().push(d);
+    }
+    result.routes = std::mem::take(&mut plan.routes);
     // A glaze has no imports of its own: it sees the folder modules its
     // folder's `.kiln` files import, so a page can take `shared.Post`.
     let mut folder_imports: BTreeMap<String, BTreeMap<String, String>> = BTreeMap::new();
@@ -196,7 +262,7 @@ pub fn bind_entry(root: &Path, entry: &Path, texts: &[(PathBuf, String)]) -> Bou
             }
         }
     }
-    for ((path, text), module) in texts.iter().zip(&parsed) {
+    for (index, ((path, text), module)) in texts.iter().zip(&parsed).enumerate() {
         let own = owner(root, path);
         let mut resolver = Resolver {
             packages: &packages,
@@ -261,10 +327,34 @@ pub fn bind_entry(root: &Path, entry: &Path, texts: &[(PathBuf, String)]) -> Bou
             resolver.imports = folder_imports.get(&own).cloned().unwrap_or_default();
             resolver.glaze(&glaze);
         }
-        let rewritten = resolver.map.apply(text);
+        let file_plan = plan.files.remove(&index).unwrap_or_default();
+        for (span, text) in file_plan.edits {
+            resolver.edit(span, text);
+        }
+        let mut rewritten = resolver.map.apply(text);
+        let base = rewritten.len();
+        rewritten.push_str(&file_plan.appended);
+        result.regions.extend(
+            file_plan
+                .regions
+                .into_iter()
+                .map(|(start, end, target, span)| Region {
+                    file: index,
+                    start: base + start,
+                    end: base + end,
+                    target,
+                    span,
+                }),
+        );
         result.texts.push((path.clone(), rewritten));
         result.maps.push(resolver.map);
+        resolver
+            .diagnostics
+            .extend(route_diagnostics.remove(&index).unwrap_or_default());
         result.diagnostics.push(resolver.diagnostics);
+        result
+            .warnings
+            .push(route_warnings.remove(&index).unwrap_or_default());
     }
     result
 }
@@ -628,6 +718,15 @@ impl Resolver<'_> {
                 type_args,
                 args,
             } => {
+                // `app.file_routes(...)` is replaced by a call of the
+                // function its routes are written in; its arguments are
+                // literals and stay as they are.
+                if let ExprKind::Field { expr, name } = &callee.kind {
+                    if name.name == "file_routes" {
+                        self.expr(expr);
+                        return;
+                    }
+                }
                 if matches!(&callee.kind, ExprKind::Field {expr,name} if name.name=="render" && matches!(&expr.kind, ExprKind::Ident(n) if n=="web"))
                 {
                     if let Some(a) = args.first() {
