@@ -315,7 +315,34 @@
           }
         ]
       }
-    ]
+    ],
+    "configurationDefaults": {
+      "[kiln]": {
+        "editor.quickSuggestions": {
+          "other": "on",
+          "comments": "off",
+          "strings": "on"
+        },
+        "editor.wordBasedSuggestions": "off",
+        "editor.suggest.insertMode": "replace"
+      },
+      "[glaze]": {
+        "editor.quickSuggestions": {
+          "other": "on",
+          "comments": "off",
+          "strings": "on"
+        },
+        "editor.suggest.insertMode": "replace"
+      },
+      "[ember]": {
+        "editor.quickSuggestions": {
+          "other": "on",
+          "comments": "off",
+          "strings": "on"
+        },
+        "editor.suggest.insertMode": "replace"
+      }
+    }
   },
   "scripts": {
     "bundle": "esbuild src/extension.js --bundle --outfile=dist/extension.js --external:vscode --format=cjs --platform=node --target=node18 --minify",

@@ -38,6 +38,12 @@
   `<posts.` in a glaze completes that folder's components and subfolders;
   and go to definition works from an imported module to its folder's main
   file and from `web.render` and `{% layout %}` paths to the component.
+- Editing in VS Code (#77): signature help inside calls (from `kiln lsp`,
+  so every editor gets it), suggestions while typing in strings for
+  component paths, completions that replace the whole word, no word-based
+  guesses mixed into Kiln's, and the server's state beside the language in
+  the status bar with a restart when it stops. A server that fails to
+  start offers its output and a restart.
 - A page with embers but no `</head>` loads their script before
   `</body>` rather than after the end of the page.
 - `kiln upgrade` no longer offers to "upgrade" a kiln built from source

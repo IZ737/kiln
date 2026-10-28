@@ -1094,3 +1094,46 @@ fn navigates_and_completes_across_modules() {
     c.finish();
     let _ = std::fs::remove_dir_all(dir);
 }
+
+/// Signature help inside a call: the signature from the checker, the
+/// argument being typed, and the doc comment.
+#[test]
+fn shows_signatures_while_calling() {
+    let (mut client, main, _, _) = blog("signature");
+    let body_end = MAIN.rfind('}').unwrap();
+    let with = |line: &str| format!("{}{line}\n{}", &MAIN[..body_end], &MAIN[body_end..]);
+    let help = client.at(
+        "textDocument/signatureHelp",
+        &main,
+        &with("    print(helper(|"),
+    );
+    assert_eq!(help["signatures"][0]["label"], "fn helper(p: Post) -> Int");
+    assert_eq!(
+        help["signatures"][0]["parameters"][0]["label"],
+        json!([10, 17])
+    );
+    assert_eq!(help["activeParameter"], 0);
+    assert_eq!(
+        help["signatures"][0]["documentation"]["value"],
+        "Doubles a post's id."
+    );
+    // A method's `self` is not an argument; the second one is active.
+    let help = client.at(
+        "textDocument/signatureHelp",
+        &main,
+        &with("    let t = post.title.replace(\"a\", |"),
+    );
+    let label = help["signatures"][0]["label"].as_str().unwrap();
+    assert!(label.contains("replace("), "{help}");
+    assert_eq!(help["activeParameter"], 1, "{help}");
+    // Outside a call there is none.
+    assert_eq!(
+        client.at(
+            "textDocument/signatureHelp",
+            &main,
+            &with("    let x = [1, |")
+        ),
+        Value::Null
+    );
+    client.finish();
+}

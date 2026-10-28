@@ -20,6 +20,8 @@ See [projects](../reference/projects.md) for module paths and visibility. It giv
   of `web.render(...)` or `{% layout %}` offers component paths as the
   compiler finds them (same-folder files by name, others from the
   project root).
+- **Signature help**: inside a call, the function's signature with the
+  argument being typed marked, and its doc comment.
 - **Hover**: the type of a name or expression, a function's signature, a
   type's fields or variants, and the doc comment (`//` lines just above the
   declaration), including for the standard library.

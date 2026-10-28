@@ -91,6 +91,18 @@ async function run() {
   assert.strictEqual(word && doc.getText(word), "x");
   const name = doc.getWordRangeAtPosition(positionOf(doc, "print(helper", 10));
   assert.strictEqual(name && doc.getText(name), "helper");
+  // Signature help inside the call, with the argument marked.
+  const signatures = await vscode.commands.executeCommand(
+    "vscode.executeSignatureHelpProvider",
+    mainUri,
+    positionOf(doc, "print(helper(post", 13),
+    "(",
+  );
+  assert.strictEqual(signatures?.signatures[0]?.label, "fn helper(p: Post) -> Int");
+  assert.strictEqual(signatures.activeParameter, 0);
+  // Suggestions show while typing in strings, for component paths.
+  const editorConfig = vscode.workspace.getConfiguration("editor", { languageId: "kiln" });
+  assert.strictEqual(editorConfig.get("quickSuggestions").strings, "on");
   await vscode.commands.executeCommand("undo");
   await doc.save();
 

@@ -15,6 +15,28 @@ const COMMANDS = ["check", "run", "build", "test", "dev", "fmt"];
 let client;
 /** @type {vscode.OutputChannel} */
 let output;
+/** The language server's state, beside the language in the status bar. */
+let status;
+
+const SELECTOR = ["kiln", "glaze", "ember"];
+
+/// Shows the server's state: running, starting, stopped or missing kiln,
+/// with the command that helps.
+function showStatus(state, detail) {
+  if (!status) return;
+  const states = {
+    running: ["kiln lsp", vscode.LanguageStatusSeverity?.Information, "kiln.showOutput", "Show Output"],
+    starting: ["kiln lsp: starting", vscode.LanguageStatusSeverity?.Information, "kiln.showOutput", "Show Output"],
+    stopped: ["kiln lsp: stopped", vscode.LanguageStatusSeverity?.Error, "kiln.restartServer", "Restart"],
+    missing: ["kiln not found", vscode.LanguageStatusSeverity?.Error, "kiln.showOutput", "Show Output"],
+  };
+  const [text, severity, command, title] = states[state];
+  status.text = text;
+  status.detail = detail ?? "";
+  status.severity = severity;
+  status.busy = state === "starting";
+  status.command = { command, title };
+}
 
 /// The `kiln` executable to use, or `undefined` after telling the user how
 /// to get one.
@@ -54,8 +76,12 @@ function kilnPath({ quiet = false } = {}) {
 
 async function startClient() {
   const command = kilnPath();
-  if (!command) return;
+  if (!command) {
+    showStatus("missing", "Set kiln.path, or install Kiln");
+    return;
+  }
   output.appendLine(`Starting ${command} lsp`);
+  showStatus("starting", command);
   client = new LanguageClient(
     "kiln",
     "Kiln",
@@ -72,10 +98,33 @@ async function startClient() {
       outputChannel: output,
     },
   );
+  const started = client;
+  started.onDidChangeState?.(({ newState }) => {
+    if (client !== started) return;
+    if (newState === State.Running) {
+      const version = started.initializeResult?.serverInfo?.version;
+      showStatus("running", version ? `Kiln ${version}` : command);
+    } else if (newState === State.Stopped) {
+      showStatus("stopped", "Click to restart it");
+    } else {
+      showStatus("starting", command);
+    }
+  });
   try {
     await client.start();
+    if (client === started && started.state === State.Running) {
+      const version = started.initializeResult?.serverInfo?.version;
+      showStatus("running", version ? `Kiln ${version}` : command);
+    }
   } catch (err) {
-    vscode.window.showErrorMessage(`kiln lsp did not start: ${err.message ?? err}`);
+    showStatus("stopped", String(err.message ?? err));
+    const choice = await vscode.window.showErrorMessage(
+      `kiln lsp did not start: ${err.message ?? err}`,
+      "Show Output",
+      "Restart",
+    );
+    if (choice === "Show Output") output.show();
+    if (choice === "Restart") restartClient();
   }
 }
 
@@ -169,6 +218,11 @@ const taskProvider = {
 
 async function activate(context) {
   output = vscode.window.createOutputChannel("Kiln");
+  if (vscode.languages?.createLanguageStatusItem) {
+    status = vscode.languages.createLanguageStatusItem("kiln.server", SELECTOR);
+    status.name = "Kiln language server";
+    context.subscriptions.push(status);
+  }
   context.subscriptions.push(
     output,
     ...COMMANDS.map((c) => vscode.commands.registerCommand(`kiln.${c}`, (uri) => runCommand(c, uri))),

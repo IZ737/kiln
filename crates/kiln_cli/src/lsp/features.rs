@@ -1210,6 +1210,109 @@ fn component_path_definition(sources: &[Source], index: usize, offset: usize) ->
     (sources.iter().any(|s| s.path == file) || file.is_file())
         .then(|| file_location(sources, &file))
 }
+/// The signature of the call the cursor is in, from what hover says about
+/// the function's name, with the argument being typed marked.
+pub(super) fn signature_help(sources: &[Source], index: usize, offset: usize) -> Value {
+    let text = &sources[index].text;
+    let Some((callee_end, active)) = open_call(text, offset.min(text.len())) else {
+        return Value::Null;
+    };
+    // Hover on the last letter of the name before `(`.
+    let hover = hover(sources, index, callee_end.saturating_sub(1));
+    let Some(contents) = hover["contents"]["value"].as_str() else {
+        return Value::Null;
+    };
+    let Some(signature) = contents
+        .strip_prefix("```kiln\n")
+        .and_then(|rest| rest.split("\n```").next())
+        .filter(|s| s.starts_with("fn ") || s.contains(" fn "))
+    else {
+        return Value::Null;
+    };
+    let doc = contents
+        .split_once("\n```\n\n")
+        .map(|(_, doc)| doc.to_string());
+    let params = signature_params(signature);
+    let mut info = json!({
+        "label": signature,
+        "parameters": params
+            .iter()
+            .map(|(start, end)| json!({"label": [utf16_len(&signature[..*start]), utf16_len(&signature[..*end])]}))
+            .collect::<Vec<_>>(),
+    });
+    if let Some(doc) = doc {
+        info["documentation"] = json!({"kind": "markdown", "value": doc});
+    }
+    let active = active.min(params.len().saturating_sub(1));
+    json!({"signatures": [info], "activeSignature": 0, "activeParameter": active})
+}
+
+fn utf16_len(text: &str) -> usize {
+    text.chars().map(char::len_utf16).sum()
+}
+
+/// The innermost call whose `(` is open at `offset`: where its callee's
+/// name ends, and which argument the cursor is in.
+fn open_call(text: &str, offset: usize) -> Option<(usize, usize)> {
+    let mut depth = 0usize;
+    let mut commas = 0;
+    let bytes = text.as_bytes();
+    let mut i = offset;
+    let mut in_string = false;
+    while i > 0 {
+        i -= 1;
+        match bytes[i] {
+            b'"' => in_string = !in_string,
+            _ if in_string => {}
+            b')' | b']' | b'}' => depth += 1,
+            b'[' | b'{' if depth == 0 => return None,
+            b'(' if depth == 0 => {
+                let name_end = text[..i].trim_end().len();
+                let ok = text[..name_end]
+                    .chars()
+                    .next_back()
+                    .is_some_and(|c| c.is_alphanumeric() || c == '_' || c == '>');
+                return ok.then_some((name_end, commas));
+            }
+            b'(' | b'[' | b'{' => depth -= 1,
+            b',' if depth == 0 => commas += 1,
+            _ => {}
+        }
+    }
+    None
+}
+
+/// The byte ranges of the parameters in `fn name(a: Int, b: String = "x") -> T`.
+fn signature_params(signature: &str) -> Vec<(usize, usize)> {
+    let Some(open) = signature.find('(') else {
+        return Vec::new();
+    };
+    let mut out = Vec::new();
+    let mut depth = 0;
+    let mut start = open + 1;
+    for (i, c) in signature[open + 1..].char_indices() {
+        let at = open + 1 + i;
+        match c {
+            '(' | '[' | '{' | '<' => depth += 1,
+            ')' | ']' | '}' | '>' if depth > 0 => depth -= 1,
+            ',' if depth == 0 => {
+                out.push((start, at));
+                start = at + 2;
+            }
+            ')' => {
+                if at > start {
+                    out.push((start, at));
+                }
+                break;
+            }
+            _ => {}
+        }
+    }
+    // `self` is not an argument the caller writes.
+    out.retain(|(s, e)| &signature[*s..*e] != "self");
+    out
+}
+
 pub(super) fn completion(sources: &[Source], index: usize, offset: usize) -> Value {
     let text = &sources[index].text;
     let offset = offset.min(text.len());
@@ -1521,11 +1624,7 @@ fn module_completion(sources: &[Source], index: usize, offset: usize) -> Option<
             .filter(|m| !m.split('.').any(|part| part.starts_with("__")))
             .collect();
         // The path being typed: after `import ` or the last `,`.
-        let typed = paths_typed
-            .rsplit(',')
-            .next()
-            .unwrap_or("")
-            .trim_start();
+        let typed = paths_typed.rsplit(',').next().unwrap_or("").trim_start();
         let items: Vec<Value> = match typed.rsplit_once('.') {
             // After `posts.`, the folders inside `posts/`.
             Some((parent, _)) => modules
@@ -1586,6 +1685,22 @@ fn module_completion(sources: &[Source], index: usize, offset: usize) -> Option<
 #[cfg(test)]
 mod slot_tests {
     use super::*;
+
+    #[test]
+    fn finds_the_open_call_and_its_parameters() {
+        let text = "print(helper(post, 1), x";
+        assert_eq!(open_call(text, text.len()), Some((5, 1)));
+        assert_eq!(open_call("helper(post, ", 13), Some((6, 1)));
+        assert_eq!(open_call("f(\"a, b\", ", 10), Some((1, 1)));
+        assert_eq!(open_call("let x = [1, ", 12), None);
+        assert_eq!(open_call("x + 1", 5), None);
+        let sig = "fn Post.rename(self, to: String, why: Map<String, Int> = {}) -> Post";
+        let params: Vec<&str> = signature_params(sig)
+            .iter()
+            .map(|(s, e)| &sig[*s..*e])
+            .collect();
+        assert_eq!(params, ["to: String", "why: Map<String, Int> = {}"]);
+    }
 
     #[test]
     fn component_paths_are_completed_in_render_and_layout_strings() {
