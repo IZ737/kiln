@@ -1170,7 +1170,7 @@ fn path_slot(text: &str, offset: usize, glaze: bool) -> Option<PathSlot> {
     let line_start = text[..offset].rfind('\n').map_or(0, |i| i + 1);
     let line = &text[line_start..offset];
     // Inside a string: an odd number of quotes before the cursor.
-    if line.matches('"').count() % 2 == 0 {
+    if line.matches('"').count().is_multiple_of(2) {
         return None;
     }
     let quote = line_start + line.rfind('"')?;
