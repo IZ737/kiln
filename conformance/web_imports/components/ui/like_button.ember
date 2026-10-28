@@ -1,0 +1,3 @@
+{% props n: Int %}
+{% state likes: Int = n %}
+<button on:click={likes = likes + 1}>{likes}</button>

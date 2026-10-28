@@ -940,6 +940,46 @@ fn completes_render_and_layout_paths() {
         !layouts.iter().any(|l| l.ends_with(".ember")),
         "{layouts:?}"
     );
+    // An import names components and folders from the file's folder, or
+    // from the root after `@`.
+    let imports = labels(&c.at(
+        "textDocument/completion",
+        &page_uri,
+        "{% import \"|\" %}\n<p>home</p>\n",
+    ));
+    assert_eq!(
+        imports,
+        [
+            "../index.glaze",
+            "../layouts/base.glaze",
+            "../routes",
+            "../routes/local.glaze",
+            "./_components/card.glaze",
+            "./counter.ember",
+        ]
+    );
+    let rooted = labels(&c.at(
+        "textDocument/completion",
+        &page_uri,
+        "{% import \"@|\" %}\n<p>home</p>\n",
+    ));
+    assert!(
+        rooted.contains(&"@/layouts/base.glaze".to_string()),
+        "{rooted:?}"
+    );
+    // And goes to what it names.
+    let target = c.at(
+        "textDocument/definition",
+        &page_uri,
+        "{% import \"../lay|outs/base.glaze\" %}\n<p>home</p>\n",
+    );
+    assert_eq!(target["uri"], file_uri(&dir.join("layouts/base.glaze")));
+    let target = c.at(
+        "textDocument/definition",
+        &page_uri,
+        "{% import \"@/rou|tes\" %}\n<p>home</p>\n",
+    );
+    assert_eq!(target["uri"], file_uri(&dir.join("routes/routes.kiln")));
     c.finish();
     let _ = std::fs::remove_dir_all(dir);
 }

@@ -1,0 +1,5 @@
+[package]
+name = "web_imports"
+
+[aliases]
+ui = "components/ui"

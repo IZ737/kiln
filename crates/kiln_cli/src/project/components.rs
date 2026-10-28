@@ -9,7 +9,8 @@ use kiln_syntax::ast::{Expr, ExprKind, Glaze, Module, Node};
 use std::path::Path;
 
 /// A component file a source file names, relative to the project root,
-/// such as `posts/index.glaze`. For a tag, both `.glaze` and `.ember` are
+/// such as `posts/index.glaze`, or a path from the root or an alias, such
+/// as `@/posts/index.glaze`. For a tag, both `.glaze` and `.ember` are
 /// given, since either may be the one.
 pub fn in_module(module: &Module) -> Vec<String> {
     let mut out = Vec::new();
@@ -24,7 +25,9 @@ pub fn in_module(module: &Module) -> Vec<String> {
 pub fn in_glaze(glaze: &Glaze) -> Vec<String> {
     let mut out = Vec::new();
     if let Some(layout) = &glaze.layout {
-        out.extend(super::routes::literal(&layout.path).filter(|p| rooted(p)));
+        out.extend(
+            super::routes::literal(&layout.path).filter(|p| rooted(p) || p.starts_with('@')),
+        );
     }
     each_element(&glaze.nodes, &mut |name| {
         if let Some((folder, component)) = name.rsplit_once('.') {
@@ -63,7 +66,16 @@ fn render_path(e: &Expr) -> Option<String> {
         return None;
     }
     let first = args.first().filter(|a| a.name.is_none())?;
-    super::routes::literal(&first.value).filter(|p| rooted(p))
+    super::routes::literal(&first.value).filter(|p| rooted(p) || p.starts_with('@'))
+}
+
+/// The paths of a glaze's `{% import %}` tags.
+pub fn imports(glaze: &Glaze) -> Vec<(String, kiln_diagnostics::Span)> {
+    glaze
+        .imports
+        .iter()
+        .filter_map(|i| Some((super::routes::literal(&i.path)?, i.path.span)))
+        .collect()
 }
 
 /// A project-root-relative component path: with a folder, written with

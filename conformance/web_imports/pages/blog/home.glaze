@@ -1,0 +1,8 @@
+{% import "../../components/card.glaze" %}
+{% import "@ui/like_button.ember" as Like %}
+{% import "@/shared" as s %}
+{% layout "@/layouts/base.glaze" %}
+{% css "@/styles/site.css" %}
+{% props n: Int %}
+<Card title={s.title(n)} />
+<Like n={n} />

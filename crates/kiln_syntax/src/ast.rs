@@ -408,6 +408,8 @@ pub struct Glaze {
     pub layout: Option<Layout>,
     /// `{% css "site.css" %}` and `{% css module styles from "card.module.css" %}`
     pub css: Vec<CssImport>,
+    /// `{% import "../components/card.glaze" %}` and `{% import "@/shared" %}`
+    pub imports: Vec<GlazeImport>,
     pub nodes: Vec<Node>,
     /// Where each `{% tag %}` and `{# comment #}` is. A line that holds
     /// only these renders as nothing, not as a blank line.
@@ -444,6 +446,18 @@ pub struct CssImport {
     pub module: Option<Ident>,
     /// The file, a string literal relative to the glaze.
     pub path: Expr,
+    pub span: Span,
+}
+
+/// `{% import "../components/card.glaze" %}` makes `<Card />` available;
+/// `{% import "@/shared" %}` the Kiln module `shared`. `as` renames either.
+/// The path is relative to the importing file (`./`, `../`), the project
+/// root (`@/`) or an alias from `kiln.toml` (`@ui/`).
+#[derive(Clone, Debug, PartialEq)]
+pub struct GlazeImport {
+    /// A string literal.
+    pub path: Expr,
+    pub alias: Option<Ident>,
     pub span: Span,
 }
 

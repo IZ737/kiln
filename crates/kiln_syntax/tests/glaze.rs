@@ -373,6 +373,18 @@ fn css_tags_import_stylesheets_and_css_modules() {
 }
 
 #[test]
+fn import_tags_name_components_and_folders_by_path() {
+    let g =
+        ok("{% import \"../components/card.glaze\" %}\n{% import \"@/shared\" as s %}\n<Card />");
+    assert_eq!(g.imports.len(), 2);
+    assert!(g.imports[0].alias.is_none());
+    assert_eq!(g.imports[1].alias.as_ref().unwrap().name, "s");
+    // Imports belong at the top level, and only `as` may follow the path.
+    assert!(!error_codes("{% if a %}{% import \"./x.glaze\" %}{% end %}").is_empty());
+    assert!(!error_codes("{% import \"./x.glaze\" from y %}").is_empty());
+}
+
+#[test]
 fn source_suffix_declares_kind_without_changing_spans() {
     use kiln_syntax::glaze::parse_component;
     for src in [

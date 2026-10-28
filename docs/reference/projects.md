@@ -95,7 +95,8 @@ locations.
 
 The same file declares the project's Wares in `[dependencies]`, the
 registry they come from, a `[policy]` limiting them, and `[test]` settings
-for `kiln test`; `kiln.lock` pins the exact Wares. See [Wares](wares.md)
+for `kiln test`, and `[aliases]` for paths in glazes (see
+[Imports in glazes](#imports-in-glazes)); `kiln.lock` pins the exact Wares. See [Wares](wares.md)
 and [Testing](testing.md). No manifest or dependency installation is
 needed for local modules.
 
@@ -119,10 +120,50 @@ import, so a folder whose component names a page in a folder that imports it
 is no cycle. A missing component says where it was looked for, such as "no
 file named `ui/missing.glaze` in the project".
 
-A glaze has no imports of its own. It sees the folder modules that its
-folder's `.kiln` files import, so in a folder whose routes import `shared`,
-a page can take `{% props post: shared.Post %}` and call
-`shared.may_edit(...)`.
+A glaze sees the folder modules that its folder's `.kiln` files import, so
+in a folder whose routes import `shared`, a page can take
+`{% props post: shared.Post %}` and call `shared.may_edit(...)`.
+
+### Imports in glazes
+
+A glaze or ember can also import what it uses itself, by path, at its top
+level:
+
+```glaze
+{% import "../components/card.glaze" %}
+{% import "@ui/like_button.ember" as Like %}
+{% import "@/shared" as s %}
+{% layout "@/layouts/base.glaze" %}
+{% css "@/styles/site.css" %}
+<Card title={s.title(post)} />
+<Like n={post.likes} />
+```
+
+A path to a `.glaze` or `.ember` file makes its component a tag, named in
+PascalCase from the file name (`like_button.ember` is `<LikeButton />`) or
+by `as`. A path to a folder imports that module, named after the folder or
+by `as`, as `import` does in a `.kiln` file: it brings the folder into the
+program, and its imports must be acyclic. The import is the file's own;
+other glazes in the folder do not see it.
+
+A path starts with `./` or `../` (from the file's folder), `@/` (from the
+project root, or a Ware's root inside a Ware) or `@name/` (from a folder
+`[aliases]` names). It is written with `/` and stays inside the project.
+`@/` and `@name/` paths work in `web.render(...)`, `{% layout %}` and
+`{% css %}` too, so a file can move without its paths changing.
+
+Aliases are in the root `kiln.toml`:
+
+```toml
+[aliases]
+ui = "components/ui"
+```
+
+An alias is a lowercase name, not the name of a dependency, for a folder in
+the project. Each mistake is an E0230 error at the path or key: a path with
+no `./`, `../` or `@`, one that leaves the project, an alias that is not
+declared, a file or folder that is not there and an alias whose folder is
+missing.
 
 `.glaze` remains server-only. `.ember` retains selective hydration and typed
 RPC. A page without an Ember loads no Ember JS or Wasm. Stylesheet imports and
@@ -162,5 +203,7 @@ The LSP follows the project graph with unsaved editor text, resolves public
 exports for hover/definition/completion, and keeps diagnostics on original
 source paths. Inside the first string of `web.render(...)` or `{% layout %}`
 it completes component paths as the compiler resolves them: same-folder
-files by name and the rest of the project from its root. VS Code Check/Run/Build actions select the app root within the
+files by name and the rest of the project from its root. In
+`{% import "..." %}` it completes components and folders from the file's
+folder, or from the root after `@`, and goes to what a path names. VS Code Check/Run/Build actions select the app root within the
 workspace and save dirty source files throughout the project.

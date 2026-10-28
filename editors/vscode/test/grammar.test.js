@@ -103,6 +103,7 @@ test("Glaze tags, output, components and attributes", async () => {
       '{% css module card from "card.module.css" %}',
       '<p ui={{ p: space.md, hover: { bg: color.accent } }}>x</p>',
       "<form on:submit.prevent.latest={ save() }></form>",
+      '{% import "@/shared" as s %}',
     ].join("\n"),
   );
   assertScope(lines, 0, "{%", "punctuation.definition.tag.begin.glaze");
@@ -146,6 +147,8 @@ test("Glaze tags, output, components and attributes", async () => {
   assertScope(lines, 9, "let a = {b: 1}", "source.js");
   assertScope(lines, 11, "css", "keyword.control.glaze");
   assertScope(lines, 11, "card.module.css", "string.quoted.double.kiln");
+  assertScope(lines, 14, "import", "keyword.control.glaze");
+  assertScope(lines, 14, "@/shared", "string.quoted.double.kiln");
   // A style's record is Kiln code, and its braces end where the tag does.
   assertScope(lines, 12, "md", "variable.other.property.kiln");
   assert.ok(!scopeOf(lines, 12, "x").some((s) => s.endsWith(".kiln")));

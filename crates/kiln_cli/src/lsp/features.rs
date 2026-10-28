@@ -1175,23 +1175,28 @@ fn import_definition(sources: &[Source], index: usize, offset: usize) -> Option<
             let folder = path[..=at]
                 .iter()
                 .fold(root.clone(), |dir, part| dir.join(&part.name));
-            let mut files: Vec<PathBuf> = std::fs::read_dir(crate::project::real(&folder))
-                .ok()?
-                .filter_map(Result::ok)
-                .map(|e| folder.join(e.file_name()))
-                .filter(|p| p.extension().is_some_and(|e| e == "kiln"))
-                .collect();
-            files.sort();
-            let main = folder.join(format!("{}.kiln", path[at].name));
-            let file = if files.contains(&main) {
-                main
-            } else {
-                files.into_iter().next()?
-            };
-            return Some(file_location(sources, &file));
+            return Some(file_location(sources, &import_target(&folder)?));
         }
     }
     None
+}
+
+/// The file an imported folder goes to: the one named after the folder,
+/// or else its first `.kiln` file.
+fn import_target(folder: &Path) -> Option<PathBuf> {
+    let mut files: Vec<PathBuf> = std::fs::read_dir(crate::project::real(folder))
+        .ok()?
+        .filter_map(Result::ok)
+        .map(|e| folder.join(e.file_name()))
+        .filter(|p| p.extension().is_some_and(|e| e == "kiln"))
+        .collect();
+    files.sort();
+    let main = folder.join(format!("{}.kiln", folder.file_name()?.to_string_lossy()));
+    if files.contains(&main) {
+        Some(main)
+    } else {
+        files.into_iter().next()
+    }
 }
 
 /// From a component path in `web.render(...)` or `{% layout %}`, the
@@ -1202,11 +1207,25 @@ fn component_path_definition(sources: &[Source], index: usize, offset: usize) ->
     let rest = &source.text[slot.start..];
     let path = &rest[..rest.find(['"', '\n']).unwrap_or(rest.len())];
     let root = crate::project::common_root(sources.iter().map(|s| s.path.as_path()));
-    let file = if path.contains('/') {
+    let file = if path.starts_with(['@', '.']) {
+        let owner = source
+            .path
+            .parent()?
+            .strip_prefix(&root)
+            .ok()?
+            .to_string_lossy()
+            .replace(['/', '\\'], ".");
+        let aliases = crate::project::packages(&root).aliases;
+        root.join(crate::project::paths::locate(&owner, path, &aliases).ok()?)
+    } else if path.contains('/') {
         root.join(path)
     } else {
         source.path.parent()?.join(path)
     };
+    if file.is_dir() {
+        // A folder import: its file named after it, or its first one.
+        return import_target(&file).map(|f| file_location(sources, &f));
+    }
     (sources.iter().any(|s| s.path == file) || file.is_file())
         .then(|| file_location(sources, &file))
 }
@@ -1406,7 +1425,7 @@ fn qualified_tag_completion(sources: &[Source], index: usize, offset: usize) -> 
 }
 
 /// Where a component path is being typed: in the first string of
-/// `web.render(...)` or of a glaze's `{% layout ... %}`.
+/// `web.render(...)` or of a glaze's `{% layout ... %}` or `{% import ... %}`.
 #[derive(Debug, PartialEq)]
 struct PathSlot {
     /// The string's contents, as byte offsets.
@@ -1414,6 +1433,9 @@ struct PathSlot {
     end: usize,
     /// Whether embers fit: a layout is a glaze.
     embers: bool,
+    /// An import, whose paths start with `./`, `../` or `@/`, and which
+    /// also names folders.
+    import: bool,
 }
 
 fn path_slot(text: &str, offset: usize, glaze: bool) -> Option<PathSlot> {
@@ -1425,10 +1447,12 @@ fn path_slot(text: &str, offset: usize, glaze: bool) -> Option<PathSlot> {
     }
     let quote = line_start + line.rfind('"')?;
     let before = text[..quote].trim_end();
-    let embers = if before.ends_with("render(") || before.ends_with("render (") {
-        true
+    let (embers, import) = if before.ends_with("render(") || before.ends_with("render (") {
+        (true, false)
     } else if glaze && before.ends_with("{% layout") {
-        false
+        (false, false)
+    } else if glaze && before.ends_with("{% import") {
+        (true, true)
     } else {
         return None;
     };
@@ -1439,6 +1463,7 @@ fn path_slot(text: &str, offset: usize, glaze: bool) -> Option<PathSlot> {
         start: quote + 1,
         end,
         embers,
+        import,
     })
 }
 
@@ -1456,10 +1481,12 @@ fn component_path_completion(sources: &[Source], index: usize, offset: usize) ->
         .unwrap_or_default();
     let mut files: Vec<PathBuf> = sources.iter().map(|s| s.path.clone()).collect();
     let _ = crate::collect_sources(&root, &mut files);
+    let typed = &source.text[slot.start..offset];
     let mut targets = std::collections::BTreeSet::new();
     for file in &files {
         let ember = file.extension().is_some_and(|e| e == "ember");
-        if !crate::is_glaze(file) || (ember && !slot.embers) || *file == source.path {
+        let kiln = slot.import && file.extension().is_some_and(|e| e == "kiln");
+        if !(crate::is_glaze(file) || kiln) || (ember && !slot.embers) || *file == source.path {
             continue;
         }
         let Ok(relative) = file.strip_prefix(&root) else {
@@ -1474,6 +1501,28 @@ fn component_path_completion(sources: &[Source], index: usize, offset: usize) ->
             .iter()
             .any(|p| p.starts_with("__") || p.starts_with('.'))
         {
+            continue;
+        }
+        if slot.import {
+            // Components, and folders with Kiln code.
+            let target = if file.extension().is_some_and(|e| e == "kiln") {
+                match file.parent().and_then(|d| d.strip_prefix(&root).ok()) {
+                    Some(d)
+                        if !d.as_os_str().is_empty() && file.parent() != Some(own.as_path()) =>
+                    {
+                        d.to_path_buf()
+                    }
+                    _ => continue,
+                }
+            } else {
+                relative.to_path_buf()
+            };
+            let name = if typed.starts_with('@') {
+                format!("@/{}", target.to_string_lossy().replace('\\', "/"))
+            } else {
+                relative_path(own.strip_prefix(&root).unwrap_or(Path::new("")), &target)
+            };
+            targets.insert((file.parent() != Some(own.as_path()), name));
             continue;
         }
         let name = if file.parent() == Some(own.as_path()) {
@@ -1493,7 +1542,7 @@ fn component_path_completion(sources: &[Source], index: usize, offset: usize) ->
             json!({
                 "label": name,
                 "kind": FILE,
-                "detail": if name.ends_with(".ember") { "Ember" } else { "Glaze" },
+                "detail": if name.ends_with(".ember") { "Ember" } else if name.ends_with(".glaze") { "Glaze" } else { "Module" },
                 "sortText": format!("{}{name}", u8::from(elsewhere)),
                 "filterText": name,
                 "textEdit": {"range": range, "newText": name},
@@ -1501,6 +1550,24 @@ fn component_path_completion(sources: &[Source], index: usize, offset: usize) ->
         })
         .collect();
     Some(json!({"isIncomplete": false, "items": items}))
+}
+
+/// `target` as a path from the folder `from`, both project-relative:
+/// `./card.glaze` or `../components/card.glaze`.
+fn relative_path(from: &Path, target: &Path) -> String {
+    let from: Vec<_> = from.iter().collect();
+    let to: Vec<_> = target.iter().collect();
+    let common = from.iter().zip(&to).take_while(|(a, b)| a == b).count();
+    let mut parts: Vec<String> = vec!["..".to_string(); from.len() - common];
+    if parts.is_empty() {
+        parts.push(".".to_string());
+    }
+    parts.extend(
+        to[common..]
+            .iter()
+            .map(|p| p.to_string_lossy().into_owned()),
+    );
+    parts.join("/")
 }
 fn bound_request(
     sources: &[Source],
@@ -1711,7 +1778,8 @@ mod slot_tests {
             Some(PathSlot {
                 start: at - 2,
                 end: at,
-                embers: true
+                embers: true,
+                import: false
             })
         );
         let text = "{% layout \"bas\" %}";
@@ -1723,6 +1791,9 @@ mod slot_tests {
         assert!(path_slot("print(\"pa", 8, false).is_none());
         assert!(path_slot("web.render(pa", 13, false).is_none());
         assert!(path_slot("{% layout \"x", 12, false).is_none());
+        let text = "{% import \"../ca\" %}";
+        let slot = path_slot(text, text.find("ca").unwrap() + 2, true).unwrap();
+        assert!(slot.import && slot.embers);
     }
 }
 

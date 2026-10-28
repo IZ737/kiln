@@ -65,7 +65,7 @@
     },
     "glaze-tag": {
       "name": "meta.tag.template.glaze",
-      "begin": "(\\{%)\\s*(props|layout|slot|fill|css|state|let|if|else|for|empty|match|case|end)?\\b",
+      "begin": "(\\{%)\\s*(props|layout|slot|fill|css|import|state|let|if|else|for|empty|match|case|end)?\\b",
       "end": "%\\}",
       "beginCaptures": {
         "1": {

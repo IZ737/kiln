@@ -96,6 +96,7 @@ enum Tag {
     Let(LocalDecl),
     Layout(Layout),
     Css(CssImport),
+    Import(GlazeImport),
     Slot(Option<Ident>),
     Fill(Ident),
     If(Expr),
@@ -587,6 +588,27 @@ impl GlazeParser<'_> {
                 let path = p.parse_expr();
                 Tag::Css(CssImport { module, path, span })
             }),
+            "import" => self.parse_code(tokens, |p| {
+                let path = p.parse_expr();
+                let alias = match p.peek() {
+                    TokenKind::Ident(w) if w == "as" => {
+                        p.bump();
+                        Some(p.expect_ident("a name for the import"))
+                    }
+                    TokenKind::Eof => None,
+                    _ => {
+                        let found = p.peek().to_string();
+                        let at = p.span();
+                        p.error(Diagnostic::error(
+                            codes::EXPECTED_TOKEN,
+                            format!("expected `as` or `%}}`, found {found}"),
+                            at,
+                        ));
+                        None
+                    }
+                };
+                Tag::Import(GlazeImport { path, alias, span })
+            }),
             "slot" => {
                 let name = self.parse_code(tokens, |p| {
                     matches!(p.peek(), TokenKind::Ident(_)).then(|| p.expect_ident("a slot name"))
@@ -676,7 +698,7 @@ impl GlazeParser<'_> {
             "each" | "foreach" => "use `{% for item in items %}`",
             "unless" => "use `{% if not condition %}`",
             "switch" | "when" => "use `{% match value %}` with `{% case pattern %}`",
-            _ => "the tags are `props`, `state`, `layout`, `css`, `slot`, `fill`, `let`, `if`, `else`, `for`, `empty`, `match`, `case` and `end`",
+            _ => "the tags are `props`, `state`, `layout`, `css`, `import`, `slot`, `fill`, `let`, `if`, `else`, `for`, `empty`, `match`, `case` and `end`",
         };
         self.error(
             Diagnostic::error(
@@ -740,6 +762,13 @@ impl GlazeParser<'_> {
                     self.glaze.css.push(import);
                 } else {
                     misplaced(self, "css");
+                }
+            }
+            Tag::Import(import) => {
+                if top_level {
+                    self.glaze.imports.push(import);
+                } else {
+                    misplaced(self, "import");
                 }
             }
             Tag::Let(decl) => nodes.push(Node::Let(decl)),

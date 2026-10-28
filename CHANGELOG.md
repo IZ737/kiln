@@ -2,8 +2,9 @@
 
 ## 0.16.0 (2026-10-28)
 
-The open issues: components from any folder, `kiln new` templates,
-cross-folder editor features and a working update notice.
+The open issues: components from any folder, imports and `@/` paths in
+glazes, `kiln new` templates, cross-folder editor features and a working
+update notice.
 
 - The notice that a newer kiln is out works for commands that end with
   Ctrl-C (#68). The check used to start only after a command finished, so
@@ -19,6 +20,15 @@ cross-folder editor features and a working update notice.
   Before, a component in a folder nothing imported was reported as "no
   file named ... in this directory" although the file was there; a
   missing component now says it was looked for "in the project".
+- Glazes and embers can import what they use by path (#76):
+  `{% import "../components/card.glaze" %}` makes `<Card />` a tag,
+  `{% import "@/shared" as s %}` imports a folder module, and `as` renames
+  either. Paths start with `./` or `../` (from the file), `@/` (from the
+  project root) or `@name/`, for a folder named in a new `[aliases]`
+  section of `kiln.toml`. `@` paths also work in `web.render(...)`,
+  `{% layout %}` and `{% css %}`, and the language server completes and
+  follows import paths. Every bad path is an error at the path that says
+  why.
 - The VS Code extension gives `kiln.toml` and `kiln.lock` Kiln icons and
   TOML highlighting (#78). Only those two file names are claimed, so other
   `.toml` files are left to any TOML extension. The brand assets gain the
