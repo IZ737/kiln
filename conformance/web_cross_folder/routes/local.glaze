@@ -1,0 +1,2 @@
+{% layout "layouts/main.glaze" title: "Local" %}
+<pages.Card label="from routes" />

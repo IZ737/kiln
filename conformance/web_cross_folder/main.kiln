@@ -1,0 +1,18 @@
+// Components used across folders with no imports of their folders: a
+// slash path in `web.render` or `{% layout %}` and a qualified tag name a
+// component by its place in the project, and that brings its folder into
+// the program. Route code lives in a folder of its own.
+import web, os
+import routes
+
+fn main() ! {
+    let app = web.app()
+    routes.register(app)
+    app.get("/root", fn(req) {
+        return web.render("index.glaze", {})
+    })
+    app.get("/quit", fn(req) {
+        os.exit(0)
+    })
+    try app.listen("127.0.0.1:${env("PORT") ?? "8080"}")
+}

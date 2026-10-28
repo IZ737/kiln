@@ -49,7 +49,7 @@ fn error(message: impl Into<String>, span: Span) -> Diagnostic {
     Diagnostic::error(codes::FILE_ROUTES, message, span)
 }
 
-fn literal(e: &Expr) -> Option<String> {
+pub(super) fn literal(e: &Expr) -> Option<String> {
     match &e.kind {
         ExprKind::Str(pieces) => {
             let mut out = String::new();
@@ -214,7 +214,7 @@ fn mount_call(e: &Expr) -> Option<MountCall> {
     Some(call)
 }
 
-fn each_block(b: &Block, f: &mut dyn FnMut(&Expr)) {
+pub(super) fn each_block(b: &Block, f: &mut dyn FnMut(&Expr)) {
     for s in &b.stmts {
         match s {
             Stmt::Let { value, .. } => each_expr(value, f),
@@ -321,7 +321,7 @@ fn each_expr(e: &Expr, f: &mut dyn FnMut(&Expr)) {
 }
 
 /// The bodies of a module's functions and methods, and its constants.
-fn each_body(module: &Module, f: &mut dyn FnMut(&Block)) {
+pub(super) fn each_body(module: &Module, f: &mut dyn FnMut(&Block)) {
     for item in &module.items {
         match item {
             Item::Fn(func) => f(&func.body),

@@ -1,5 +1,6 @@
 //! Deterministic project discovery. Only explicitly imported folders enter a build.
 pub mod bind;
+mod components;
 pub mod routes;
 use kiln_diagnostics::{codes, Diagnostic, Span};
 use kiln_syntax::ast::Item;
@@ -422,15 +423,28 @@ impl Project {
         };
         let mut imports = BTreeMap::new();
         let mut mounted: Vec<(PathBuf, PathBuf)> = Vec::new();
+        let mut referenced = BTreeSet::new();
         for file in &files {
-            if crate::is_glaze(file) {
-                continue;
-            }
             let text = match self.overlays.get(file) {
                 Some(text) => text.clone(),
                 None => read(file)?,
             };
+            if crate::is_glaze(file) {
+                let glaze =
+                    kiln_syntax::glaze::parse_component(&text, &file.to_string_lossy()).glaze;
+                referenced.extend(
+                    components::in_glaze(&glaze)
+                        .iter()
+                        .filter_map(|c| components::folder(&package_root, c)),
+                );
+                continue;
+            }
             let module = kiln_syntax::parse(&text).module;
+            referenced.extend(
+                components::in_module(&module)
+                    .iter()
+                    .filter_map(|c| components::folder(&package_root, c)),
+            );
             // The folders of `app.file_routes` mounts are part of the app.
             for dir in routes::mount_dirs(&self.root, &module) {
                 mounted.push((dir, file.clone()));
@@ -521,6 +535,14 @@ impl Project {
         }
         visiting.pop();
         visited.insert(dir.to_path_buf());
+        // The folders of components named by their place in the project.
+        // They are not imports, so they are visited once this folder is
+        // done: a folder that imports this one is no cycle.
+        for folder in referenced {
+            if !visiting.contains(&folder) {
+                self.visit(&folder, visiting, visited)?;
+            }
+        }
         Ok(())
     }
 }

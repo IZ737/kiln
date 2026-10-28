@@ -1,0 +1,13 @@
+import web
+
+pub fn register(app: web.App) {
+    app.get("/", fn(req) {
+        return web.render("pages/home.glaze", { title: "Home" })
+    })
+    app.get("/counter", fn(req) {
+        return web.render("pages/counter.ember", { start: 1 })
+    })
+    app.get("/local", fn(req) {
+        return web.render("local.glaze", {})
+    })
+}

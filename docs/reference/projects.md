@@ -2,7 +2,8 @@
 
 A folder is a module. Its `.kiln` files share functions, types and constants;
 imports belong to the source file that writes them. Child folders are separate
-modules and enter the application only through explicit imports.
+modules and enter the application only through explicit imports, or for
+components, by being named (see [Components and assets](#components-and-assets)).
 
 ```kiln
 import posts, posts.search
@@ -84,6 +85,15 @@ segments retain their exact spelling; the final capitalized component name uses
 the existing snake-case filename convention. Other modules' same-named files
 cannot hijack local lookup.
 
+A slash-bearing path or a qualified tag brings the folder of the component it
+names into the program, as an import would, so components can live anywhere
+in the project: a `components/` or `layouts/` folder needs no `.kiln` file,
+and nothing has to import it. Only string literals and tags count, since the
+folders are found when the program is compiled. Naming a component is not an
+import, so a folder whose component names a page in a folder that imports it
+is no cycle. A missing component says where it was looked for, such as "no
+file named `ui/missing.glaze` in the project".
+
 A glaze has no imports of its own. It sees the folder modules that its
 folder's `.kiln` files import, so in a folder whose routes import `shared`,
 a page can take `{% props post: shared.Post %}` and call
@@ -94,7 +104,8 @@ RPC. A page without an Ember loads no Ember JS or Wasm. Stylesheet imports and
 scoped CSS URLs resolve relative to the owning component; CSS asset paths remain
 inside the project. Root `static/` files use `/static/...`; a module's files use
 `/static/posts/...` (including nested module segments). Duplicate asset URLs are
-errors. Only imported modules contribute assets.
+errors. Only folders in the program (imported, mounted or named by a
+component) contribute assets.
 
 A folder that `app.file_routes("pages")` mounts is part of the project too,
 with its subfolders, whether or not anything imports it: its `.glaze` pages

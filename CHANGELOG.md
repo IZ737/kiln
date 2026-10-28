@@ -9,6 +9,15 @@
   --version` says so too, and a failed check records why in
   `~/.kiln/update-check`. On Windows the check leaves the terminal's job
   and process group, so closing an editor's terminal does not stop it.
+- Components can be used from any folder (#75). A slash path in
+  `web.render(...)` or `{% layout %}`, or a qualified tag such as
+  `<widgets.Panel />`, brings the folder it names into the program, so a
+  `components/` or `layouts/` folder needs no `.kiln` file and no import.
+  Before, a component in a folder nothing imported was reported as "no
+  file named ... in this directory" although the file was there; a
+  missing component now says it was looked for "in the project".
+- A page with embers but no `</head>` loads their script before
+  `</body>` rather than after the end of the page.
 - `kiln upgrade` no longer offers to "upgrade" a kiln built from source
   that is newer than the latest release.
 

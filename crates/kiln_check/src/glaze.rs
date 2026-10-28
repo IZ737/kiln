@@ -575,9 +575,15 @@ impl Checker {
             self.refer(span, crate::ide::Ref::Component(file.to_owned()));
             return Some(sig.clone());
         }
+        // A path with a folder is from the project root.
+        let place = if file.contains('/') {
+            "in the project"
+        } else {
+            "in this directory"
+        };
         let mut diag = Diagnostic::error(
             codes::UNKNOWN_GLAZE,
-            format!("there is no {what}: no file named `{file}` in this directory (components may also use `.ember`)"),
+            format!("there is no {what}: no file named `{file}` {place} (components may also use `.ember`)"),
             span,
         );
         let mut files: Vec<&str> = glazes.keys().map(String::as_str).collect();

@@ -521,7 +521,9 @@ These are errors with a suggested fix. Run `kiln explain <code>` for details.
 ## Folder modules
 
 Same-folder components and layouts keep their owning module's context.
-`<posts.Editor />` explicitly names `posts/editor.ember` in a reachable module;
-`web.render("posts/index.glaze", {})` uses a project-root-qualified path.
+`<posts.Editor />` explicitly names `posts/editor.ember`, and
+`web.render("posts/index.glaze", {})` and `{% layout "layouts/base.glaze" %}`
+use project-root-qualified paths. Naming a component this way brings its
+folder into the program, so it need not be imported.
 Module-local CSS, scoped URLs and static assets retain that context. See
 [projects.md](projects.md) for import reachability, path rules and examples.

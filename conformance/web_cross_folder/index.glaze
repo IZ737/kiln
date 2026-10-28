@@ -1,0 +1,4 @@
+{% layout "layouts/main.glaze" title: "Root" %}
+<p>root</p>
+<pages.Card label="from the root" />
+<widgets.Panel n={5} />
