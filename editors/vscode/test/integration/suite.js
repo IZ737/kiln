@@ -28,6 +28,13 @@ async function run() {
   const glaze = await vscode.workspace.openTextDocument(vscode.Uri.joinPath(folder, "card.glaze"));
   assert.strictEqual(glaze.languageId, "glaze");
 
+  // kiln.toml and kiln.lock get the Kiln icons and TOML highlighting by
+  // name; other TOML files are left to whatever handles them.
+  const open = (name) => vscode.workspace.openTextDocument(vscode.Uri.joinPath(folder, "config", name));
+  assert.strictEqual((await open("kiln.toml")).languageId, "kiln-manifest");
+  assert.strictEqual((await open("kiln.lock")).languageId, "kiln-lock");
+  assert.ok(!["kiln-manifest", "kiln-lock"].includes((await open("other.toml")).languageId));
+
   const extension = vscode.extensions.getExtension("iz737.kiln");
   const api = await extension.activate();
   await until("kiln lsp to start", () => api.client() && api.client().isRunning());

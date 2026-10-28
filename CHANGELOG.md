@@ -16,6 +16,10 @@
   Before, a component in a folder nothing imported was reported as "no
   file named ... in this directory" although the file was there; a
   missing component now says it was looked for "in the project".
+- The VS Code extension gives `kiln.toml` and `kiln.lock` Kiln icons and
+  TOML highlighting (#78). Only those two file names are claimed, so other
+  `.toml` files are left to any TOML extension. The brand assets gain the
+  `kiln-manifest` and `kiln-lock` icons.
 - A page with embers but no `</head>` loads their script before
   `</body>` rather than after the end of the page.
 - `kiln upgrade` no longer offers to "upgrade" a kiln built from source

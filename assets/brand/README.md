@@ -12,7 +12,7 @@ All artwork is editable SVG geometry; no raster images or installed fonts are ne
 - `logo/kiln-symbol.svg` — original kiln mark only (transparent)
 - `logo/kiln-symbol-mono.svg`, `logo/kiln-symbol-white.svg` — alternative mark colours
 - `logo/png/` — 1200px lockups and 16, 32, 64, 128, 256, 512px symbol exports
-- `icons/svg/` — five vocabulary icons, each with standard, `-dark`, and `-mono` SVG
+- `icons/svg/` — seven vocabulary icons, each with standard, `-dark`, and `-mono` SVG
 - `icons/png/{16,32,64,128}/` — PNG versions of five icons
 - `vscode/file-icon-theme.json` — sample icon theme definition using relative paths
 - `preview/brand-and-vocabulary.png` — single combined proof sheet
@@ -26,6 +26,8 @@ All artwork is editable SVG geometry; no raster images or installed fonts are ne
 | `ware-package.svg` | Ware | Package |
 | `ember-wasm.svg` | Ember | Interactive component compiled to WebAssembly |
 | `fire-release.svg` | `kiln fire` | Release build |
+| `kiln-manifest.svg` | `kiln.toml` | Project manifest |
+| `kiln-lock.svg` | `kiln.lock` | Pinned Wares |
 
 ## Brand colours
 

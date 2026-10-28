@@ -193,3 +193,58 @@ test("triple-quoted Kiln strings span lines and interpolate", async () => {
   assertScope(lines, 2, '"""', "punctuation.definition.string.end.kiln");
   assertScope(lines, 3, "let", "storage.type.let.kiln");
 });
+
+test("kiln.toml and kiln.lock as TOML", async () => {
+  const { lines, stack } = await tokenize(
+    "source.toml.kiln",
+    [
+      "# The project.",
+      "[package]",
+      'name = "fieldnotes" # trailing',
+      "kind = 'app'",
+      "[dependencies]",
+      'ui = { ware = "kiln/ui", version = "^0.3" }',
+      'aliases.ui = "components"',
+      "[[ware]]",
+      "count = 1_000",
+      "ratio = -1.5e3",
+      "hex = 0xFF",
+      "on = true",
+      "when = 2026-10-28T00:00:00Z",
+      "list = [",
+      '  "a", # one',
+      "  2,",
+      "]",
+      'text = """',
+      "two \\n lines",
+      '"""',
+      '"quoted key" = 1',
+      "after = false",
+    ].join("\n"),
+  );
+  assertScope(lines, 0, "#", "punctuation.definition.comment.toml");
+  assertScope(lines, 1, "package", "entity.name.section.toml");
+  assertScope(lines, 2, "name", "variable.other.key.toml");
+  assertScope(lines, 2, "=", "punctuation.separator.key-value.toml");
+  assertScope(lines, 2, "fieldnotes", "string.quoted.double.basic.line.toml");
+  assert.ok(lines[2].some((t) => t.scopes.includes("comment.line.number-sign.toml")));
+  assertScope(lines, 3, "app", "string.quoted.single.literal.line.toml");
+  assertScope(lines, 5, "ware", "variable.other.key.toml");
+  assertScope(lines, 5, "kiln/ui", "string.quoted.double.basic.line.toml");
+  assertScope(lines, 6, "aliases", "variable.other.key.toml");
+  assertScope(lines, 6, "ui", "variable.other.key.toml");
+  assertScope(lines, 7, "ware", "entity.name.section.toml");
+  assertScope(lines, 8, "1_000", "constant.numeric.toml");
+  assertScope(lines, 9, "-1.5e3", "constant.numeric.toml");
+  assertScope(lines, 10, "0xFF", "constant.numeric.hex.toml");
+  assertScope(lines, 11, "true", "constant.language.boolean.toml");
+  assertScope(lines, 12, "2026-10-28T00:00:00Z", "constant.other.time.toml");
+  assertScope(lines, 14, "a", "string.quoted.double.basic.line.toml");
+  assertScope(lines, 15, "2", "constant.numeric.toml");
+  assertScope(lines, 18, "\\n", "constant.character.escape.toml");
+  assertScope(lines, 20, '"quoted key"', "variable.other.key.toml");
+  // Multi-line arrays and strings end, and what follows is a key again.
+  assertScope(lines, 21, "after", "variable.other.key.toml");
+  assertScope(lines, 21, "false", "constant.language.boolean.toml");
+  assert.strictEqual(stack.depth, 1);
+});

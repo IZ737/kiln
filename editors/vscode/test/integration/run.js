@@ -33,6 +33,12 @@ fn main() {
   fs.writeFileSync(path.join(workspace, "card.glaze"), "{% props post: Post %}\n<h1>{post.title}</h1>\n");
   fs.writeFileSync(path.join(workspace, "counter.ember"), "{% props post: Post %}\n{% state count = 0 %}\n<button on:click={ count += 1 }>{post.title}: {count}</button>\n");
   fs.writeFileSync(path.join(workspace, "page.glaze"), "{% props post: Post %}<Counter post={post} />\n");
+  // kiln.toml and kiln.lock, in a folder of their own so the program
+  // above stays manifest-free, beside an ordinary TOML file.
+  fs.mkdirSync(path.join(workspace, "config"));
+  fs.writeFileSync(path.join(workspace, "config", "kiln.toml"), '[package]\nname = "demo"\n');
+  fs.writeFileSync(path.join(workspace, "config", "kiln.lock"), "# kiln.lock\nversion = 1\n");
+  fs.writeFileSync(path.join(workspace, "config", "other.toml"), "key = 1\n");
   // GUI shells can replace PATH; test the configured executable deterministically.
   fs.mkdirSync(path.join(workspace, ".vscode"));
   fs.writeFileSync(path.join(workspace, ".vscode", "settings.json"), JSON.stringify({ "kiln.path": path.resolve(kiln) }));

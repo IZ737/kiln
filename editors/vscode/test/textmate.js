@@ -9,6 +9,7 @@ const grammars = {
   "source.kiln": "syntaxes/kiln.tmLanguage.json",
   "text.html.glaze": "syntaxes/glaze.tmLanguage.json",
   "text.html.ember": "syntaxes/ember.tmLanguage.json",
+  "source.toml.kiln": "syntaxes/toml.tmLanguage.json",
 };
 
 const wasm = fs.readFileSync(require.resolve("vscode-oniguruma/release/onig.wasm"));
