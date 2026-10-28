@@ -41,6 +41,7 @@ fn upgrade(options: Options) -> Result<(), String> {
     let releases = releases.as_str();
     let agent = agent(Duration::from_secs(300))?;
 
+    let asked = options.version.is_some();
     let tag = match options.version {
         Some(version) if version.starts_with('v') => version,
         Some(version) => format!("v{version}"),
@@ -54,6 +55,12 @@ fn upgrade(options: Options) -> Result<(), String> {
     let wanted = tag.trim_start_matches('v');
     if wanted == current && !options.force {
         println!("kiln {current} is up to date");
+        return Ok(());
+    }
+    // A kiln built from source can be newer than the latest release: that
+    // is not an upgrade unless asked for by version.
+    if !asked && !options.force && crate::notice::newer(current, wanted) {
+        println!("kiln {current} is newer than the latest release, {wanted}");
         return Ok(());
     }
     if options.check {

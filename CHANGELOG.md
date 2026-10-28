@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased
+
+- The notice that a newer kiln is out works for commands that end with
+  Ctrl-C (#68). The check used to start only after a command finished, so
+  `kiln dev` and servers under `kiln run` never started it; it now starts
+  first, and those commands say what it found before they run. `kiln
+  --version` says so too, and a failed check records why in
+  `~/.kiln/update-check`. On Windows the check leaves the terminal's job
+  and process group, so closing an editor's terminal does not stop it.
+- `kiln upgrade` no longer offers to "upgrade" a kiln built from source
+  that is newer than the latest release.
+
 ## 0.15.0 (2026-10-27)
 
 Phase 6.7: pages as files. A site can keep its pages in a folder and let

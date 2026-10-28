@@ -467,7 +467,17 @@ enum DbCommand {
 
 fn main() -> ExitCode {
     kiln_diagnostics::set_path_display(project::shown);
-    let cli = Cli::parse();
+    let cli = match Cli::try_parse() {
+        Ok(cli) => cli,
+        Err(err) => {
+            let _ = err.print();
+            // `kiln --version` is where people look for a newer kiln.
+            if err.kind() == clap::error::ErrorKind::DisplayVersion {
+                notice::show();
+            }
+            return ExitCode::from(err.exit_code().clamp(0, 255) as u8);
+        }
+    };
     ware::set_mode(ware::Mode {
         locked: cli.locked,
         offline: cli.offline,
@@ -485,9 +495,20 @@ fn main() -> ExitCode {
             | Command::UpdateCheck
             | Command::Check { json: true, .. }
     );
+    // The check starts before the command, since `kiln dev` and servers
+    // under `kiln run` end with Ctrl-C, and those say what it found first.
+    let text = if notice { notice::start() } else { None };
+    let first = matches!(command, Command::Dev { .. } | Command::Run { .. });
+    if first {
+        if let Some(text) = &text {
+            eprintln!("{text}");
+        }
+    }
     let code = dispatch(command);
-    if notice {
-        notice::show();
+    if !first {
+        if let Some(text) = text {
+            eprintln!("{text}");
+        }
     }
     code
 }
