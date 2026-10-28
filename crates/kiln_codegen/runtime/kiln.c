@@ -1452,7 +1452,6 @@ K_API void k_task_spawn(void (*fn)(void *), void *arg) {
         t->error_show = NULL;
         t->lib_error = t->client_error = t->panic_message = NULL;
         t->stores = NULL;
-        t->client_status = 400;
     } else {
         t = GC_MALLOC_UNCOLLECTABLE(sizeof *t);
         if (!t) { fputs("panic: out of memory\n", stderr); exit(101); }
@@ -1480,6 +1479,9 @@ K_API void k_task_spawn(void (*fn)(void *), void *arg) {
         k_tasks = k_grow(k_tasks, &k_tasks_cap, k_ntasks + 1, sizeof *k_tasks);
         k_tasks[k_ntasks++] = t;
     }
+    /* A new task's memory is zeroed, so these are set for both. */
+    t->client_status = 400;
+    t->web_reads = NULL;
     t->fd = K_BAD_SOCK;
     t->fn = fn;
     t->arg = arg;
