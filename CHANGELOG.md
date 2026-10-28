@@ -33,6 +33,11 @@
   file before writing any and never overwrites one: a conflict writes
   nothing and names the files, a folder with other files needs a yes, and
   an existing `.gitignore` is kept. `--pages` still works.
+- The language server follows the project across folders (#79): `import`
+  completes folder modules and, after `import posts.`, the folders inside;
+  `<posts.` in a glaze completes that folder's components and subfolders;
+  and go to definition works from an imported module to its folder's main
+  file and from `web.render` and `{% layout %}` paths to the component.
 - A page with embers but no `</head>` loads their script before
   `</body>` rather than after the end of the page.
 - `kiln upgrade` no longer offers to "upgrade" a kiln built from source

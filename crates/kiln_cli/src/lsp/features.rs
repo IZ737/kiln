@@ -1136,12 +1136,87 @@ pub(super) fn definition(sources: &[Source], index: usize, offset: usize) -> Val
             .collect();
         return Value::Array(locations);
     }
+    if let Some(location) = import_definition(sources, index, offset)
+        .or_else(|| component_path_definition(sources, index, offset))
+    {
+        return location;
+    }
     bound_request(sources, index, offset, definition_bound)
+}
+
+/// The start of a file, as a location.
+fn file_location(sources: &[Source], path: &Path) -> Value {
+    let uri = sources
+        .iter()
+        .find(|s| s.path == path)
+        .and_then(|s| s.uri.clone())
+        .unwrap_or_else(|| path_to_uri(path));
+    json!({"uri": uri, "range": range("", 0, 0)})
+}
+
+/// From a module in an `import`, its folder's main file: the one named
+/// after the folder, or else its first `.kiln` file.
+fn import_definition(sources: &[Source], index: usize, offset: usize) -> Option<Value> {
+    let source = &sources[index];
+    if crate::is_glaze(&source.path) {
+        return None;
+    }
+    let module = kiln_syntax::parse(&source.text).module;
+    let root = crate::project::common_root(sources.iter().map(|s| s.path.as_path()));
+    for item in &module.items {
+        let Item::Import(import) = item else { continue };
+        for path in &import.paths {
+            let Some(at) = path
+                .iter()
+                .position(|i| (i.span.start as usize..=i.span.end as usize).contains(&offset))
+            else {
+                continue;
+            };
+            let folder = path[..=at]
+                .iter()
+                .fold(root.clone(), |dir, part| dir.join(&part.name));
+            let mut files: Vec<PathBuf> = std::fs::read_dir(crate::project::real(&folder))
+                .ok()?
+                .filter_map(Result::ok)
+                .map(|e| folder.join(e.file_name()))
+                .filter(|p| p.extension().is_some_and(|e| e == "kiln"))
+                .collect();
+            files.sort();
+            let main = folder.join(format!("{}.kiln", path[at].name));
+            let file = if files.contains(&main) {
+                main
+            } else {
+                files.into_iter().next()?
+            };
+            return Some(file_location(sources, &file));
+        }
+    }
+    None
+}
+
+/// From a component path in `web.render(...)` or `{% layout %}`, the
+/// component's file.
+fn component_path_definition(sources: &[Source], index: usize, offset: usize) -> Option<Value> {
+    let source = &sources[index];
+    let slot = path_slot(&source.text, offset, crate::is_glaze(&source.path))?;
+    let rest = &source.text[slot.start..];
+    let path = &rest[..rest.find(['"', '\n']).unwrap_or(rest.len())];
+    let root = crate::project::common_root(sources.iter().map(|s| s.path.as_path()));
+    let file = if path.contains('/') {
+        root.join(path)
+    } else {
+        source.path.parent()?.join(path)
+    };
+    (sources.iter().any(|s| s.path == file) || file.is_file())
+        .then(|| file_location(sources, &file))
 }
 pub(super) fn completion(sources: &[Source], index: usize, offset: usize) -> Value {
     let text = &sources[index].text;
     let offset = offset.min(text.len());
     if let Some(result) = component_path_completion(sources, index, offset) {
+        return result;
+    }
+    if let Some(result) = qualified_tag_completion(sources, index, offset) {
         return result;
     }
     // `"` and `/` ask for component paths; anywhere else nothing fits
@@ -1153,6 +1228,78 @@ pub(super) fn completion(sources: &[Source], index: usize, offset: usize) -> Val
         return result;
     }
     bound_request(sources, index, offset, completion_bound)
+}
+
+/// After `<posts.` in a glaze or ember: the components in `posts/` and
+/// the folders inside it, named as a qualified tag names them.
+fn qualified_tag_completion(sources: &[Source], index: usize, offset: usize) -> Option<Value> {
+    let source = &sources[index];
+    if !crate::is_glaze(&source.path) {
+        return None;
+    }
+    let before = &source.text[..offset];
+    let start = before.rfind(|c: char| !(c.is_alphanumeric() || "_.[]".contains(c)))?;
+    if !before[..=start].ends_with('<') {
+        return None;
+    }
+    let (folder, _) = before[start + 1..].rsplit_once('.')?;
+    if folder.is_empty() || folder.split('.').any(str::is_empty) {
+        return None;
+    }
+    let root = crate::project::common_root(sources.iter().map(|s| s.path.as_path()));
+    let dir = folder.split('.').fold(root, |dir, part| dir.join(part));
+    let mut items = std::collections::BTreeMap::new();
+    let mut files: Vec<PathBuf> = sources
+        .iter()
+        .map(|s| s.path.clone())
+        .filter(|p| p.parent() == Some(dir.as_path()))
+        .collect();
+    for entry in std::fs::read_dir(crate::project::real(&dir))
+        .into_iter()
+        .flatten()
+        .flatten()
+    {
+        let path = dir.join(entry.file_name());
+        let name = entry.file_name().to_string_lossy().into_owned();
+        if entry.path().is_dir() && !name.starts_with(['.', '_']) {
+            let mut inner = Vec::new();
+            let _ = crate::collect_sources(&path, &mut inner);
+            if !inner.is_empty() {
+                items.insert(name.clone(), json!({"label": name, "kind": MODULE}));
+            }
+        } else {
+            files.push(path);
+        }
+    }
+    for file in files.iter().filter(|f| crate::is_glaze(f)) {
+        let stem = file.file_stem()?.to_string_lossy().into_owned();
+        let tag: String = stem
+            .split('_')
+            .map(|w| {
+                let mut c = w.chars();
+                c.next()
+                    .map(|f| f.to_ascii_uppercase().to_string() + c.as_str())
+                    .unwrap_or_default()
+            })
+            .collect();
+        let kind = if file.extension().is_some_and(|e| e == "ember") {
+            "Ember"
+        } else {
+            "Glaze"
+        };
+        let detail = file
+            .strip_prefix(crate::project::common_root(
+                sources.iter().map(|s| s.path.as_path()),
+            ))
+            .unwrap_or(file)
+            .to_string_lossy()
+            .replace('\\', "/");
+        items.insert(
+            tag.clone(),
+            json!({"label": tag, "kind": CLASS, "detail": format!("{kind} {detail}")}),
+        );
+    }
+    Some(json!({"isIncomplete": false, "items": items.into_values().collect::<Vec<_>>()}))
 }
 
 /// Where a component path is being typed: in the first string of
@@ -1360,18 +1507,39 @@ fn module_completion(sources: &[Source], index: usize, offset: usize) -> Option<
     let before = &text[..offset];
     let line = before.rsplit('\n').next().unwrap_or("").trim_start();
     let root = crate::project::common_root(sources.iter().map(|s| s.path.as_path()));
-    if line.starts_with("import ") {
-        let mut paths = Vec::new();
+    if let Some(paths_typed) = line.strip_prefix("import ") {
+        let mut paths: Vec<PathBuf> = sources.iter().map(|s| s.path.clone()).collect();
         let _ = crate::collect_sources(&root, &mut paths);
-        let modules: std::collections::BTreeSet<_> = paths
+        let own = sources[index].path.parent();
+        let modules: std::collections::BTreeSet<String> = paths
             .iter()
-            .filter_map(|p| p.parent()?.strip_prefix(&root).ok())
+            .filter_map(|p| p.parent())
+            .filter(|dir| Some(*dir) != own)
+            .filter_map(|dir| dir.strip_prefix(&root).ok())
             .filter(|p| !p.as_os_str().is_empty())
             .map(|p| p.to_string_lossy().replace(['/', '\\'], "."))
+            .filter(|m| !m.split('.').any(|part| part.starts_with("__")))
             .collect();
-        return Some(
-            json!({"isIncomplete":false,"items":modules.into_iter().map(|m|json!({"label":m,"kind":MODULE})).collect::<Vec<_>>()}),
-        );
+        // The path being typed: after `import ` or the last `,`.
+        let typed = paths_typed
+            .rsplit(',')
+            .next()
+            .unwrap_or("")
+            .trim_start();
+        let items: Vec<Value> = match typed.rsplit_once('.') {
+            // After `posts.`, the folders inside `posts/`.
+            Some((parent, _)) => modules
+                .iter()
+                .filter_map(|m| m.strip_prefix(parent)?.strip_prefix('.'))
+                .filter(|child| !child.contains('.'))
+                .map(|child| json!({"label": child, "kind": MODULE}))
+                .collect(),
+            None => modules
+                .iter()
+                .map(|m| json!({"label": m, "kind": MODULE}))
+                .collect(),
+        };
+        return Some(json!({"isIncomplete": false, "items": items}));
     }
     let word = before
         .rsplit(|c: char| !c.is_alphanumeric() && c != '_' && c != '.')
