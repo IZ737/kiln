@@ -270,6 +270,7 @@ pub fn bind_entry(root: &Path, entry: &Path, texts: &[(PathBuf, String)]) -> Bou
             source: text,
             symbols: &symbols,
             imports: BTreeMap::new(),
+            components: BTreeMap::new(),
             locals: vec![BTreeSet::new()],
             generics: vec![BTreeSet::new()],
             map: SourceMap::default(),
@@ -325,6 +326,7 @@ pub fn bind_entry(root: &Path, entry: &Path, texts: &[(PathBuf, String)]) -> Bou
         } else {
             let glaze = kiln_syntax::glaze::parse_component(text, &path.to_string_lossy()).glaze;
             resolver.imports = folder_imports.get(&own).cloned().unwrap_or_default();
+            resolver.glaze_imports(&glaze, root, texts);
             resolver.glaze(&glaze);
         }
         let file_plan = plan.files.remove(&index).unwrap_or_default();
@@ -364,6 +366,9 @@ struct Resolver<'a> {
     source: &'a str,
     symbols: &'a Symbols,
     imports: BTreeMap<String, String>,
+    /// Components a glaze imports, by tag name: the tag to write instead,
+    /// such as `components.Card`.
+    components: BTreeMap<String, String>,
     locals: Vec<BTreeSet<String>>,
     generics: Vec<BTreeSet<String>>,
     map: SourceMap,
@@ -801,7 +806,128 @@ impl Resolver<'_> {
             _ => {}
         }
     }
+    /// `{% import "..." %}` in a glaze or ember: a component becomes a tag
+    /// name, a folder a module name. The tag itself is removed.
+    fn glaze_imports(&mut self, g: &Glaze, root: &Path, texts: &[(PathBuf, String)]) {
+        for import in &g.imports {
+            // A comment, so the line still renders as nothing.
+            self.edit(import.span, "{# import #}".to_string());
+            let Some(spec) = super::routes::literal(&import.path) else {
+                self.diagnostics.push(super::diagnostic(
+                    "an import's path is a string literal, such as \"../components/card.glaze\"",
+                    import.path.span,
+                ));
+                continue;
+            };
+            let target = match self.locate(&spec) {
+                Ok(target) => target,
+                Err(message) => {
+                    self.diagnostics
+                        .push(super::diagnostic(message, import.path.span));
+                    continue;
+                }
+            };
+            let exists = |path: &Path| texts.iter().any(|(p, _)| p == path) || path.exists();
+            let alias = import.alias.as_ref();
+            if target.ends_with(".glaze") || target.ends_with(".ember") {
+                if !exists(&root.join(&target)) {
+                    self.diagnostics.push(super::diagnostic(
+                        format!("`{spec}` names `{target}`, which is not in the project"),
+                        import.path.span,
+                    ));
+                    continue;
+                }
+                let (folder, file) = target.rsplit_once('/').unwrap_or(("", &target));
+                let stem = file.trim_end_matches(".glaze").trim_end_matches(".ember");
+                let component = pascal_case(stem);
+                let name = alias.map_or(component.clone(), |a| a.name.clone());
+                if !name.starts_with(|c: char| c.is_ascii_uppercase()) {
+                    self.diagnostics.push(super::diagnostic(
+                        format!(
+                            "a component's name is capitalized: `as {}`",
+                            pascal_case(&name)
+                        ),
+                        alias.map_or(import.path.span, |a| a.span),
+                    ));
+                    continue;
+                }
+                let tag = if folder.is_empty() {
+                    component
+                } else {
+                    format!("{}.{component}", folder.replace('/', "."))
+                };
+                if self.components.insert(name.clone(), tag).is_some() {
+                    self.diagnostics.push(super::diagnostic(
+                        format!("`<{name}>` is imported twice; rename one with `as`"),
+                        import.span,
+                    ));
+                }
+            } else {
+                let key = target.replace('/', ".");
+                if !self.symbols.contains_key(&key) {
+                    let message = if root.join(&target).is_dir() {
+                        format!("`{spec}` names the folder `{target}`, which has no Kiln source")
+                    } else {
+                        format!("`{spec}` names `{target}`, which is not a folder in the project; a component's path ends in `.glaze` or `.ember`")
+                    };
+                    self.diagnostics
+                        .push(super::diagnostic(message, import.path.span));
+                    continue;
+                }
+                let name = alias.map_or_else(
+                    || target.rsplit('/').next().unwrap_or(&target).to_string(),
+                    |a| a.name.clone(),
+                );
+                if let Some(previous) = self.imports.insert(name.clone(), key.clone()) {
+                    if previous != key {
+                        self.diagnostics.push(super::diagnostic(
+                            format!("module name `{name}` is already this folder's import of `{previous}`; rename this one with `as`"),
+                            import.span,
+                        ));
+                    }
+                }
+            }
+        }
+    }
+    /// The project-relative path a `./`, `../`, `@/` or `@alias/` path in
+    /// this file names. In a Ware, `@/` is the Ware's root and there are
+    /// no aliases.
+    fn locate(&self, spec: &str) -> Result<String, String> {
+        super::paths::locate(self.owner, spec, &self.packages.aliases)
+    }
+    /// `{% css "@/styles/site.css" %}`: CSS paths are relative to the
+    /// glaze, so a rooted one is written as one from the glaze's folder.
+    fn rebase_css(&mut self, e: &Expr) {
+        let ExprKind::Str(parts) = &e.kind else {
+            return;
+        };
+        let [StrPiece::Text(path)] = parts.as_slice() else {
+            return;
+        };
+        if !path.starts_with('@') {
+            return;
+        }
+        match self.locate(path) {
+            Ok(target) => {
+                let up = self.owner.split('.').filter(|p| !p.is_empty()).count();
+                self.edit(e.span, format!("\"{}{target}\"", "../".repeat(up)));
+            }
+            Err(message) => self.diagnostics.push(super::diagnostic(message, e.span)),
+        }
+    }
     fn rebase(&mut self, e: &Expr) {
+        // `@/...` and `@alias/...` are from the project root.
+        if let ExprKind::Str(parts) = &e.kind {
+            if let [StrPiece::Text(path)] = parts.as_slice() {
+                if path.starts_with('@') {
+                    match self.locate(path) {
+                        Ok(path) => self.edit(e.span, format!("\"{path}\"")),
+                        Err(message) => self.diagnostics.push(super::diagnostic(message, e.span)),
+                    }
+                    return;
+                }
+            }
+        }
         if self.owner.is_empty() {
             return;
         }
@@ -830,6 +956,9 @@ impl Resolver<'_> {
             self.expr(&s.value);
             self.declare(&s.name.name);
         }
+        for c in &g.css {
+            self.rebase_css(&c.path);
+        }
         if let Some(l) = &g.layout {
             self.rebase(&l.path);
             for a in &l.args {
@@ -850,6 +979,7 @@ impl Resolver<'_> {
                             e.name.span,
                         ));
                     }
+                    let imported = self.components.get(&e.name.name).cloned();
                     let qualified = e
                         .name
                         .name
@@ -864,11 +994,13 @@ impl Resolver<'_> {
                         .filter(|(key, module, _)| key != module)
                         .map(|(key, _, component)| format!("{key}.{component}"));
                     if e.is_component()
-                        && (qualified.is_some()
+                        && (imported.is_some()
+                            || qualified.is_some()
                             || (!self.owner.is_empty() && !e.name.name.contains('.')))
                     {
-                        let name =
-                            qualified.unwrap_or_else(|| format!("{}.{}", self.owner, e.name.name));
+                        let name = imported
+                            .or(qualified)
+                            .unwrap_or_else(|| format!("{}.{}", self.owner, e.name.name));
                         self.edit(e.name.span, name.clone());
                         let element = &self.source[e.span.start as usize..e.span.end as usize];
                         if let Some(close) = element.rfind("</") {
@@ -953,4 +1085,16 @@ impl Resolver<'_> {
         }
         self.locals.pop();
     }
+}
+
+/// `like_button` is `LikeButton`, as component tags are named.
+fn pascal_case(name: &str) -> String {
+    name.split(['_', '-'])
+        .map(|w| {
+            let mut c = w.chars();
+            c.next()
+                .map(|f| f.to_ascii_uppercase().to_string() + c.as_str())
+                .unwrap_or_default()
+        })
+        .collect()
 }

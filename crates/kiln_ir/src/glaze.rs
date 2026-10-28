@@ -421,6 +421,9 @@ fn generate_for(glazes: &[GlazeInput], app: &App, client: bool) -> GlazeSource {
              \x20   if html.contains(\"</head>\") {{\n\
              \x20       return html.replace(\"</head>\", \"${{tag}}</head>\")\n\
              \x20   }}\n\
+             \x20   if html.contains(\"</body>\") {{\n\
+             \x20       return html.replace(\"</body>\", \"${{tag}}</body>\")\n\
+             \x20   }}\n\
              \x20   return \"${{html}}${{tag}}\"\n\
              }}\n",
             kiln_string(&format!(

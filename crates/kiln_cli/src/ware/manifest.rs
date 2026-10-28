@@ -52,6 +52,9 @@ pub struct Manifest {
     pub registry: Option<String>,
     pub policy: Option<Policy>,
     pub test: TestConfig,
+    /// `[aliases]`: `ui = "components"` lets source paths start `@ui/`.
+    /// The folders are relative to the root, as written.
+    pub aliases: BTreeMap<String, String>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -131,7 +134,16 @@ impl Manifest {
             ..Default::default()
         };
         for key in value.keys() {
-            if !["package", "dependencies", "registry", "policy", "test"].contains(&key.as_str()) {
+            if ![
+                "package",
+                "dependencies",
+                "registry",
+                "policy",
+                "test",
+                "aliases",
+            ]
+            .contains(&key.as_str())
+            {
                 return Err(bad(key, format!("unsupported section `{key}`")));
             }
         }
@@ -217,6 +229,59 @@ impl Manifest {
                         format!("`{}` is already a dependency, as `{other}`", dep.name),
                     ));
                 }
+            }
+        }
+        if let Some(aliases) = value.get("aliases") {
+            let table = aliases
+                .as_table()
+                .ok_or_else(|| bad("aliases", "[aliases] must be a table".into()))?;
+            for (name, folder) in table {
+                let folder = folder.as_str().ok_or_else(|| {
+                    bad(
+                        name,
+                        format!("aliases.{name} must be a folder, as a string"),
+                    )
+                })?;
+                if name.is_empty()
+                    || !name.starts_with(|c: char| c.is_ascii_lowercase())
+                    || !name.chars().all(|c| {
+                        c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_' || c == '-'
+                    })
+                {
+                    return Err(bad(
+                        name,
+                        format!("alias `{name}`: use lowercase letters, digits, `-` and `_`, starting with a letter (`@/` is the project root and cannot be redefined)"),
+                    ));
+                }
+                if m.dependencies.contains_key(name) {
+                    return Err(bad(
+                        name,
+                        format!("alias `{name}` has the name of a dependency; rename one"),
+                    ));
+                }
+                let path = Path::new(folder);
+                if folder.is_empty()
+                    || path.is_absolute()
+                    || folder.contains('\\')
+                    || path.components().any(|c| {
+                        !matches!(
+                            c,
+                            std::path::Component::Normal(_) | std::path::Component::CurDir
+                        )
+                    })
+                {
+                    return Err(bad(
+                        name,
+                        format!("aliases.{name} must be a folder inside the project, written with `/`, such as \"components\""),
+                    ));
+                }
+                m.aliases.insert(
+                    name.clone(),
+                    folder
+                        .trim_start_matches("./")
+                        .trim_end_matches('/')
+                        .to_string(),
+                );
             }
         }
         if let Some(registry) = value.get("registry") {

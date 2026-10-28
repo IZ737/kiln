@@ -28,6 +28,13 @@ async function run() {
   const glaze = await vscode.workspace.openTextDocument(vscode.Uri.joinPath(folder, "card.glaze"));
   assert.strictEqual(glaze.languageId, "glaze");
 
+  // kiln.toml and kiln.lock get the Kiln icons and TOML highlighting by
+  // name; other TOML files are left to whatever handles them.
+  const open = (name) => vscode.workspace.openTextDocument(vscode.Uri.joinPath(folder, "config", name));
+  assert.strictEqual((await open("kiln.toml")).languageId, "kiln-manifest");
+  assert.strictEqual((await open("kiln.lock")).languageId, "kiln-lock");
+  assert.ok(!["kiln-manifest", "kiln-lock"].includes((await open("other.toml")).languageId));
+
   const extension = vscode.extensions.getExtension("iz737.kiln");
   const api = await extension.activate();
   await until("kiln lsp to start", () => api.client() && api.client().isRunning());
@@ -84,6 +91,18 @@ async function run() {
   assert.strictEqual(word && doc.getText(word), "x");
   const name = doc.getWordRangeAtPosition(positionOf(doc, "print(helper", 10));
   assert.strictEqual(name && doc.getText(name), "helper");
+  // Signature help inside the call, with the argument marked.
+  const signatures = await vscode.commands.executeCommand(
+    "vscode.executeSignatureHelpProvider",
+    mainUri,
+    positionOf(doc, "print(helper(post", 13),
+    "(",
+  );
+  assert.strictEqual(signatures?.signatures[0]?.label, "fn helper(p: Post) -> Int");
+  assert.strictEqual(signatures.activeParameter, 0);
+  // Suggestions show while typing in strings, for component paths.
+  const editorConfig = vscode.workspace.getConfiguration("editor", { languageId: "kiln" });
+  assert.strictEqual(editorConfig.get("quickSuggestions").strings, "on");
   await vscode.commands.executeCommand("undo");
   await doc.save();
 

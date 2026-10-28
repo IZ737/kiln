@@ -1,8 +1,8 @@
 {
   "name": "kiln",
   "displayName": "Kiln",
-  "description": "Kiln, Glaze and Ember language support: highlighting, file icons, completion, hover, go to definition, and Check, Run, Build, Test, Dev and Format commands, from the Kiln language server.",
-  "version": "0.15.0",
+  "description": "Kiln, Glaze and Ember language support: highlighting, file icons (kiln.toml and kiln.lock too), completion, hover, go to definition, and Check, Run, Build, Test, Dev and Format commands, from the Kiln language server.",
+  "version": "0.16.0",
   "publisher": "iz737",
   "license": "MIT",
   "icon": "icons/kiln.png",
@@ -78,6 +78,34 @@
           "light": "./icons/ember-wasm.svg",
           "dark": "./icons/ember-wasm-dark.svg"
         }
+      },
+      {
+        "id": "kiln-manifest",
+        "aliases": [
+          "Kiln manifest (TOML)"
+        ],
+        "filenames": [
+          "kiln.toml"
+        ],
+        "configuration": "./toml-language-configuration.json",
+        "icon": {
+          "light": "./icons/kiln-manifest.svg",
+          "dark": "./icons/kiln-manifest-dark.svg"
+        }
+      },
+      {
+        "id": "kiln-lock",
+        "aliases": [
+          "Kiln lockfile (TOML)"
+        ],
+        "filenames": [
+          "kiln.lock"
+        ],
+        "configuration": "./toml-language-configuration.json",
+        "icon": {
+          "light": "./icons/kiln-lock.svg",
+          "dark": "./icons/kiln-lock-dark.svg"
+        }
       }
     ],
     "grammars": [
@@ -105,6 +133,16 @@
           "source.css": "css",
           "source.js": "javascript"
         }
+      },
+      {
+        "language": "kiln-manifest",
+        "scopeName": "source.toml.kiln",
+        "path": "./syntaxes/toml.tmLanguage.json"
+      },
+      {
+        "language": "kiln-lock",
+        "scopeName": "source.toml.kiln",
+        "path": "./syntaxes/toml.tmLanguage.json"
       }
     ],
     "commands": [
@@ -277,7 +315,34 @@
           }
         ]
       }
-    ]
+    ],
+    "configurationDefaults": {
+      "[kiln]": {
+        "editor.quickSuggestions": {
+          "other": "on",
+          "comments": "off",
+          "strings": "on"
+        },
+        "editor.wordBasedSuggestions": "off",
+        "editor.suggest.insertMode": "replace"
+      },
+      "[glaze]": {
+        "editor.quickSuggestions": {
+          "other": "on",
+          "comments": "off",
+          "strings": "on"
+        },
+        "editor.suggest.insertMode": "replace"
+      },
+      "[ember]": {
+        "editor.quickSuggestions": {
+          "other": "on",
+          "comments": "off",
+          "strings": "on"
+        },
+        "editor.suggest.insertMode": "replace"
+      }
+    }
   },
   "scripts": {
     "bundle": "esbuild src/extension.js --bundle --outfile=dist/extension.js --external:vscode --format=cjs --platform=node --target=node18 --minify",

@@ -117,6 +117,7 @@ the request, since it does not go to the browser.
 | `{% layout "base.glaze" title: value %}` | Wrap this glaze in a layout. Once, at the top level |
 | `{% slot %}`, `{% slot name %}` | In a layout or component: where the caller's content goes |
 | `{% fill name %} ... {% end %}` | Content for `{% slot name %}`: directly inside a component tag, or at the top level of a page with a layout |
+| `{% import "../components/card.glaze" %}`, `{% import "@/shared" as s %}` | Use a component as a tag, or a folder as a module, by path: `./`, `../`, `@/` or an alias. At the top level |
 | `{% css "site.css" %}` | Use a global stylesheet. At the top level |
 | `{% css module name from "card.module.css" %}` | Use a CSS Module: `name.card` is its renamed class. At the top level |
 | `{% state name = value %}`, `{% state name: Type = value %}` | Mutable reactive state in `.ember` files only. At the top level |
@@ -521,7 +522,12 @@ These are errors with a suggested fix. Run `kiln explain <code>` for details.
 ## Folder modules
 
 Same-folder components and layouts keep their owning module's context.
-`<posts.Editor />` explicitly names `posts/editor.ember` in a reachable module;
-`web.render("posts/index.glaze", {})` uses a project-root-qualified path.
+`<posts.Editor />` explicitly names `posts/editor.ember`, and
+`web.render("posts/index.glaze", {})` and `{% layout "layouts/base.glaze" %}`
+use project-root-qualified paths. Naming a component this way brings its
+folder into the program, so it need not be imported. A glaze can also
+`{% import %}` a component or folder by a path from its own folder (`./`,
+`../`), the project root (`@/`) or an alias from `kiln.toml`; see
+[Imports in glazes](projects.md#imports-in-glazes).
 Module-local CSS, scoped URLs and static assets retain that context. See
 [projects.md](projects.md) for import reachability, path rules and examples.

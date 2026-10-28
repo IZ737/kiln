@@ -6,11 +6,25 @@
     },
     "_glaze": {
       "iconPath": "../icons/svg/glaze-component.svg"
+    },
+    "_ember": {
+      "iconPath": "../icons/svg/ember-wasm.svg"
+    },
+    "_kiln_manifest": {
+      "iconPath": "../icons/svg/kiln-manifest.svg"
+    },
+    "_kiln_lock": {
+      "iconPath": "../icons/svg/kiln-lock.svg"
     }
   },
   "fileExtensions": {
     "kiln": "_kiln",
-    "glaze": "_glaze"
+    "glaze": "_glaze",
+    "ember": "_ember"
+  },
+  "fileNames": {
+    "kiln.toml": "_kiln_manifest",
+    "kiln.lock": "_kiln_lock"
   },
   "languageIds": {
     "kiln": "_kiln"

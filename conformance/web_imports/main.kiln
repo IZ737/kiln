@@ -1,0 +1,16 @@
+// Glazes import components and folders by path: `./` and `../` from the
+// glaze's folder, `@/` from the project root and `@ui/` from the folder
+// that `[aliases]` in kiln.toml names. `@/` paths work in `web.render`,
+// `{% layout %}` and `{% css %}` too.
+import web, os
+
+fn main() ! {
+    let app = web.app()
+    app.get("/", fn(req) {
+        return web.render("@/pages/blog/home.glaze", { n: 3 })
+    })
+    app.get("/quit", fn(req) {
+        os.exit(0)
+    })
+    try app.listen("127.0.0.1:${env("PORT") ?? "8080"}")
+}

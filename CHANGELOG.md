@@ -1,5 +1,67 @@
 # Changelog
 
+## 0.16.0 (2026-10-28)
+
+The open issues: components from any folder, imports and `@/` paths in
+glazes, `kiln new` templates, cross-folder editor features and a working
+update notice.
+
+- The notice that a newer kiln is out works for commands that end with
+  Ctrl-C (#68). The check used to start only after a command finished, so
+  `kiln dev` and servers under `kiln run` never started it; it now starts
+  first, and those commands say what it found before they run. `kiln
+  --version` says so too, and a failed check records why in
+  `~/.kiln/update-check`. On Windows the check leaves the terminal's job
+  and process group, so closing an editor's terminal does not stop it.
+- Components can be used from any folder (#75). A slash path in
+  `web.render(...)` or `{% layout %}`, or a qualified tag such as
+  `<widgets.Panel />`, brings the folder it names into the program, so a
+  `components/` or `layouts/` folder needs no `.kiln` file and no import.
+  Before, a component in a folder nothing imported was reported as "no
+  file named ... in this directory" although the file was there; a
+  missing component now says it was looked for "in the project".
+- Glazes and embers can import what they use by path (#76):
+  `{% import "../components/card.glaze" %}` makes `<Card />` a tag,
+  `{% import "@/shared" as s %}` imports a folder module, and `as` renames
+  either. Paths start with `./` or `../` (from the file), `@/` (from the
+  project root) or `@name/`, for a folder named in a new `[aliases]`
+  section of `kiln.toml`. `@` paths also work in `web.render(...)`,
+  `{% layout %}` and `{% css %}`, and the language server completes and
+  follows import paths. Every bad path is an error at the path that says
+  why.
+- The VS Code extension gives `kiln.toml` and `kiln.lock` Kiln icons and
+  TOML highlighting (#78). Only those two file names are claimed, so other
+  `.toml` files are left to any TOML extension. The brand assets gain the
+  `kiln-manifest` and `kiln-lock` icons.
+- The language server completes component paths in the first string of
+  `web.render(...)` and of a glaze's `{% layout %}` (#67): files in the
+  same folder by name, the rest of the project from its root, embers only
+  where they can be rendered. `"` and `/` ask for completions.
+- `kiln new` makes three kinds of project (#80): `web` (routes in
+  `main.kiln`, now with a layout and `site.css`), `pages` (pages as files)
+  and `cli` (a command-line program with no web code), optionally with an
+  Ember (`--ember`). It asks in a terminal, and `--template` (or
+  `--kind`), `--name` and `--yes` answer for scripts and agents.
+  `kiln new .` makes the project in the current folder. It checks every
+  file before writing any and never overwrites one: a conflict writes
+  nothing and names the files, a folder with other files needs a yes, and
+  an existing `.gitignore` is kept. `--pages` still works.
+- The language server follows the project across folders (#79): `import`
+  completes folder modules and, after `import posts.`, the folders inside;
+  `<posts.` in a glaze completes that folder's components and subfolders;
+  and go to definition works from an imported module to its folder's main
+  file and from `web.render` and `{% layout %}` paths to the component.
+- Editing in VS Code (#77): signature help inside calls (from `kiln lsp`,
+  so every editor gets it), suggestions while typing in strings for
+  component paths, completions that replace the whole word, no word-based
+  guesses mixed into Kiln's, and the server's state beside the language in
+  the status bar with a restart when it stops. A server that fails to
+  start offers its output and a restart.
+- A page with embers but no `</head>` loads their script before
+  `</body>` rather than after the end of the page.
+- `kiln upgrade` no longer offers to "upgrade" a kiln built from source
+  that is newer than the latest release.
+
 ## 0.15.0 (2026-10-27)
 
 Phase 6.7: pages as files. A site can keep its pages in a folder and let

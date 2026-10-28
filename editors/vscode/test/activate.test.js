@@ -38,6 +38,14 @@ function fakeVscode(settings) {
       onDidChangeConfiguration: () => ({ dispose() {} }),
       textDocuments: [],
     },
+    languages: {
+      createLanguageStatusItem: (id, selector) => {
+        const item = { id, selector, dispose() {} };
+        log.status = item;
+        return item;
+      },
+    },
+    LanguageStatusSeverity: { Information: 0, Warning: 1, Error: 2 },
     commands: {
       registerCommand: (name, fn) => {
         log.commands[name] = fn;
@@ -73,7 +81,12 @@ function fakeVscode(settings) {
         Object.assign(this, { id, server, options, state: 2 });
         log.clients.push(this);
       }
-      async start() {}
+      onDidChangeState(listener) {
+        this.listener = listener;
+      }
+      async start() {
+        this.initializeResult = { serverInfo: { name: "kiln", version: "9.9.9" } };
+      }
       async stop() {
         this.state = 1;
       }
@@ -113,6 +126,14 @@ test("starts kiln lsp and runs commands as kiln tasks", async () => {
   await extension.activate(context());
   assert.strictEqual(log.clients.length, 1);
   assert.deepStrictEqual(log.clients[0].server, { command: kiln, args: ["lsp"] });
+  // Its state shows beside Kiln, Glaze and Ember files, and a stopped
+  // server offers a restart.
+  assert.deepStrictEqual(log.status.selector, ["kiln", "glaze", "ember"]);
+  assert.strictEqual(log.status.text, "kiln lsp");
+  assert.strictEqual(log.status.detail, "Kiln 9.9.9");
+  log.clients[0].listener({ newState: 1 });
+  assert.strictEqual(log.status.text, "kiln lsp: stopped");
+  assert.strictEqual(log.status.command.command, "kiln.restartServer");
   for (const c of ["kiln.check", "kiln.run", "kiln.build", "kiln.test", "kiln.dev", "kiln.fmt", "kiln.restartServer", "kiln.showOutput"]) {
     assert.ok(log.commands[c], `${c} is registered`);
   }
@@ -147,6 +168,7 @@ test("explains how to get kiln when it is missing", async () => {
   await extension.activate(context());
   assert.strictEqual(log.clients.length, 0);
   assert.match(log.errors[0], /kiln\.path setting names .*no-such-kiln/);
+  assert.strictEqual(log.status.text, "kiln not found");
   // Commands still answer, with what to do.
   await log.commands["kiln.check"]();
   assert.match(log.errors[1], /Open a \.kiln file/);

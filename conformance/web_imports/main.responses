@@ -1,0 +1,9 @@
+### GET / HTTP/1.1
+HTTP/1.1 200 OK
+content-type: text/html; charset=utf-8
+content-length: 401
+connection: close
+
+<html><head><title>Imports</title><link rel="stylesheet" href="/_kiln/app-bn1yas.css"><script type="module" src="/_kiln/ember-HASH.js"></script></head><body><h2>Post 3</h2>
+<kiln-island data-k-ember="__module_636f6d706f6e656e74732f75692f6c696b655f627574746f6e" data-k-hydrate="load" data-k-props="{&quot;n&quot;:3}" data-k-state="{&quot;likes&quot;:3}"><button>3</button></kiln-island></body></html>
+### GET /quit HTTP/1.1

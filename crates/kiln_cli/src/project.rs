@@ -1,5 +1,7 @@
 //! Deterministic project discovery. Only explicitly imported folders enter a build.
 pub mod bind;
+mod components;
+pub mod paths;
 pub mod routes;
 use kiln_diagnostics::{codes, Diagnostic, Span};
 use kiln_syntax::ast::Item;
@@ -158,6 +160,18 @@ pub fn discover_with(
         if let Some(graph) = graph {
             packages = mount(&root, &graph);
         }
+        for (name, folder) in &manifest.aliases {
+            if !root.join(folder).is_dir() {
+                return Err(invalid_at(
+                    &manifest.path,
+                    crate::ware::manifest::key_span(&manifest.text, name),
+                    format!(
+                        "alias `@{name}/` names the folder `{folder}`, which is not in the project"
+                    ),
+                ));
+            }
+        }
+        packages.aliases = manifest.aliases.clone();
     }
     if tests {
         let (name, dir) = crate::ware::builtin_test().map_err(invalid)?;
@@ -209,6 +223,8 @@ pub struct Packages {
     pub root: BTreeMap<String, String>,
     /// Each Ware, by module key (`__ware.kiln.ui`).
     pub wares: BTreeMap<String, WarePackage>,
+    /// `[aliases]` from kiln.toml: `ui` to the folder `components`.
+    pub aliases: BTreeMap<String, String>,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -422,15 +438,51 @@ impl Project {
         };
         let mut imports = BTreeMap::new();
         let mut mounted: Vec<(PathBuf, PathBuf)> = Vec::new();
+        let mut referenced = BTreeSet::new();
         for file in &files {
-            if crate::is_glaze(file) {
-                continue;
-            }
             let text = match self.overlays.get(file) {
                 Some(text) => text.clone(),
                 None => read(file)?,
             };
+            // A component path from the project root or an alias, or one
+            // relative to the package's root.
+            let component_folder = |path: &str| {
+                if path.starts_with('@') {
+                    let path = paths::locate(&owner, path, &packages.aliases).ok()?;
+                    components::folder(&self.root, &path)
+                } else {
+                    components::folder(&package_root, path)
+                }
+            };
+            if crate::is_glaze(file) {
+                let glaze =
+                    kiln_syntax::glaze::parse_component(&text, &file.to_string_lossy()).glaze;
+                referenced.extend(
+                    components::in_glaze(&glaze)
+                        .iter()
+                        .filter_map(|c| component_folder(c)),
+                );
+                // `{% import %}`: a component's folder is part of the
+                // build, and a folder is imported like `import` imports
+                // it. Bad paths are reported when the file is bound.
+                for (spec, span) in components::imports(&glaze) {
+                    let Ok(target) = paths::locate(&owner, &spec, &packages.aliases) else {
+                        continue;
+                    };
+                    if target.ends_with(".glaze") || target.ends_with(".ember") {
+                        referenced.extend(components::folder(&self.root, &target));
+                    } else if self.root.join(&target).is_dir() {
+                        imports.insert(self.root.join(&target), (file.clone(), span));
+                    }
+                }
+                continue;
+            }
             let module = kiln_syntax::parse(&text).module;
+            referenced.extend(
+                components::in_module(&module)
+                    .iter()
+                    .filter_map(|c| component_folder(c)),
+            );
             // The folders of `app.file_routes` mounts are part of the app.
             for dir in routes::mount_dirs(&self.root, &module) {
                 mounted.push((dir, file.clone()));
@@ -521,6 +573,14 @@ impl Project {
         }
         visiting.pop();
         visited.insert(dir.to_path_buf());
+        // The folders of components named by their place in the project.
+        // They are not imports, so they are visited once this folder is
+        // done: a folder that imports this one is no cycle.
+        for folder in referenced {
+            if !visiting.contains(&folder) {
+                self.visit(&folder, visiting, visited)?;
+            }
+        }
         Ok(())
     }
 }

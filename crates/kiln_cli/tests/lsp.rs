@@ -270,7 +270,7 @@ fn blog(name: &str) -> (Client, String, String, std::path::PathBuf) {
     }
     assert_eq!(
         caps["completionProvider"]["triggerCharacters"],
-        json!(["."])
+        json!([".", "\"", "/"])
     );
     client.open(&main, MAIN);
     (client, main, other, dir)
@@ -865,4 +865,315 @@ fn understands_filesystem_routes() {
     );
     c.finish();
     let _ = std::fs::remove_dir_all(dir);
+}
+
+/// Issue #67: the first string of `web.render(...)` and of a glaze's
+/// `{% layout %}` completes component paths as the compiler finds them.
+#[test]
+fn completes_render_and_layout_paths() {
+    let dir = program_dir("render-paths");
+    for folder in ["routes", "pages", "layouts", "pages/_components"] {
+        std::fs::create_dir_all(dir.join(folder)).unwrap();
+    }
+    let main = "import web\nimport routes\nfn main() {}\n";
+    let routes =
+        "import web\npub fn home(req: web.Request) -> web.Response {\n    return web.render(\"\", {})\n}\n";
+    std::fs::write(dir.join("main.kiln"), main).unwrap();
+    std::fs::write(dir.join("index.glaze"), "<p>root</p>\n").unwrap();
+    std::fs::write(dir.join("routes/routes.kiln"), routes).unwrap();
+    std::fs::write(dir.join("routes/local.glaze"), "<p>local</p>\n").unwrap();
+    std::fs::write(dir.join("pages/home.glaze"), "<p>home</p>\n").unwrap();
+    std::fs::write(dir.join("pages/counter.ember"), "<b>1</b>\n").unwrap();
+    std::fs::write(dir.join("pages/_components/card.glaze"), "<i>c</i>\n").unwrap();
+    std::fs::write(dir.join("layouts/base.glaze"), "<main>{% slot %}</main>\n").unwrap();
+    let uri = file_uri(&dir.join("routes/routes.kiln"));
+    let mut c = Client::start();
+    c.request("initialize", json!({"rootUri": file_uri(&dir)}));
+    c.open(&uri, routes);
+    let in_render = |path: &str| {
+        format!("import web\npub fn home(req: web.Request) -> web.Response {{\n    return web.render(\"{path}\", {{ n: 1 }})\n}}\n")
+    };
+    let all = c.at("textDocument/completion", &uri, &in_render("|"));
+    // Its own folder by file name, the others from the root; not the
+    // root's files, which only the root names that way.
+    assert_eq!(
+        labels(&all),
+        [
+            "layouts/base.glaze",
+            "local.glaze",
+            "pages/_components/card.glaze",
+            "pages/counter.ember",
+            "pages/home.glaze"
+        ]
+    );
+    // The edit replaces the whole string's contents and keeps the quotes.
+    let partial = c.at("textDocument/completion", &uri, &in_render("pa|ges/ho"));
+    let home = partial["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|i| i["label"] == "pages/home.glaze")
+        .unwrap();
+    assert_eq!(home["textEdit"]["newText"], "pages/home.glaze");
+    assert_eq!(
+        home["textEdit"]["range"],
+        json!({"start": {"line": 2, "character": 23}, "end": {"line": 2, "character": 31}})
+    );
+    // Other strings and arguments are left alone.
+    let other = in_render("x").replace("{ n: 1 }", "\"|\"");
+    assert!(labels(&c.at("textDocument/completion", &uri, &other)).is_empty());
+    // A layout is a glaze, from a glaze.
+    let page = dir.join("pages/home.glaze");
+    let page_uri = file_uri(&page);
+    c.open(&page_uri, "<p>home</p>\n");
+    let layouts = labels(&c.at(
+        "textDocument/completion",
+        &page_uri,
+        "{% layout \"|\" %}\n<p>home</p>\n",
+    ));
+    assert!(
+        layouts.contains(&"layouts/base.glaze".to_string()),
+        "{layouts:?}"
+    );
+    assert!(!layouts.contains(&"index.glaze".to_string()));
+    assert!(
+        !layouts.iter().any(|l| l.ends_with(".ember")),
+        "{layouts:?}"
+    );
+    // An import names components and folders from the file's folder, or
+    // from the root after `@`.
+    let imports = labels(&c.at(
+        "textDocument/completion",
+        &page_uri,
+        "{% import \"|\" %}\n<p>home</p>\n",
+    ));
+    assert_eq!(
+        imports,
+        [
+            "../index.glaze",
+            "../layouts/base.glaze",
+            "../routes",
+            "../routes/local.glaze",
+            "./_components/card.glaze",
+            "./counter.ember",
+        ]
+    );
+    let rooted = labels(&c.at(
+        "textDocument/completion",
+        &page_uri,
+        "{% import \"@|\" %}\n<p>home</p>\n",
+    ));
+    assert!(
+        rooted.contains(&"@/layouts/base.glaze".to_string()),
+        "{rooted:?}"
+    );
+    // And goes to what it names.
+    let target = c.at(
+        "textDocument/definition",
+        &page_uri,
+        "{% import \"../lay|outs/base.glaze\" %}\n<p>home</p>\n",
+    );
+    assert_eq!(target["uri"], file_uri(&dir.join("layouts/base.glaze")));
+    let target = c.at(
+        "textDocument/definition",
+        &page_uri,
+        "{% import \"@/rou|tes\" %}\n<p>home</p>\n",
+    );
+    assert_eq!(target["uri"], file_uri(&dir.join("routes/routes.kiln")));
+    c.finish();
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+/// Issue #79: imports, qualified names and components across folders
+/// complete and navigate as the compiler resolves them.
+#[test]
+fn navigates_and_completes_across_modules() {
+    let dir = program_dir("graph");
+    for folder in ["posts/search", "shared", "pages", "layouts", "widgets"] {
+        std::fs::create_dir_all(dir.join(folder)).unwrap();
+    }
+    let main = "import web\nimport posts, shared\nfn main() {\n    let p = shared.Post(id: 1)\n    print(posts.title(p))\n}\nfn page(req: web.Request) -> web.Response {\n    return web.render(\"pages/home.glaze\", { post: shared.Post(id: 2) })\n}\n";
+    let posts = "import shared\npub fn title(p: shared.Post) -> String { return \"post ${p.id}\" }\nfn hidden() {}\n";
+    let search = "pub fn find() -> Int { return 1 }\n";
+    let models = "pub struct Post {\n    id: Int\n}\n";
+    let home = "{% props post: shared.Post %}\n{% layout \"layouts/base.glaze\" %}\n<widgets.Badge n={post.id} />\n";
+    std::fs::write(dir.join("main.kiln"), main).unwrap();
+    std::fs::write(dir.join("posts/posts.kiln"), posts).unwrap();
+    std::fs::write(dir.join("posts/search/search.kiln"), search).unwrap();
+    std::fs::write(dir.join("shared/models.kiln"), models).unwrap();
+    std::fs::write(dir.join("pages/home.glaze"), home).unwrap();
+    std::fs::write(dir.join("layouts/base.glaze"), "<main>{% slot %}</main>\n").unwrap();
+    std::fs::write(
+        dir.join("widgets/badge.glaze"),
+        "{% props n: Int %}\n<b>{n}</b>\n",
+    )
+    .unwrap();
+    std::fs::write(
+        dir.join("widgets/meter.ember"),
+        "{% props n: Int %}\n<i>{n}</i>\n",
+    )
+    .unwrap();
+    let main_uri = file_uri(&dir.join("main.kiln"));
+    let home_uri = file_uri(&dir.join("pages/home.glaze"));
+    let mut c = Client::start();
+    c.request("initialize", json!({"rootUri": file_uri(&dir)}));
+    c.open(&main_uri, main);
+    let at_main = |c: &mut Client, method: &str, from: &str, to: &str| {
+        c.at(method, &main_uri, &main.replacen(from, to, 1))
+    };
+    // Import paths: modules, then a folder's child modules after a dot.
+    let modules = labels(&at_main(
+        &mut c,
+        "textDocument/completion",
+        "import posts, shared",
+        "import posts, shared, |",
+    ));
+    for m in [
+        "layouts",
+        "pages",
+        "posts",
+        "posts.search",
+        "shared",
+        "widgets",
+    ] {
+        assert!(modules.contains(&m.to_string()), "{m} in {modules:?}");
+    }
+    let children = labels(&at_main(
+        &mut c,
+        "textDocument/completion",
+        "import posts, shared",
+        "import posts.|",
+    ));
+    assert_eq!(children, ["search"]);
+    // Definition from an import to the module's file, and from qualified
+    // names and types to their declarations.
+    let def = at_main(
+        &mut c,
+        "textDocument/definition",
+        "import posts, shared",
+        "import po|sts, shared",
+    );
+    assert_eq!(def["uri"], file_uri(&dir.join("posts/posts.kiln")), "{def}");
+    let def = at_main(
+        &mut c,
+        "textDocument/definition",
+        "posts.title(p)",
+        "posts.ti|tle(p)",
+    );
+    assert_eq!(def["uri"], file_uri(&dir.join("posts/posts.kiln")), "{def}");
+    let def = at_main(
+        &mut c,
+        "textDocument/definition",
+        "shared.Post(id: 1)",
+        "shared.Po|st(id: 1)",
+    );
+    assert_eq!(
+        def["uri"],
+        file_uri(&dir.join("shared/models.kiln")),
+        "{def}"
+    );
+    // From a render path to the component.
+    let def = at_main(
+        &mut c,
+        "textDocument/definition",
+        "\"pages/home.glaze\"",
+        "\"pages/ho|me.glaze\"",
+    );
+    assert_eq!(def["uri"], home_uri, "{def}");
+    // In the glaze: the layout, a qualified tag, and qualified tags'
+    // completion.
+    c.open(&home_uri, home);
+    let def = c.at(
+        "textDocument/definition",
+        &home_uri,
+        &home.replace("layouts/base", "layouts/ba|se"),
+    );
+    assert_eq!(
+        def["uri"],
+        file_uri(&dir.join("layouts/base.glaze")),
+        "{def}"
+    );
+    let def = c.at(
+        "textDocument/definition",
+        &home_uri,
+        &home.replace("widgets.Badge", "widgets.Ba|dge"),
+    );
+    assert_eq!(
+        def["uri"],
+        file_uri(&dir.join("widgets/badge.glaze")),
+        "{def}"
+    );
+    let tags = labels(&c.at(
+        "textDocument/completion",
+        &home_uri,
+        &home.replace("<widgets.Badge n={post.id} />", "<widgets.|"),
+    ));
+    assert_eq!(tags, ["Badge", "Meter"]);
+    // Nothing is cached: an unsaved new component and a renamed one show
+    // at once, and a deleted one is gone.
+    let fresh = file_uri(&dir.join("widgets/fresh.ember"));
+    c.open(&fresh, "{% props n: Int %}\n<i>{n}</i>\n");
+    std::fs::rename(
+        dir.join("widgets/meter.ember"),
+        dir.join("widgets/gauge.ember"),
+    )
+    .unwrap();
+    let tags = labels(&c.at(
+        "textDocument/completion",
+        &home_uri,
+        &home.replace("<widgets.Badge n={post.id} />", "<widgets.|"),
+    ));
+    assert_eq!(tags, ["Badge", "Fresh", "Gauge"]);
+    let modules = labels(&at_main(
+        &mut c,
+        "textDocument/completion",
+        "import posts, shared",
+        "import |",
+    ));
+    assert!(!modules.contains(&"posts.search".to_string()) || dir.join("posts/search").is_dir());
+    c.finish();
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+/// Signature help inside a call: the signature from the checker, the
+/// argument being typed, and the doc comment.
+#[test]
+fn shows_signatures_while_calling() {
+    let (mut client, main, _, _) = blog("signature");
+    let body_end = MAIN.rfind('}').unwrap();
+    let with = |line: &str| format!("{}{line}\n{}", &MAIN[..body_end], &MAIN[body_end..]);
+    let help = client.at(
+        "textDocument/signatureHelp",
+        &main,
+        &with("    print(helper(|"),
+    );
+    assert_eq!(help["signatures"][0]["label"], "fn helper(p: Post) -> Int");
+    assert_eq!(
+        help["signatures"][0]["parameters"][0]["label"],
+        json!([10, 17])
+    );
+    assert_eq!(help["activeParameter"], 0);
+    assert_eq!(
+        help["signatures"][0]["documentation"]["value"],
+        "Doubles a post's id."
+    );
+    // A method's `self` is not an argument; the second one is active.
+    let help = client.at(
+        "textDocument/signatureHelp",
+        &main,
+        &with("    let t = post.title.replace(\"a\", |"),
+    );
+    let label = help["signatures"][0]["label"].as_str().unwrap();
+    assert!(label.contains("replace("), "{help}");
+    assert_eq!(help["activeParameter"], 1, "{help}");
+    // Outside a call there is none.
+    assert_eq!(
+        client.at(
+            "textDocument/signatureHelp",
+            &main,
+            &with("    let x = [1, |")
+        ),
+        Value::Null
+    );
+    client.finish();
 }

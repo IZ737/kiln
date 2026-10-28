@@ -1,0 +1,33 @@
+### GET / HTTP/1.1
+HTTP/1.1 200 OK
+content-type: text/html; charset=utf-8
+content-length: 300
+connection: close
+
+<h1>Home</h1>
+<div class="card">beside it</div>
+<kiln-island data-k-ember="__module_70616765732f636f756e746572" data-k-hydrate="load" data-k-props="{&quot;start&quot;:2}" data-k-state="{&quot;count&quot;:2}"><button>2</button></kiln-island><script type="module" src="/_kiln/ember-HASH.js"></script>
+### GET /counter HTTP/1.1
+HTTP/1.1 200 OK
+content-type: text/html; charset=utf-8
+content-length: 252
+connection: close
+
+<kiln-island data-k-ember="__module_70616765732f636f756e746572" data-k-hydrate="load" data-k-props="{&quot;start&quot;:1}" data-k-state="{&quot;count&quot;:1}"><button>1</button></kiln-island><script type="module" src="/_kiln/ember-HASH.js"></script>
+### GET /local HTTP/1.1
+HTTP/1.1 200 OK
+content-type: text/html; charset=utf-8
+content-length: 94
+connection: close
+
+<html><head><title>Local</title></head><body><div class="card">from routes</div></body></html>
+### GET /root HTTP/1.1
+HTTP/1.1 200 OK
+content-type: text/html; charset=utf-8
+content-length: 530
+connection: close
+
+<html><head><title>Root</title><script type="module" src="/_kiln/ember-HASH.js"></script></head><body><p>root</p>
+<div class="card">from the root</div>
+<kiln-island data-k-ember="__module_776964676574732f70616e656c" data-k-hydrate="load" data-k-props="{&quot;n&quot;:5}" data-k-state="{}"><section><kiln-island data-k-ember="__module_70616765732f636f756e746572" data-k-hydrate="load" data-k-props="{&quot;start&quot;:5}" data-k-state="{&quot;count&quot;:5}"><button>5</button></kiln-island></section></kiln-island></body></html>
+### GET /quit HTTP/1.1

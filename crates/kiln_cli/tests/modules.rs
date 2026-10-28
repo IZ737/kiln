@@ -346,3 +346,86 @@ fn the_examples_check() {
         String::from_utf8_lossy(&out.stderr)
     );
 }
+
+/// Issue #75: a component is named by its place in the project, and its
+/// folder need not be imported, or hold any `.kiln` code.
+#[test]
+fn components_are_used_across_folders_without_imports() {
+    let app = App::new(&[
+        (
+            "main.kiln",
+            "import web\nimport routes\nfn main() ! {\n    let app = web.app()\n    routes.register(app)\n    try app.listen(\":0\")\n}\n",
+        ),
+        (
+            "routes/routes.kiln",
+            "import web\npub fn register(app: web.App) {\n    app.get(\"/\", fn(req) { return web.render(\"pages/home.glaze\", { n: 1 }) })\n}\n",
+        ),
+        (
+            "pages/home.glaze",
+            "{% layout \"layouts/base.glaze\" %}\n{% props n: Int %}\n<ui.Badge n={n} />\n",
+        ),
+        ("layouts/base.glaze", "<main>{% slot %}</main>\n"),
+        ("ui/badge.ember", "{% props n: Int %}\n<b>{n}</b>\n"),
+        // `ui` imports `routes`, which names a component in `pages`: that
+        // is no import cycle.
+        ("ui/ui.kiln", "import routes\n"),
+    ]);
+    app.succeeds();
+    // A component that is not there says where it was looked for.
+    app.write(
+        "pages/home.glaze",
+        "{% props n: Int %}\n<ui.Missing n={n} />\n",
+    );
+    app.fails("no file named `ui/missing.glaze` in the project");
+}
+
+#[test]
+fn glazes_import_components_and_folders_by_path() {
+    let app = App::new(&[
+        (
+            "kiln.toml",
+            "[package]\nname = \"site\"\n\n[aliases]\nui = \"components/ui\"\n",
+        ),
+        (
+            "main.kiln",
+            "import web\nfn main() ! {\n    let app = web.app()\n    app.get(\"/\", fn(req) { return web.render(\"@/pages/blog/home.glaze\", { n: 1 }) })\n    try app.listen(\":0\")\n}\n",
+        ),
+        (
+            "pages/blog/home.glaze",
+            "{% import \"../../components/card.glaze\" %}\n{% import \"@ui/like_button.ember\" as Like %}\n{% import \"@/shared\" as s %}\n{% layout \"@/layouts/base.glaze\" %}\n{% css \"@/styles/site.css\" %}\n{% props n: Int %}\n<Card title={s.title(n)} />\n<Like n={n} />\n",
+        ),
+        ("layouts/base.glaze", "<main>{% slot %}</main>\n"),
+        ("styles/site.css", "main { color: red; }\n"),
+        ("components/card.glaze", "{% props title: String %}\n<h2>{title}</h2>\n"),
+        ("components/ui/like_button.ember", "{% props n: Int %}\n<b>{n}</b>\n"),
+        ("shared/shared.kiln", "pub fn title(n: Int) -> String {\n    return \"Post {n}\"\n}\n"),
+    ]);
+    app.succeeds();
+    // Each mistake points at the import's path.
+    app.write(
+        "pages/blog/home.glaze",
+        "{% import \"components/card.glaze\" %}\n<p>x</p>\n",
+    );
+    app.fails("start the path with `./` or `../`");
+    app.write(
+        "pages/blog/home.glaze",
+        "{% import \"@nope/card.glaze\" %}\n<p>x</p>\n",
+    );
+    app.fails("there is no alias `@nope/`");
+    app.write(
+        "pages/blog/home.glaze",
+        "{% import \"../../../card.glaze\" %}\n<p>x</p>\n",
+    );
+    app.fails("leaves the project");
+    app.write(
+        "pages/blog/home.glaze",
+        "{% import \"@/components/missing.glaze\" %}\n<p>x</p>\n",
+    );
+    app.fails("`@/components/missing.glaze` names `components/missing.glaze`, which is not in the project");
+    // An alias names a folder that is there.
+    app.write(
+        "kiln.toml",
+        "[package]\nname = \"site\"\n\n[aliases]\nui = \"widgets\"\n",
+    );
+    app.fails("alias `@ui/` names the folder `widgets`, which is not in the project");
+}

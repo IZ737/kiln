@@ -6,12 +6,29 @@ files and `.glaze` templates and components.
 - **Highlighting** for Kiln, and for Glaze's HTML with the Kiln code in its
   `{...}` outputs, `{% ... %}` tags and attribute values. `<style>` and
   `<script>` contents are highlighted as CSS and JavaScript.
-- **File icons** for `.kiln` and `.glaze` files, in light and dark versions.
+- **File icons** for `.kiln`, `.glaze` and `.ember` files, and for the
+  project files `kiln.toml` and `kiln.lock`, in light and dark versions.
   They show with any file icon theme that has no icon of its own for Kiln.
+- **`kiln.toml` and `kiln.lock`** are highlighted as TOML, as the languages
+  "Kiln manifest (TOML)" and "Kiln lockfile (TOML)". Only those two file
+  names are claimed: other `.toml` files keep whatever TOML extension you
+  use. VS Code gives icons per language, so a TOML extension's own features
+  (such as schema completion) do not apply to these two files; to use one
+  for them anyway, add `"files.associations": { "kiln.toml": "toml" }`.
 - **Language features from `kiln lsp`**: errors as you type with quick
-  fixes, completion, hover with types and doc comments, go to definition,
-  the outline, and Go to Symbol in Workspace. They come from the compiler,
-  so they match what `kiln check` says.
+  fixes, completion, signature help inside calls, hover with types and doc
+  comments, go to definition, find references and rename, formatting, the
+  outline, and Go to Symbol in Workspace. They come from the compiler, so
+  they match what `kiln check` says, and work on unsaved files. Everything
+  semantic lives in `kiln lsp`, so other editors get the same; the
+  extension is a thin client.
+- **Suggestions while typing**, in strings too (so `web.render("` and
+  `{% layout "` offer component paths), replacing the whole word they
+  complete. These are defaults for the Kiln, Glaze and Ember languages, and
+  can be changed per language in your settings.
+- **The server's state** beside the language in the status bar: running
+  (with kiln's version), starting, stopped (click to restart) or kiln not
+  found.
 - **Commands**: **Kiln: Check Program**, **Kiln: Run Program** (also the
   ▶ button in the editor title) and **Kiln: Build Program** run `kiln
   check`, `kiln run` and `kiln build` on the app root within the current workspace,

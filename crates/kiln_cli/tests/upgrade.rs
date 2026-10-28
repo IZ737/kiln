@@ -166,7 +166,8 @@ fn update_check_records_the_latest_release() {
     assert!(out.status.success());
     assert!(!String::from_utf8_lossy(&out.stderr).contains("is available"));
 
-    // When the server is gone, what was found before stays.
+    // When the server is gone, what was found before stays, with why the
+    // check failed rather than nothing.
     let out = kiln(
         &exe,
         "http://127.0.0.1:1/releases",
@@ -174,9 +175,16 @@ fn update_check_records_the_latest_release() {
         "update-check",
         &[],
     );
-    assert!(out.status.success());
+    assert!(!out.status.success());
     let cache = std::fs::read_to_string(home.join("update-check")).unwrap();
     assert_eq!(cache.lines().nth(1), Some("v9.0.0"));
+    assert!(
+        cache
+            .lines()
+            .nth(2)
+            .is_some_and(|line| line.contains("cannot find the latest release")),
+        "{cache}"
+    );
 }
 
 /// Under a pseudo-terminal (from `script`), a command shows the notice
@@ -286,4 +294,90 @@ fn upgrade_reports_a_missing_release() {
     let out = upgrade(&exe, &serve(false), &["--version", "v8.0.0"]);
     assert_eq!(out.status.code(), Some(1));
     assert!(String::from_utf8_lossy(&out.stderr).contains("release v8.0.0 not found"));
+}
+
+/// Runs `command` (a shell command line) in a terminal, as `script` gives
+/// one, with `home` as the Kiln home and `base` as the release server.
+fn in_terminal(command: &str, home: &PathBuf, base: &str) -> String {
+    let out = Command::new("script")
+        .args(["-qec", command, "/dev/null"])
+        .env("KILN_HOME", home)
+        .env("KILN_RELEASES_URL", base)
+        .env_remove("KILN_NO_UPDATE_CHECK")
+        .env_remove("CI")
+        .env_remove("HTTP_PROXY")
+        .env_remove("HTTPS_PROXY")
+        .env_remove("http_proxy")
+        .env_remove("https_proxy")
+        .env_remove("ALL_PROXY")
+        .env_remove("all_proxy")
+        .output()
+        .unwrap();
+    String::from_utf8_lossy(&out.stdout).into_owned()
+}
+
+fn wait_for_release(cache: &std::path::Path) {
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(20);
+    while !std::fs::read_to_string(cache)
+        .unwrap_or_default()
+        .contains("v9.0.0")
+    {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "the background check did not record the new release"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(100));
+    }
+}
+
+/// `kiln --version` is where people look for a newer kiln.
+#[test]
+fn version_says_a_newer_kiln_is_out() {
+    if Command::new("script").arg("--version").output().is_err() {
+        return;
+    }
+    let exe = kiln_copy("version");
+    let home = exe.parent().unwrap().join("home");
+    std::fs::create_dir_all(&home).unwrap();
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+    std::fs::write(home.join("update-check"), format!("{now}\nv9.0.0\n")).unwrap();
+    let shown = in_terminal(&format!("{} --version", exe.display()), &home, "");
+    let current = env!("CARGO_PKG_VERSION");
+    assert!(shown.contains(&format!("kiln {current}")), "{shown}");
+    assert!(shown.contains("note: kiln 9.0.0 is available"), "{shown}");
+}
+
+/// The issue in #68: `kiln dev` and servers under `kiln run` end with
+/// Ctrl-C, so a check that only started after the command never ran, and
+/// the notice never showed. The check starts first, and they say what it
+/// found before they start.
+#[test]
+fn a_command_stopped_with_ctrl_c_still_checks() {
+    if Command::new("script").arg("--version").output().is_err()
+        || Command::new("timeout").arg("--version").output().is_err()
+    {
+        return;
+    }
+    let exe = kiln_copy("interrupted");
+    let base = serve(false);
+    let dir = exe.parent().unwrap();
+    let home = dir.join("home");
+    std::fs::create_dir_all(&home).unwrap();
+    let app = dir.join("app");
+    std::fs::create_dir_all(&app).unwrap();
+    std::fs::write(
+        app.join("main.kiln"),
+        "import time\n\nfn main() {\n    time.sleep(20s)\n}\n",
+    )
+    .unwrap();
+    let cache = home.join("update-check");
+    let run = format!("timeout -s INT 10 {} run {}", exe.display(), app.display());
+    let shown = in_terminal(&run, &home, &base);
+    assert!(!shown.contains("is available"), "{shown}");
+    wait_for_release(&cache);
+    let shown = in_terminal(&run, &home, &base);
+    assert!(shown.contains("note: kiln 9.0.0 is available"), "{shown}");
 }

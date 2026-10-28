@@ -88,7 +88,8 @@ impl Server {
                         "codeActionProvider": {"codeActionKinds": ["quickfix"]},
                         "hoverProvider": true,
                         "definitionProvider": true,
-                        "completionProvider": {"triggerCharacters": ["."]},
+                        "completionProvider": {"triggerCharacters": [".", "\"", "/"]},
+                        "signatureHelpProvider": {"triggerCharacters": ["(", ","], "retriggerCharacters": [")"]},
                         "documentSymbolProvider": true,
                         "workspaceSymbolProvider": true,
                         "referencesProvider": true,
@@ -139,7 +140,10 @@ impl Server {
                 None
             }
             "textDocument/codeAction" => Some(self.code_actions(&uri, params)),
-            "textDocument/hover" | "textDocument/definition" | "textDocument/completion" => {
+            "textDocument/hover"
+            | "textDocument/definition"
+            | "textDocument/completion"
+            | "textDocument/signatureHelp" => {
                 let empty = match method {
                     "textDocument/completion" => json!({"isIncomplete": false, "items": []}),
                     _ => Value::Null,
@@ -151,6 +155,9 @@ impl Server {
                 Some(match method {
                     "textDocument/hover" => features::hover(&sources, index, offset),
                     "textDocument/definition" => features::definition(&sources, index, offset),
+                    "textDocument/signatureHelp" => {
+                        features::signature_help(&sources, index, offset)
+                    }
                     _ => features::completion(&sources, index, offset),
                 })
             }

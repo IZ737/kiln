@@ -620,6 +620,7 @@ const PROPERTY: u32 = 10;
 const VALUE: u32 = 12;
 const CLASS: u32 = 7;
 const STRUCT: u32 = 22;
+const FILE: u32 = 17;
 
 /// The completions at `offset`: the name being typed there is replaced by
 /// `COMPLETION_MARKER`, and the checker says what fits in its place.
@@ -1135,13 +1136,438 @@ pub(super) fn definition(sources: &[Source], index: usize, offset: usize) -> Val
             .collect();
         return Value::Array(locations);
     }
+    if let Some(location) = import_definition(sources, index, offset)
+        .or_else(|| component_path_definition(sources, index, offset))
+    {
+        return location;
+    }
     bound_request(sources, index, offset, definition_bound)
 }
+
+/// The start of a file, as a location.
+fn file_location(sources: &[Source], path: &Path) -> Value {
+    let uri = sources
+        .iter()
+        .find(|s| s.path == path)
+        .and_then(|s| s.uri.clone())
+        .unwrap_or_else(|| path_to_uri(path));
+    json!({"uri": uri, "range": range("", 0, 0)})
+}
+
+/// From a module in an `import`, its folder's main file: the one named
+/// after the folder, or else its first `.kiln` file.
+fn import_definition(sources: &[Source], index: usize, offset: usize) -> Option<Value> {
+    let source = &sources[index];
+    if crate::is_glaze(&source.path) {
+        return None;
+    }
+    let module = kiln_syntax::parse(&source.text).module;
+    let root = crate::project::common_root(sources.iter().map(|s| s.path.as_path()));
+    for item in &module.items {
+        let Item::Import(import) = item else { continue };
+        for path in &import.paths {
+            let Some(at) = path
+                .iter()
+                .position(|i| (i.span.start as usize..=i.span.end as usize).contains(&offset))
+            else {
+                continue;
+            };
+            let folder = path[..=at]
+                .iter()
+                .fold(root.clone(), |dir, part| dir.join(&part.name));
+            return Some(file_location(sources, &import_target(&folder)?));
+        }
+    }
+    None
+}
+
+/// The file an imported folder goes to: the one named after the folder,
+/// or else its first `.kiln` file.
+fn import_target(folder: &Path) -> Option<PathBuf> {
+    let mut files: Vec<PathBuf> = std::fs::read_dir(crate::project::real(folder))
+        .ok()?
+        .filter_map(Result::ok)
+        .map(|e| folder.join(e.file_name()))
+        .filter(|p| p.extension().is_some_and(|e| e == "kiln"))
+        .collect();
+    files.sort();
+    let main = folder.join(format!("{}.kiln", folder.file_name()?.to_string_lossy()));
+    if files.contains(&main) {
+        Some(main)
+    } else {
+        files.into_iter().next()
+    }
+}
+
+/// From a component path in `web.render(...)` or `{% layout %}`, the
+/// component's file.
+fn component_path_definition(sources: &[Source], index: usize, offset: usize) -> Option<Value> {
+    let source = &sources[index];
+    let slot = path_slot(&source.text, offset, crate::is_glaze(&source.path))?;
+    let rest = &source.text[slot.start..];
+    let path = &rest[..rest.find(['"', '\n']).unwrap_or(rest.len())];
+    let root = crate::project::common_root(sources.iter().map(|s| s.path.as_path()));
+    let file = if path.starts_with(['@', '.']) {
+        let owner = source
+            .path
+            .parent()?
+            .strip_prefix(&root)
+            .ok()?
+            .to_string_lossy()
+            .replace(['/', '\\'], ".");
+        let aliases = crate::project::packages(&root).aliases;
+        root.join(crate::project::paths::locate(&owner, path, &aliases).ok()?)
+    } else if path.contains('/') {
+        root.join(path)
+    } else {
+        source.path.parent()?.join(path)
+    };
+    if file.is_dir() {
+        // A folder import: its file named after it, or its first one.
+        return import_target(&file).map(|f| file_location(sources, &f));
+    }
+    (sources.iter().any(|s| s.path == file) || file.is_file())
+        .then(|| file_location(sources, &file))
+}
+/// The signature of the call the cursor is in, from what hover says about
+/// the function's name, with the argument being typed marked.
+pub(super) fn signature_help(sources: &[Source], index: usize, offset: usize) -> Value {
+    let text = &sources[index].text;
+    let Some((callee_end, active)) = open_call(text, offset.min(text.len())) else {
+        return Value::Null;
+    };
+    // Hover on the last letter of the name before `(`.
+    let hover = hover(sources, index, callee_end.saturating_sub(1));
+    let Some(contents) = hover["contents"]["value"].as_str() else {
+        return Value::Null;
+    };
+    let Some(signature) = contents
+        .strip_prefix("```kiln\n")
+        .and_then(|rest| rest.split("\n```").next())
+        .filter(|s| s.starts_with("fn ") || s.contains(" fn "))
+    else {
+        return Value::Null;
+    };
+    let doc = contents
+        .split_once("\n```\n\n")
+        .map(|(_, doc)| doc.to_string());
+    let params = signature_params(signature);
+    let mut info = json!({
+        "label": signature,
+        "parameters": params
+            .iter()
+            .map(|(start, end)| json!({"label": [utf16_len(&signature[..*start]), utf16_len(&signature[..*end])]}))
+            .collect::<Vec<_>>(),
+    });
+    if let Some(doc) = doc {
+        info["documentation"] = json!({"kind": "markdown", "value": doc});
+    }
+    let active = active.min(params.len().saturating_sub(1));
+    json!({"signatures": [info], "activeSignature": 0, "activeParameter": active})
+}
+
+fn utf16_len(text: &str) -> usize {
+    text.chars().map(char::len_utf16).sum()
+}
+
+/// The innermost call whose `(` is open at `offset`: where its callee's
+/// name ends, and which argument the cursor is in.
+fn open_call(text: &str, offset: usize) -> Option<(usize, usize)> {
+    let mut depth = 0usize;
+    let mut commas = 0;
+    let bytes = text.as_bytes();
+    let mut i = offset;
+    let mut in_string = false;
+    while i > 0 {
+        i -= 1;
+        match bytes[i] {
+            b'"' => in_string = !in_string,
+            _ if in_string => {}
+            b')' | b']' | b'}' => depth += 1,
+            b'[' | b'{' if depth == 0 => return None,
+            b'(' if depth == 0 => {
+                let name_end = text[..i].trim_end().len();
+                let ok = text[..name_end]
+                    .chars()
+                    .next_back()
+                    .is_some_and(|c| c.is_alphanumeric() || c == '_' || c == '>');
+                return ok.then_some((name_end, commas));
+            }
+            b'(' | b'[' | b'{' => depth -= 1,
+            b',' if depth == 0 => commas += 1,
+            _ => {}
+        }
+    }
+    None
+}
+
+/// The byte ranges of the parameters in `fn name(a: Int, b: String = "x") -> T`.
+fn signature_params(signature: &str) -> Vec<(usize, usize)> {
+    let Some(open) = signature.find('(') else {
+        return Vec::new();
+    };
+    let mut out = Vec::new();
+    let mut depth = 0;
+    let mut start = open + 1;
+    for (i, c) in signature[open + 1..].char_indices() {
+        let at = open + 1 + i;
+        match c {
+            '(' | '[' | '{' | '<' => depth += 1,
+            ')' | ']' | '}' | '>' if depth > 0 => depth -= 1,
+            ',' if depth == 0 => {
+                out.push((start, at));
+                start = at + 2;
+            }
+            ')' => {
+                if at > start {
+                    out.push((start, at));
+                }
+                break;
+            }
+            _ => {}
+        }
+    }
+    // `self` is not an argument the caller writes.
+    out.retain(|(s, e)| &signature[*s..*e] != "self");
+    out
+}
+
 pub(super) fn completion(sources: &[Source], index: usize, offset: usize) -> Value {
+    let text = &sources[index].text;
+    let offset = offset.min(text.len());
+    if let Some(result) = component_path_completion(sources, index, offset) {
+        return result;
+    }
+    if let Some(result) = qualified_tag_completion(sources, index, offset) {
+        return result;
+    }
+    // `"` and `/` ask for component paths; anywhere else nothing fits
+    // right after them.
+    if text[..offset].ends_with(['"', '/']) {
+        return json!({"isIncomplete": false, "items": []});
+    }
     if let Some(result) = module_completion(sources, index, offset) {
         return result;
     }
     bound_request(sources, index, offset, completion_bound)
+}
+
+/// After `<posts.` in a glaze or ember: the components in `posts/` and
+/// the folders inside it, named as a qualified tag names them.
+fn qualified_tag_completion(sources: &[Source], index: usize, offset: usize) -> Option<Value> {
+    let source = &sources[index];
+    if !crate::is_glaze(&source.path) {
+        return None;
+    }
+    let before = &source.text[..offset];
+    let start = before.rfind(|c: char| !(c.is_alphanumeric() || "_.[]".contains(c)))?;
+    if !before[..=start].ends_with('<') {
+        return None;
+    }
+    let (folder, _) = before[start + 1..].rsplit_once('.')?;
+    if folder.is_empty() || folder.split('.').any(str::is_empty) {
+        return None;
+    }
+    let root = crate::project::common_root(sources.iter().map(|s| s.path.as_path()));
+    let dir = folder.split('.').fold(root, |dir, part| dir.join(part));
+    let mut items = std::collections::BTreeMap::new();
+    let mut files: Vec<PathBuf> = sources
+        .iter()
+        .map(|s| s.path.clone())
+        .filter(|p| p.parent() == Some(dir.as_path()))
+        .collect();
+    for entry in std::fs::read_dir(crate::project::real(&dir))
+        .into_iter()
+        .flatten()
+        .flatten()
+    {
+        let path = dir.join(entry.file_name());
+        let name = entry.file_name().to_string_lossy().into_owned();
+        if entry.path().is_dir() && !name.starts_with(['.', '_']) {
+            let mut inner = Vec::new();
+            let _ = crate::collect_sources(&path, &mut inner);
+            if !inner.is_empty() {
+                items.insert(name.clone(), json!({"label": name, "kind": MODULE}));
+            }
+        } else {
+            files.push(path);
+        }
+    }
+    for file in files.iter().filter(|f| crate::is_glaze(f)) {
+        let stem = file.file_stem()?.to_string_lossy().into_owned();
+        let tag: String = stem
+            .split('_')
+            .map(|w| {
+                let mut c = w.chars();
+                c.next()
+                    .map(|f| f.to_ascii_uppercase().to_string() + c.as_str())
+                    .unwrap_or_default()
+            })
+            .collect();
+        let kind = if file.extension().is_some_and(|e| e == "ember") {
+            "Ember"
+        } else {
+            "Glaze"
+        };
+        let detail = file
+            .strip_prefix(crate::project::common_root(
+                sources.iter().map(|s| s.path.as_path()),
+            ))
+            .unwrap_or(file)
+            .to_string_lossy()
+            .replace('\\', "/");
+        items.insert(
+            tag.clone(),
+            json!({"label": tag, "kind": CLASS, "detail": format!("{kind} {detail}")}),
+        );
+    }
+    Some(json!({"isIncomplete": false, "items": items.into_values().collect::<Vec<_>>()}))
+}
+
+/// Where a component path is being typed: in the first string of
+/// `web.render(...)` or of a glaze's `{% layout ... %}` or `{% import ... %}`.
+#[derive(Debug, PartialEq)]
+struct PathSlot {
+    /// The string's contents, as byte offsets.
+    start: usize,
+    end: usize,
+    /// Whether embers fit: a layout is a glaze.
+    embers: bool,
+    /// An import, whose paths start with `./`, `../` or `@/`, and which
+    /// also names folders.
+    import: bool,
+}
+
+fn path_slot(text: &str, offset: usize, glaze: bool) -> Option<PathSlot> {
+    let line_start = text[..offset].rfind('\n').map_or(0, |i| i + 1);
+    let line = &text[line_start..offset];
+    // Inside a string: an odd number of quotes before the cursor.
+    if line.matches('"').count().is_multiple_of(2) {
+        return None;
+    }
+    let quote = line_start + line.rfind('"')?;
+    let before = text[..quote].trim_end();
+    let (embers, import) = if before.ends_with("render(") || before.ends_with("render (") {
+        (true, false)
+    } else if glaze && before.ends_with("{% layout") {
+        (false, false)
+    } else if glaze && before.ends_with("{% import") {
+        (true, true)
+    } else {
+        return None;
+    };
+    let rest = &text[offset..];
+    let line_end = rest.find('\n').unwrap_or(rest.len());
+    let end = offset + rest[..line_end].find('"').unwrap_or(0);
+    Some(PathSlot {
+        start: quote + 1,
+        end,
+        embers,
+        import,
+    })
+}
+
+/// Glazes and embers to complete in a `web.render` or layout path, named
+/// as the compiler finds them: by file name in the file's own folder, and
+/// from the project root elsewhere.
+fn component_path_completion(sources: &[Source], index: usize, offset: usize) -> Option<Value> {
+    let source = &sources[index];
+    let slot = path_slot(&source.text, offset, crate::is_glaze(&source.path))?;
+    let root = crate::project::common_root(sources.iter().map(|s| s.path.as_path()));
+    let own = source
+        .path
+        .parent()
+        .map(Path::to_path_buf)
+        .unwrap_or_default();
+    let mut files: Vec<PathBuf> = sources.iter().map(|s| s.path.clone()).collect();
+    let _ = crate::collect_sources(&root, &mut files);
+    let typed = &source.text[slot.start..offset];
+    let mut targets = std::collections::BTreeSet::new();
+    for file in &files {
+        let ember = file.extension().is_some_and(|e| e == "ember");
+        let kiln = slot.import && file.extension().is_some_and(|e| e == "kiln");
+        if !(crate::is_glaze(file) || kiln) || (ember && !slot.embers) || *file == source.path {
+            continue;
+        }
+        let Ok(relative) = file.strip_prefix(&root) else {
+            continue;
+        };
+        let parts: Vec<String> = relative
+            .iter()
+            .map(|p| p.to_string_lossy().into_owned())
+            .collect();
+        // Wares and kiln's own folders are not the project's.
+        if parts
+            .iter()
+            .any(|p| p.starts_with("__") || p.starts_with('.'))
+        {
+            continue;
+        }
+        if slot.import {
+            // Components, and folders with Kiln code.
+            let target = if file.extension().is_some_and(|e| e == "kiln") {
+                match file.parent().and_then(|d| d.strip_prefix(&root).ok()) {
+                    Some(d)
+                        if !d.as_os_str().is_empty() && file.parent() != Some(own.as_path()) =>
+                    {
+                        d.to_path_buf()
+                    }
+                    _ => continue,
+                }
+            } else {
+                relative.to_path_buf()
+            };
+            let name = if typed.starts_with('@') {
+                format!("@/{}", target.to_string_lossy().replace('\\', "/"))
+            } else {
+                relative_path(own.strip_prefix(&root).unwrap_or(Path::new("")), &target)
+            };
+            targets.insert((file.parent() != Some(own.as_path()), name));
+            continue;
+        }
+        let name = if file.parent() == Some(own.as_path()) {
+            parts.last()?.clone()
+        } else if parts.len() > 1 {
+            parts.join("/")
+        } else {
+            // A root file is named from the root only from the root.
+            continue;
+        };
+        targets.insert((file.parent() != Some(own.as_path()), name));
+    }
+    let range = range(&source.text, slot.start, slot.end);
+    let items: Vec<Value> = targets
+        .into_iter()
+        .map(|(elsewhere, name)| {
+            json!({
+                "label": name,
+                "kind": FILE,
+                "detail": if name.ends_with(".ember") { "Ember" } else if name.ends_with(".glaze") { "Glaze" } else { "Module" },
+                "sortText": format!("{}{name}", u8::from(elsewhere)),
+                "filterText": name,
+                "textEdit": {"range": range, "newText": name},
+            })
+        })
+        .collect();
+    Some(json!({"isIncomplete": false, "items": items}))
+}
+
+/// `target` as a path from the folder `from`, both project-relative:
+/// `./card.glaze` or `../components/card.glaze`.
+fn relative_path(from: &Path, target: &Path) -> String {
+    let from: Vec<_> = from.iter().collect();
+    let to: Vec<_> = target.iter().collect();
+    let common = from.iter().zip(&to).take_while(|(a, b)| a == b).count();
+    let mut parts: Vec<String> = vec!["..".to_string(); from.len() - common];
+    if parts.is_empty() {
+        parts.push(".".to_string());
+    }
+    parts.extend(
+        to[common..]
+            .iter()
+            .map(|p| p.to_string_lossy().into_owned()),
+    );
+    parts.join("/")
 }
 fn bound_request(
     sources: &[Source],
@@ -1251,18 +1677,35 @@ fn module_completion(sources: &[Source], index: usize, offset: usize) -> Option<
     let before = &text[..offset];
     let line = before.rsplit('\n').next().unwrap_or("").trim_start();
     let root = crate::project::common_root(sources.iter().map(|s| s.path.as_path()));
-    if line.starts_with("import ") {
-        let mut paths = Vec::new();
+    if let Some(paths_typed) = line.strip_prefix("import ") {
+        let mut paths: Vec<PathBuf> = sources.iter().map(|s| s.path.clone()).collect();
         let _ = crate::collect_sources(&root, &mut paths);
-        let modules: std::collections::BTreeSet<_> = paths
+        let own = sources[index].path.parent();
+        let modules: std::collections::BTreeSet<String> = paths
             .iter()
-            .filter_map(|p| p.parent()?.strip_prefix(&root).ok())
+            .filter_map(|p| p.parent())
+            .filter(|dir| Some(*dir) != own)
+            .filter_map(|dir| dir.strip_prefix(&root).ok())
             .filter(|p| !p.as_os_str().is_empty())
             .map(|p| p.to_string_lossy().replace(['/', '\\'], "."))
+            .filter(|m| !m.split('.').any(|part| part.starts_with("__")))
             .collect();
-        return Some(
-            json!({"isIncomplete":false,"items":modules.into_iter().map(|m|json!({"label":m,"kind":MODULE})).collect::<Vec<_>>()}),
-        );
+        // The path being typed: after `import ` or the last `,`.
+        let typed = paths_typed.rsplit(',').next().unwrap_or("").trim_start();
+        let items: Vec<Value> = match typed.rsplit_once('.') {
+            // After `posts.`, the folders inside `posts/`.
+            Some((parent, _)) => modules
+                .iter()
+                .filter_map(|m| m.strip_prefix(parent)?.strip_prefix('.'))
+                .filter(|child| !child.contains('.'))
+                .map(|child| json!({"label": child, "kind": MODULE}))
+                .collect(),
+            None => modules
+                .iter()
+                .map(|m| json!({"label": m, "kind": MODULE}))
+                .collect(),
+        };
+        return Some(json!({"isIncomplete": false, "items": items}));
     }
     let word = before
         .rsplit(|c: char| !c.is_alphanumeric() && c != '_' && c != '.')
@@ -1304,6 +1747,54 @@ fn module_completion(sources: &[Source], index: usize, offset: usize) -> Option<
         }
     }
     Some(json!({"isIncomplete":false,"items":items}))
+}
+
+#[cfg(test)]
+mod slot_tests {
+    use super::*;
+
+    #[test]
+    fn finds_the_open_call_and_its_parameters() {
+        let text = "print(helper(post, 1), x";
+        assert_eq!(open_call(text, text.len()), Some((5, 1)));
+        assert_eq!(open_call("helper(post, ", 13), Some((6, 1)));
+        assert_eq!(open_call("f(\"a, b\", ", 10), Some((1, 1)));
+        assert_eq!(open_call("let x = [1, ", 12), None);
+        assert_eq!(open_call("x + 1", 5), None);
+        let sig = "fn Post.rename(self, to: String, why: Map<String, Int> = {}) -> Post";
+        let params: Vec<&str> = signature_params(sig)
+            .iter()
+            .map(|(s, e)| &sig[*s..*e])
+            .collect();
+        assert_eq!(params, ["to: String", "why: Map<String, Int> = {}"]);
+    }
+
+    #[test]
+    fn component_paths_are_completed_in_render_and_layout_strings() {
+        let text = "return web.render(\"pa\", { posts })";
+        let at = text.find("pa").unwrap() + 2;
+        assert_eq!(
+            path_slot(text, at, false),
+            Some(PathSlot {
+                start: at - 2,
+                end: at,
+                embers: true,
+                import: false
+            })
+        );
+        let text = "{% layout \"bas\" %}";
+        let slot = path_slot(text, text.find("bas").unwrap() + 1, true).unwrap();
+        assert!(!slot.embers);
+        assert_eq!(&text[slot.start..slot.end], "bas");
+        // Not the second argument, other calls or code.
+        assert!(path_slot("web.render(\"a.glaze\", \"x", 24, false).is_none());
+        assert!(path_slot("print(\"pa", 8, false).is_none());
+        assert!(path_slot("web.render(pa", 13, false).is_none());
+        assert!(path_slot("{% layout \"x", 12, false).is_none());
+        let text = "{% import \"../ca\" %}";
+        let slot = path_slot(text, text.find("ca").unwrap() + 2, true).unwrap();
+        assert!(slot.import && slot.embers);
+    }
 }
 
 #[cfg(test)]

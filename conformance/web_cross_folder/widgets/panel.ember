@@ -1,0 +1,2 @@
+{% props n: Int %}
+<section><pages.Counter start={n} /></section>

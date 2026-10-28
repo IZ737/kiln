@@ -1,0 +1,2 @@
+{% props label: String %}
+<div class="card">{label}</div>

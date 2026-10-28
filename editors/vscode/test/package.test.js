@@ -30,12 +30,28 @@ test("the icons are copies of the brand assets", () => {
     "icons/kiln-source-dark.svg": "icons/svg/kiln-source-dark.svg",
     "icons/glaze-component.svg": "icons/svg/glaze-component.svg",
     "icons/glaze-component-dark.svg": "icons/svg/glaze-component-dark.svg",
+    "icons/kiln-manifest.svg": "icons/svg/kiln-manifest.svg",
+    "icons/kiln-manifest-dark.svg": "icons/svg/kiln-manifest-dark.svg",
+    "icons/kiln-lock.svg": "icons/svg/kiln-lock.svg",
+    "icons/kiln-lock-dark.svg": "icons/svg/kiln-lock-dark.svg",
   };
   for (const [copy, original] of Object.entries(copies)) {
     assert.ok(
       fs.readFileSync(path.join(root, copy)).equals(fs.readFileSync(path.join(brand, original))),
       `${copy} differs from assets/brand/${original}; copy it again`,
     );
+  }
+});
+
+test("kiln.toml and kiln.lock are claimed by name, not every TOML file", () => {
+  const byId = Object.fromEntries(manifest.contributes.languages.map((l) => [l.id, l]));
+  assert.deepStrictEqual(byId["kiln-manifest"].filenames, ["kiln.toml"]);
+  assert.deepStrictEqual(byId["kiln-lock"].filenames, ["kiln.lock"]);
+  for (const lang of manifest.contributes.languages) {
+    assert.ok(lang.id !== "toml", "the extension must not redefine the toml language");
+    for (const ext of lang.extensions ?? []) {
+      assert.ok(![".toml", ".lock"].includes(ext), `${lang.id} claims every ${ext} file`);
+    }
   }
 });
 
@@ -123,7 +139,7 @@ test("the package holds only what VS Code loads", () => {
   for (const file of files) {
     assert.ok(!/^(node_modules|src|test|\.vscode)\//.test(file), `${file} is packaged`);
   }
-  assert.ok(files.length < 20, `${files.length} files are packaged`);
+  assert.ok(files.length < 26, `${files.length} files are packaged`);
 });
 
 test("the word pattern finds names as VS Code compiles it", () => {

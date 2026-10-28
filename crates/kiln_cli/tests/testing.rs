@@ -153,35 +153,99 @@ fn the_guestbook_tests_pass() {
     examples_tests_pass("examples/guestbook");
 }
 
-/// `kiln new`'s two templates, with routes in `main.kiln` and with pages
-/// in `pages/`, make apps whose own tests pass.
+/// Every `kiln new` template, with and without an Ember, makes a project
+/// that checks and passes its own tests; pages export statically, and the
+/// command-line program runs. `kiln new .` fills the current folder.
 #[test]
 fn new_projects_pass_their_tests() {
-    for pages in [false, true] {
+    for (template, ember) in [
+        ("web", false),
+        ("web", true),
+        ("pages", false),
+        ("pages", true),
+        ("cli", false),
+    ] {
         let scratch = Scratch::new(&[]);
         let dir = scratch.0.join("notes_app");
         let mut new = Command::new(env!("CARGO_BIN_EXE_kiln"));
-        new.arg("new").arg(&dir).env("KILN_NO_UPDATE_CHECK", "1");
-        if pages {
-            new.arg("--pages");
+        new.args(["new", "--template", template, "--yes"])
+            .arg(&dir)
+            .env("KILN_NO_UPDATE_CHECK", "1");
+        if ember {
+            new.arg("--ember");
         }
         let out = new.output().unwrap();
         assert!(out.status.success(), "{}", text(&out));
-        assert_eq!(dir.join("pages/index.glaze").exists(), pages);
-        let out = kiln_test(&dir, &["--unit", "--integration"]);
-        assert!(out.status.success(), "{}", text(&out));
+        assert!(
+            text(&out).contains(&format!("cd {}", dir.display())),
+            "{}",
+            text(&out)
+        );
+        assert_eq!(dir.join("pages/index.glaze").exists(), template == "pages");
+        assert_eq!(dir.join("components/counter.ember").exists(), ember);
+        let check = Command::new(env!("CARGO_BIN_EXE_kiln"))
+            .arg("check")
+            .arg(&dir)
+            .env("KILN_NO_UPDATE_CHECK", "1")
+            .output()
+            .unwrap();
+        assert!(check.status.success(), "{template}: {}", text(&check));
+        let suites: &[&str] = if template == "cli" {
+            &["--unit"]
+        } else {
+            &["--unit", "--integration"]
+        };
+        let out = kiln_test(&dir, suites);
+        assert!(out.status.success(), "{template}: {}", text(&out));
         assert!(text(&out).contains("0 failed"), "{}", text(&out));
-        if pages {
-            let out = Command::new(env!("CARGO_BIN_EXE_kiln"))
-                .args(["fire", "--static"])
-                .arg(&dir)
-                .env("KILN_NO_UPDATE_CHECK", "1")
-                .output()
-                .unwrap();
-            assert!(out.status.success(), "{}", text(&out));
-            assert!(dir.join("dist/about/index.html").exists());
+        match template {
+            "pages" => {
+                let out = Command::new(env!("CARGO_BIN_EXE_kiln"))
+                    .args(["fire", "--static"])
+                    .arg(&dir)
+                    .env("KILN_NO_UPDATE_CHECK", "1")
+                    .output()
+                    .unwrap();
+                assert!(out.status.success(), "{}", text(&out));
+                assert!(dir.join("dist/about/index.html").exists());
+            }
+            "cli" => {
+                let out = Command::new(env!("CARGO_BIN_EXE_kiln"))
+                    .arg("run")
+                    .arg(&dir)
+                    .arg("Ada")
+                    .env("KILN_NO_UPDATE_CHECK", "1")
+                    .output()
+                    .unwrap();
+                assert_eq!(String::from_utf8_lossy(&out.stdout), "Hello, Ada!\n");
+            }
+            _ => {}
         }
     }
+
+    // `kiln new .` in an empty folder: no nested folder, named after it.
+    let scratch = Scratch::new(&[]);
+    let here = scratch.0.join("My Site");
+    std::fs::create_dir_all(&here).unwrap();
+    let out = Command::new(env!("CARGO_BIN_EXE_kiln"))
+        .args(["new", ".", "--kind", "cli"])
+        .current_dir(&here)
+        .env("KILN_NO_UPDATE_CHECK", "1")
+        .output()
+        .unwrap();
+    assert!(out.status.success(), "{}", text(&out));
+    assert!(!text(&out).contains("cd "), "{}", text(&out));
+    let manifest = std::fs::read_to_string(here.join("kiln.toml")).unwrap();
+    assert!(manifest.contains("name = \"my-site\""), "{manifest}");
+    // Again, now that it is not empty: refused, and nothing changes.
+    let out = Command::new(env!("CARGO_BIN_EXE_kiln"))
+        .args(["new", ".", "--kind", "cli", "--yes"])
+        .current_dir(&here)
+        .env("KILN_NO_UPDATE_CHECK", "1")
+        .output()
+        .unwrap();
+    assert_eq!(out.status.code(), Some(1));
+    assert!(text(&out).contains("never overwrites"), "{}", text(&out));
 }
 
 fn examples_tests_pass(dir: &str) {

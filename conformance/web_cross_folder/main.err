@@ -1,0 +1,5 @@
+info listening on http://127.0.0.1:PORT
+info GET / 200 TIME
+info GET /counter 200 TIME
+info GET /local 200 TIME
+info GET /root 200 TIME
