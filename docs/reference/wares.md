@@ -193,7 +193,7 @@ capabilities again.
 | `kiln yank publisher/name@1.2.3 [--undo]` | Stop new locks from choosing a release |
 | `kiln ware verify NAME` | Check a locked Ware against `kiln.lock` |
 | `kiln ui add NAME...` / `kiln ui list` | Copy kiln/ui components into the project, to own |
-| `kiln new DIR` | A new app: manifest, a page, a module and tests |
+| `kiln new DIR` / `kiln new .` | A new project, in a new folder or the current one (see [Starting a project](projects.md#starting-a-project)) |
 
 ## Publishing
 

@@ -212,7 +212,8 @@ cargo run -p kiln_cli -- explain E0106
 For a whole site, start with [Your first Kiln site](docs/guides/first-site.md):
 
 ```sh
-kiln new mysite        # an app with a page, a module and tests
+kiln new mysite        # asks: web app, pages as files, or command-line program
+kiln new .             # the same, in the current folder
 kiln dev mysite        # serve it, rebuilding and reloading as you save
 kiln test mysite       # unit, integration and browser tests
 kiln fmt mysite        # one layout

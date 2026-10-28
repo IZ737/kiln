@@ -147,7 +147,7 @@ Run `cargo fmt --all`, `cargo clippy --all-targets -- -D warnings` and
   Ware commands). `ware/` is Wares: `manifest.rs` (`kiln.toml`),
   `resolve.rs`, `lock.rs` (`kiln.lock`), `cache.rs`, `registry.rs`
   (protocol v1), `git.rs`, `policy.rs` (capabilities) and `ui.rs`
-  (`kiln ui add`, `kiln new`). `testing/` is `kiln test`: `mod.rs` finds,
+  (`kiln ui add`); `new.rs` is `kiln new` and its templates. `testing/` is `kiln test`: `mod.rs` finds,
   builds and runs tests, `http.rs` their requests and `browser.rs` drives
   Chromium over CDP; the `test` module tests import is in `wares/test/`.
   `fire.rs` is `kiln fire`, and with `--static` runs the program with

@@ -7,6 +7,7 @@ mod fire;
 mod fmt;
 mod lsp;
 mod mcp;
+mod new;
 mod notice;
 mod npm;
 mod project;
@@ -340,13 +341,29 @@ enum Command {
         #[command(subcommand)]
         action: UiCommand,
     },
-    /// Make a new web app in a new folder: a manifest, a page, a module and
-    /// tests. Nothing is fetched or run.
+    /// Make a new project in a new folder, or in the current one with
+    /// `kiln new .`: a web app, a web app whose pages are files, or a
+    /// command-line program, each with tests. In a terminal it asks which;
+    /// nothing is fetched or run, and no file is ever overwritten.
     New {
+        /// The folder to make the project in; `.` is the current folder.
         dir: PathBuf,
-        /// Make its pages files in `pages/`, served by `app.file_routes`.
-        #[arg(long)]
+        /// What to make. Asked in a terminal; `web` otherwise.
+        #[arg(long, alias = "kind", value_enum)]
+        template: Option<new::Template>,
+        /// The same as `--template pages`.
+        #[arg(long, conflicts_with = "template")]
         pages: bool,
+        /// The project's name in kiln.toml. Defaults to the folder's name.
+        #[arg(long)]
+        name: Option<String>,
+        /// Add an interactive Ember to a web app's home page.
+        #[arg(long)]
+        ember: bool,
+        /// Ask nothing: use the defaults, and add the files to a folder
+        /// that already has others (never overwriting one).
+        #[arg(long, short)]
+        yes: bool,
     },
     /// Check a locked Ware's source against kiln.lock and its capabilities.
     Ware {
@@ -749,7 +766,24 @@ fn dispatch(command: Command) -> ExitCode {
         Command::Ui {
             action: UiCommand::List,
         } => report(Ok(ware::ui::names().join("\n"))),
-        Command::New { dir, pages } => report(ware::ui::new_project(&dir, pages)),
+        Command::New {
+            dir,
+            template,
+            pages,
+            name,
+            ember,
+            yes,
+        } => report(new::run(new::Options {
+            dir,
+            template: if pages {
+                Some(new::Template::Pages)
+            } else {
+                template
+            },
+            name,
+            ember,
+            yes,
+        })),
         Command::Ware {
             action: WareCommand::Verify { ware: w, dir },
         } => report(ware::commands::verify_ware(&w, &dir)),

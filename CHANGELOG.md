@@ -24,6 +24,15 @@
   `web.render(...)` and of a glaze's `{% layout %}` (#67): files in the
   same folder by name, the rest of the project from its root, embers only
   where they can be rendered. `"` and `/` ask for completions.
+- `kiln new` makes three kinds of project (#80): `web` (routes in
+  `main.kiln`, now with a layout and `site.css`), `pages` (pages as files)
+  and `cli` (a command-line program with no web code), optionally with an
+  Ember (`--ember`). It asks in a terminal, and `--template` (or
+  `--kind`), `--name` and `--yes` answer for scripts and agents.
+  `kiln new .` makes the project in the current folder. It checks every
+  file before writing any and never overwrites one: a conflict writes
+  nothing and names the files, a folder with other files needs a yes, and
+  an existing `.gitignore` is kept. `--pages` still works.
 - A page with embers but no `</head>` loads their script before
   `</body>` rather than after the end of the page.
 - `kiln upgrade` no longer offers to "upgrade" a kiln built from source

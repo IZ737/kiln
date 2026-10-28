@@ -35,6 +35,31 @@ reserved: rename a local `web/` rather than shadowing `import web`. Paths are
 case-sensitive on every platform. Case-folded filename collisions and source
 or module symlinks are rejected. Internal module symbol prefixes are reserved.
 
+## Starting a project
+
+`kiln new my-app` makes the folder `my-app` with a project in it, and `kiln
+new .` makes one in the current folder, named after it (`My Site` gives
+`my-site`; `--name` sets another). In a terminal it asks what to make:
+
+| Template | What it writes |
+| --- | --- |
+| `web` | `main.kiln` with the routes, a layout, a page, `site.css`, a `notes/` module, unit and integration tests |
+| `pages` | the same app with its pages as files in `pages/`, served by `app.file_routes` and exported by `kiln fire --static` |
+| `cli` | a command-line program: `main.kiln`, a `greet/` module and a unit test, with no web code |
+
+A web app can also get an Ember, `components/counter.ember`, on its home
+page. Scripts and agents choose with flags: `--template web|pages|cli` (or
+`--kind`), `--ember`, and `--yes` to ask nothing and take the defaults
+(`web`, no Ember). Every file is written into the folder with a
+`kiln.toml`, and `.gitignore` too unless one is there. Nothing is fetched
+or run, and the output says how to run, test and build the project.
+
+`kiln new` never overwrites a file. Before writing anything it checks
+every file it would write, and if one is already there it names them all
+and writes nothing. A folder that already has other files (a fresh Git
+repository, say) gets the project beside them only after a yes: in a
+terminal it asks, and otherwise it needs `--yes`.
+
 ## Roots and entrypoints
 
 `kiln run folder` and `kiln build folder` select that folder as the root. They

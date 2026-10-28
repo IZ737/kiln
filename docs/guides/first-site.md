@@ -18,7 +18,8 @@ kiln run guestbook        # http://127.0.0.1:8080
 kiln test guestbook       # its unit and integration tests
 ```
 
-`kiln new` writes a manifest (`kiln.toml`), `main.kiln` with the routes,
+`kiln new` asks what to make; choose the web app. It writes a manifest
+(`kiln.toml`), `main.kiln` with the routes, a layout with its stylesheet,
 a page (`home.glaze`), a folder module (`notes/`) and a test of each kind.
 Nothing is downloaded. While you work, `kiln dev guestbook` rebuilds and
 reloads the page on every save, and keeps the last good build running
