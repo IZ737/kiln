@@ -20,6 +20,10 @@
   TOML highlighting (#78). Only those two file names are claimed, so other
   `.toml` files are left to any TOML extension. The brand assets gain the
   `kiln-manifest` and `kiln-lock` icons.
+- The language server completes component paths in the first string of
+  `web.render(...)` and of a glaze's `{% layout %}` (#67): files in the
+  same folder by name, the rest of the project from its root, embers only
+  where they can be rendered. `"` and `/` ask for completions.
 - A page with embers but no `</head>` loads their script before
   `</body>` rather than after the end of the page.
 - `kiln upgrade` no longer offers to "upgrade" a kiln built from source

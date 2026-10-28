@@ -88,7 +88,7 @@ impl Server {
                         "codeActionProvider": {"codeActionKinds": ["quickfix"]},
                         "hoverProvider": true,
                         "definitionProvider": true,
-                        "completionProvider": {"triggerCharacters": ["."]},
+                        "completionProvider": {"triggerCharacters": [".", "\"", "/"]},
                         "documentSymbolProvider": true,
                         "workspaceSymbolProvider": true,
                         "referencesProvider": true,

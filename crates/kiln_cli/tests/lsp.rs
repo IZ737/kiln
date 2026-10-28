@@ -866,3 +866,80 @@ fn understands_filesystem_routes() {
     c.finish();
     let _ = std::fs::remove_dir_all(dir);
 }
+
+/// Issue #67: the first string of `web.render(...)` and of a glaze's
+/// `{% layout %}` completes component paths as the compiler finds them.
+#[test]
+fn completes_render_and_layout_paths() {
+    let dir = program_dir("render-paths");
+    for folder in ["routes", "pages", "layouts", "pages/_components"] {
+        std::fs::create_dir_all(dir.join(folder)).unwrap();
+    }
+    let main = "import web\nimport routes\nfn main() {}\n";
+    let routes =
+        "import web\npub fn home(req: web.Request) -> web.Response {\n    return web.render(\"\", {})\n}\n";
+    std::fs::write(dir.join("main.kiln"), main).unwrap();
+    std::fs::write(dir.join("index.glaze"), "<p>root</p>\n").unwrap();
+    std::fs::write(dir.join("routes/routes.kiln"), routes).unwrap();
+    std::fs::write(dir.join("routes/local.glaze"), "<p>local</p>\n").unwrap();
+    std::fs::write(dir.join("pages/home.glaze"), "<p>home</p>\n").unwrap();
+    std::fs::write(dir.join("pages/counter.ember"), "<b>1</b>\n").unwrap();
+    std::fs::write(dir.join("pages/_components/card.glaze"), "<i>c</i>\n").unwrap();
+    std::fs::write(dir.join("layouts/base.glaze"), "<main>{% slot %}</main>\n").unwrap();
+    let uri = file_uri(&dir.join("routes/routes.kiln"));
+    let mut c = Client::start();
+    c.request("initialize", json!({"rootUri": file_uri(&dir)}));
+    c.open(&uri, routes);
+    let in_render = |path: &str| {
+        format!("import web\npub fn home(req: web.Request) -> web.Response {{\n    return web.render(\"{path}\", {{ n: 1 }})\n}}\n")
+    };
+    let all = c.at("textDocument/completion", &uri, &in_render("|"));
+    // Its own folder by file name, the others from the root; not the
+    // root's files, which only the root names that way.
+    assert_eq!(
+        labels(&all),
+        [
+            "layouts/base.glaze",
+            "local.glaze",
+            "pages/_components/card.glaze",
+            "pages/counter.ember",
+            "pages/home.glaze"
+        ]
+    );
+    // The edit replaces the whole string's contents and keeps the quotes.
+    let partial = c.at("textDocument/completion", &uri, &in_render("pa|ges/ho"));
+    let home = partial["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|i| i["label"] == "pages/home.glaze")
+        .unwrap();
+    assert_eq!(home["textEdit"]["newText"], "pages/home.glaze");
+    assert_eq!(
+        home["textEdit"]["range"],
+        json!({"start": {"line": 2, "character": 23}, "end": {"line": 2, "character": 31}})
+    );
+    // Other strings and arguments are left alone.
+    let other = in_render("x").replace("{ n: 1 }", "\"|\"");
+    assert!(labels(&c.at("textDocument/completion", &uri, &other)).is_empty());
+    // A layout is a glaze, from a glaze.
+    let page = dir.join("pages/home.glaze");
+    let page_uri = file_uri(&page);
+    c.open(&page_uri, "<p>home</p>\n");
+    let layouts = labels(&c.at(
+        "textDocument/completion",
+        &page_uri,
+        "{% layout \"|\" %}\n<p>home</p>\n",
+    ));
+    assert!(
+        layouts.contains(&"layouts/base.glaze".to_string()),
+        "{layouts:?}"
+    );
+    assert!(!layouts.contains(&"index.glaze".to_string()));
+    assert!(
+        !layouts.iter().any(|l| l.ends_with(".ember")),
+        "{layouts:?}"
+    );
+    c.finish();
+    let _ = std::fs::remove_dir_all(dir);
+}

@@ -620,6 +620,7 @@ const PROPERTY: u32 = 10;
 const VALUE: u32 = 12;
 const CLASS: u32 = 7;
 const STRUCT: u32 = 22;
+const FILE: u32 = 17;
 
 /// The completions at `offset`: the name being typed there is replaced by
 /// `COMPLETION_MARKER`, and the checker says what fits in its place.
@@ -1138,10 +1139,118 @@ pub(super) fn definition(sources: &[Source], index: usize, offset: usize) -> Val
     bound_request(sources, index, offset, definition_bound)
 }
 pub(super) fn completion(sources: &[Source], index: usize, offset: usize) -> Value {
+    let text = &sources[index].text;
+    let offset = offset.min(text.len());
+    if let Some(result) = component_path_completion(sources, index, offset) {
+        return result;
+    }
+    // `"` and `/` ask for component paths; anywhere else nothing fits
+    // right after them.
+    if text[..offset].ends_with(['"', '/']) {
+        return json!({"isIncomplete": false, "items": []});
+    }
     if let Some(result) = module_completion(sources, index, offset) {
         return result;
     }
     bound_request(sources, index, offset, completion_bound)
+}
+
+/// Where a component path is being typed: in the first string of
+/// `web.render(...)` or of a glaze's `{% layout ... %}`.
+#[derive(Debug, PartialEq)]
+struct PathSlot {
+    /// The string's contents, as byte offsets.
+    start: usize,
+    end: usize,
+    /// Whether embers fit: a layout is a glaze.
+    embers: bool,
+}
+
+fn path_slot(text: &str, offset: usize, glaze: bool) -> Option<PathSlot> {
+    let line_start = text[..offset].rfind('\n').map_or(0, |i| i + 1);
+    let line = &text[line_start..offset];
+    // Inside a string: an odd number of quotes before the cursor.
+    if line.matches('"').count() % 2 == 0 {
+        return None;
+    }
+    let quote = line_start + line.rfind('"')?;
+    let before = text[..quote].trim_end();
+    let embers = if before.ends_with("render(") || before.ends_with("render (") {
+        true
+    } else if glaze && before.ends_with("{% layout") {
+        false
+    } else {
+        return None;
+    };
+    let rest = &text[offset..];
+    let line_end = rest.find('\n').unwrap_or(rest.len());
+    let end = offset + rest[..line_end].find('"').unwrap_or(0);
+    Some(PathSlot {
+        start: quote + 1,
+        end,
+        embers,
+    })
+}
+
+/// Glazes and embers to complete in a `web.render` or layout path, named
+/// as the compiler finds them: by file name in the file's own folder, and
+/// from the project root elsewhere.
+fn component_path_completion(sources: &[Source], index: usize, offset: usize) -> Option<Value> {
+    let source = &sources[index];
+    let slot = path_slot(&source.text, offset, crate::is_glaze(&source.path))?;
+    let root = crate::project::common_root(sources.iter().map(|s| s.path.as_path()));
+    let own = source
+        .path
+        .parent()
+        .map(Path::to_path_buf)
+        .unwrap_or_default();
+    let mut files: Vec<PathBuf> = sources.iter().map(|s| s.path.clone()).collect();
+    let _ = crate::collect_sources(&root, &mut files);
+    let mut targets = std::collections::BTreeSet::new();
+    for file in &files {
+        let ember = file.extension().is_some_and(|e| e == "ember");
+        if !crate::is_glaze(file) || (ember && !slot.embers) || *file == source.path {
+            continue;
+        }
+        let Ok(relative) = file.strip_prefix(&root) else {
+            continue;
+        };
+        let parts: Vec<String> = relative
+            .iter()
+            .map(|p| p.to_string_lossy().into_owned())
+            .collect();
+        // Wares and kiln's own folders are not the project's.
+        if parts
+            .iter()
+            .any(|p| p.starts_with("__") || p.starts_with('.'))
+        {
+            continue;
+        }
+        let name = if file.parent() == Some(own.as_path()) {
+            parts.last()?.clone()
+        } else if parts.len() > 1 {
+            parts.join("/")
+        } else {
+            // A root file is named from the root only from the root.
+            continue;
+        };
+        targets.insert((file.parent() != Some(own.as_path()), name));
+    }
+    let range = range(&source.text, slot.start, slot.end);
+    let items: Vec<Value> = targets
+        .into_iter()
+        .map(|(elsewhere, name)| {
+            json!({
+                "label": name,
+                "kind": FILE,
+                "detail": if name.ends_with(".ember") { "Ember" } else { "Glaze" },
+                "sortText": format!("{}{name}", u8::from(elsewhere)),
+                "filterText": name,
+                "textEdit": {"range": range, "newText": name},
+            })
+        })
+        .collect();
+    Some(json!({"isIncomplete": false, "items": items}))
 }
 fn bound_request(
     sources: &[Source],
@@ -1304,6 +1413,34 @@ fn module_completion(sources: &[Source], index: usize, offset: usize) -> Option<
         }
     }
     Some(json!({"isIncomplete":false,"items":items}))
+}
+
+#[cfg(test)]
+mod slot_tests {
+    use super::*;
+
+    #[test]
+    fn component_paths_are_completed_in_render_and_layout_strings() {
+        let text = "return web.render(\"pa\", { posts })";
+        let at = text.find("pa").unwrap() + 2;
+        assert_eq!(
+            path_slot(text, at, false),
+            Some(PathSlot {
+                start: at - 2,
+                end: at,
+                embers: true
+            })
+        );
+        let text = "{% layout \"bas\" %}";
+        let slot = path_slot(text, text.find("bas").unwrap() + 1, true).unwrap();
+        assert!(!slot.embers);
+        assert_eq!(&text[slot.start..slot.end], "bas");
+        // Not the second argument, other calls or code.
+        assert!(path_slot("web.render(\"a.glaze\", \"x", 24, false).is_none());
+        assert!(path_slot("print(\"pa", 8, false).is_none());
+        assert!(path_slot("web.render(pa", 13, false).is_none());
+        assert!(path_slot("{% layout \"x", 12, false).is_none());
+    }
 }
 
 #[cfg(test)]

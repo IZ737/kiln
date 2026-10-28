@@ -135,5 +135,7 @@ JOURNAL_HTTP=1 JOURNAL_ADMIN=you@example.com kiln run examples/journal
 
 The LSP follows the project graph with unsaved editor text, resolves public
 exports for hover/definition/completion, and keeps diagnostics on original
-source paths. VS Code Check/Run/Build actions select the app root within the
+source paths. Inside the first string of `web.render(...)` or `{% layout %}`
+it completes component paths as the compiler resolves them: same-folder
+files by name and the rest of the project from its root. VS Code Check/Run/Build actions select the app root within the
 workspace and save dirty source files throughout the project.
