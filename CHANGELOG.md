@@ -1,6 +1,9 @@
 # Changelog
 
-## Unreleased
+## 0.16.0 (2026-10-28)
+
+The open issues: components from any folder, `kiln new` templates,
+cross-folder editor features and a working update notice.
 
 - The notice that a newer kiln is out works for commands that end with
   Ctrl-C (#68). The check used to start only after a command finished, so
