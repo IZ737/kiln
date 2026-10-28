@@ -185,7 +185,12 @@ try {
 
   // An optimistic update rolls back when the server says no.
   await page.click("#optimistic .bump");
-  await eventually("an accepted update stays", async () => (await text(page, "#optimistic .n")) === "1");
+  // A click while the call is running is ignored, so the next one waits
+  // for it to finish.
+  await eventually("an accepted update stays", async () =>
+    (await text(page, "#optimistic .n")) === "1" &&
+    (await page.locator("#optimistic .bump").getAttribute("aria-busy")) === null,
+  );
   await page.click("#optimistic .bump");
   await eventually("a refused update rolls back", async () =>
     (await text(page, "#optimistic .n")) === "1" && (await text(page, "#optimistic .error")) === "2 is even",
