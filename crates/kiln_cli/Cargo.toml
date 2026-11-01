@@ -12,7 +12,7 @@ name = "kiln"
 path = "src/main.rs"
 
 [dependencies]
-toml = "0.8"
+toml = "1.1"
 kiln_diagnostics.workspace = true
 kiln_syntax.workspace = true
 kiln_check.workspace = true
