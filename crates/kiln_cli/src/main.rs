@@ -84,7 +84,7 @@ enum Command {
         #[arg(long)]
         emit_ir: Option<PathBuf>,
         /// How to generate code. `native` needs no outside tools; `c`
-        /// needs a C compiler and the Boehm GC. Defaults to `native` where
+        /// needs a C compiler. Defaults to `native` where
         /// this kiln supports it.
         #[arg(long, value_enum)]
         backend: Option<Backend>,

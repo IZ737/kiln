@@ -122,7 +122,8 @@ already a Rust project, so Rust libraries fit the repo better.
 ## What stays in C
 
 - **The Boehm collector.** It is C, vendored, and long-lived; a precise GC
-  is a phase 7 item and would replace it then, not now.
+  is a phase 7 item and would replace it then, not now. (It did: the
+  collector is now `kiln_rt/src/gc.rs`, see `precise-gc.md`.)
 - **The task switch** (the assembly on x86-64 ELF, fibers on Windows) and
   the scheduler around it. It is small, does not parse input, and Boehm's
   stack hooks are C. It could move to Rust later with `naked` functions;

@@ -1,7 +1,7 @@
 //! Builds the runtimes that native executables are made from, one for each
-//! target: the Kiln runtime (the C part and `kiln_rt`, the Rust part) and the
-//! Boehm garbage collector (vendored in `vendor/bdwgc`) with a C library. The `kiln` binary carries the results,
-//! so the people who use it need no C compiler or libraries.
+//! target: the Kiln runtime (the C part and `kiln_rt`, the Rust part, which
+//! holds the garbage collector) with a C library. The `kiln` binary carries
+//! the results, so the people who use it need no C compiler or libraries.
 //!
 //! - Linux x86-64 needs a musl C compiler: `musl-gcc` (the `musl-tools`
 //!   package on Debian and Ubuntu), or the one `KILN_MUSL_CC` names, and the
@@ -38,7 +38,6 @@ const LINUX_FILES: &[&str] = &[
     "crt1.o",
     "crti.o",
     "native.o",
-    "gc.o",
     "kiln_rt.o",
     "libc.a",
     "crtn.o",
@@ -48,7 +47,6 @@ struct Paths {
     manifest: PathBuf,
     out: PathBuf,
     shared: PathBuf,
-    gc: PathBuf,
 }
 
 fn main() {
@@ -56,14 +54,9 @@ fn main() {
     let paths = Paths {
         out: PathBuf::from(std::env::var("OUT_DIR").unwrap()),
         shared: manifest.join("../kiln_codegen/runtime"),
-        gc: manifest.join("vendor/bdwgc"),
         manifest,
     };
-    for path in [
-        paths.manifest.join("runtime"),
-        paths.shared.join("kiln.c"),
-        paths.gc.clone(),
-    ] {
+    for path in [paths.manifest.join("runtime"), paths.shared.join("kiln.c")] {
         println!("cargo:rerun-if-changed={}", path.display());
     }
     for var in ["KILN_MUSL_CC", "KILN_MUSL_LIB", "KILN_MINGW_CC"] {
@@ -124,7 +117,6 @@ fn linux(p: &Paths) -> Result<(), String> {
             Command::new(&cc)
                 .args(flags)
                 .args(extra)
-                .arg(format!("-I{}", p.gc.join("include").display()))
                 .arg(format!("-I{}", p.shared.display()))
                 .arg("-c")
                 .arg(source)
@@ -136,18 +128,6 @@ fn linux(p: &Paths) -> Result<(), String> {
         )
     };
     compile(&p.manifest.join("runtime/native.c"), "native.o", &[])?;
-    compile(
-        &p.gc.join("extra/gc.c"),
-        "gc.o",
-        &[
-            "-DALL_INTERIOR_POINTERS",
-            "-DNO_EXECUTE_PERMISSION",
-            "-DNO_GETCONTEXT",
-            "-DUSE_MMAP",
-            "-DUSE_MMAP_ANON",
-            "-DALWAYS_SMALL_CLEAR_STACK",
-        ],
-    )?;
     // Rust's standard library reads its own stack traces with libunwind,
     // which Rust ships for musl targets.
     let rt = kiln_rt::build("x86_64-unknown-linux-musl", &p.out)?;
@@ -175,7 +155,6 @@ fn windows(p: &Paths) -> Result<(), String> {
             Command::new(&cc)
                 .args(["-std=gnu11", "-O2", "-w"])
                 .args(extra)
-                .arg(format!("-I{}", p.gc.join("include").display()))
                 .arg(format!("-I{}", p.shared.display()))
                 .arg("-c")
                 .arg(source)
@@ -187,15 +166,6 @@ fn windows(p: &Paths) -> Result<(), String> {
         )
     };
     compile(&p.manifest.join("runtime/native.c"), "native.o", &[])?;
-    compile(
-        &p.gc.join("extra/gc.c"),
-        "gc.o",
-        &[
-            "-DALL_INTERIOR_POINTERS",
-            "-DNO_EXECUTE_PERMISSION",
-            "-DALWAYS_SMALL_CLEAR_STACK",
-        ],
-    )?;
     run(
         Command::new(&windres)
             .current_dir(p.manifest.join("runtime"))
@@ -222,7 +192,6 @@ fn windows(p: &Paths) -> Result<(), String> {
                 "-Wl,--disable-reloc-section",
             ])
             .arg(dir.join("native.o"))
-            .arg(dir.join("gc.o"))
             .arg(dir.join("manifest.o"))
             .arg(&rt)
             // What Rust's standard library needs: all part of Windows.

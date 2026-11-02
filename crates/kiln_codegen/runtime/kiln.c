@@ -2,8 +2,9 @@
  * the native backend compiles it once, into the runtime `kiln` carries.
  *
  * Values: Int is int64_t, Float is double, Bool is bool, Duration is int64_t
- * nanoseconds. Everything else is a pointer to memory owned by the Boehm
- * garbage collector. Generic code (type parameters, list elements, enum
+ * nanoseconds. Everything else is a pointer to memory owned by the garbage
+ * collector (crates/kiln_rt/src/gc.rs; the rules are in
+ * docs/plans/precise-gc.md). Generic code (type parameters, list elements, enum
  * fields, closure arguments) stores values in `kv`, a 64-bit slot. An
  * optional `T?` is a `kbox *` holding the value as a kv, or NULL for none.
  */
@@ -11,7 +12,6 @@
 #define _XOPEN_SOURCE 600 /* for the ucontext functions tasks use */
 #define _DARWIN_C_SOURCE
 #endif
-#include <gc.h>
 #include <errno.h>
 #include <inttypes.h>
 #include <math.h>
@@ -86,17 +86,45 @@ static inline double k_kv2f(kv v) { double f; memcpy(&f, &v, sizeof f); return f
 #define K_P2KV(p) ((kv)(uintptr_t)(p))
 #define K_KV2P(t, v) ((t)(uintptr_t)(v))
 
-K_EXPORT void *k_alloc(size_t n) {
-    void *p = GC_MALLOC(n);
-    if (!p) { fputs("panic: out of memory\n", stderr); exit(101); }
-    return p;
-}
+/* ----- the collector -----
+ *
+ * The collector is in `kiln_rt` (crates/kiln_rt/src/gc.rs). Allocation
+ * never collects: a collection runs only at a safepoint in generated code
+ * (`k_gc_collect`, when `k_gc_pending` is set), where every live value is
+ * in a root. The roots are the shadow-stack frames generated code links
+ * from `k_gc_top`, the runtime's statics and each task's saved state
+ * (`k_gc_visit_roots`), and the ranges registered with `k_gc_add_roots`.
+ *
+ * So runtime code holds values freely between calls into generated code
+ * (a closure, a handler), and roots the ones it keeps across such a call
+ * in a frame of its own: `K_GC_FRAME(n)` declares it, `K_GC_SET(i, v)`
+ * fills a slot, and `K_GC_LEAVE()` unlinks it before every return.
+ * Generated show, eq, hash and cmp functions never collect. */
+typedef struct kgc_frame { struct kgc_frame *prev; int64_t n; kv s[]; } kgc_frame;
+extern kgc_frame *k_gc_top;
+extern uint8_t k_gc_pending;
+void *k_rt_alloc(size_t n);
+void *k_alloc_atomic(size_t n);
+void *k_alloc_ptrs(size_t n);
+void *k_alloc_bits(size_t n, uint64_t bits);
+void k_gc_add_roots(const kv *p, int64_t n);
+void k_gc_collect(void);
+void k_gc_init(void);
+void *k_gc_base(const void *p);
+size_t k_gc_size(const void *p);
 
-K_API void *k_alloc_atomic(size_t n) {
-    void *p = GC_MALLOC_ATOMIC(n);
-    if (!p) { fputs("panic: out of memory\n", stderr); exit(101); }
-    return p;
-}
+#define K_GC_FRAME(N) \
+    struct { kgc_frame *prev; int64_t n; kv s[N]; } kgcf = {k_gc_top, N, {0}}; \
+    k_gc_top = (kgc_frame *)&kgcf
+#define K_GC_SET(i, v) (kgcf.s[i] = K_P2KV(v))
+#define K_GC_LEAVE() (k_gc_top = kgcf.prev)
+/* A safepoint, in generated code: every live value is in a root here. */
+#define K_GC_POLL() do { if (k_gc_pending) k_gc_collect(); } while (0)
+
+/* `n` zeroed bytes whose words may each hold a value or a pointer. Memory
+ * with a known layout is better asked for with `k_alloc_atomic` (no
+ * pointers), `k_alloc_ptrs` (only pointers) or `k_alloc_bits`. */
+K_EXPORT void *k_alloc(size_t n) { return k_rt_alloc(n); }
 
 /* ----- strings ----- */
 
@@ -151,7 +179,7 @@ K_API kstr *k_concat(kstr *a, kstr *b) {
         memcpy(buf->bytes + a->len, b->data, (size_t)b->len);
         buf->used = n;
         buf->bytes[n] = 0;
-        kstr *r = k_alloc(sizeof(kstr));
+        kstr *r = k_alloc_bits(sizeof(kstr), 0x2);
         r->len = n;
         r->data = buf->bytes;
         return r;
@@ -355,7 +383,7 @@ K_EXPORT kbox *k_box(kv v) {
 typedef struct kclosure { kv (*fn)(void *env, kv *args); void *env; } kclosure;
 
 K_API kclosure *k_closure(kv (*fn)(void *, kv *), void *env) {
-    kclosure *c = k_alloc(sizeof(kclosure));
+    kclosure *c = k_alloc_bits(sizeof(kclosure), 0x2);
     c->fn = fn;
     c->env = env;
     return c;
@@ -426,7 +454,7 @@ typedef struct kdesc {
 typedef struct klist { int64_t len, cap; kv *items; } klist;
 
 K_EXPORT klist *k_list(int64_t n, const kv *items) {
-    klist *l = k_alloc(sizeof(klist));
+    klist *l = k_alloc_bits(sizeof(klist), 0x4);
     l->len = n;
     l->cap = n < 4 ? 4 : n;
     l->items = k_alloc(sizeof(kv) * (size_t)l->cap);
@@ -470,34 +498,57 @@ K_API kbox *k_list_first(klist *l) { return k_list_get(l, 0); }
 K_API kbox *k_list_last(klist *l) { return k_list_get(l, l->len - 1); }
 
 K_API klist *k_list_filter(klist *l, kclosure *keep) {
+    K_GC_FRAME(3);
+    K_GC_SET(0, l);
+    K_GC_SET(1, keep);
     klist *r = k_list(0, NULL);
+    K_GC_SET(2, r);
     for (int64_t i = 0; i < l->len; i++)
         if ((bool)k_call1(keep, l->items[i])) k_list_push(r, l->items[i]);
+    K_GC_LEAVE();
     return r;
 }
 
 K_API klist *k_list_map(klist *l, kclosure *f) {
+    K_GC_FRAME(3);
+    K_GC_SET(0, l);
+    K_GC_SET(1, f);
     klist *r = k_list(0, NULL);
+    K_GC_SET(2, r);
     for (int64_t i = 0; i < l->len; i++) k_list_push(r, k_call1(f, l->items[i]));
+    K_GC_LEAVE();
     return r;
 }
 
 K_API kbox *k_list_find(klist *l, kclosure *f) {
-    for (int64_t i = 0; i < l->len; i++)
-        if ((bool)k_call1(f, l->items[i])) return k_box(l->items[i]);
-    return NULL;
+    K_GC_FRAME(2);
+    K_GC_SET(0, l);
+    K_GC_SET(1, f);
+    kbox *found = NULL;
+    for (int64_t i = 0; i < l->len && !found; i++)
+        if ((bool)k_call1(f, l->items[i])) found = k_box(l->items[i]);
+    K_GC_LEAVE();
+    return found;
 }
 
 K_API bool k_list_any(klist *l, kclosure *f) {
-    for (int64_t i = 0; i < l->len; i++)
-        if ((bool)k_call1(f, l->items[i])) return true;
-    return false;
+    K_GC_FRAME(2);
+    K_GC_SET(0, l);
+    K_GC_SET(1, f);
+    bool any = false;
+    for (int64_t i = 0; i < l->len && !any; i++) any = (bool)k_call1(f, l->items[i]);
+    K_GC_LEAVE();
+    return any;
 }
 
 K_API bool k_list_all(klist *l, kclosure *f) {
-    for (int64_t i = 0; i < l->len; i++)
-        if (!(bool)k_call1(f, l->items[i])) return false;
-    return true;
+    K_GC_FRAME(2);
+    K_GC_SET(0, l);
+    K_GC_SET(1, f);
+    bool all = true;
+    for (int64_t i = 0; i < l->len && all; i++) all = (bool)k_call1(f, l->items[i]);
+    K_GC_LEAVE();
+    return all;
 }
 
 K_API bool k_list_contains(klist *l, kv item, bool (*eq)(kv, kv)) {
@@ -515,11 +566,20 @@ K_API klist *k_list_reverse(klist *l) {
 /* A stable merge sort by precomputed keys. */
 K_API klist *k_list_sort_by(klist *l, kclosure *key, int (*cmp)(kv, kv)) {
     int64_t n = l->len;
+    K_GC_FRAME(6);
+    K_GC_SET(0, l);
+    K_GC_SET(1, key);
     kv *keys = k_alloc(sizeof(kv) * (size_t)(n ? n : 1));
     kv *vals = k_alloc(sizeof(kv) * (size_t)(n ? n : 1));
     kv *tk = k_alloc(sizeof(kv) * (size_t)(n ? n : 1));
     kv *tv = k_alloc(sizeof(kv) * (size_t)(n ? n : 1));
+    K_GC_SET(2, keys);
+    K_GC_SET(3, vals);
+    K_GC_SET(4, tk);
+    K_GC_SET(5, tv);
+    /* The key function may collect; the sort itself never does. */
     for (int64_t i = 0; i < n; i++) { vals[i] = l->items[i]; keys[i] = k_call1(key, vals[i]); }
+    K_GC_LEAVE();
     for (int64_t w = 1; w < n; w *= 2) {
         for (int64_t lo = 0; lo < n; lo += 2 * w) {
             int64_t mid = lo + w < n ? lo + w : n, hi = lo + 2 * w < n ? lo + 2 * w : n;
@@ -614,23 +674,39 @@ K_API kbox *k_list_extreme(klist *l, int (*cmp)(kv, kv), int sign) {
 }
 
 K_API int64_t k_list_count(klist *l, kclosure *f) {
+    K_GC_FRAME(2);
+    K_GC_SET(0, l);
+    K_GC_SET(1, f);
     int64_t n = 0;
     for (int64_t i = 0; i < l->len; i++)
         if ((bool)k_call1(f, l->items[i])) n++;
+    K_GC_LEAVE();
     return n;
 }
 
 K_API kv k_list_fold(klist *l, kv acc, kclosure *f) {
-    for (int64_t i = 0; i < l->len; i++) acc = k_call2(f, acc, l->items[i]);
+    K_GC_FRAME(3);
+    K_GC_SET(0, l);
+    K_GC_SET(1, f);
+    for (int64_t i = 0; i < l->len; i++) {
+        kgcf.s[2] = acc;
+        acc = k_call2(f, acc, l->items[i]);
+    }
+    K_GC_LEAVE();
     return acc;
 }
 
 K_API klist *k_list_flat_map(klist *l, kclosure *f) {
+    K_GC_FRAME(3);
+    K_GC_SET(0, l);
+    K_GC_SET(1, f);
     klist *r = k_list(0, NULL);
+    K_GC_SET(2, r);
     for (int64_t i = 0; i < l->len; i++) {
         klist *part = K_KV2P(klist *, k_call1(f, l->items[i]));
         for (int64_t j = 0; j < part->len; j++) k_list_push(r, part->items[j]);
     }
+    K_GC_LEAVE();
     return r;
 }
 
@@ -679,7 +755,7 @@ K_API uint64_t k_hash_str(kv v) {
 }
 
 K_API kmap *k_map_new(k_hash_fn hash, k_eq_fn eq) {
-    kmap *m = k_alloc(sizeof(kmap));
+    kmap *m = k_alloc_bits(sizeof(kmap), 0x78);
     m->cap = 8;
     m->keys = k_alloc(sizeof(kv) * 8);
     m->vals = k_alloc(sizeof(kv) * 8);
@@ -1061,11 +1137,11 @@ typedef int ksock;
  * Kiln does not promise that tasks can share mutable values safely.
  *
  * The state of a failing call and of a panic belongs to the running task,
- * so a switch saves and restores it. The collector scans the running
- * task's stack as the program's stack, and the stacks of the other tasks
- * through its push-other-roots hook. Stacks are switched by a few lines
- * of assembly on x86-64 Unix systems, by fibers on Windows, and by
- * `swapcontext` elsewhere. */
+ * so a switch saves and restores it, as it does the task's shadow stack
+ * (`k_gc_top`); the collector visits every task's through
+ * `k_gc_visit_roots`. Stacks are switched by a few lines of assembly on
+ * x86-64 Unix systems, by fibers on Windows, and by `swapcontext`
+ * elsewhere. */
 
 #if defined(_WIN32)
 #define K_TASK_FIBER 1
@@ -1079,12 +1155,6 @@ typedef int ksock;
 
 #define K_TASK_STACK (1024 * 1024)
 #define K_TASK_GUARD (64 * 1024)
-
-/* From the collector's gc_mark.h, which is installed in different places. */
-typedef void (GC_CALLBACK *k_gc_push_roots)(void);
-GC_API void GC_CALL GC_set_push_other_roots(k_gc_push_roots);
-GC_API k_gc_push_roots GC_CALL GC_get_push_other_roots(void);
-GC_API void GC_CALL GC_push_all_eager(void *, void *);
 
 typedef struct ktask {
     void *sp;   /* the stack pointer while the task is switched out */
@@ -1109,6 +1179,8 @@ typedef struct ktask {
     /* `k_web_reads` while the task waits. */
     const char *web_reads;
     void *panic_jmp[5];
+    /* Its shadow stack while another task runs. */
+    kgc_frame *gc_top;
 #if K_TASK_FIBER
     void *fiber;
 #elif K_TASK_UCONTEXT
@@ -1147,7 +1219,7 @@ typedef struct kstores {
 K_API kstores *k_stores = NULL;
 
 static kstores *k_stores_new(kstores *outer) {
-    kstores *t = k_alloc(sizeof *t);
+    kstores *t = k_alloc_bits(sizeof *t, 0x5);
     t->slots = NULL;
     t->len = 0;
     t->outer = outer;
@@ -1209,7 +1281,6 @@ static ktask **k_waiting;
 static int64_t k_nwaiting, k_waiting_cap;
 static struct pollfd *k_pollfds;
 static int64_t k_pollfds_cap;
-static k_gc_push_roots k_old_push_roots;
 
 #ifdef _WIN32
 K_EXPORT int64_t k_mono_now(void) {
@@ -1236,35 +1307,36 @@ static void *k_grow(void *items, int64_t *cap, int64_t need, size_t size) {
     return items;
 }
 
-static void GC_CALLBACK k_task_push_stacks(void) {
-    if (k_old_push_roots) k_old_push_roots();
+/* The roots a task's saved state holds. */
+static void k_task_roots(const ktask *t, void (*words)(const kv *, int64_t)) {
+    kv saved[] = {t->error, K_P2KV(t->lib_error), K_P2KV(t->client_error), K_P2KV(t->panic_message),
+                  K_P2KV(t->request), K_P2KV(t->stores), K_P2KV(t->arg)};
+    words(saved, (int64_t)(sizeof saved / sizeof *saved));
+}
+
+/* For the collector: the roots of the program and of every task, as the
+ * words that may hold a value and the shadow stacks (`chain` walks one
+ * from its innermost frame). */
+K_EXPORT void k_gc_visit_roots(void (*words)(const kv *, int64_t), void (*chain)(void *)) {
+    chain(k_gc_top);
+    kv statics[] = {k_error, K_P2KV(k_lib_error), K_P2KV(k_web_client_error), K_P2KV(k_panic_message),
+                    K_P2KV(k_web_request), K_P2KV(k_stores)};
+    words(statics, (int64_t)(sizeof statics / sizeof *statics));
     for (int64_t i = 0; i < k_ntasks; i++) {
         ktask *t = k_tasks[i];
-        if (t != k_cur && t->state != K_TASK_DONE && t->sp && t->hi) GC_push_all_eager(t->sp, t->hi);
+        if (t == k_cur) continue;
+        chain(t->gc_top);
+        k_task_roots(t, words);
     }
-    if (k_cur != &k_main_task) GC_push_all_eager(k_main_task.sp, k_main_task.hi);
+    if (k_cur != &k_main_task) {
+        chain(k_main_task.gc_top);
+        k_task_roots(&k_main_task, words);
+    }
 }
-
-static void *k_task_bottom_locked(void *hi) {
-    struct GC_stack_base sb;
-    memset(&sb, 0, sizeof sb);
-    sb.mem_base = hi;
-    GC_set_stackbottom(NULL, &sb);
-    return NULL;
-}
-
-/* Tells the collector where the running stack ends. */
-static void k_task_set_bottom(char *hi) { GC_call_with_alloc_lock(k_task_bottom_locked, hi); }
 
 static void k_task_init(void) {
     if (k_tasks_on) return;
     k_tasks_on = true;
-    struct GC_stack_base sb;
-    memset(&sb, 0, sizeof sb);
-    GC_get_my_stackbottom(&sb);
-    k_main_task.hi = sb.mem_base;
-    k_old_push_roots = GC_get_push_other_roots();
-    GC_set_push_other_roots(k_task_push_stacks);
 #if K_TASK_FIBER
     k_main_task.fiber = ConvertThreadToFiber(NULL);
     if (!k_main_task.fiber) { fputs("panic: cannot start tasks\n", stderr); exit(101); }
@@ -1339,7 +1411,8 @@ static void k_task_switch(ktask *to) {
     k_panic_trap = to->panic_trap;
     k_panic_message = to->panic_message;
     memcpy(k_panic_jmp, to->panic_jmp, sizeof k_panic_jmp);
-    if (to->hi) k_task_set_bottom(to->hi);
+    from->gc_top = k_gc_top;
+    k_gc_top = to->gc_top;
     k_task_jump_to(from, to);
 }
 
@@ -1410,10 +1483,6 @@ static void k_task_park(void) {
 /* Every task starts here, and a finished task waits here to run the next
  * one spawned. */
 static void k_task_entry(void) {
-#if K_TASK_FIBER
-    k_cur->hi = (char *)((NT_TIB *)NtCurrentTeb())->StackBase;
-    k_task_set_bottom(k_cur->hi);
-#endif
     for (;;) {
         k_cur->fn(k_cur->arg);
         k_cur->fn = NULL;
@@ -1452,8 +1521,10 @@ K_API void k_task_spawn(void (*fn)(void *), void *arg) {
         t->error_show = NULL;
         t->lib_error = t->client_error = t->panic_message = NULL;
         t->stores = NULL;
+        t->request = NULL;
+        t->gc_top = NULL;
     } else {
-        t = GC_MALLOC_UNCOLLECTABLE(sizeof *t);
+        t = calloc(1, sizeof *t);
         if (!t) { fputs("panic: out of memory\n", stderr); exit(101); }
 #if K_TASK_FIBER
         t->fiber = CreateFiberEx(64 * 1024, K_TASK_STACK, 0, k_task_fiber, t);
@@ -2349,7 +2420,11 @@ K_API bool k_web_wants_json(kv *req) {
 /* Calls `app.on_error`'s handler; NULL if it panics. In a function of its
  * own for `__builtin_setjmp`, as `k_web_call` is. */
 K_API kv *k_web_call_on_error(kapp *a, kv *req, int64_t status, kstr *message) {
+    K_GC_FRAME(2);
+    K_GC_SET(0, req);
+    K_GC_SET(1, message);
     if (__builtin_setjmp(k_panic_jmp) != 0) {
+        k_gc_top = kgcf.prev;
         k_failed = false;
         k_web_log("error", req, "error page panicked", k_panic_message);
         return NULL;
@@ -2361,6 +2436,7 @@ K_API kv *k_web_call_on_error(kapp *a, kv *req, int64_t status, kstr *message) {
     k_panic_trap = true;
     kv res = a->on_error->fn(a->on_error->env, args);
     k_panic_trap = false;
+    K_GC_LEAVE();
     return K_KV2P(kv *, res);
 }
 
@@ -2397,7 +2473,7 @@ K_API void *k_web_error(int64_t status, kstr *message) {
 /* Whether `p` is a value the runtime marked after its `fields` slots. */
 K_API bool k_web_marked(kv p, int64_t fields) {
     kv *v = K_KV2P(kv *, p);
-    return v && GC_base(v) == (void *)v && GC_size(v) >= sizeof(kv) * (size_t)(fields + 1) &&
+    return v && k_gc_base(v) == (void *)v && k_gc_size(v) >= sizeof(kv) * (size_t)(fields + 1) &&
            v[fields] == K_P2KV(&k_web_mark);
 }
 
@@ -2407,8 +2483,11 @@ K_API bool k_web_marked(kv p, int64_t fields) {
  * own because `__builtin_setjmp` must not return to a frame whose locals
  * changed after it. Returns the response, or NULL with the error in
  * `*status`, `*message` and `*json`. */
-K_API kv *k_web_call(kclosure *handler, kv *req, kv *args, int64_t *status, kstr **message, bool *json) {
+K_API kv *k_web_call_trapped(kclosure *handler, kv *req, kv *args, int64_t *status, kstr **message,
+                             bool *json) {
+    kgc_frame *top = k_gc_top;
     if (__builtin_setjmp(k_panic_jmp) != 0) {
+        k_gc_top = top;
         k_failed = false;
         k_web_log("error", req, "panicked", k_panic_message);
         *status = 500;
@@ -2447,6 +2526,16 @@ K_API kv *k_web_call(kclosure *handler, kv *req, kv *args, int64_t *status, kstr
     return NULL;
 }
 
+K_API kv *k_web_call(kclosure *handler, kv *req, kv *args, int64_t *status, kstr **message, bool *json) {
+    K_GC_FRAME(3);
+    K_GC_SET(0, handler);
+    K_GC_SET(1, req);
+    K_GC_SET(2, args);
+    kv *res = k_web_call_trapped(handler, req, args, status, message, json);
+    K_GC_LEAVE();
+    return res;
+}
+
 /* Whether a request that changes something came from another site's page:
  * a browser says so in `sec-fetch-site`, or else in an `origin` that is
  * not this host. A request with neither, such as one from curl or another
@@ -2473,11 +2562,12 @@ K_API bool k_web_cross_site(kapp *a, kv *req, kstr *method, kstr *path) {
 
 /* The response to a request: the first route whose method and pattern
  * match handles it. `HEAD` requests go to `GET` routes. */
-K_API kv *k_web_dispatch(kapp *a, kv *req) {
+K_API kv *k_web_dispatch_rooted(kapp *a, kv *req, kv *roots) {
     kstr *method = K_KV2P(kstr *, req[K_REQ_METHOD]);
     kstr *path = K_KV2P(kstr *, req[K_REQ_PATH]);
     klist *raw = k_web_segments(path);
     klist *segs = k_list(0, NULL);
+    roots[0] = K_P2KV(segs);
     for (int64_t i = 0; i < raw->len; i++) {
         kstr *s = K_KV2P(kstr *, raw->items[i]);
         k_list_push(segs, K_P2KV(k_rt_path_decode(s)));
@@ -2513,6 +2603,7 @@ K_API kv *k_web_dispatch(kapp *a, kv *req) {
             kstr *name = k_str(m);
             if (!allow) allow = name;
             else if (k_str_find(allow, name, 0) < 0) allow = k_concat(k_concat(allow, k_str(", ")), name);
+            roots[1] = K_P2KV(allow);
             continue;
         }
         /* A page of a `.static` route the server rendered when it started:
@@ -2557,6 +2648,16 @@ K_API kv *k_web_dispatch(kapp *a, kv *req) {
     if (!allow) return k_web_error_response(a, req, 404, k_str("Not Found"), false);
     kv *res = k_web_error_response(a, req, 405, k_str("Method Not Allowed"), false);
     k_map_set(K_KV2P(kmap *, res[K_RES_HEADERS]), K_P2KV(k_str("allow")), K_P2KV(allow));
+    return res;
+}
+
+/* Answers a request: the first `app.before` hook that answers, or the
+ * route that matches. The app and the request are the caller's roots; the
+ * values this keeps across the handlers are in a frame of its own. */
+K_API kv *k_web_dispatch(kapp *a, kv *req) {
+    K_GC_FRAME(2);
+    kv *res = k_web_dispatch_rooted(a, req, kgcf.s);
+    K_GC_LEAVE();
     return res;
 }
 
@@ -2626,6 +2727,9 @@ K_EXPORT void k_web_access_log(kapp *a, kv *req, int64_t status, int64_t start) 
  * not answer otherwise (`req` is NULL if it could not read the head). Its
  * status is one a response can have. */
 K_EXPORT kv *k_web_handle(kapp *a, kv *req, int64_t status) {
+    K_GC_FRAME(2);
+    K_GC_SET(0, a);
+    K_GC_SET(1, req);
     kv *res;
     k_web_request = req;
     k_stores = k_stores_new(NULL);
@@ -2645,6 +2749,7 @@ K_EXPORT kv *k_web_handle(kapp *a, kv *req, int64_t status) {
             fprintf(stderr, "error a handler returned the status %" PRId64 ", which only the server sends\n", s);
         res = k_web_text(k_str("Internal Server Error"), 500);
     }
+    K_GC_LEAVE();
     return res;
 }
 
@@ -2671,7 +2776,9 @@ K_API kv *k_web_request_for(kstr *path) {
  * with `*message` set when it fails or panics. In a function of its own
  * for `__builtin_setjmp`, as `k_web_call` is. */
 K_API klist *k_web_call_pages(kroute *r, kstr **message) {
+    kgc_frame *top = k_gc_top;
     if (__builtin_setjmp(k_panic_jmp) != 0) {
+        k_gc_top = top;
         k_failed = false;
         *message = k_concat(k_str("panicked: "), k_panic_message);
         return NULL;
@@ -2708,11 +2815,14 @@ K_API klist *k_web_static_paths(kroute *r, kstr **message) {
 /* Renders the pages of the `.static` routes, for `k_web_dispatch` to serve.
  * A page that fails is logged and left to its handler. */
 K_API void k_web_prerender(kapp *a) {
+    K_GC_FRAME(2);
+    K_GC_SET(0, a);
     for (int64_t i = 0; i < a->n; i++) {
         kroute *r = a->routes[i];
         if (!r->is_static || r->method != 0) continue;
         kstr *message = NULL;
         klist *paths = k_web_static_paths(r, &message);
+        K_GC_SET(1, paths);
         fflush(stdout);
         if (!paths) {
             fprintf(stderr, "error cannot list the pages of %s: %s\n", k_cstr(r->pattern), k_cstr(message));
@@ -2740,10 +2850,13 @@ K_API void k_web_prerender(kapp *a) {
         }
     }
     k_web_request = NULL;
+    K_GC_LEAVE();
 }
 
 /* `kiln fire --static`: writes the site's pages to `dir` and exits. */
 K_API _Noreturn void k_web_export(kapp *a, const char *dir) {
+    K_GC_FRAME(2);
+    K_GC_SET(0, a);
     k_rt_export_start();
     for (int64_t i = 0; i < a->n; i++) {
         kroute *r = a->routes[i];
@@ -2756,6 +2869,7 @@ K_API _Noreturn void k_web_export(kapp *a, const char *dir) {
         }
         kstr *message = NULL;
         klist *paths = k_web_static_paths(r, &message);
+        K_GC_SET(1, paths);
         if (!paths) {
             k_rt_export_problem(r->pattern, "pages", message);
             continue;

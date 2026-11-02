@@ -45,11 +45,10 @@ jobs:
           # programs for.
           targets: x86_64-unknown-linux-musl, x86_64-pc-windows-gnu
       - uses: Swatinem/rust-cache@v2
-      # libgc-dev is for the C backend; musl-tools and mingw-w64 build the
-      # runtimes that the native backend makes Linux and Windows executables
-      # from.
+      # musl-tools and mingw-w64 build the runtimes that the native backend
+      # makes Linux and Windows executables from.
       # A stuck package mirror fails the step instead of hanging.
-      - run: sh scripts/install-ci-deps.sh libgc-dev musl-tools gcc-mingw-w64-x86-64
+      - run: sh scripts/install-ci-deps.sh musl-tools gcc-mingw-w64-x86-64
         timeout-minutes: 10
       - run: cargo fmt --all --check
       - run: cargo clippy --all-targets -- -D warnings

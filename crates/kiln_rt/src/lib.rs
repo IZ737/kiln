@@ -4,11 +4,14 @@
 //! runtime call them as they call any other runtime function. The plan for
 //! what moves here, and why, is `docs/plans/runtime-rust.md`.
 //!
-//! Code here follows three rules:
+//! The garbage collector is here too (`gc.rs`; the design is in
+//! `docs/plans/precise-gc.md`). Code here follows three rules:
 //!
-//! - **The collector does not see Rust's heap.** Boehm scans stacks and
-//!   static data, not memory from Rust's allocator, so a Kiln value is never
-//!   kept only in a `Vec`, `Box` or other heap memory of Rust's.
+//! - **The collector sees only its roots.** It never scans a Rust stack or
+//!   Rust's heap, and it collects only at a safepoint in generated code. So
+//!   Rust code may hold Kiln values anywhere between calls into generated
+//!   code (a handler, a closure), and roots the ones it keeps across such a
+//!   call with [`value::Roots`].
 //! - **No Kiln panic jumps over Rust frames.** A panic in Kiln code
 //!   `longjmp`s to the trap the C runtime set, so Rust code that calls back
 //!   into Kiln goes through a C function that sets the trap below it.
@@ -21,6 +24,7 @@ mod base64;
 mod binary;
 mod export;
 mod form;
+mod gc;
 mod html;
 mod json;
 mod markdown;
@@ -49,6 +53,10 @@ pub use export::{
     k_rt_export_start, k_rt_static_paths,
 };
 pub use form::k_rt_web_form;
+pub use gc::{
+    k_alloc_atomic, k_alloc_bits, k_alloc_ptrs, k_gc_add_roots, k_gc_base, k_gc_collect, k_gc_init,
+    k_gc_pending, k_gc_size, k_gc_top, k_rt_alloc,
+};
 pub use html::{k_rt_html_escape, k_rt_html_safe_url};
 pub use json::{k_json_encode, k_rt_json_decode};
 pub use markdown::k_rt_markdown_to_html;

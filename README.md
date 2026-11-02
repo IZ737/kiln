@@ -196,9 +196,8 @@ and the C compilers that build the runtimes `kiln` carries inside it:
 `kiln` you get then compiles programs with no other tools: its Linux
 executables are static and run on any Linux x86-64 system, and its Windows
 `.exe` files use only DLLs that come with Windows. Without either compiler,
-or with `--backend c`, `kiln` compiles through C and needs a C compiler and
-the Boehm garbage collector (`libgc-dev` on Debian and Ubuntu, `gc-devel`
-on Fedora, `bdw-gc` on Homebrew).
+or with `--backend c`, `kiln` compiles through C and needs only a C
+compiler.
 
 ```sh
 cargo run -p kiln_cli -- run examples/hello     # compile and run a program
@@ -235,7 +234,7 @@ and use the compiler through `kiln mcp`.
 | `crates/kiln_codegen` | The C backend, and the runtime in `runtime/kiln.c` |
 | `crates/kiln_wasm` | The WasmGC backend for embers, with their runtime and the browser bridge |
 | `crates/kiln_rt` | The runtime's Rust part: the HTTP server, JSON and TLS |
-| `crates/kiln_native` | The native backend: Cranelift code generation, built-in linking for Linux and Windows, and the bundled runtime, Boehm GC (`vendor/bdwgc`) and C libraries |
+| `crates/kiln_native` | The native backend: Cranelift code generation, built-in linking for Linux and Windows, and the bundled runtime and C libraries |
 | `crates/kiln_cli` | The `kiln` command |
 | `examples/` | Example programs and glazes; every one is checked in CI |
 | `wares/ui` | kiln/ui, the official UI Ware |

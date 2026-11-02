@@ -1,7 +1,7 @@
 //! The C backend: turns a Kiln program in the IR (see `kiln_ir`) into one C
 //! file, which a C compiler builds against the runtime (`runtime/kiln.c`,
-//! and `kiln_rt`, its Rust part, which `kiln` carries) and the Boehm garbage
-//! collector.
+//! and `kiln_rt`, its Rust part with the garbage collector, which `kiln`
+//! carries).
 //!
 //! ```no_run
 //! let source = "fn main() {\n    print(\"hi\")\n}\n";
@@ -78,7 +78,9 @@ pub fn compile_c(c_source: &str, out: &Path) -> Result<(), String> {
     let result = Command::new(&cc)
         // Warnings are not shown unless the build fails. These two are
         // errors from GCC 14 on, so an older compiler reports them too.
-        .args(["-std=gnu11", "-O2"])
+        // Generated code reads a frame's root slots as the pointers stored
+        // in them, which strict aliasing would not allow.
+        .args(["-std=gnu11", "-O2", "-fno-strict-aliasing"])
         .args([
             "-Werror=int-conversion",
             "-Werror=incompatible-pointer-types",
@@ -87,7 +89,7 @@ pub fn compile_c(c_source: &str, out: &Path) -> Result<(), String> {
         .arg("-o")
         .arg(out)
         .arg(&rt_path)
-        .args(["-lgc", "-lm"])
+        .arg("-lm")
         .args(KILN_RT_LIBS)
         .output();
     let _ = std::fs::remove_dir_all(&dir);
@@ -103,9 +105,6 @@ pub fn compile_c(c_source: &str, out: &Path) -> Result<(), String> {
         return Ok(());
     }
     let stderr = String::from_utf8_lossy(&output.stderr);
-    if stderr.contains("gc.h") || stderr.contains("-lgc") {
-        return Err("the Boehm garbage collector is not installed. Install `libgc-dev` (Debian and Ubuntu), `gc-devel` (Fedora) or `bdw-gc` (Homebrew)".into());
-    }
     Err(format!(
         "internal compiler error: the C compiler rejected the generated code. Please report this.\n{stderr}"
     ))

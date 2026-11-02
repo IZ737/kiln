@@ -56,9 +56,14 @@ fn conformance_programs_produce_expected_output() {
         "expected programs in {}",
         root.display()
     );
-    let mut backends = vec!["c"];
+    // Each native backend runs every program twice: as it is, and with the
+    // collector collecting at every safepoint and poisoning what it frees
+    // (`KILN_GC_STRESS=1`), which turns a value the generated code or the
+    // runtime forgot to root into a failure.
+    let mut backends = vec!["c", "c-stress"];
     if kiln_native::unavailable(kiln_native::Target::host()).is_none() {
         backends.push("native");
+        backends.push("native-stress");
     }
     if std::env::var_os("KILN_WINE").is_some()
         && kiln_native::unavailable(kiln_native::Target::Windows).is_none()
@@ -109,6 +114,11 @@ fn node() -> Option<std::ffi::OsString> {
 /// Runs one program and records how its behaviour differs from the
 /// expected files.
 fn run_program(program: &Path, backend: &str, failures: &mut Vec<String>) {
+    let label = backend;
+    let (backend, stress) = match backend.strip_suffix("-stress") {
+        Some(backend) => (backend, true),
+        None => (backend, false),
+    };
     let read = |ext: &str| std::fs::read_to_string(program.join("main").with_extension(ext)).ok();
     let args = read("args").unwrap_or_default();
     let mut built_exe = None;
@@ -180,6 +190,9 @@ fn run_program(program: &Path, backend: &str, failures: &mut Vec<String>) {
     let port = requests.as_ref().map(|_| free_port());
     if let Some(port) = port {
         command.env("PORT", port.to_string());
+    }
+    if stress {
+        command.env("KILN_GC_STRESS", "1");
     }
     let mut child = command
         .args(args.lines())
@@ -266,7 +279,7 @@ fn run_program(program: &Path, backend: &str, failures: &mut Vec<String>) {
         return;
     }
     let name = format!(
-        "{} ({backend})",
+        "{} ({label})",
         program.file_name().unwrap().to_string_lossy()
     );
     if stdout != expected_out {

@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.18.0 (2026-11-02)
+
+Kiln's own garbage collector replaces Boehm's
+([plan](docs/plans/precise-gc.md)).
+
+- The collector is a non-moving mark-and-sweep collector in `kiln_rt`.
+  It is precise about its roots and about every typed layout: generated
+  code keeps the pointers it holds across calls in a shadow-stack frame
+  linked from `k_gc_top`, every object carries its layout, and a
+  collection runs only at a safepoint (a function's entry and a loop's
+  back-edge), never inside an allocation. The collector never scans a
+  machine stack or static data, so an `Int` or a `Float` on the stack can
+  no longer keep an object alive, and task stacks are not scanned at all.
+  Erased slots (list items, boxes, generic records) are validated against
+  the heap rather than trusted, which is safe because nothing moves.
+- `KILN_GC_STRESS=1` collects at every safepoint and poisons freed memory,
+  and `KILN_GC_LOG=1` prints each collection. The conformance tests run
+  every program under stress with both backends.
+- The C backend no longer needs `libgc-dev`: a C compiler is enough. The
+  native backend no longer builds `bdwgc`, and `vendor/bdwgc` is gone.
+- Embers and WasmGC are unchanged.
+
 ## 0.16.0 (2026-10-28)
 
 The open issues: components from any folder, imports and `@/` paths in

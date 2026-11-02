@@ -52,28 +52,47 @@ struct LocalC {
     cell: Option<String>,
 }
 
+/// The state of the function being generated. Its shadow-stack frame
+/// `kgcf` (see `K_GC_FRAME` in `kiln.c` and `docs/plans/precise-gc.md`)
+/// has a root slot for every pointer or `kv` local and for every such
+/// value a part of an expression holds while later parts run; `slot_top`
+/// is the slots in use at this point and `slot_max` the most ever.
 struct FnState {
     decls: String,
+    /// Copies the pointer parameters into their root slots.
+    prologue: String,
     body: String,
     depth: usize,
     locals: Vec<LocalC>,
     tys: Vec<Ty>,
     ret: Ty,
     closure: bool,
+    slot_top: usize,
+    slot_max: usize,
 }
 
 impl Default for FnState {
     fn default() -> Self {
         FnState {
             decls: String::new(),
+            prologue: String::new(),
             body: String::new(),
             depth: 0,
             locals: Vec::new(),
             tys: Vec::new(),
             ret: Ty::Unit,
             closure: false,
+            slot_top: 0,
+            slot_max: 0,
         }
     }
+}
+
+/// Where an expression's value is rooted; see `Gen::rooting`.
+enum Rooting {
+    New,
+    Inner,
+    None,
 }
 
 struct Gen<'a> {
@@ -152,9 +171,19 @@ impl<'a> Gen<'a> {
         out.push_str(&self.bodies);
         let main = self.func_name(self.p.main);
         let init = self.func_name(self.p.init);
+        let mut roots = String::new();
+        for g in &self.p.globals {
+            if matches!(self.rep(&g.ty), Rep::Ptr | Rep::Kv) {
+                let _ = writeln!(
+                    roots,
+                    "    k_gc_add_roots((const kv *)&kc_{}, 1);",
+                    mangle(&g.name)
+                );
+            }
+        }
         let _ = write!(
             out,
-            "int main(int argc, char **argv) {{\n    GC_INIT();\n    k_argc = argc;\n    k_argv = argv;\n    {init}();\n    {main}();\n    if (k_failed) {{\n        fflush(stdout);\n        fprintf(stderr, \"error: %s\\n\", k_cstr(k_error_show(k_error)));\n        return 1;\n    }}\n    return 0;\n}}\n"
+            "int main(int argc, char **argv) {{\n    k_gc_init();\n    k_argc = argc;\n    k_argv = argv;\n{roots}    {init}();\n    {main}();\n    if (k_failed) {{\n        fflush(stdout);\n        fprintf(stderr, \"error: %s\\n\", k_cstr(k_error_show(k_error)));\n        return 1;\n    }}\n    return 0;\n}}\n"
         );
         out
     }
@@ -186,17 +215,30 @@ impl<'a> Gen<'a> {
             ..FnState::default()
         };
         // Every local gets a C name; all but parameters of ordinary
-        // functions are declared at the top.
+        // functions are declared at the top. A pointer local, or the
+        // pointer to a local's cell, lives in a root slot of the frame.
         let mut params = Vec::new();
         for (i, local) in func.locals.iter().enumerate() {
             let c = format!("v_{}_{}", mangle(&local.name), self.next());
             let cty = self.c_type(&local.ty);
+            let rooted = matches!(self.rep(&local.ty), Rep::Ptr | Rep::Kv);
             let lc = if local.cell {
-                let cell = format!("{c}_cell");
-                self.decl(&format!("{cty} *"), &cell);
+                let n = self.slot();
+                let cell = format!("(*({cty} **)&kgcf.s[{n}])");
                 LocalC {
                     c: format!("(*{cell})"),
                     cell: Some(cell),
+                }
+            } else if rooted {
+                let n = self.slot();
+                let slot = format!("(*({cty} *)&kgcf.s[{n}])");
+                if !closure && func.params.contains(&i) {
+                    params.push(format!("{cty} {c}"));
+                    let _ = writeln!(self.f.prologue, "    {slot} = {c};");
+                }
+                LocalC {
+                    c: slot,
+                    cell: None,
                 }
             } else {
                 if !closure && func.params.contains(&i) {
@@ -228,10 +270,12 @@ impl<'a> Gen<'a> {
                 self.line(&format!("{} = {v};", self.f.locals[l].c));
             }
         }
+        self.line("K_GC_POLL();");
         let void = self.is_void(&func.ret);
         let v = self.block(&func.body, !void);
         let value_ty = block_ty(&func.body);
         if !void && !self.is_void(&value_ty) {
+            self.line("K_GC_LEAVE();");
             if closure {
                 let v = self.to_kv(&v, &func.ret);
                 self.line(&format!("return {v};"));
@@ -241,13 +285,20 @@ impl<'a> Gen<'a> {
         }
         let name = self.func_name(id);
         let f = std::mem::take(&mut self.f);
+        // The frame comes first: the locals' slots are in it.
+        let decls = format!(
+            "    K_GC_FRAME({});\n{}{}",
+            f.slot_max.max(1),
+            f.decls,
+            f.prologue
+        );
         if closure {
             let header = format!("static kv {name}(void *envp, kv *args)");
             let _ = writeln!(self.protos, "{header};");
             let _ = write!(
                 self.bodies,
-                "{header} {{\n    kv *env = envp;\n    (void)env; (void)args;\n{}{}    return 0;\n}}\n\n",
-                f.decls, f.body
+                "{header} {{\n    kv *env = envp;\n    (void)env; (void)args;\n{}{}    K_GC_LEAVE();\n    return 0;\n}}\n\n",
+                decls, f.body
             );
             return;
         }
@@ -263,7 +314,8 @@ impl<'a> Gen<'a> {
         };
         let header = format!("static {ret} {name}({params})");
         let _ = writeln!(self.protos, "{header};");
-        let _ = write!(self.bodies, "{header} {{\n{}{}}}\n\n", f.decls, f.body);
+        let leave = if void { "    K_GC_LEAVE();\n" } else { "" };
+        let _ = write!(self.bodies, "{header} {{\n{}{}{leave}}}\n\n", decls, f.body);
     }
 
     // ----- types -----
@@ -412,6 +464,28 @@ impl<'a> Gen<'a> {
     /// The name and declared type of a struct field.
     /// The C lvalue of a field of the value `b`, and the field's declared
     /// type. A record is an array of slots.
+    /// The bits of `k_alloc_bits` for slots holding values of these types.
+    fn pointer_bits(&self, tys: &[Ty]) -> u64 {
+        let mut bits = 0;
+        for (i, ty) in tys.iter().enumerate() {
+            if matches!(self.rep(ty), Rep::Ptr | Rep::Kv) && i < 64 {
+                bits |= 1 << i;
+            }
+        }
+        bits
+    }
+
+    /// The bits of `k_alloc_bits` for a struct's fields.
+    fn struct_bits(&self, adt: AdtId) -> u64 {
+        match &self.p.adts[adt].kind {
+            AdtKind::Struct(fields) => {
+                let tys: Vec<Ty> = fields.iter().map(|f| f.ty.clone()).collect();
+                self.pointer_bits(&tys)
+            }
+            AdtKind::Enum(_) => 0,
+        }
+    }
+
     fn field_place(&self, b: &str, base: &Ty, field: usize) -> (String, Ty) {
         match base {
             Ty::Adt(id, _) => {
@@ -472,6 +546,49 @@ impl<'a> Gen<'a> {
         name
     }
 
+    /// A root slot of the frame, free from here until the enclosing
+    /// statement or expression is done.
+    fn slot(&mut self) -> usize {
+        let i = self.f.slot_top;
+        self.f.slot_top += 1;
+        self.f.slot_max = self.f.slot_max.max(self.f.slot_top);
+        i
+    }
+
+    /// Stores a value of type `ty` in a new root slot, and returns the
+    /// expression that reads it back.
+    fn root(&mut self, v: &str, ty: &Ty) -> String {
+        let i = self.slot();
+        let k = self.to_kv(v, ty);
+        self.line(&format!("kgcf.s[{i}] = {k};"));
+        self.unkv(&format!("kgcf.s[{i}]"), ty)
+    }
+
+    /// How an expression's value is kept reachable: in a new root slot; in
+    /// the slot a part of it already has, for a block's value or a coercion
+    /// that leaves a pointer as it is; or not at all, for a value that is
+    /// not a pointer or is a local, which has a root slot of its own.
+    fn rooting(&self, e: &Expr) -> Rooting {
+        if !matches!(self.rep(&e.ty), Rep::Ptr | Rep::Kv) {
+            return Rooting::None;
+        }
+        match &e.kind {
+            ExprKind::Local(_) | ExprKind::None | ExprKind::Error => Rooting::None,
+            ExprKind::Block(_) => Rooting::Inner,
+            ExprKind::Coerce(inner) => {
+                let boxes = matches!(&e.ty, Ty::Opt(_)) && !matches!(&inner.ty, Ty::Opt(_));
+                if boxes || !matches!(self.rep(&inner.ty), Rep::Ptr | Rep::Kv) {
+                    Rooting::New
+                } else if matches!(self.rooting(inner), Rooting::None) {
+                    Rooting::None
+                } else {
+                    Rooting::Inner
+                }
+            }
+            _ => Rooting::New,
+        }
+    }
+
     /// Generates code into a separate buffer, one level deeper, and returns
     /// it with the value.
     fn capture(&mut self, f: impl FnOnce(&mut Self) -> String) -> (String, String) {
@@ -501,6 +618,7 @@ impl<'a> Gen<'a> {
 
     /// The statement that leaves the current function after an error.
     fn fail_return(&mut self) {
+        self.line("K_GC_LEAVE();");
         if self.f.closure || !self.is_void(&self.f.ret.clone()) {
             self.line("return 0;");
         } else {
@@ -527,14 +645,22 @@ impl<'a> Gen<'a> {
     }
 
     fn stmt(&mut self, stmt: &Stmt) {
+        let base = self.f.slot_top;
+        self.stmt_inner(stmt);
+        self.f.slot_top = base;
+    }
+
+    fn stmt_inner(&mut self, stmt: &Stmt) {
         match stmt {
             Stmt::Let(l, value) => {
                 let v = self.expr(value);
                 let lc = self.f.locals[*l].clone();
                 match &lc.cell {
                     Some(cell) => {
-                        let cty = self.c_type(&self.f.tys[*l].clone());
-                        self.line(&format!("{cell} = k_alloc(sizeof({cty}));"));
+                        let ty = self.f.tys[*l].clone();
+                        let cty = self.c_type(&ty);
+                        let bits = self.pointer_bits(std::slice::from_ref(&ty));
+                        self.line(&format!("{cell} = k_alloc_bits(sizeof({cty}), {bits});"));
                         self.line(&format!("*{cell} = {v};"));
                     }
                     None => self.line(&format!("{} = {v};", lc.c)),
@@ -556,6 +682,7 @@ impl<'a> Gen<'a> {
                     Some(v) => self.expr(v),
                     None => "0".into(),
                 };
+                self.line("K_GC_LEAVE();");
                 if self.f.closure {
                     let v = self.to_kv(&v, &ret);
                     self.line(&format!("return {v};"));
@@ -576,6 +703,7 @@ impl<'a> Gen<'a> {
                     self.f.body.push_str(&code);
                     self.line(&format!("if (!({c})) break;"));
                 }
+                self.line("K_GC_POLL();");
                 self.block(body, false);
                 self.close();
             }
@@ -592,6 +720,7 @@ impl<'a> Gen<'a> {
                 self.line(&format!("{h} = {hi};"));
                 let i = self.tmp_c("int64_t");
                 self.open(&format!("for ({i} = {lo}; {i} < {h}; {i}++)"));
+                self.line("K_GC_POLL();");
                 let int = Ty::Adt(self.prims.int, Vec::new());
                 let item = self.convert(&i, &int, &self.f.tys[*var].clone());
                 self.line(&format!("{} = {item};", self.local(*var)));
@@ -610,16 +739,17 @@ impl<'a> Gen<'a> {
                     _ => (Ty::Unknown, false),
                 };
                 let l = self.expr(iter);
-                // A set is looped over through a snapshot of its items.
-                let l = if is_set {
-                    format!("k_map_keys({l})")
+                // A set is looped over through a snapshot of its items,
+                // which stays rooted through the loop as the list does.
+                let lt = if is_set {
+                    let list = Ty::Adt(self.prims.list, Vec::new());
+                    self.root(&format!("k_map_keys({l})"), &list)
                 } else {
                     l
                 };
-                let lt = self.tmp_c("klist *");
-                self.line(&format!("{lt} = {l};"));
                 let i = self.tmp_c("int64_t");
                 self.open(&format!("for ({i} = 0; {i} < {lt}->len; {i}++)"));
+                self.line("K_GC_POLL();");
                 let item = self.unkv(&format!("{lt}->items[{i}]"), &elem);
                 let item = self.convert(&item, &elem, &self.f.tys[*var].clone());
                 self.line(&format!("{} = {item};", self.local(*var)));
@@ -752,7 +882,20 @@ impl<'a> Gen<'a> {
         }
     }
 
+    /// Generates an expression. A pointer or `kv` result that is not simply
+    /// a local is stored in a root slot, so that it is reachable while
+    /// later parts of the enclosing expression run. The C expression
+    /// returned reads the slots it uses only when the statement that holds
+    /// it runs, so slots are reused between statements, not within one.
     fn expr(&mut self, e: &Expr) -> String {
+        let v = self.expr_inner(e);
+        match self.rooting(e) {
+            Rooting::New => self.root(&v, &e.ty),
+            Rooting::Inner | Rooting::None => v,
+        }
+    }
+
+    fn expr_inner(&mut self, e: &Expr) -> String {
         match &e.kind {
             ExprKind::Int(n) => format!("INT64_C({n})"),
             ExprKind::Float(x) => {
@@ -918,7 +1061,8 @@ impl<'a> Gen<'a> {
                 };
                 let t = self.tmp(&Ty::Adt(*adt, Vec::new()));
                 let name = self.struct_name(*adt);
-                self.line(&format!("{t} = k_alloc(sizeof({name}));"));
+                let bits = self.struct_bits(*adt);
+                self.line(&format!("{t} = k_alloc_bits(sizeof({name}), {bits});"));
                 for (f, v) in names.iter().zip(vals) {
                     self.line(&format!("{t}->f_{f} = {v};"));
                 }
@@ -1055,8 +1199,16 @@ impl<'a> Gen<'a> {
                     return format!("k_closure({name}, NULL)");
                 }
                 let env = self.tmp_c("kv *");
+                let mut bits = 0u64;
+                for (i, &l) in captures.iter().enumerate() {
+                    let pointer = self.f.locals[l].cell.is_some()
+                        || matches!(self.rep(&self.f.tys[l]), Rep::Ptr | Rep::Kv);
+                    if pointer && i < 64 {
+                        bits |= 1 << i;
+                    }
+                }
                 self.line(&format!(
-                    "{env} = k_alloc(sizeof(kv) * {});",
+                    "{env} = k_alloc_bits(sizeof(kv) * {}, {bits});",
                     captures.len()
                 ));
                 for (i, &l) in captures.iter().enumerate() {
@@ -1295,7 +1447,8 @@ impl<'a> Gen<'a> {
         let ty = Ty::Adt(self.prims.error, Vec::new());
         let w = self.tmp(&ty);
         let name = self.struct_name(self.prims.error);
-        self.line(&format!("{w} = k_alloc(sizeof({name}));"));
+        let bits = self.struct_bits(self.prims.error);
+        self.line(&format!("{w} = k_alloc_bits(sizeof({name}), {bits});"));
         w
     }
 
@@ -1517,7 +1670,7 @@ impl<'a> Gen<'a> {
         };
         let t = self.tmp(ty);
         let name = self.struct_name(*id);
-        self.line(&format!("{t} = k_alloc(sizeof({name}));"));
+        self.line(&format!("{t} = k_alloc_bits(sizeof({name}), 0);"));
         self.line(&format!("{t}->f_unix_nanos = {ns};"));
         t
     }
@@ -1531,7 +1684,7 @@ impl<'a> Gen<'a> {
         self.line(&format!("{n} = {ns};"));
         let t = self.tmp(ty);
         let name = self.struct_name(*id);
-        self.line(&format!("{t} = k_alloc(sizeof({name}));"));
+        self.line(&format!("{t} = k_alloc_bits(sizeof({name}), 0);"));
         for part in ["year", "month", "day"] {
             self.line(&format!("{t}->f_{part} = k_time_{part}({n});"));
         }

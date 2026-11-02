@@ -1,8 +1,9 @@
 # Phase 7 — A precise garbage collector
 
-**Status: in progress (2026-11-02).** This plan replaces the Boehm
-collector with Kiln's own collector. Where it and the code differ once the
-work lands, the code and `docs/design.md` are authoritative.
+**Status: implemented (2026-11-02), in 0.18.0.** This plan replaced the
+Boehm collector with Kiln's own collector. Where it and the code differ,
+the code (`crates/kiln_rt/src/gc.rs`) and `docs/design.md` are
+authoritative.
 
 Roadmap placement: Phase 7 (Kiln 1.0 readiness), alongside the LLVM
 `kiln fire` backend, which shares the root contract below.
