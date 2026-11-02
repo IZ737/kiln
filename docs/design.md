@@ -225,8 +225,14 @@ needed to run or build an application.
 
 ## Memory and concurrency
 
-- A concurrent, non-moving, tri-color mark-and-sweep GC, as in Go. Phase 1
-  links the Boehm collector; phase 7 replaces it with a precise collector.
+- A non-moving mark-and-sweep collector of Kiln's own, in `kiln_rt`
+  (phase 7; the design is in [plans/precise-gc.md](plans/precise-gc.md)).
+  It is precise about its roots and about every typed layout: generated
+  code keeps the pointers it holds across calls in a shadow-stack frame,
+  objects carry their layout, and a collection runs only at a safepoint
+  (function entry and loop back-edges). Erased `kv` slots are validated
+  against the heap rather than trusted. Concurrent marking, as in Go, is a
+  later step on the same layout. Phase 1 linked the Boehm collector.
 - Escape analysis, and later request-scoped arenas for garbage that dies when
   a response is sent.
 - An M:N scheduler of lightweight tasks; blocking I/O parks the task. Tasks
@@ -265,7 +271,7 @@ C backend maps it almost line for line; later backends can flatten it.
 
 The phase 1 C backend (`crates/kiln_codegen`) emits one C file with the
 runtime (`runtime/kiln.c`) in front, and builds it with `$CC` or `cc`
-against the Boehm collector. Values keep their natural C types (`int64_t`,
+against `kiln_rt`, which holds the collector. Values keep their natural C types (`int64_t`,
 `double`, `bool`, pointers); list, map and set items, the fields of generic
 structs and enums, and closure arguments use a uniform 64-bit slot, so the
 runtime's collection code is shared by every item type. A call that fails sets a
@@ -280,7 +286,7 @@ build links the runtime into an executable with no base relocations, and
 applying the relocations itself and writing the program's entry points into
 a table the runtime's `main` reads. Values are stored as in the C backend
 and both call the same runtime, which `kiln`'s build compiles once per
-target, with the Boehm collector and a C library (musl for Linux, the
+target, with a C library (musl for Linux, the
 `msvcrt` that ships with Windows), for `kiln` to carry. Struct fields
 are slots, so a struct is an array of them. Where the C backend writes a
 show, equality, hash or ordering function for each type, the native one
@@ -302,7 +308,7 @@ end users**, not eliminating libraries from Kiln's implementation:
   directly from Kiln's typed IR. Provide an integrated or bundled linking
   path rather than invoking a system-installed linker. Retain the C backend
   as a supported alternative and correctness reference.
-- Bundle and statically link the Kiln runtime, Boehm GC and required system
+- Bundle and statically link the Kiln runtime, its collector and required system
   support into generated executables. Kiln's standard-library API remains
   available; users simply do not install its implementation separately.
 - Target Linux x86-64 first, with an explicit follow-up for native Windows
@@ -326,7 +332,7 @@ Compiler-from-source dependencies do not count against this goal.
 **Windows follow-up (not a gate on phase 1.5 or phase 2):** On a clean,
 compatible Windows x86-64 machine, downloading only `kiln.exe` is sufficient
 to compile supported CLI programs to Windows `.exe` files, and the outputs
-run without separately installing development tools, Boehm GC or additional
+run without separately installing development tools, a collector or additional
 runtime redistributables. Validate with the same conformance programs in
 Windows CI. The C backend can remain available separately where its external
 toolchain dependencies are acceptable.
@@ -363,7 +369,7 @@ deliberate:
 - `upper` and `lower` change only ASCII letters.
 - Maps, sets and functions cannot be map keys or sorted by value.
 - Methods cannot be used as values (`ps.map(P.get)`); write a closure.
-- The collector is Boehm's conservative one until phase 7.
+- The collector was Boehm's conservative one until phase 7 replaced it.
 
 ### Phase 2: the HTTP server
 

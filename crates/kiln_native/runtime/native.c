@@ -273,12 +273,8 @@ int main(int argc, char **argv) {
      * "listening" line must arrive when they are written, as elsewhere. */
     setvbuf(stderr, NULL, _IONBF, 0);
     SetConsoleOutputCP(CP_UTF8);
-#else
-    /* The collector would read /proc to find the stack, which a minimal
-     * system may not have. Kiln code runs in frames below this one. */
-    GC_stackbottom = (char *)__builtin_frame_address(0);
 #endif
-    GC_INIT();
+    k_gc_init();
     k_argc = argc;
     k_argv = argv;
     kiln_init();

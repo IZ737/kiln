@@ -81,9 +81,12 @@ inlining and little else that a release build wants.
   same checks (`k_div`'s zero and overflow panics, `x % -1 == 0`), which
   is what makes a loop over `i % 7` three times faster than Cranelift's.
   Anything larger stays a call.
-- **The garbage collector stays Boehm** in this slice. It scans the stack
-  and registers conservatively, so optimized code needs no stack maps,
-  and the GC can be replaced later without touching the backends' IR.
+- **The garbage collector stayed Boehm** in this slice. It scanned the
+  stack and registers conservatively, so optimized code needed no stack
+  maps. The precise collector that followed
+  ([plan](precise-gc.md)) uses a shadow stack, and the LLVM backend
+  emits the same frame records, slot stores and polls as the Cranelift
+  one.
 - **Not a new ABI:** every function keeps the C calling convention and
   the same symbol names (`kiln_init`, `kiln_main`, `kf_*`, `kh_*`), so
   the runtime calls closures and helpers as it does now.

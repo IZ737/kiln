@@ -128,6 +128,39 @@ extern "C" {
     pub fn k_json_new_map(key: *const KDesc) -> *mut KMap;
 }
 
+/// Keeps `N` Kiln values reachable while it lives: a shadow-stack frame
+/// linked from `k_gc_top`, as generated code keeps for its own values.
+/// Rust code needs one only around a call into generated code (a handler
+/// or a closure), since the collector runs only at safepoints there.
+#[repr(C)]
+pub struct Roots<const N: usize> {
+    prev: *mut crate::gc::Frame,
+    n: i64,
+    pub slots: [Kv; N],
+}
+
+impl<const N: usize> Roots<N> {
+    /// Links a frame holding `values`. The frame must live on the stack
+    /// and be dropped in the order it was made, as a local is.
+    pub fn new(values: [Kv; N]) -> std::pin::Pin<Box<Roots<N>>> {
+        let mut roots = Box::pin(Roots {
+            prev: unsafe { crate::gc::k_gc_top },
+            n: N as i64,
+            slots: values,
+        });
+        unsafe {
+            crate::gc::k_gc_top = &mut *roots as *mut Roots<N> as *mut crate::gc::Frame;
+        }
+        roots
+    }
+}
+
+impl<const N: usize> Drop for Roots<N> {
+    fn drop(&mut self) {
+        unsafe { crate::gc::k_gc_top = self.prev };
+    }
+}
+
 pub fn ptr<T>(v: Kv) -> *mut T {
     v as usize as *mut T
 }

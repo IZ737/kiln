@@ -29,7 +29,7 @@ use hyper::header::{HeaderName, HeaderValue, CONNECTION, CONTENT_LENGTH, SET_COO
 use hyper::http::request::Parts;
 use hyper::{Method, Request, Response, StatusCode, Version};
 
-use crate::value::{bytes, k_alloc, k_map_set, kv, ptr, string, KMap, Kv};
+use crate::value::{bytes, k_alloc, k_map_set, kv, ptr, string, KMap, Kv, Roots};
 use crate::web::reason;
 
 /// A socket, as `kiln.c`'s `ksock`.
@@ -386,6 +386,9 @@ fn answer(
     start: i64,
 ) -> Response<Full<Bytes>> {
     let req = request(head, body);
+    // The handler may let other tasks run, and they may collect; the
+    // request is used after it returns.
+    let _roots = Roots::new([kv(app), kv(req)]);
     let res = unsafe { k_web_handle(app, req, refused) };
     let res = unsafe { std::slice::from_raw_parts(res, 3) };
     let status = res[RES_STATUS] as i64;

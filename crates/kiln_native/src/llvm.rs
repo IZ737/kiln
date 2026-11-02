@@ -369,7 +369,11 @@ impl<'a> Gen<'a> {
         let mut data: Vec<_> = self.data_imports.iter().collect();
         data.sort();
         for name in data {
-            let ty = if *name == "k_failed" { "i8" } else { "i64" };
+            let ty = if matches!(*name, "k_failed" | "k_gc_pending") {
+                "i8"
+            } else {
+                "i64"
+            };
             let _ = writeln!(out, "@{name} = external global {ty}");
         }
         let mut intrinsics: Vec<_> = self.intrinsics.iter().collect();
@@ -458,12 +462,22 @@ impl<'a> Gen<'a> {
             loops: Vec::new(),
             counter: 0,
             terminated: false,
+            frame: None,
+            frame_alloca: String::new(),
+            prologue: String::new(),
         };
         body(&mut fx);
         if !fx.terminated {
             fx.emit("unreachable");
         }
-        let Fx { body, allocas, .. } = fx;
+        fx.finish_frame();
+        let Fx {
+            body,
+            allocas,
+            frame_alloca,
+            prologue,
+            ..
+        } = fx;
         let linkage = if internal { "internal " } else { "" };
         let params: Vec<String> = signature
             .params
@@ -477,7 +491,9 @@ impl<'a> Gen<'a> {
             signature.ret_name(),
             params.join(", ")
         );
+        self.bodies.push_str(&frame_alloca);
         self.bodies.push_str(&allocas);
+        self.bodies.push_str(&prologue);
         self.bodies.push_str(&body);
         self.bodies.push_str("}\n\n");
     }
@@ -492,14 +508,31 @@ impl<'a> Gen<'a> {
             fx.ret = func.ret.clone();
             fx.closure = closure;
             fx.tys = func.locals.iter().map(|l| l.ty.clone()).collect();
+            fx.enter_frame();
+            if id == p.init {
+                let addr = fx.data_addr("@kiln_globals");
+                let n = V::int(p.globals.len() as i64);
+                fx.call_rt("k_gc_add_roots", &[addr, n]);
+            }
             for local in &func.locals {
                 let ty = fx.g.cty(&local.ty);
+                // A local holding a pointer or a `kv` (or the cell of one)
+                // lives in a slot of the frame, so it is a root as it is.
+                let rooted = matches!(fx.g.rep(&local.ty), Rep::Ptr | Rep::Kv);
                 let slot = if local.cell {
-                    let a = fx.alloca(T::I64);
+                    let a = if rooted {
+                        fx.frame_slot()
+                    } else {
+                        fx.alloca(T::I64)
+                    };
                     fx.store_to(&V::int(0), &a);
                     Slot::Cell(a, ty)
                 } else {
-                    let a = fx.alloca(ty);
+                    let a = if rooted {
+                        fx.frame_slot()
+                    } else {
+                        fx.alloca(ty)
+                    };
                     let zero = V::new(ty.zero(), ty);
                     fx.store_to(&zero, &a);
                     Slot::Var(a, ty)
@@ -529,6 +562,7 @@ impl<'a> Gen<'a> {
                     fx.init_local(l, v);
                 }
             }
+            fx.poll();
             let void = is_void(&func.ret);
             let v = fx.block(&func.body, !void);
             let value_ty = block_ty(&func.body);
@@ -1014,6 +1048,28 @@ enum Slot {
     Cell(V, T),
 }
 
+/// The function's shadow-stack frame (see `docs/plans/precise-gc.md`): the
+/// `alloca` `%s0` holding `prev`, `n` and `n` root slots, linked from
+/// `k_gc_top` while the function runs. Rooted locals live in its slots,
+/// and every other pointer or `kv` value held across a call is stored in
+/// one when it is defined; the collector reads the slots, and never moves
+/// an object, so the SSA copy stays good.
+struct Frame {
+    /// The root slots in use at this point, and the most ever in use.
+    top: usize,
+    max: usize,
+}
+
+/// The bytes before a frame's first root slot: `prev` and `n`.
+const FRAME_SLOTS: i64 = 16;
+
+/// Where an expression's value is rooted; see `Fx::rooting`.
+enum Rooting {
+    New,
+    Inner,
+    None,
+}
+
 /// The state of the function being generated.
 struct Fx<'g, 'a> {
     g: &'g mut Gen<'a>,
@@ -1031,6 +1087,13 @@ struct Fx<'g, 'a> {
     counter: usize,
     /// Whether the current block has ended.
     terminated: bool,
+    /// The shadow-stack frame of a user function; helpers have none.
+    frame: Option<Frame>,
+    /// The frame's `alloca` and the code that links it, written by
+    /// `finish_frame` once the slot count is known; they go before and
+    /// after the other `alloca`s.
+    frame_alloca: String,
+    prologue: String,
 }
 
 impl Fx<'_, '_> {
@@ -1223,9 +1286,129 @@ impl Fx<'_, '_> {
         self.ins(T::I64, &format!("ptrtoint ptr {} to i64", slot.text))
     }
 
-    /// Allocates `n` slots on the heap.
-    fn alloc(&mut self, n: usize) -> V {
-        self.call_rt("k_alloc", &[V::int(8 * n.max(1) as i64)])
+    /// Allocates `n` slots on the heap, telling the collector which hold
+    /// pointers: bit `i` of `bits` is set when slot `i` may.
+    fn alloc_bits(&mut self, n: usize, bits: u64) -> V {
+        let size = V::int(8 * n.max(1) as i64);
+        self.call_rt("k_alloc_bits", &[size, V::int(bits as i64)])
+    }
+
+    /// The bits of `alloc_bits` for slots holding values of these types.
+    fn pointer_bits(&self, tys: &[Ty]) -> u64 {
+        let mut bits = 0;
+        for (i, ty) in tys.iter().enumerate() {
+            if matches!(self.g.rep(ty), Rep::Ptr | Rep::Kv) && i < 64 {
+                bits |= 1 << i;
+            }
+        }
+        bits
+    }
+
+    // ----- the shadow stack -----
+
+    /// Starts the function's frame. Its `alloca` and the code linking it
+    /// from `k_gc_top` are written by `finish_frame`, once the number of
+    /// slots is known.
+    fn enter_frame(&mut self) {
+        self.g.data_import("k_gc_top");
+        self.frame = Some(Frame { top: 0, max: 0 });
+    }
+
+    /// Writes the frame's `alloca`, sized for the slots the function used,
+    /// and the code that fills `prev` and `n`, zeroes the slots (so that
+    /// the collector never reads a stale word) and links the frame.
+    fn finish_frame(&mut self) {
+        let Some(frame) = self.frame.take() else {
+            return;
+        };
+        let n = frame.max;
+        let _ = writeln!(
+            self.frame_alloca,
+            "  %s0 = alloca [{} x i64], align 8",
+            n + 2
+        );
+        let mut p = String::new();
+        let _ = writeln!(p, "  %gcprev = load i64, ptr @k_gc_top, align 8");
+        let _ = writeln!(p, "  store i64 %gcprev, ptr %s0, align 8");
+        let _ = writeln!(p, "  %gcn = getelementptr inbounds i8, ptr %s0, i64 8");
+        let _ = writeln!(p, "  store i64 {n}, ptr %gcn, align 8");
+        for i in 0..n {
+            let _ = writeln!(
+                p,
+                "  %gcz{i} = getelementptr inbounds i8, ptr %s0, i64 {}",
+                FRAME_SLOTS + 8 * i as i64
+            );
+            let _ = writeln!(p, "  store i64 0, ptr %gcz{i}, align 8");
+        }
+        let _ = writeln!(p, "  %gcself = ptrtoint ptr %s0 to i64");
+        let _ = writeln!(p, "  store i64 %gcself, ptr @k_gc_top, align 8");
+        self.prologue = p;
+    }
+
+    /// Unlinks the frame before a return.
+    fn leave_frame(&mut self) {
+        if self.frame.is_some() {
+            self.emit("store i64 %gcprev, ptr @k_gc_top, align 8");
+        }
+    }
+
+    /// A root slot free from here until the enclosing statement or
+    /// expression is done.
+    fn temp_slot(&mut self) -> usize {
+        let frame = self.frame.as_mut().expect("a frame");
+        let i = frame.top;
+        frame.top += 1;
+        frame.max = frame.max.max(frame.top);
+        i
+    }
+
+    /// The address of root slot `i`, as a pointer register.
+    fn slot_ptr(&mut self, i: usize) -> String {
+        self.ins(
+            T::I64,
+            &format!(
+                "getelementptr inbounds i8, ptr %s0, i64 {}",
+                FRAME_SLOTS + 8 * i as i64
+            ),
+        )
+        .text
+    }
+
+    /// A fresh root slot for a local, as the `alloca`-like pointer the
+    /// local is loaded from and stored to (computed in the entry block).
+    fn frame_slot(&mut self) -> V {
+        let i = self.temp_slot();
+        let r = format!("%s{}", self.next());
+        let _ = writeln!(
+            self.allocas,
+            "  {r} = getelementptr inbounds i8, ptr %s0, i64 {}",
+            FRAME_SLOTS + 8 * i as i64
+        );
+        V::new(r, T::I64)
+    }
+
+    /// Stores a pointer or `kv` value in a root slot.
+    fn root_in(&mut self, i: usize, v: V) {
+        let v = self.fit(v, T::I64);
+        let p = self.slot_ptr(i);
+        self.store_at(&v, &p);
+    }
+
+    /// A safepoint: collects if the heap has grown enough. Every live
+    /// pointer is in a root slot here.
+    fn poll(&mut self) {
+        if self.frame.is_none() {
+            return;
+        }
+        self.g.data_import("k_gc_pending");
+        let pending = self.ins(T::I64, "load i8, ptr @k_gc_pending, align 1");
+        let c = self.ins(T::I1, &format!("icmp ne i8 {}, 0", pending.text));
+        let (collect, cont) = (self.create_block(), self.create_block());
+        self.brif(c, &collect, &cont);
+        self.switch_to_block(&collect);
+        self.call_rt("k_gc_collect", &[]);
+        self.jump(&cont);
+        self.switch_to_block(&cont);
     }
 
     /// Continues in a new block that nothing jumps to, after a `return`,
@@ -1353,7 +1536,8 @@ impl Fx<'_, '_> {
     /// Gives a local its first value, allocating its cell if it has one.
     fn init_local(&mut self, l: LocalId, v: V) {
         if let Slot::Cell(a, _) = self.locals[l].clone() {
-            let cell = self.alloc(1);
+            let bits = self.pointer_bits(std::slice::from_ref(&self.tys[l]));
+            let cell = self.alloc_bits(1, bits);
             self.store_to(&cell, &a);
         }
         self.set_local(l, v);
@@ -1366,6 +1550,7 @@ impl Fx<'_, '_> {
     // ----- returns and errors -----
 
     fn ret_value(&mut self, v: V) {
+        self.leave_frame();
         if self.closure {
             let ret = self.ret.clone();
             let k = self.kv_of(v, &ret);
@@ -1382,6 +1567,7 @@ impl Fx<'_, '_> {
     /// Leaves the current function after an error, or at the end of a
     /// function whose value is unused.
     fn fail_return(&mut self) {
+        self.leave_frame();
         if self.closure {
             self.ret_raw(Some(V::int(0)));
         } else if is_void(&self.ret) {
@@ -1426,7 +1612,7 @@ impl Fx<'_, '_> {
     fn new_error(&mut self, message: V) -> V {
         let error = self.g.prims.error;
         let n = self.g.field_count(error);
-        let w = self.alloc(n);
+        let w = self.alloc_bits(n, 1 << self.g.field_index(error, "message"));
         let offset = 8 * self.g.field_index(error, "message") as i64;
         self.store(&message, &w, offset);
         w
@@ -1520,6 +1706,14 @@ impl Fx<'_, '_> {
     }
 
     fn stmt(&mut self, stmt: &Stmt) {
+        let base = self.frame.as_ref().map(|f| f.top);
+        self.stmt_inner(stmt);
+        if let (Some(base), Some(frame)) = (base, self.frame.as_mut()) {
+            frame.top = base;
+        }
+    }
+
+    fn stmt_inner(&mut self, stmt: &Stmt) {
         match stmt {
             Stmt::Let(l, value) => {
                 let v = self.expr(value);
@@ -1578,6 +1772,7 @@ impl Fx<'_, '_> {
                 let c = self.expr(cond);
                 self.brif(c, &body_b, &exit);
                 self.switch_to_block(&body_b);
+                self.poll();
                 self.loops.push((header.clone(), exit.clone()));
                 self.block(body, false);
                 self.loops.pop();
@@ -1630,6 +1825,10 @@ impl Fx<'_, '_> {
                 // A set is looped over through a snapshot of its items.
                 if is_set {
                     l = self.call_rt("k_map_keys", &[l]);
+                    if self.frame.is_some() {
+                        let i = self.temp_slot();
+                        self.root_in(i, l.clone());
+                    }
                 }
                 let i = self.alloca(T::I64);
                 self.store_to(&V::int(0), &i);
@@ -1681,6 +1880,7 @@ impl Fx<'_, '_> {
         let c = cond(self);
         self.brif(c, &body_b, &exit);
         self.switch_to_block(&body_b);
+        self.poll();
         start(self);
         if let Some(f) = filter {
             let keep = self.expr(f);
@@ -1917,7 +2117,53 @@ impl Fx<'_, '_> {
         }
     }
 
+    /// Generates an expression. A pointer or `kv` result that is not simply
+    /// a local is stored in a root slot, so that it is reachable while
+    /// later parts of the enclosing expression run; the slots its own
+    /// parts used are free again.
     fn expr(&mut self, e: &Expr) -> V {
+        let base = self.frame.as_ref().map(|f| f.top);
+        let v = self.expr_inner(e);
+        if let Some(base) = base {
+            match self.rooting(e) {
+                Rooting::New => {
+                    self.frame.as_mut().unwrap().top = base;
+                    let i = self.temp_slot();
+                    self.root_in(i, v.clone());
+                }
+                Rooting::Inner => {}
+                Rooting::None => self.frame.as_mut().unwrap().top = base,
+            }
+        }
+        v
+    }
+
+    /// How an expression's value is kept reachable: in a new root slot; in
+    /// the slot a part of it already has, for a block's value or a coercion
+    /// that leaves a pointer as it is; or not at all, for a value that is
+    /// not a pointer or is a local, which has a root slot of its own.
+    fn rooting(&self, e: &Expr) -> Rooting {
+        if !matches!(self.g.rep(&e.ty), Rep::Ptr | Rep::Kv) {
+            return Rooting::None;
+        }
+        match &e.kind {
+            ExprKind::Local(_) | ExprKind::None | ExprKind::Error => Rooting::None,
+            ExprKind::Block(_) => Rooting::Inner,
+            ExprKind::Coerce(inner) => {
+                let boxes = matches!(&e.ty, Ty::Opt(_)) && !matches!(&inner.ty, Ty::Opt(_));
+                if boxes || !matches!(self.g.rep(&inner.ty), Rep::Ptr | Rep::Kv) {
+                    Rooting::New
+                } else if matches!(self.rooting(inner), Rooting::None) {
+                    Rooting::None
+                } else {
+                    Rooting::Inner
+                }
+            }
+            _ => Rooting::New,
+        }
+    }
+
+    fn expr_inner(&mut self, e: &Expr) -> V {
         match &e.kind {
             ExprKind::Int(n) => V::int(*n),
             ExprKind::Float(x) => V::new(float_const(*x), T::F64),
@@ -1945,13 +2191,20 @@ impl Fx<'_, '_> {
                 self.call_rt("k_closure", &[fa, V::int(0)])
             }
             ExprKind::Concat(parts) => {
+                // The string so far is live while the next part runs, so
+                // it has a root slot of its own.
+                let slot = self.frame.is_some().then(|| self.temp_slot());
                 let mut acc: Option<V> = None;
                 for part in parts {
                     let v = self.expr(part);
-                    acc = Some(match acc {
+                    let joined = match acc {
                         None => v,
                         Some(a) => self.call_rt("k_concat", &[a, v]),
-                    });
+                    };
+                    if let Some(i) = slot {
+                        self.root_in(i, joined.clone());
+                    }
+                    acc = Some(joined);
                 }
                 match acc {
                     Some(v) => v,
@@ -2123,7 +2376,8 @@ impl Fx<'_, '_> {
                         self.kv_of(v, ty)
                     })
                     .collect();
-                let s = self.alloc(vals.len());
+                let bits = self.pointer_bits(&decls);
+                let s = self.alloc_bits(vals.len(), bits);
                 for (i, v) in vals.into_iter().enumerate() {
                     self.store(&v, &s, 8 * i as i64);
                 }
@@ -2257,7 +2511,17 @@ impl Fx<'_, '_> {
                 if captures.is_empty() {
                     return self.call_rt("k_closure", &[fa, V::int(0)]);
                 }
-                let env = self.alloc(captures.len());
+                // A captured cell is a pointer; a captured value is a
+                // pointer when its type is.
+                let mut bits = 0;
+                for (i, &l) in captures.iter().enumerate() {
+                    let ptr = matches!(self.locals[l], Slot::Cell(..))
+                        || matches!(self.g.rep(&self.tys[l]), Rep::Ptr | Rep::Kv);
+                    if ptr && i < 64 {
+                        bits |= 1 << i;
+                    }
+                }
+                let env = self.alloc_bits(captures.len(), bits);
                 for (i, &l) in captures.iter().enumerate() {
                     let v = match self.locals[l].clone() {
                         Slot::Cell(a, _) => self.load_from(T::I64, &a),
@@ -2774,7 +3038,7 @@ impl Fx<'_, '_> {
             return V::int(0);
         };
         let n = self.g.field_count(*id);
-        let t = self.alloc(n);
+        let t = self.alloc_bits(n, 0);
         let off = 8 * self.g.field_index(*id, "unix_nanos") as i64;
         self.store(&ns, &t, off);
         t
@@ -2786,7 +3050,7 @@ impl Fx<'_, '_> {
             return V::int(0);
         };
         let n = self.g.field_count(*id);
-        let t = self.alloc(n);
+        let t = self.alloc_bits(n, 0);
         for (part, f) in [
             ("year", "k_time_year"),
             ("month", "k_time_month"),

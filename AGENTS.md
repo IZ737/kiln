@@ -75,7 +75,7 @@ Building needs `musl-tools` and `gcc-mingw-w64-x86-64` (for the native
 backend's Linux and Windows runtimes), Rust's standard library for
 `x86_64-unknown-linux-musl` and `x86_64-pc-windows-gnu` (for the runtime's
 Rust part; `rust-toolchain.toml` lists them, or `rustup target add` them)
-and, for the C backend and its tests, a C compiler and `libgc-dev`.
+and, for the C backend and its tests, a C compiler.
 `cargo deny check` (CI runs it) checks the dependencies for advisories and
 licences.
 
@@ -107,7 +107,7 @@ Run `cargo fmt --all`, `cargo clippy --all-targets -- -D warnings` and
 - `crates/kiln_codegen`: the C backend. `emit.rs` turns an IR program into
   C with `emit_c(&ir)`; `runtime/kiln.c` is prepended to it, and `kiln_rt`
   (built for the system by `build.rs`) is linked with it. Building needs
-  a C compiler and the Boehm GC (`libgc-dev`).
+  a C compiler.
 - `crates/kiln_rt`: the runtime's Rust part, a static library linked into
   every program, which exports `k_*` functions with the C ABI. The
   network-facing parts of the runtime move here, onto maintained libraries
@@ -128,7 +128,7 @@ Run `cargo fmt --all`, `cargo clippy --all-targets -- -D warnings` and
   Linux `link.rs` links it with the built-in wild linker, and for Windows
   `pe.rs` adds it to the prelinked runtime executable as new sections.
   `build.rs` compiles both runtimes: `runtime/native.c` (which includes the
-  shared `kiln.c`), `kiln_rt` and the Boehm GC vendored in `vendor/bdwgc`,
+  shared `kiln.c`) and `kiln_rt`,
   with musl's C library for Linux and mingw-w64 for Windows, all carried
   inside `kiln`. `llvm.rs` is the LLVM backend of `kiln fire`: it writes
   the same program as LLVM IR text (`emit(&ir, target)`), mirroring

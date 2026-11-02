@@ -109,8 +109,8 @@ enum Command {
         #[arg(long)]
         emit_llvm: Option<PathBuf>,
         /// How to generate code. `native` needs no outside tools; `c`
-        /// needs a C compiler and the Boehm GC; `llvm` needs clang and
-        /// optimizes. Defaults to `native` where this kiln supports it.
+        /// needs a C compiler; `llvm` needs clang and optimizes.
+        /// Defaults to `native` where this kiln supports it.
         #[arg(long, value_enum)]
         backend: Option<Backend>,
         /// The system to build for: `linux` or `windows` (x86-64), or
