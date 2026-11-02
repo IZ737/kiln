@@ -37,6 +37,11 @@ For Phase 6.6 static site work, follow [docs/plans/phase-6.6.md](docs/plans/phas
 
 For Phase 6.7 filesystem routing, follow [docs/plans/phase-6.7.md](docs/plans/phase-6.7.md) and the [Pages as files guide](docs/guides/file-routes.md): `app.file_routes(...)` is expanded when the program is compiled into ordinary route registrations (`crates/kiln_cli/src/project/routes.rs`), never by scanning folders at run time, and every error points at the page or `route.kiln` it is about.
 
+For Phase 7.1 release builds, follow [docs/plans/phase-7.1.md](docs/plans/phase-7.1.md):
+`kiln fire` optimizes through LLVM by writing `.ll` text for a clang on the
+system, never by linking LLVM into `kiln`; `kiln build` and `kiln run` keep
+needing no tools, and both builds must behave the same.
+
 For Phase 6 testing, read [docs/plans/testing.md](docs/plans/testing.md): the public
 `kiln test` tool must support unit, integration **and real-browser E2E**
 tests in one CLI, including Ember hydration and typed RPC from its first
@@ -125,7 +130,12 @@ Run `cargo fmt --all`, `cargo clippy --all-targets -- -D warnings` and
   `build.rs` compiles both runtimes: `runtime/native.c` (which includes the
   shared `kiln.c`), `kiln_rt` and the Boehm GC vendored in `vendor/bdwgc`,
   with musl's C library for Linux and mingw-w64 for Windows, all carried
-  inside `kiln`.
+  inside `kiln`. `llvm.rs` is the LLVM backend of `kiln fire`: it writes
+  the same program as LLVM IR text (`emit(&ir, target)`), mirroring
+  `gen.rs` function for function, and `compile` runs a clang on it
+  (`find_clang`: `KILN_CLANG`, or `clang`/`clang-N` on the PATH, 15 or
+  later); the object goes through the same `link`. kiln does not link
+  LLVM in.
   Code in `kiln.c` that differs on Windows goes under `#ifdef _WIN32`. `runtime.rs` lists the C signatures of the runtime functions the
   generated code calls. Generated code shows, compares, hashes and orders
   compound values through `k_desc_*` in `native.c`, which read a
@@ -234,10 +244,13 @@ Run `cargo fmt --all`, `cargo clippy --all-targets -- -D warnings` and
 - **The compiler never guesses.** A program that type-checks but uses
   something the backend cannot build yet gets E0401 at that spot, never
   wrong code.
-- **Both backends learn every feature.** A change to what the compiler
-  builds goes in `kiln_codegen/src/emit.rs` and `kiln_native/src/gen.rs`;
-  runtime functions are `K_API` in `kiln.c` or `#[no_mangle] extern "C"`
-  in `kiln_rt`, so both can call them.
+- **Every backend learns every feature.** A change to what the compiler
+  builds goes in `kiln_codegen/src/emit.rs`, `kiln_native/src/gen.rs` and
+  `kiln_native/src/llvm.rs` (the last two share `runtime.rs`'s signature
+  table and are kept parallel, function for function); runtime functions
+  are `K_API` in `kiln.c` or `#[no_mangle] extern "C"` in `kiln_rt`, so
+  all can call them. The conformance tests run every program with each
+  backend that the system can build.
 - Keep error messages short, specific, and in plain words: say what was
   expected and what was found.
 

@@ -23,6 +23,9 @@ fn flush_makes_prompt_visible_before_input() {
     let mut backends = vec!["c"];
     if kiln_native::unavailable(kiln_native::Target::host()).is_none() {
         backends.push("native");
+        if kiln_native::llvm::find_clang().is_ok() {
+            backends.push("llvm");
+        }
     }
     if std::env::var_os("KILN_WINE").is_some()
         && kiln_native::unavailable(kiln_native::Target::Windows).is_none()

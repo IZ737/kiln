@@ -12,7 +12,9 @@
 //!
 //! The C backend in `kiln_codegen` stays as the reference: both backends
 //! share the runtime in `kiln_codegen/runtime/kiln.c`, and the conformance
-//! tests run every program with both.
+//! tests run every program with both. For release builds, [`llvm`] writes
+//! the program as LLVM IR for a clang on the system to optimize; its
+//! object is linked the same way.
 //!
 //! ```no_run
 //! let source = "fn main() {\n    print(\"hi\")\n}\n";
@@ -29,6 +31,7 @@
 
 mod gen;
 mod link;
+pub mod llvm;
 mod pe;
 mod runtime;
 

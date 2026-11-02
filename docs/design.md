@@ -249,7 +249,7 @@ to a typed mid-level IR, which feeds a backend:
 | C (via clang, gcc or `zig cc`) | First backend; free cross-compilation | 1 |
 | Cranelift | Self-contained native compilation; fast debug builds | 1.5 |
 | WasmGC | Browser code (embers) | 4 |
-| LLVM | Optimized release builds | 7 |
+| LLVM | Optimized release builds (`kiln fire`), through a clang on the system | 7.1 |
 
 The IR (`crates/kiln_ir`) is a typed tree: names are resolved, closures and
 field shorthands are lifted into functions with their captures listed (a

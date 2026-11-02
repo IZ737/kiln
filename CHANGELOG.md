@@ -1,5 +1,28 @@
 # Changelog
 
+## 0.17.0 (2026-11-02)
+
+Phase 7.1: `kiln fire` is the optimized release build
+([plan](docs/plans/phase-7.1.md)).
+
+- `kiln fire` builds through LLVM. A new backend
+  (`crates/kiln_native/src/llvm.rs`) writes the program as LLVM IR, a
+  clang on the system compiles it with `-O2`, and kiln links the object
+  with the runtime it carries, as it links Cranelift's; the executable is
+  as self-contained as before, and `--target windows` works from Linux.
+  kiln finds `clang` (or `clang-15` and up) on the `PATH`, or the one
+  `KILN_CLANG` names, and needs clang 15 or later; without one it builds
+  with Cranelift and says so in a note. `kiln build`, `kiln run` and
+  `kiln fire` take `--backend llvm` to insist on it, `kiln fire --backend
+  native` keeps Cranelift, and `kiln build --emit-llvm out.ll` writes the
+  IR. kiln does not link LLVM in, so it stays one small binary.
+- Both builds behave the same: every conformance program also runs
+  through the LLVM backend (and, under Wine, as a Windows executable
+  built with it), with the same checks for integer overflow and division
+  by zero. CPU-bound Kiln code runs 1.3 to 3 times faster than with
+  Cranelift in the compiler's benchmarks; code that spends its time in
+  the runtime gains little, since the runtime is prebuilt either way.
+
 ## 0.16.0 (2026-10-28)
 
 The open issues: components from any folder, imports and `@/` paths in

@@ -255,3 +255,71 @@ fn file_routes_are_exported() {
     let _ = std::fs::remove_dir_all(&app);
     let _ = std::fs::remove_dir_all(&site);
 }
+
+/// `kiln fire` without `--static`: an optimized executable through LLVM
+/// when there is a clang, and otherwise Cranelift's, with a note.
+#[test]
+fn a_release_is_built_through_llvm_when_clang_is_found() {
+    if kiln_native::unavailable(kiln_native::Target::host()).is_some() {
+        return;
+    }
+    let dir = temp("release");
+    std::fs::create_dir_all(&dir).unwrap();
+    let program = root().join("conformance/basics");
+    let expected = std::fs::read_to_string(program.join("main.out")).unwrap();
+    let run = |exe: &Path| {
+        let out = Command::new(exe).output().unwrap();
+        assert!(out.status.success(), "{}", stderr(&out));
+        assert_eq!(String::from_utf8_lossy(&out.stdout), expected);
+    };
+
+    if kiln_native::llvm::find_clang().is_ok() {
+        let exe = dir.join("basics-llvm");
+        let fired = kiln()
+            .args(["fire", "-o"])
+            .arg(&exe)
+            .arg(&program)
+            .output()
+            .unwrap();
+        assert!(fired.status.success(), "{}", stderr(&fired));
+        assert!(
+            !stderr(&fired).contains("without LLVM"),
+            "{}",
+            stderr(&fired)
+        );
+        run(&exe);
+    }
+
+    // Without a usable clang, the release is Cranelift's, and kiln says so.
+    let exe = dir.join("basics-native");
+    let fired = kiln()
+        .args(["fire", "-o"])
+        .arg(&exe)
+        .arg(&program)
+        .env("KILN_CLANG", dir.join("no-such-clang"))
+        .output()
+        .unwrap();
+    assert!(fired.status.success(), "{}", stderr(&fired));
+    assert!(
+        stderr(&fired).contains("note: building without LLVM's optimizer: KILN_CLANG is"),
+        "{}",
+        stderr(&fired)
+    );
+    run(&exe);
+
+    // Asked for LLVM, kiln fails instead of falling back.
+    let fired = kiln()
+        .args(["fire", "--backend", "llvm", "-o"])
+        .arg(dir.join("basics-none"))
+        .arg(&program)
+        .env("KILN_CLANG", dir.join("no-such-clang"))
+        .output()
+        .unwrap();
+    assert!(!fired.status.success());
+    assert!(
+        stderr(&fired).contains("error: KILN_CLANG is"),
+        "{}",
+        stderr(&fired)
+    );
+    let _ = std::fs::remove_dir_all(&dir);
+}
