@@ -1,8 +1,8 @@
 //! The native backend: turns a Kiln program in the IR (see `kiln_ir`) into
 //! an executable for Linux or Windows on x86-64, with no outside tools.
 //! [Cranelift] generates machine code from the IR, and `kiln` combines it
-//! with the runtime it carries for the target: the Kiln runtime, the Boehm
-//! garbage collector and a C library.
+//! with the runtime it carries for the target: the Kiln runtime (with its
+//! garbage collector) and a C library.
 //!
 //! - For Linux the built-in linker ([wild]) links the code with musl's C
 //!   library into one static executable that needs no shared libraries.
@@ -12,7 +12,9 @@
 //!
 //! The C backend in `kiln_codegen` stays as the reference: both backends
 //! share the runtime in `kiln_codegen/runtime/kiln.c`, and the conformance
-//! tests run every program with both.
+//! tests run every program with both. For release builds, [`llvm`] writes
+//! the program as LLVM IR for a clang on the system to optimize; its
+//! object is linked the same way.
 //!
 //! ```no_run
 //! let source = "fn main() {\n    print(\"hi\")\n}\n";
@@ -29,6 +31,7 @@
 
 mod gen;
 mod link;
+pub mod llvm;
 mod pe;
 mod runtime;
 

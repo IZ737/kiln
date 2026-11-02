@@ -21,7 +21,7 @@ The repository is a Rust workspace. It pins no fixed Rust version in `rust-toolc
 On Debian/Ubuntu, the native toolchain/runtime build also needs:
 
 ```sh
-sudo apt-get install musl-tools gcc-mingw-w64-x86-64 libgc-dev
+sudo apt-get install musl-tools gcc-mingw-w64-x86-64
 ```
 
 You may also need a C compiler. Other distributions and Windows have corresponding toolchains; see [README.md](README.md#try-it) and [AGENTS.md](AGENTS.md#commands). A released `kiln` executable does **not** require this contributor build setup.

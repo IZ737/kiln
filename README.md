@@ -101,7 +101,7 @@ desktop. KilnOS is a separate hobby concept, not a current compiler milestone.
 | Finish | An ordinary function returning typed `Ui` styles or a multi-part style record |
 | Ware | A package |
 | Ember (`.ember`) | A browser-capable component: SSR by default, hydrated as WasmGC |
-| `kiln fire` | Make a release build; `kiln fire --static` writes a static site |
+| `kiln fire` | Make a release build, optimized through LLVM with a clang on the system; `kiln fire --static` writes a static site |
 
 A page remains server-only while using an interactive island:
 
@@ -184,6 +184,7 @@ Then:
 ```sh
 kiln run examples/hello
 kiln build examples/hello --target windows   # hello.exe, from any system
+kiln fire examples/hello                     # the release build, through LLVM (needs clang)
 ```
 
 ## Try it
@@ -273,7 +274,7 @@ and use the compiler through `kiln mcp`.
 | ✅ 6.5.1 | **Ember shared stores and reactivity alignment**: implement previously agreed typed importable global stores, deep reactive roots, batched updates, scoped SSR, opt-in client navigation with preserved store identity, opt-in persistence, retaining explicit `{% state %}` syntax; [implementation plan](docs/plans/phase-6.5.1.md) | Independent Embers use the same reactive store without providers; updates synchronize, users remain isolated and stores survive opted-in client navigation but reset on reload by default |
 | ✅ 6.6 | **Static site generation**: `kiln fire --static`, build-time route enumeration, assets and Ember hydration for static output; [implementation plan](docs/plans/phase-6.6.md) | A Kiln site can export deployable static HTML/CSS/assets without a running Kiln server; unsupported server-only interactions are diagnosed |
 | ✅ 6.7 | **Opt-in filesystem routing**: discover `.glaze` pages from `app.file_routes(...)` mounts; support typed `[param]` routes, optional `route.kiln` loaders/HTTP handlers, route-local static export, safe collision diagnostics and compiler/LSP integration; [design and implementation plan](docs/plans/phase-6.7.md) | A project mixes filesystem-discovered pages and explicit routes using one typed router, with working SSR, static export, Ember hydration, editor diagnostics and browser tests |
-| 7 | **Kiln 1.0 readiness**: production hardening, optimized `kiln fire` release builds (including LLVM), precise GC, performance, security and stability | Kiln 1.0: a stable language and native runtime ready for manually deployed personal production projects |
+| 🚧 7 | **Kiln 1.0 readiness**: production hardening, optimized `kiln fire` release builds (✅ 7.1 LLVM, [implementation plan](docs/plans/phase-7.1.md)), precise GC, performance, security and stability | Kiln 1.0: a stable language and native runtime ready for manually deployed personal production projects |
 | 8 | **Deployment and release automation**: `kiln deploy`/`kiln release`, inspectable deployment plans, existing infrastructure targets, migrations, health checks and safeguards | A tested build can be safely deployed and verified on existing infrastructure without requiring a bespoke deployment script |
 | 9+ | Installable PWAs with local-first data that syncs with the server, further optimization, interoperability improvements, desktop apps, additional targets, request arenas and self-hosting | Independent milestones after deployment automation |
 

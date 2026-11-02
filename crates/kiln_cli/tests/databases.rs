@@ -14,6 +14,9 @@ fn backends() -> Vec<&'static str> {
     let mut out = vec!["c"];
     if kiln_native::unavailable(kiln_native::Target::host()).is_none() {
         out.push("native");
+        if kiln_native::llvm::find_clang().is_ok() {
+            out.push("llvm");
+        }
     }
     out
 }

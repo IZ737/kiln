@@ -84,6 +84,12 @@ jobs:
           env -i PATH=/nonexistent ./target/debug/kiln build examples/hello --target windows -o /tmp/hello.exe
           # A root with nothing in it but the executable: no libc, no /proc.
           sudo chroot /tmp/empty-root /hello
+      - name: kiln fire optimizes through the runner's clang, and the result needs no libraries either
+        run: |
+          clang --version
+          ./target/debug/kiln fire --backend llvm examples/hello -o /tmp/empty-root/hello-fire
+          sudo chroot /tmp/empty-root /hello-fire
+          ./target/debug/kiln build --backend llvm --target windows examples/hello -o /tmp/hello-fire.exe
       - name: kiln upgrade installs a real release over itself
         run: |
           mkdir -p /tmp/upgrade && cp target/debug/kiln /tmp/upgrade/kiln
@@ -175,6 +181,12 @@ jobs:
         shell: bash
         # Only Git's own tools (bash, diff) on the PATH: no C compiler.
         run: PATH=/usr/bin scripts/windows-check.sh kiln.exe
+      - name: kiln fire makes a release with the runner's clang
+        shell: bash
+        run: |
+          clang --version
+          ./kiln.exe fire --backend llvm examples/hello -o hello-fire.exe
+          ./hello-fire.exe
       - name: kiln fire --static writes a site with kiln.exe
         shell: bash
         run: |

@@ -1,7 +1,8 @@
 # Formatting, live reload and agents
 
 The tools around the compiler: `kiln fmt` for one layout, `kiln dev` for
-a server that rebuilds as you type, and `kiln mcp` for coding agents.
+a server that rebuilds as you type, `kiln fire` for release builds, and
+`kiln mcp` for coding agents.
 [Static sites](static-sites.md) covers `kiln fire --static`.
 [Editor setup](editors.md) covers the language server, and
 [Testing](../reference/testing.md) covers `kiln test`.
@@ -43,6 +44,41 @@ while you fix it. The program listens on a free port of its own
 The reload script is added to HTML pages by the proxy only: a program
 built by `kiln build` never has it. kiln dev listens on `127.0.0.1` unless
 you give `--host`, and warns when another machine could reach it.
+
+## `kiln fire`
+
+```sh
+kiln fire                        # a release build of the program in this folder
+kiln fire examples/hello -o hello
+kiln fire --backend native       # Cranelift, as kiln build
+kiln build --backend llvm --emit-llvm out.ll examples/hello   # the same, and its LLVM IR
+```
+
+`kiln build` and `kiln run` make machine code with Cranelift inside
+kiln: quick to build, with no tools to install. `kiln fire` makes the
+release build: it writes the program as LLVM IR and runs **clang** on it
+with `-O2`, so functions are inlined and loops are optimized, then links
+the object with the runtime kiln carries, exactly as `kiln build` links
+Cranelift's. The executable is as self-contained as any other, and
+`--target windows` works from Linux the same way.
+
+kiln looks for clang on the `PATH` (`clang`, or `clang-15` and up), or
+runs the one `KILN_CLANG` names; clang 15 or later is needed. Without
+one, `kiln fire` builds with Cranelift and says so in one line:
+
+```
+note: building without LLVM's optimizer: no clang was found on the PATH; install clang 15 or later (...)
+```
+
+`--backend llvm` asks for LLVM and fails instead of falling back, for a
+build script that must not quietly ship the slower build. Both builds
+behave the same: the conformance programs run through Cranelift, LLVM and
+the C backend, and the same checks (integer overflow, division by zero,
+bounds) are kept in release builds. How much faster a release is depends
+on the program: loops and calls in Kiln code gain the most (1.3 to 3
+times faster in the compiler's benchmarks), while a program that spends
+its time in the runtime, such as string handling or the database, gains
+little, since the runtime is prebuilt either way.
 
 ## Visual Studio Code
 

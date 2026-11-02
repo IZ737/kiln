@@ -31,8 +31,8 @@ and it has cost us since:
   collector cannot offer.
 
 A precise collector knows exactly which words hold references. This plan
-builds one in `kiln_rt` (new runtime code goes in Rust) and teaches both
-backends to tell it where the references are.
+builds one in `kiln_rt` (new runtime code goes in Rust) and teaches the
+backends (C, Cranelift and LLVM) to tell it where the references are.
 
 ## 2. What "precise" means here
 

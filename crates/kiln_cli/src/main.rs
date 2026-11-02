@@ -44,6 +44,10 @@ enum Backend {
     Native,
     /// C, compiled by the system's C compiler.
     C,
+    /// LLVM IR, optimized and compiled by a clang on the system (15 or
+    /// later; `KILN_CLANG` names one), then made into an executable by
+    /// kiln itself. What `kiln fire` uses when it finds clang.
+    Llvm,
 }
 
 impl Backend {
@@ -55,6 +59,24 @@ impl Backend {
         } else {
             Backend::C
         })
+    }
+
+    /// The backend of a release build: LLVM when there is a clang to
+    /// run, otherwise the default, with a note saying why.
+    fn for_release(backend: Option<Backend>, target: Target) -> Backend {
+        if let Some(backend) = backend {
+            return backend;
+        }
+        if kiln_native::unavailable(target).is_some() {
+            return Backend::C;
+        }
+        match kiln_native::llvm::find_clang() {
+            Ok(_) => Backend::Llvm,
+            Err(why) => {
+                eprintln!("note: building without LLVM's optimizer: {why}");
+                Backend::Native
+            }
+        }
     }
 }
 
@@ -83,9 +105,12 @@ enum Command {
         /// Also write the program's IR, in its readable form, to this path.
         #[arg(long)]
         emit_ir: Option<PathBuf>,
+        /// Also write the program as LLVM IR to this path.
+        #[arg(long)]
+        emit_llvm: Option<PathBuf>,
         /// How to generate code. `native` needs no outside tools; `c`
-        /// needs a C compiler. Defaults to `native` where
-        /// this kiln supports it.
+        /// needs a C compiler; `llvm` needs clang and optimizes.
+        /// Defaults to `native` where this kiln supports it.
         #[arg(long, value_enum)]
         backend: Option<Backend>,
         /// The system to build for: `linux` or `windows` (x86-64), or
@@ -95,8 +120,9 @@ enum Command {
         #[arg(long, value_parser = parse_target)]
         target: Option<BuildTarget>,
     },
-    /// Make a release of a program: an executable, as `kiln build` makes
-    /// it, or with `--static` a static site of its pages.
+    /// Make a release of a program: an optimized executable (through
+    /// LLVM, with a clang on the system), or with `--static` a static
+    /// site of its pages.
     Fire {
         /// The program's folder. Defaults to the current directory.
         #[arg(default_value = ".")]
@@ -110,7 +136,8 @@ enum Command {
         /// default `dist` in the program's folder).
         #[arg(short, long)]
         output: Option<PathBuf>,
-        /// How to generate code, as for `kiln build`.
+        /// How to generate code, as for `kiln build`. Defaults to `llvm`
+        /// when a clang is found, otherwise to `native`, with a note.
         #[arg(long, value_enum)]
         backend: Option<Backend>,
     },
@@ -612,12 +639,14 @@ fn dispatch(command: Command) -> ExitCode {
             output,
             emit_c,
             emit_ir,
+            emit_llvm,
             backend,
             target,
         } => {
             let emit = Emit {
                 c: emit_c.as_deref(),
                 ir: emit_ir.as_deref(),
+                llvm: emit_llvm.as_deref(),
                 ..Emit::default()
             };
             let target = match target {
@@ -650,7 +679,11 @@ fn dispatch(command: Command) -> ExitCode {
             let opts = fire::Options {
                 dir,
                 output,
-                backend: Backend::or_default(backend, Target::host()),
+                backend: if static_site {
+                    Backend::or_default(backend, Target::host())
+                } else {
+                    Backend::for_release(backend, Target::host())
+                },
             };
             if static_site {
                 fire::static_site(opts)
@@ -1362,6 +1395,7 @@ fn default_output(path: &Path, target: Target) -> PathBuf {
 struct Emit<'a> {
     c: Option<&'a Path>,
     ir: Option<&'a Path>,
+    llvm: Option<&'a Path>,
     /// Build the program for WebAssembly instead, as a Node.js script.
     wasm: bool,
     /// Where to put, for `kiln fire --static`, each call an ember makes to
@@ -1713,8 +1747,20 @@ fn build_project(
     if let (Some(c_path), Some(c)) = (emit.c, &c) {
         write(c_path, c)?;
     }
-    let linked = match (backend, c) {
-        (Backend::C, Some(c)) => kiln_codegen::compile_c(&c, out),
+    let ll = match (backend, emit.llvm) {
+        (Backend::Llvm, _) | (_, Some(_)) => {
+            Some(kiln_native::llvm::emit(&ir, target).map_err(report)?)
+        }
+        _ => None,
+    };
+    if let (Some(ll_path), Some(ll)) = (emit.llvm, &ll) {
+        write(ll_path, ll)?;
+    }
+    let linked = match (backend, c, ll) {
+        (Backend::C, Some(c), _) => kiln_codegen::compile_c(&c, out),
+        (Backend::Llvm, _, Some(ll)) => kiln_native::llvm::find_clang()
+            .and_then(|clang| kiln_native::llvm::compile(&clang, &ll, target))
+            .and_then(|object| kiln_native::link(&object, target, out)),
         _ => {
             let object = kiln_native::compile(&ir, target).map_err(report)?;
             kiln_native::link(&object, target, out)

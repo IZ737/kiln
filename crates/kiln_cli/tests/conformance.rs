@@ -1,8 +1,9 @@
 //! Runs every program in `conformance/` (one folder each) with `kiln run`,
-//! once with each backend (the native one when this kiln has its runtime),
-//! and compares its output with the expected files in the folder. When
-//! `KILN_WINE` names a Wine, each program is also built for Windows and run
-//! with it. Programs that the browser can run (all but those using
+//! once with each backend (the native one when this kiln has its runtime,
+//! and the LLVM one when there is also a clang; `KILN_BACKENDS=llvm,c`
+//! picks), and compares its output with the expected files in the folder. When
+//! `KILN_WINE` names a Wine, each program is also built for Windows (with
+//! Cranelift, and with LLVM when there is a clang) and run with it. Programs that the browser can run (all but those using
 //! server-only modules, E0218) are also built with `--target wasm` and run
 //! with Node.js 22 or later (`KILN_NODE`, or `node`), when there is one, to
 //! test the WebAssembly backend. The expected files:
@@ -64,11 +65,22 @@ fn conformance_programs_produce_expected_output() {
     if kiln_native::unavailable(kiln_native::Target::host()).is_none() {
         backends.push("native");
         backends.push("native-stress");
+        if kiln_native::llvm::find_clang().is_ok() {
+            backends.push("llvm");
+            backends.push("llvm-stress");
+        }
+    }
+    // `KILN_BACKENDS=llvm,c` runs only those backends.
+    if let Ok(only) = std::env::var("KILN_BACKENDS") {
+        backends.retain(|b| only.split(',').any(|o| o == *b));
     }
     if std::env::var_os("KILN_WINE").is_some()
         && kiln_native::unavailable(kiln_native::Target::Windows).is_none()
     {
         backends.push("windows");
+        if kiln_native::llvm::find_clang().is_ok() {
+            backends.push("windows-llvm");
+        }
     }
     if node().is_some() {
         backends.push("wasm");
@@ -156,22 +168,23 @@ fn run_program(program: &Path, backend: &str, failures: &mut Vec<String>) {
         c.arg(&script);
         built_exe = Some(script);
         c
-    } else if backend == "windows" {
-        // Built with `kiln build --target windows`, then run with Wine.
+    } else if backend.starts_with("windows") {
+        // Built with `kiln build --target windows` (`windows-llvm`: through
+        // the LLVM backend), then run with Wine.
         let exe = std::env::temp_dir().join(format!(
             "kiln-conformance-{}-{}.exe",
             std::process::id(),
             program.file_name().unwrap().to_string_lossy()
         ));
-        let built = Command::new(env!("CARGO_BIN_EXE_kiln"))
-            .args(["build", "--target", "windows", "-o"])
-            .arg(&exe)
-            .arg(program)
-            .output()
-            .unwrap();
+        let mut build = Command::new(env!("CARGO_BIN_EXE_kiln"));
+        build.args(["build", "--target", "windows"]);
+        if backend == "windows-llvm" {
+            build.args(["--backend", "llvm"]);
+        }
+        let built = build.arg("-o").arg(&exe).arg(program).output().unwrap();
         if !built.status.success() {
             failures.push(format!(
-                "{} (windows): does not build:\n{}",
+                "{} ({backend}): does not build:\n{}",
                 program.display(),
                 String::from_utf8_lossy(&built.stderr)
             ));

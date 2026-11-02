@@ -28,8 +28,8 @@ pub struct Options {
     pub backend: Backend,
 }
 
-/// `kiln fire`: an executable, as `kiln build` makes it. Phase 7 makes
-/// this the optimized release build.
+/// `kiln fire`: the release build of an executable, through LLVM's
+/// optimizer when `opts.backend` is `Llvm` (see `Backend::for_release`).
 pub fn release(opts: Options) -> ExitCode {
     let target = Target::host();
     let out = opts

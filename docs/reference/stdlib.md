@@ -816,10 +816,12 @@ page loads them with the embers.
 2. For the compiler, add the module to `LIB_MODULES` in
    `crates/kiln_ir/src/lower.rs`; its calls become `ExprKind::Lib`. Build
    each function in the runtime (`crates/kiln_codegen/runtime/kiln.c`, as a
-   `K_API` function) and in both backends: `lib_call` in
+   `K_API` function) and in every backend: `lib_call` in
    `crates/kiln_codegen/src/emit.rs` for C, and `lib_call` in
-   `crates/kiln_native/src/gen.rs` for native code, with the function's C
-   signature in `crates/kiln_native/src/runtime.rs`. A runtime function that
+   `crates/kiln_native/src/gen.rs` (Cranelift) and
+   `crates/kiln_native/src/llvm.rs` (LLVM, for `kiln fire`), with the
+   function's C signature in `crates/kiln_native/src/runtime.rs`, which
+   both read. A runtime function that
    fails sets `k_lib_error` to its message. The runtime is also built for
    Windows with mingw-w64: put code that differs there under
    `#ifdef _WIN32`. Generated code that calls a C library function directly
