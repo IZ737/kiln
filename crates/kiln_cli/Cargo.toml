@@ -37,7 +37,7 @@ rusqlite = { version = "0.41", features = ["bundled"] }
 # `kiln db` on PostgreSQL and MySQL.
 kiln_dbwire = { path = "../kiln_dbwire" }
 serde = { workspace = true }
-base64 = "0.22"
+base64 = "0.23"
 flate2 = "1"
 tar = { version = "0.4", default-features = false }
 zip = { version = "9", default-features = false, features = ["deflate-flate2"] }
